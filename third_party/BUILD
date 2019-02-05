@@ -14,7 +14,7 @@ alias(
 )
 alias(
     name = "futures",
-    actual = "//third_party/vendor/futures-0.1.14:futures",
+    actual = "//third_party/vendor/futures-0.1.25:futures",
 )
 alias(
     name = "glob",

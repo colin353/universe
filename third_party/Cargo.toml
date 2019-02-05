@@ -11,7 +11,7 @@ protobuf = "=2.0.4"
 byteorder = "=1.2.7"
 time = "=0.1.38"
 glob = "=0.2"
-futures = "=0.1.14"
+futures = "=0.1.25"
 
 [raze]
 # The WORKSPACE relative path to the Cargo.toml working directory.

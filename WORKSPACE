@@ -5,20 +5,22 @@ http_archive(
     urls = [
         # Master branch as of 2018-12-11
         "https://github.com/bazelbuild/rules_rust/archive/3228ccd3814c2ad0d7307d2f87fb8ff9616149d7.tar.gz",
-        ],
-    )
+    ],
+)
 
 http_archive(
     name = "bazel_skylib",
     sha256 = "eb5c57e4c12e68c0c20bc774bfbc60a568e800d025557bc4ea022c6479acc867",
     strip_prefix = "bazel-skylib-0.6.0",
     url = "https://github.com/bazelbuild/bazel-skylib/archive/0.6.0.tar.gz",
-    )
+)
 
 load("@io_bazel_rules_rust//rust:repositories.bzl", "rust_repositories")
+
 rust_repositories()
 
 load("@io_bazel_rules_rust//:workspace.bzl", "bazel_version")
+
 bazel_version(name = "bazel_version")
 
 load("@io_bazel_rules_rust//proto:repositories.bzl", "rust_proto_repositories")

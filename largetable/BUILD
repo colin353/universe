@@ -6,35 +6,35 @@ load("@io_bazel_rules_rust//proto:proto.bzl", "rust_proto_library")
 
 proto_library(
     name = "largetable_proto",
-    srcs = [ "record.proto" ],
-    )
+    srcs = ["record.proto"],
+)
 
 rust_proto_library(
     name = "largetable_proto_rust",
-    deps = [ ":largetable_proto" ],
-    )
+    deps = [":largetable_proto"],
+)
 
 rust_library(
     name = "largetable",
     srcs = [
+        "dtable.rs",
+        "keyserializer.rs",
+        "largetable.rs",
         "lib.rs",
         "mtable.rs",
-        "dtable.rs",
-        "largetable.rs",
-        "keyserializer.rs",
-        ],
+    ],
     deps = [
         ":largetable_proto_rust",
-        "//util/sstable",
-        "//util/recordio",
-        "@io_bazel_rules_rust//proto/raze:protobuf",
         "//third_party:futures",
-        "//third_party:time",
         "//third_party:glob",
-        ]
-    )
+        "//third_party:time",
+        "//util/recordio",
+        "//util/sstable",
+        "@io_bazel_rules_rust//proto/raze:protobuf",
+    ],
+)
 
 rust_test(
     name = "largetable_test",
-    deps = [ ":largetable" ],
-    )
+    deps = [":largetable"],
+)
