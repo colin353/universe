@@ -1,0 +1,10 @@
+syntax = "proto3";
+
+message Record {
+  bool deleted = 1;
+  uint64 timestamp = 2;
+  bytes data = 3;
+
+  string row = 4;
+  string col = 5;
+}

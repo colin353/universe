@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+// Index is the key index, which is a bunch of pointers into the file, each
+// with an associated key string. The pointers are spaced ~64 kB apart.
+message Index { repeated KeyEntry pointers = 1; }
+
+message KeyEntry {
+  string key = 1;
+  uint64 offset = 2;
+}
+
+// A DataEntry is the (key, value) pair, where the value has been serialized
+// to bytes.
+message DataEntry {
+  string key = 1;
+  // The value is a serialized version of whatever the sstable value type is.
+  // If it's a protobuf, it'll be serialized to bytes first, then written to
+  // this field.
+  bytes value = 2;
+}

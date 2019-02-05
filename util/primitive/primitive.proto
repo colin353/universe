@@ -1,0 +1,7 @@
+syntax = "proto3";
+
+message Number { int64 number = 1; }
+
+message UnsignedNumber { uint64 number = 1; }
+
+message Float { double number = 1; }

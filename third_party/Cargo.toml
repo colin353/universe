@@ -1,0 +1,21 @@
+[package]
+name = "compile_with_bazel"
+version = "0.0.0"
+
+# Mandatory (or Cargo tooling is unhappy)
+[lib]
+path = "fake_lib.rs"
+
+[dependencies]
+protobuf = "=2.0.4"
+byteorder = "=1.2.7"
+time = "=0.1.38"
+glob = "=0.2"
+futures = "=0.1.14"
+
+[raze]
+# The WORKSPACE relative path to the Cargo.toml working directory.
+workspace_path = "//third_party"
+
+# The target to generate BUILD rules for.
+target = "x86_64-unknown-linux-gnu"
