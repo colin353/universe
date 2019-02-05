@@ -288,7 +288,7 @@ impl<T: Serializable + Default> SSTableReader<T> {
     }
 
     fn seek_to_min_key(&mut self, key: &str) -> io::Result<()> {
-        let starting_offset = match self.index.get_block_with_min_key(key) {
+        let starting_offset = match index::get_block_with_min_key(&self.index, key) {
             Some(block) => block.get_offset(),
             None => return Ok(()),
         };
@@ -324,7 +324,7 @@ impl<T: Serializable + Default> SSTableReader<T> {
     pub fn get(&mut self, key: &str) -> io::Result<Option<T>> {
         // First, conduct a binary search on the keys in the index to find the block to read. Then,
         // seek to that block, and read until the block is over.
-        let offset = match self.index.get_block(key) {
+        let offset = match index::get_block(&self.index, key) {
             Some(block) => block.get_offset(),
             None => return Ok(None),
         };
@@ -387,14 +387,8 @@ impl<'a, T: Serializable + Default> SpecdSSTableReader<'a, T> {
     pub fn seek_to_start(&mut self) -> io::Result<()> {
         self.reached_end = false;
         let maybe_block = match self.min_key > self.key_spec {
-            true => self
-                .reader
-                .index
-                .get_block_with_min_key(self.min_key.as_str()),
-            false => self
-                .reader
-                .index
-                .get_block_with_keyspec(self.key_spec.as_str()),
+            true => index::get_block_with_min_key(&self.reader.index, self.min_key.as_str()),
+            false => index::get_block_with_keyspec(&self.reader.index, self.key_spec.as_str()),
         };
 
         let offset = match maybe_block {
@@ -582,7 +576,7 @@ impl<T: Serializable + Default> SSTableReader<T> {
     }
 
     pub fn suggest_shards(&self, key_spec: &str, min_key: &str, max_key: &str) -> Vec<String> {
-        self.index.suggest_shards(key_spec, min_key, max_key)
+        index::suggest_shards(&self.index, key_spec, min_key, max_key)
     }
 }
 
@@ -593,10 +587,13 @@ impl<T: Serializable + Default> Iterator for SSTableReader<T> {
     }
 }
 
-impl sstable_proto_rust::Index {
-    pub fn get_block(&self, key: &str) -> Option<sstable_proto_rust::KeyEntry> {
-        match self._get_block_index(key, false, false) {
-            Some(index) => Some(self.pointers[index].to_owned()),
+mod index {
+    pub fn get_block(
+        index: &sstable_proto_rust::Index,
+        key: &str,
+    ) -> Option<sstable_proto_rust::KeyEntry> {
+        match _get_block_index(index, key, false, false) {
+            Some(i) => Some(index.pointers[i].to_owned()),
             None => None,
         }
     }
@@ -606,14 +603,19 @@ impl sstable_proto_rust::Index {
     // keys, then the suggested shards should be composed of the intervals between the resulting
     // keys. When using a key_spec, an implicit final shard should be included from the last key to
     // the end of the keyspec.
-    pub fn suggest_shards(&self, key_spec: &str, min_key: &str, max_key: &str) -> Vec<String> {
+    pub fn suggest_shards(
+        index: &sstable_proto_rust::Index,
+        key_spec: &str,
+        min_key: &str,
+        max_key: &str,
+    ) -> Vec<String> {
         let maybe_index: Option<usize>;
         let lower_bound = if key_spec > min_key {
             // In this case, we will use the key_spec to retrieve the block.
-            maybe_index = self.get_block_index_with_keyspec(key_spec);
+            maybe_index = get_block_index_with_keyspec(index, key_spec);
             key_spec
         } else {
-            maybe_index = self.get_block_index_with_min_key(min_key);
+            maybe_index = get_block_index_with_min_key(index, min_key);
             min_key
         };
 
@@ -622,9 +624,9 @@ impl sstable_proto_rust::Index {
         let mut count = 0;
 
         // Find the SSTable boundaries within the spec.
-        if let Some(index) = maybe_index {
-            for i in (index as usize)..self.get_pointers().len() {
-                let ref keyentry = self.pointers[i];
+        if let Some(idx) = maybe_index {
+            for i in (idx as usize)..index.get_pointers().len() {
+                let ref keyentry = index.pointers[i];
 
                 // Make sure we have passed the min key.
                 if keyentry.get_key() < lower_bound {
@@ -658,33 +660,50 @@ impl sstable_proto_rust::Index {
         boundaries
     }
 
-    pub fn get_block_with_keyspec(&self, key_spec: &str) -> Option<sstable_proto_rust::KeyEntry> {
-        match self._get_block_index(key_spec, true, false) {
-            Some(index) => Some(self.pointers[index].to_owned()),
+    pub fn get_block_with_keyspec(
+        index: &sstable_proto_rust::Index,
+        key_spec: &str,
+    ) -> Option<sstable_proto_rust::KeyEntry> {
+        match _get_block_index(index, key_spec, true, false) {
+            Some(i) => Some(index.pointers[i].to_owned()),
             None => None,
         }
     }
 
     // If we have a minimum key, jump to the first record either equal to or greater than the key.
-    fn get_block_with_min_key(&self, min_key: &str) -> Option<sstable_proto_rust::KeyEntry> {
-        match self._get_block_index(min_key, false, true) {
-            Some(index) => Some(self.pointers[index].to_owned()),
+    pub fn get_block_with_min_key(
+        index: &sstable_proto_rust::Index,
+        min_key: &str,
+    ) -> Option<sstable_proto_rust::KeyEntry> {
+        match _get_block_index(index, min_key, false, true) {
+            Some(i) => Some(index.pointers[i].to_owned()),
             None => None,
         }
     }
 
-    pub fn get_block_index_with_keyspec(&self, key_spec: &str) -> Option<usize> {
-        self._get_block_index(key_spec, true, false)
+    pub fn get_block_index_with_keyspec(
+        index: &sstable_proto_rust::Index,
+        key_spec: &str,
+    ) -> Option<usize> {
+        _get_block_index(index, key_spec, true, false)
     }
 
-    pub fn get_block_index_with_min_key(&self, min_key: &str) -> Option<usize> {
-        self._get_block_index(min_key, false, true)
+    pub fn get_block_index_with_min_key(
+        index: &sstable_proto_rust::Index,
+        min_key: &str,
+    ) -> Option<usize> {
+        _get_block_index(index, min_key, false, true)
     }
 
     // _get_block searches the index for a possible key. If a suitable block is found, it'll
     // return the byte offset for that block.
-    fn _get_block_index(&self, key: &str, as_key_spec: bool, as_min_key: bool) -> Option<usize> {
-        let pointers = self.get_pointers();
+    fn _get_block_index(
+        index: &sstable_proto_rust::Index,
+        key: &str,
+        as_key_spec: bool,
+        as_min_key: bool,
+    ) -> Option<usize> {
+        let pointers = index.get_pointers();
         let length = pointers.len();
         if length == 0 {
             return None;
@@ -695,28 +714,28 @@ impl sstable_proto_rust::Index {
         while (length >> bit_index) > 0 {
             bit_index += 1
         }
-        let mut index = 0;
+        let mut i = 0;
         while bit_index > 0 {
             bit_index -= 1;
-            index += 1 << bit_index;
+            i += 1 << bit_index;
 
-            if index >= length || pointers[index].get_key() > key {
+            if i >= length || pointers[i].get_key() > key {
                 // Unset the bit in question: we've gone too far down the list.
-                index -= 1 << bit_index;
-            } else if pointers[index].get_key() < key {
+                i -= 1 << bit_index;
+            } else if pointers[i].get_key() < key {
                 // Do nothing, since we haven't gone far enough.
             } else {
-                return Some(index);
+                return Some(i);
             }
         }
 
         // For the case of using a key_spec, the key_spec is expected to rank higher than any value
         // fulfilling the spec. Therefore we may observe that the block key is higher than the
         // key_spec, which is acceptable as long as the block key matches the key spec.
-        let allowable_for_key_spec = as_key_spec && (pointers[index].get_key().starts_with(key));
+        let allowable_for_key_spec = as_key_spec && (pointers[i].get_key().starts_with(key));
 
-        match pointers[index].get_key() <= key || allowable_for_key_spec || as_min_key {
-            true => Some(index),
+        match pointers[i].get_key() <= key || allowable_for_key_spec || as_min_key {
+            true => Some(i),
 
             // If the block we found starts with a key which is already
             // higher than our key, that means our key doesn't exist.
@@ -890,15 +909,15 @@ mod tests {
     #[test]
     fn find_a_block() {
         let mut t = sstable_proto_rust::Index::new();
-        assert_eq!(t.get_block("asdf"), None);
+        assert_eq!(index::get_block(&t, "asdf"), None);
 
         t.set_pointers(protobuf::RepeatedField::from_vec(vec![keyentry(
             "bloop", 123,
         )]));
-        assert_eq!(t.get_block("asdf"), None);
-        assert_eq!(t.get_block("b"), None);
-        assert_eq!(t.get_block("bloop"), Some(keyentry("bloop", 123)));
-        assert_eq!(t.get_block("blooq"), Some(keyentry("bloop", 123)));
+        assert_eq!(index::get_block(&t, "asdf"), None);
+        assert_eq!(index::get_block(&t, "b"), None);
+        assert_eq!(index::get_block(&t, "bloop"), Some(keyentry("bloop", 123)));
+        assert_eq!(index::get_block(&t, "blooq"), Some(keyentry("bloop", 123)));
     }
 
     #[test]
@@ -1065,15 +1084,15 @@ mod tests {
         index.set_pointers(protobuf::RepeatedField::from_vec(pointers));
 
         assert_eq!(
-            index.get_block_with_min_key("argument"),
+            index::get_block_with_min_key(&index, "argument"),
             Some(keyentry("aaaa", 0))
         );
         assert_eq!(
-            index.get_block_with_min_key("dog"),
+            index::get_block_with_min_key(&index, "dog"),
             Some(keyentry("dddd", 3))
         );
         assert_eq!(
-            index.get_block_with_min_key("000"),
+            index::get_block_with_min_key(&index, "000"),
             Some(keyentry("aaaa", 0))
         );
     }
@@ -1200,7 +1219,7 @@ mod tests {
             String::from("dddd"),
         ];
 
-        assert_eq!(index.suggest_shards("", "a", "z"), expected);
+        assert_eq!(index::suggest_shards(&index, "", "a", "z"), expected);
     }
 
     #[test]
@@ -1222,19 +1241,19 @@ mod tests {
         index.set_pointers(protobuf::RepeatedField::from_vec(pointers));
 
         assert_eq!(
-            index.get_block_with_keyspec("animals_"),
+            index::get_block_with_keyspec(&index, "animals_"),
             Some(keyentry("animals_cat", 0))
         );
         assert_eq!(
-            index.get_block_with_keyspec("people_"),
+            index::get_block_with_keyspec(&index, "people_"),
             Some(keyentry("animals_yak", 2))
         );
         assert_eq!(
-            index.get_block_with_keyspec("places_"),
+            index::get_block_with_keyspec(&index, "places_"),
             Some(keyentry("people_yang", 5))
         );
         assert_eq!(
-            index.get_block_with_keyspec("things_"),
+            index::get_block_with_keyspec(&index, "things_"),
             Some(keyentry("places_toronto", 8))
         );
     }
@@ -1260,7 +1279,7 @@ mod tests {
             String::from("people_yang"),
         ];
 
-        assert_eq!(index.suggest_shards("people_", "", ""), expected);
+        assert_eq!(index::suggest_shards(&index, "people_", "", ""), expected);
     }
 
     #[test]
@@ -1285,6 +1304,9 @@ mod tests {
             String::from("places_dubai"),
         ];
 
-        assert_eq!(index.suggest_shards("", "people_c", "places_e"), expected);
+        assert_eq!(
+            index::suggest_shards(&index, "", "people_c", "places_e"),
+            expected
+        );
     }
 }

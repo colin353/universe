@@ -29,13 +29,7 @@ rust_library(
 
 rust_test(
     name = "sstable_test",
-    srcs = [
-        "lib.rs",
-        "primitive.rs",
-        ],
     deps = [
-        ":sstable_proto_rust",
-        "@io_bazel_rules_rust//proto/raze:protobuf",
-        "//third_party:byteorder",
+        ":sstable",
         ]
     )
