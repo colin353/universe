@@ -1,0 +1,90 @@
+syntax = "proto3";
+
+message Record {
+  string row = 1;
+  string column = 2;
+  uint64 timestamp = 3;
+  bytes data = 4;
+}
+
+message ReadRequest {
+  string row = 1;
+  string column = 2;
+  uint64 timestamp = 3;
+}
+
+message ReadResponse {
+  bool found = 1;
+  bytes data = 2;
+  uint64 timestamp = 3;
+}
+
+message ReadRangeRequest {
+  string row = 1;
+
+  // A column spec to adhere to (optional).
+  string column_spec = 2;
+
+  // A minimum and maximum key to read. If you leave them blank, will just
+  // use the column spec.
+  string column_min = 3;
+  string column_max = 4;
+
+  // The maximum number of records to return.
+  uint64 max_records = 5;
+
+  // A custom timestamp to use when filtering, or supply zero to use the
+  // current timestamp.
+  uint64 timestamp = 6;
+}
+
+message ReadRangeResponse {
+  bool error = 1;
+  string error_message = 2;
+
+  repeated Record records = 3;
+}
+
+message WriteRequest {
+  string row = 1;
+  string column = 2;
+  uint64 timestamp = 3;
+  bytes data = 4;
+}
+
+message WriteResponse { uint64 timestamp = 1; }
+
+message DeleteRequest {
+  string row = 1;
+  string column = 2;
+  bytes data = 3;
+}
+
+message DeleteResponse { uint64 timestamp = 1; }
+
+message ShardHintRequest {
+  string row = 1;
+
+  string column_spec = 2;
+  string column_min = 3;
+  string column_max = 4;
+  string max_shards = 5;
+}
+
+message ShardHintResponse { repeated string shards = 1; }
+
+message ReserveIDRequest {
+  string row = 1;
+  string column = 2;
+}
+
+message ReserveIDResponse { uint64 id = 1; }
+
+service LargeTableService {
+  rpc Read(ReadRequest) returns (ReadResponse);
+  rpc ReadRange(ReadRangeRequest) returns (ReadRangeResponse);
+  rpc ReserveID(ReserveIDRequest) returns (ReserveIDResponse);
+  rpc Write(WriteRequest) returns (WriteResponse);
+  rpc Delete(DeleteRequest) returns (DeleteResponse);
+  rpc GetShardHint(ShardHintRequest) returns (ShardHintResponse);
+}
