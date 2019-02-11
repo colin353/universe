@@ -21,10 +21,6 @@ alias(
     actual = "//third_party/vendor/glob-0.2.11:glob",
 )
 alias(
-    name = "protobuf",
-    actual = "//third_party/vendor/protobuf-2.0.4:protobuf",
-)
-alias(
     name = "time",
     actual = "//third_party/vendor/time-0.1.38:time",
 )

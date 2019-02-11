@@ -7,7 +7,6 @@ version = "0.0.0"
 path = "fake_lib.rs"
 
 [dependencies]
-protobuf = "=2.0.4"
 byteorder = "=1.2.7"
 time = "=0.1.38"
 glob = "=0.2"

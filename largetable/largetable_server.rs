@@ -7,6 +7,7 @@ extern crate time;
 extern crate flags;
 extern crate largetable;
 extern crate tls_api;
+extern crate tls_api_stub;
 
 extern crate largetable_grpc_rust;
 mod server_service;
@@ -18,11 +19,6 @@ use std::thread;
 
 fn main() {
     let port = define_flag!("port", 50051 as u16, "The port to bind to.");
-    let hostname = define_flag!(
-        "hostname",
-        String::from("0.0.0.0"),
-        "The hostname to bind to"
-    );
     let memory_limit = define_flag!(
         "memory_limit",
         100_000_000,
@@ -47,13 +43,12 @@ fn main() {
     // Create a new journal for this session.
     handler.add_journal();
 
-    let mut server = grpc::ServerBuilder::new();
+    let mut server = grpc::ServerBuilder::<tls_api_stub::TlsAcceptor>::new();
     server.http.set_port(port.value());
-    server.add_service(largetable_grpc_rust::LargeTableServiceServer::new_service_def(handler));
+    server.add_service(
+        largetable_grpc_rust::LargeTableServiceServer::new_service_def(handler.clone()),
+    );
     server.http.set_cpu_pool_threads(4);
-    server
-        .http
-        .set_tls(tls_api::TlsAcceptorBuilder::build().unwrap());
 
     let _server = server.build().expect("server");
 
