@@ -1,6 +1,7 @@
 package(default_visibility = ["//visibility:public"])
 
 load("@io_bazel_rules_rust//rust:rust.bzl", "rust_library")
+load("@io_bazel_rules_rust//rust:rust.bzl", "rust_binary")
 load("@io_bazel_rules_rust//rust:rust.bzl", "rust_test")
 load("@io_bazel_rules_rust//proto:proto.bzl", "rust_proto_library")
 load("@io_bazel_rules_rust//proto:proto.bzl", "rust_grpc_library")
@@ -32,6 +33,15 @@ rust_library(
         "//third_party:time",
         "@io_bazel_rules_rust//proto/raze:grpc",
         "@io_bazel_rules_rust//proto/raze:protobuf",
+    ],
+)
+
+rust_binary(
+    name = "weld_util",
+    srcs = ["weld_util.rs"],
+    deps = [
+        ":weld",
+        "//util/flags",
     ],
 )
 
