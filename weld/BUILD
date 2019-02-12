@@ -49,3 +49,12 @@ rust_test(
     name = "weld_test",
     deps = [":weld"],
 )
+
+rust_library(
+    name = "weld_repo",
+    srcs = ["weld_repo.rs"],
+    deps = [
+        ":weld",
+        "//largetable:largetable_client",
+    ],
+)
