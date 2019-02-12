@@ -62,7 +62,7 @@ rust_library(
 )
 
 rust_test(
-    name = "largetable_test",
+    name = "test_largetable",
     deps = [":largetable"],
 )
 
@@ -83,5 +83,16 @@ rust_binary(
         "@io_bazel_rules_rust//proto/raze:protobuf",
         "@io_bazel_rules_rust//proto/raze:tls_api",
         "@io_bazel_rules_rust//proto/raze:tls_api_stub",
+    ],
+)
+
+rust_library(
+    name = "largetable_test",
+    srcs = ["largetable_test.rs"],
+    deps = [
+        ":largetable",
+        ":largetable_client",
+        "//third_party:time",
+        "@io_bazel_rules_rust//proto/raze:protobuf",
     ],
 )
