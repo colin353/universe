@@ -4,8 +4,8 @@ extern crate protobuf;
 extern crate time;
 extern crate weld_grpc_rust;
 
-use weld_grpc_rust::WeldLocalService;
-use weld_grpc_rust::WeldService;
+pub use weld_grpc_rust::WeldLocalService;
+pub use weld_grpc_rust::WeldService;
 pub use weld_grpc_rust::*;
 
 use std::sync::Arc;

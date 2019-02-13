@@ -58,3 +58,26 @@ rust_library(
         "//largetable:largetable_client",
     ],
 )
+
+rust_binary(
+    name = "weld_client",
+    srcs = [
+        "client_service.rs",
+        "fs.rs",
+        "weld_client.rs",
+    ],
+    deps = [
+        ":weld",
+        ":weld_repo",
+        "//largetable:largetable_client",
+        "//largetable:largetable_test",
+        "//third_party:fuse",
+        "//third_party:libc",
+        "//third_party:time",
+        "//util/flags",
+        "@io_bazel_rules_rust//proto/raze:grpc",
+        "@io_bazel_rules_rust//proto/raze:protobuf",
+        "@io_bazel_rules_rust//proto/raze:tls_api",
+        "@io_bazel_rules_rust//proto/raze:tls_api_stub",
+    ],
+)
