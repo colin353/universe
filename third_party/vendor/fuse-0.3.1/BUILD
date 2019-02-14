@@ -76,8 +76,6 @@ rust_library(
     ],
     rustc_flags = [
         "--cap-lints=allow",
-        "-C",
-        "link-args='libfuse'",
     ],
     out_dir_tar = ":fuse_build_script_executor",
     version = "0.3.1",
