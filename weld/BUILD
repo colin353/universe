@@ -46,7 +46,7 @@ rust_binary(
 )
 
 rust_test(
-    name = "weld_test",
+    name = "weld_test_test",
     deps = [":weld"],
 )
 
@@ -117,5 +117,15 @@ rust_binary(
         "@io_bazel_rules_rust//proto/raze:protobuf",
         "@io_bazel_rules_rust//proto/raze:tls_api",
         "@io_bazel_rules_rust//proto/raze:tls_api_stub",
+    ],
+)
+
+rust_library(
+    name = "weld_test",
+    srcs = ["weld_test.rs"],
+    deps = [
+        ":weld",
+        ":weld_server_lib",
+        "//largetable:largetable_test",
     ],
 )
