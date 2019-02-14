@@ -103,3 +103,19 @@ rust_test(
         ":weld_server_lib",
     ],
 )
+
+rust_binary(
+    name = "weld_server",
+    srcs = ["server.rs"],
+    deps = [
+        ":weld",
+        ":weld_repo",
+        ":weld_server_lib",
+        "//largetable:largetable_test",
+        "//util/flags",
+        "@io_bazel_rules_rust//proto/raze:grpc",
+        "@io_bazel_rules_rust//proto/raze:protobuf",
+        "@io_bazel_rules_rust//proto/raze:tls_api",
+        "@io_bazel_rules_rust//proto/raze:tls_api_stub",
+    ],
+)
