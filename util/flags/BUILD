@@ -7,6 +7,5 @@ rust_library(
     srcs = [
         "lib.rs",
         "parse.rs",
-        ],
-    )
-
+    ],
+)

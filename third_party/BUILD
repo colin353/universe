@@ -25,6 +25,10 @@ alias(
     actual = "//third_party/vendor/glob-0.2.11:glob",
 )
 alias(
+    name = "hyper",
+    actual = "//third_party/vendor/hyper-0.12.24:hyper",
+)
+alias(
     name = "libc",
     actual = "//third_party/vendor/libc-0.2.43:libc",
 )
