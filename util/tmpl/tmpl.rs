@@ -5,6 +5,14 @@ pub enum Contents {
     MultiValue(Vec<HashMap<&'static str, Contents>>),
 }
 
+#[derive(Debug, PartialEq)]
+pub enum Key<'a> {
+    Value(&'a str),
+    MultiValue(&'a str),
+    EqualityCondition(&'a str, &'a str),
+    InequalityCondition(&'a str, &'a str),
+}
+
 pub fn apply(template: &str, data: &HashMap<&str, Contents>) -> String {
     let mut out = String::from("");
     apply_mut(template, data, &mut out);
@@ -16,19 +24,150 @@ pub fn apply_mut(template: &str, data: &HashMap<&str, Contents>, output: &mut St
     while let Some((start, maybe_key)) = parser.next() {
         output.push_str(start);
 
-        if let Some(key) = maybe_key {
-            match data.get(key) {
+        let key = if let Some(key) = maybe_key {
+            key
+        } else {
+            // If there's no key, it means there are no following keys, so we can just push the
+            // last content in and finish.
+            continue;
+        };
+
+        match decode_key(key) {
+            // Regular key insertion.
+            Key::Value(key) => match data.get(key) {
                 Some(Contents::Value(x)) => output.push_str(&x),
+                _ => eprintln!("key {} not found", key),
+            },
+
+            // Array insertion.
+            Key::MultiValue(key) => match data.get(key) {
                 Some(Contents::MultiValue(x)) => {
                     let loop_template = parser.jump_to_close_tag(key);
                     for value in x {
                         apply_mut(loop_template, value, output);
                     }
                 }
-                None => eprintln!("Unable to find key `{}`!", key),
+                _ => eprintln!("multi-value key {} not found", key),
+            },
+
+            // Equality condition, only render the block if the condition is true.
+            Key::EqualityCondition(key, value) => {
+                let block_template = parser.jump_to_close_tag(key);
+
+                // If it's a multi variable, equality tests for the length of the array.
+                let key = if key.ends_with("[]") {
+                    let (variable, _) = key.split_at(key.len() - 2);
+                    variable.trim()
+                } else {
+                    key
+                };
+
+                match data.get(key) {
+                    Some(Contents::Value(x)) => {
+                        if x == value {
+                            apply_mut(block_template, data, output);
+                        }
+                    }
+                    Some(Contents::MultiValue(x)) => {
+                        let length: usize = match value.parse() {
+                            Ok(length) => length,
+                            Err(_) => {
+                                eprintln!("equality condition with multi-value key {}, cannot parse int {}", key, value);
+                                continue;
+                            }
+                        };
+
+                        if x.len() == length {
+                            apply_mut(block_template, data, output);
+                        }
+                    }
+
+                    _ => eprintln!("equality condition key {} not found", key),
+                }
+            }
+
+            // Inequality condition, only render the block if the condition is false.
+            Key::InequalityCondition(key, value) => {
+                let block_template = parser.jump_to_close_tag(key);
+
+                // If it's a multi variable, equality tests for the length of the array.
+                let key = if key.ends_with("[]") {
+                    let (variable, _) = key.split_at(key.len() - 2);
+                    variable.trim()
+                } else {
+                    key
+                };
+
+                match data.get(key) {
+                    Some(Contents::Value(x)) => {
+                        if x != value {
+                            apply_mut(block_template, data, output);
+                        }
+                    }
+                    Some(Contents::MultiValue(x)) => {
+                        let length: usize = match value.parse() {
+                            Ok(length) => length,
+                            Err(_) => {
+                                eprintln!("inequality condition with multi-value key {}, cannot parse int {}", key, value);
+                                continue;
+                            }
+                        };
+
+                        if x.len() != length {
+                            apply_mut(block_template, data, output);
+                        }
+                    }
+
+                    _ => eprintln!("inequality condition key {} not found", key),
+                }
             }
         }
     }
+}
+
+fn decode_key<'a>(key: &'a str) -> Key<'a> {
+    // Remove any extraneous whitespace.
+    let key = key.trim();
+
+    // Check if it is an equality condition.
+    if let Some(idx) = key.find("==") {
+        let (variable, _) = key.split_at(idx);
+        let (_, value) = key.split_at(idx + 2);
+
+        // Remove the whitespace around the variable.
+        let variable = variable.trim();
+
+        // Remove the quotes and whitespace around the comparison value.
+        let value = value.trim().trim_matches('"').trim_matches('\'');
+
+        return Key::EqualityCondition(variable, value);
+    }
+
+    // Check if it is an inequality condition.
+    if let Some(idx) = key.find("!=") {
+        let (variable, _) = key.split_at(idx);
+        let (_, value) = key.split_at(idx + 2);
+
+        // Remove the whitespace around the variable.
+        let variable = variable.trim();
+
+        // Remove the quotes and whitespace around the comparison value.
+        let value = value.trim().trim_matches('"').trim_matches('\'');
+
+        return Key::InequalityCondition(variable, value);
+    }
+
+    // Check for multi-value variable.
+    if key.ends_with("[]") {
+        let (variable, _) = key.split_at(key.len() - 2);
+
+        // Remove the whitespace around the variable.
+        let variable = variable.trim();
+
+        return Key::MultiValue(variable);
+    }
+
+    Key::Value(key)
 }
 
 struct Parser<'a> {
@@ -102,6 +241,22 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_key_decoding() {
+        assert_eq!(decode_key("variable"), Key::Value("variable"));
+        assert_eq!(
+            decode_key("variable == \"value\""),
+            Key::EqualityCondition("variable", "value")
+        );
+
+        assert_eq!(
+            decode_key("variable != \" a more complex's value \""),
+            Key::InequalityCondition("variable", " a more complex's value ")
+        );
+
+        assert_eq!(decode_key(" variable[] "), Key::MultiValue("variable"));
+    }
+
+    #[test]
     fn test_parser() {
         let mut p = Parser::new("Hello, {{name}}!");
         assert_eq!(p.next(), Some(("Hello, ", Some("name"))));
@@ -129,7 +284,7 @@ mod tests {
 
     #[test]
     fn test_apply_loop() {
-        let template = "People:{{people}} {{name}}, {{title}}.{{/people}}";
+        let template = "People:{{people[]}} {{name}}, {{title}}.{{/people}}";
         let mut people = Vec::new();
         let mut p = HashMap::new();
         p.insert("name", Contents::Value(String::from("Colin")));
@@ -147,5 +302,75 @@ mod tests {
         let expected = "People: Colin, Tester. John, Tester.";
 
         assert_eq!(apply(template, &contents), expected, "Not equals");
+    }
+
+    #[test]
+    fn test_apply_conditional() {
+        let template = "Test... {{secret == true}}secret message{{/secret}}!";
+        let mut contents = HashMap::new();
+        contents.insert("secret", Contents::Value(String::from("true")));
+
+        let expected = "Test... secret message!";
+        assert_eq!(apply(template, &contents), expected);
+
+        let mut contents = HashMap::new();
+        contents.insert("secret", Contents::Value(String::from("false")));
+
+        let expected = "Test... !";
+        assert_eq!(apply(template, &contents), expected);
+    }
+
+    #[test]
+    fn test_apply_false_conditional() {
+        let template = "Test... {{secret != true}}secret message{{/secret}}!";
+        let mut contents = HashMap::new();
+        contents.insert("secret", Contents::Value(String::from("true")));
+
+        let expected = "Test... !";
+        assert_eq!(apply(template, &contents), expected);
+
+        let mut contents = HashMap::new();
+        contents.insert("secret", Contents::Value(String::from("false")));
+
+        let expected = "Test... secret message!";
+        assert_eq!(apply(template, &contents), expected);
+    }
+
+    #[test]
+    fn test_apply_array_conditional() {
+        let template = "{{array == 0}}No records found.{{/array}}";
+        let mut contents = HashMap::new();
+        contents.insert("array", Contents::MultiValue(Vec::new()));
+
+        let expected = "No records found.";
+        assert_eq!(apply(template, &contents), expected);
+
+        // Try doing it with some records.
+        let mut contents = HashMap::new();
+        let mut records = Vec::new();
+        records.push(HashMap::new());
+        contents.insert("array", Contents::MultiValue(records));
+
+        let expected = "";
+        assert_eq!(apply(template, &contents), expected);
+    }
+
+    #[test]
+    fn test_apply_array_conditional_inequality() {
+        let template = "{{array != 0}}Found some records!{{/array}}";
+        let mut contents = HashMap::new();
+        contents.insert("array", Contents::MultiValue(Vec::new()));
+
+        let expected = "";
+        assert_eq!(apply(template, &contents), expected);
+
+        // Try doing it with some records.
+        let mut contents = HashMap::new();
+        let mut records = Vec::new();
+        records.push(HashMap::new());
+        contents.insert("array", Contents::MultiValue(records));
+
+        let expected = "Found some records!";
+        assert_eq!(apply(template, &contents), expected);
     }
 }
