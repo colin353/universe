@@ -1,8 +1,32 @@
 use std::collections::HashMap;
+use std::convert::From;
 
 pub enum Contents {
     Value(String),
-    MultiValue(Vec<HashMap<&'static str, Contents>>),
+    MultiValue(ContentsMultiMap),
+}
+
+pub struct ContentsMultiMap {
+    data: Vec<HashMap<&'static str, Contents>>,
+}
+
+impl ContentsMultiMap {
+    fn new(data: Vec<HashMap<&'static str, Contents>>) -> Self {
+        ContentsMultiMap { data: data }
+    }
+}
+
+impl<T: ToString> From<T> for Contents {
+    fn from(input: T) -> Self {
+        let value: String = input.to_string();
+        Contents::Value(value)
+    }
+}
+
+impl From<ContentsMultiMap> for Contents {
+    fn from(input: ContentsMultiMap) -> Self {
+        Contents::MultiValue(input)
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -43,7 +67,7 @@ pub fn apply_mut(template: &str, data: &HashMap<&str, Contents>, output: &mut St
             Key::MultiValue(key) => match data.get(key) {
                 Some(Contents::MultiValue(x)) => {
                     let loop_template = parser.jump_to_close_tag(key);
-                    for value in x {
+                    for value in &x.data {
                         apply_mut(loop_template, value, output);
                     }
                 }
@@ -77,7 +101,7 @@ pub fn apply_mut(template: &str, data: &HashMap<&str, Contents>, output: &mut St
                             }
                         };
 
-                        if x.len() == length {
+                        if x.data.len() == length {
                             apply_mut(block_template, data, output);
                         }
                     }
@@ -113,8 +137,8 @@ pub fn apply_mut(template: &str, data: &HashMap<&str, Contents>, output: &mut St
                             }
                         };
 
-                        if x.len() != length {
-                            apply_mut(block_template, data, output);
+                        if x.data.len() != length {
+                            apply_mut(block_template, &data, output);
                         }
                     }
 
@@ -236,9 +260,35 @@ impl<'a> Iterator for Parser<'a> {
     }
 }
 
+#[macro_export]
+macro_rules! content {
+    ($( $key:expr => $value:expr),*) => {
+        &{
+            let mut m = HashMap::<&str, Contents>::new();
+            $( m.insert($key, $value.into()); )*
+                m
+        }
+    };
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_macros() {
+        let template = "hello, {{name}}, you are {{age}} years old!";
+        assert_eq!(
+            apply(
+                template,
+                content!(
+                    "name" => "Colin",
+                    "age" => 300
+                ),
+            ),
+            "hello, Colin, you are 300 years old!"
+        );
+    }
 
     #[test]
     fn test_key_decoding() {
@@ -276,10 +326,8 @@ mod tests {
     #[test]
     fn test_apply() {
         let template = "Hello, {{name}}!";
-        let mut contents = HashMap::new();
-        contents.insert("name", Contents::Value(String::from("world")));
-
-        assert_eq!(apply(template, &contents), "Hello, world!", "Not equals");
+        let mut contents = content!( "name" => "world");
+        assert_eq!(apply(template, &contents), "Hello, world!");
     }
 
     #[test]
@@ -297,7 +345,10 @@ mod tests {
         people.push(p);
 
         let mut contents = HashMap::new();
-        contents.insert("people", Contents::MultiValue(people));
+        contents.insert(
+            "people",
+            Contents::MultiValue(ContentsMultiMap::new(people)),
+        );
 
         let expected = "People: Colin, Tester. John, Tester.";
 
@@ -340,7 +391,10 @@ mod tests {
     fn test_apply_array_conditional() {
         let template = "{{array == 0}}No records found.{{/array}}";
         let mut contents = HashMap::new();
-        contents.insert("array", Contents::MultiValue(Vec::new()));
+        contents.insert(
+            "array",
+            Contents::MultiValue(ContentsMultiMap::new(Vec::new())),
+        );
 
         let expected = "No records found.";
         assert_eq!(apply(template, &contents), expected);
@@ -349,7 +403,10 @@ mod tests {
         let mut contents = HashMap::new();
         let mut records = Vec::new();
         records.push(HashMap::new());
-        contents.insert("array", Contents::MultiValue(records));
+        contents.insert(
+            "array",
+            Contents::MultiValue(ContentsMultiMap::new(records)),
+        );
 
         let expected = "";
         assert_eq!(apply(template, &contents), expected);
@@ -359,7 +416,10 @@ mod tests {
     fn test_apply_array_conditional_inequality() {
         let template = "{{array != 0}}Found some records!{{/array}}";
         let mut contents = HashMap::new();
-        contents.insert("array", Contents::MultiValue(Vec::new()));
+        contents.insert(
+            "array",
+            Contents::MultiValue(ContentsMultiMap::new(Vec::new())),
+        );
 
         let expected = "";
         assert_eq!(apply(template, &contents), expected);
@@ -368,7 +428,10 @@ mod tests {
         let mut contents = HashMap::new();
         let mut records = Vec::new();
         records.push(HashMap::new());
-        contents.insert("array", Contents::MultiValue(records));
+        contents.insert(
+            "array",
+            Contents::MultiValue(ContentsMultiMap::new(records)),
+        );
 
         let expected = "Found some records!";
         assert_eq!(apply(template, &contents), expected);
