@@ -10,8 +10,14 @@ pub struct ContentsMultiMap {
     data: Vec<HashMap<&'static str, Contents>>,
 }
 
+impl From<Vec<HashMap<&'static str, Contents>>> for ContentsMultiMap {
+    fn from(input: Vec<HashMap<&'static str, Contents>>) -> Self {
+        ContentsMultiMap { data: input }
+    }
+}
+
 impl ContentsMultiMap {
-    fn new(data: Vec<HashMap<&'static str, Contents>>) -> Self {
+    pub fn new(data: Vec<HashMap<&'static str, Contents>>) -> Self {
         ContentsMultiMap { data: data }
     }
 }
@@ -262,11 +268,19 @@ impl<'a> Iterator for Parser<'a> {
 
 #[macro_export]
 macro_rules! content {
-    ($( $key:expr => $value:expr),*) => {
-        &{
+    ($($key:expr => $value:expr),*) => {
+        {
             let mut m = HashMap::<&str, Contents>::new();
             $( m.insert($key, $value.into()); )*
-                m
+            m
+        }
+    };
+    ($($key:expr => $value:expr),*; $($key2:expr => $multivalue:expr)* ) => {
+        {
+            let mut m = HashMap::<&str, Contents>::new();
+            $( m.insert($key, $value.into()); )*
+            $( m.insert($key2, ContentsMultiMap::new($multivalue).into()); )*
+            m
         }
     };
 }
@@ -281,7 +295,7 @@ mod tests {
         assert_eq!(
             apply(
                 template,
-                content!(
+                &content!(
                     "name" => "Colin",
                     "age" => 300
                 ),
@@ -333,21 +347,18 @@ mod tests {
     #[test]
     fn test_apply_loop() {
         let template = "People:{{people[]}} {{name}}, {{title}}.{{/people}}";
-        let mut people = Vec::new();
-        let mut p = HashMap::new();
-        p.insert("name", Contents::Value(String::from("Colin")));
-        p.insert("title", Contents::Value(String::from("Tester")));
-        people.push(p);
 
-        let mut p = HashMap::new();
-        p.insert("name", Contents::Value(String::from("John")));
-        p.insert("title", Contents::Value(String::from("Tester")));
-        people.push(p);
-
-        let mut contents = HashMap::new();
-        contents.insert(
-            "people",
-            Contents::MultiValue(ContentsMultiMap::new(people)),
+        let contents = content!(;
+            "people" => vec![
+                content!(
+                    "name" => "Colin",
+                    "title" => "Tester"
+                ),
+                content!(
+                    "name" => "John",
+                    "title" => "Tester"
+                )
+            ]
         );
 
         let expected = "People: Colin, Tester. John, Tester.";
