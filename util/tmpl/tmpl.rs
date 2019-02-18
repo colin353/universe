@@ -270,14 +270,14 @@ impl<'a> Iterator for Parser<'a> {
 macro_rules! content {
     ($($key:expr => $value:expr),*) => {
         {
-            let mut m = HashMap::<&str, Contents>::new();
+            let mut m = std::collections::HashMap::<&str, $crate::Contents>::new();
             $( m.insert($key, $value.into()); )*
             m
         }
     };
     ($($key:expr => $value:expr),*; $($key2:expr => $multivalue:expr)* ) => {
         {
-            let mut m = HashMap::<&str, Contents>::new();
+            let mut m = std::collections::HashMap::<&str, $crate::Contents>::new();
             $( m.insert($key, $value.into()); )*
             $( m.insert($key2, ContentsMultiMap::new($multivalue).into()); )*
             m
