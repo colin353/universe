@@ -24,44 +24,18 @@ fn main() {
         true,
         "Whether or not to try to mount the FUSE filesystem"
     );
-    let port = define_flag!("port", 8008, "The port to bind to.");
+    let port = define_flag!("port", 8001, "The port to bind to.");
     let weld_hostname = define_flag!(
         "weld_hostname",
         String::from("localhost:8001"),
         "the hostname for the remote weld service"
     );
-    let cert = define_flag!(
-        "cert",
-        String::from(""),
-        "Where to look up the TLS certificate."
-    );
-    let key = define_flag!(
-        "key",
-        String::from(""),
-        "Where to look up the TLS private key."
-    );
-    let root_cert = define_flag!(
-        "root_cert",
-        String::from(""),
-        "Where to look up the root CA public key."
-    );
     let username = define_flag!("username", String::from(""), "The username to use.");
-    parse_flags!(
-        mount_point,
-        mount,
-        weld_hostname,
-        cert,
-        key,
-        root_cert,
-        username
-    );
+    parse_flags!(mount_point, mount, weld_hostname, port, username);
 
     let db = largetable_test::LargeTableMockClient::new();
     let mut repo = weld_repo::Repo::new(db);
 
-    let certificate = std::fs::read(cert.value()).unwrap();
-    let private_key = std::fs::read(key.value()).unwrap();
-    let root_cert = std::fs::read(root_cert.value()).unwrap();
     let client =
         weld::WeldServerClient::new(&weld_hostname.value(), username.value(), port.value());
     repo.add_remote_server(client);

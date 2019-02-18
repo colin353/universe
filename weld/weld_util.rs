@@ -29,7 +29,7 @@ fn main() {
 
     let port = define_flag!(
         "port",
-        8080 as u16,
+        8001 as u16,
         "The port to use for the local weld service"
     );
 
