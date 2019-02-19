@@ -5,6 +5,8 @@ load("@io_bazel_rules_rust//rust:rust.bzl", "rust_binary")
 load("@io_bazel_rules_rust//rust:rust.bzl", "rust_test")
 load("@io_bazel_rules_rust//proto:proto.bzl", "rust_proto_library")
 load("@io_bazel_rules_rust//proto:proto.bzl", "rust_grpc_library")
+load("@io_bazel_rules_docker//rust:image.bzl", "rust_image")
+load("@io_bazel_rules_docker//docker:docker.bzl", "docker_push")
 
 proto_library(
     name = "largetable_proto",
@@ -84,6 +86,34 @@ rust_binary(
         "@io_bazel_rules_rust//proto/raze:tls_api",
         "@io_bazel_rules_rust//proto/raze:tls_api_stub",
     ],
+)
+
+rust_image(
+    name = "largetable_server_img",
+    srcs = [
+        "largetable_server.rs",
+    ],
+    data = ["server_service.rs"],
+    deps = [
+        ":largetable",
+        ":largetable_grpc_rust",
+        "//third_party:futures",
+        "//third_party:glob",
+        "//third_party:time",
+        "//util/flags",
+        "@io_bazel_rules_rust//proto/raze:grpc",
+        "@io_bazel_rules_rust//proto/raze:protobuf",
+        "@io_bazel_rules_rust//proto/raze:tls_api",
+        "@io_bazel_rules_rust//proto/raze:tls_api_stub",
+    ],
+)
+
+docker_push(
+    name = "largetable_server_img_push",
+    image = ":largetable_server_img",
+    registry = "us.gcr.io",
+    repository = "mushu-194218/weld",
+    tag = "dev",
 )
 
 rust_library(
