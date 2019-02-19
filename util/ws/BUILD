@@ -18,6 +18,7 @@ rust_binary(
     srcs = [
         "ws_example.rs",
     ],
+    data = ["template.html"],
     deps = [
         ":ws",
         "//util/tmpl",

@@ -4,7 +4,7 @@ extern crate ws;
 use ws::{Body, Request, Response, Server};
 
 static MSG: &str = "Start svr: {}";
-static TEMPLATE: &str = "Hello, {{name}}!";
+static TEMPLATE: &str = include_str!("template.html");
 
 #[derive(Copy, Clone)]
 struct ExampleServer {}
@@ -23,7 +23,10 @@ impl ExampleServer {
         let response = tmpl::apply(
             TEMPLATE,
             &content!(
-                "name" => name
+                "title" => "Hello, world!",
+                "name" => name,
+                "noun" => "templates",
+                "verb" => "create"
             ),
         );
 
