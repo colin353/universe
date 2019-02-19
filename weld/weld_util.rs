@@ -23,13 +23,13 @@ fn load_change_file(change_file: &str) -> weld::Change {
 fn main() {
     let hostname = define_flag!(
         "weld_hostname",
-        String::from("localhost"),
+        String::from("127.0.0.1"),
         "The hostname of the local weld service."
     );
 
     let port = define_flag!(
         "port",
-        8001 as u16,
+        8008 as u16,
         "The port to use for the local weld service"
     );
 

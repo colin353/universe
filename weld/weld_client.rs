@@ -24,20 +24,31 @@ fn main() {
         true,
         "Whether or not to try to mount the FUSE filesystem"
     );
-    let port = define_flag!("port", 8001, "The port to bind to.");
+    let port = define_flag!("port", 8008, "The port to bind to.");
     let weld_hostname = define_flag!(
         "weld_hostname",
         String::from("localhost:8001"),
         "the hostname for the remote weld service"
     );
+    let server_port = define_flag!("server_port", 8001, "the port to connect to");
     let username = define_flag!("username", String::from(""), "The username to use.");
-    parse_flags!(mount_point, mount, weld_hostname, port, username);
+    parse_flags!(
+        mount_point,
+        mount,
+        weld_hostname,
+        port,
+        server_port,
+        username
+    );
 
     let db = largetable_test::LargeTableMockClient::new();
     let mut repo = weld_repo::Repo::new(db);
 
-    let client =
-        weld::WeldServerClient::new(&weld_hostname.value(), username.value(), port.value());
+    let client = weld::WeldServerClient::new(
+        &weld_hostname.value(),
+        username.value(),
+        server_port.value(),
+    );
     repo.add_remote_server(client);
 
     // Start gRPC service.
