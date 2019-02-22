@@ -112,7 +112,7 @@ docker_push(
     name = "largetable_server_img_push",
     image = ":largetable_server_img",
     registry = "us.gcr.io",
-    repository = "mushu-194218/weld",
+    repository = "mushu-194218/largetable",
     tag = "dev",
 )
 
