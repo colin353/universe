@@ -58,6 +58,25 @@ rust_library(
     deps = [
         ":weld",
         "//largetable:largetable_client",
+        "//util/cache",
+    ],
+)
+
+rust_library(
+    name = "repo_test_lib",
+    srcs = ["repo_test.rs"],
+    deps = [
+        "//largetable:largetable_test",
+        "//weld",
+        "//weld:weld_repo",
+        "//weld:weld_test",
+    ],
+)
+
+rust_test(
+    name = "weld_repo_test",
+    deps = [
+        ":repo_test_lib",
     ],
 )
 
@@ -113,6 +132,7 @@ rust_binary(
         ":weld",
         ":weld_repo",
         ":weld_server_lib",
+        "//largetable:largetable_client",
         "//largetable:largetable_test",
         "//util/flags",
         "@io_bazel_rules_rust//proto/raze:grpc",
@@ -129,6 +149,7 @@ rust_image(
         ":weld",
         ":weld_repo",
         ":weld_server_lib",
+        "//largetable:largetable_client",
         "//largetable:largetable_test",
         "//util/flags",
         "@io_bazel_rules_rust//proto/raze:grpc",

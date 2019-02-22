@@ -29,7 +29,7 @@ fn main() {
         String::from("./data"),
         "The directory where data is stored and loaded from."
     );
-    parse_flags!(port, memory_limit);
+    parse_flags!(port, data_directory, memory_limit);
 
     let mut handler =
         server_service::LargeTableServiceHandler::new(memory_limit.value(), data_directory.value());
