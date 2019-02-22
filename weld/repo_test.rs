@@ -448,4 +448,30 @@ mod tests {
             "Should have two snapshots."
         );
     }
+
+    #[test]
+    fn test_cache() {
+        let mut repo = make_remote_connected_test_repo();
+
+        // Make a change with a modified file
+        let mut change = weld::Change::new();
+        let id = repo.make_change(change);
+
+        let mut test_file = File::new();
+        test_file.set_filename(String::from("/config.txt"));
+        test_file.set_contents(String::from("{config: true}").into_bytes());
+        repo.write(id, test_file, 0);
+
+        // Take snapshot
+        let index = repo.snapshot(&weld::change(id)).get_snapshot_id();
+
+        let response = repo.read_remote(id, "/config.txt", index);
+        assert!(response.is_some());
+
+        // Delete the remote server
+        repo.remote_server = None;
+
+        let response = repo.read_remote(id, "/config.txt", index);
+        assert!(response.is_some());
+    }
 }

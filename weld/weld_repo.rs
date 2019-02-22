@@ -36,8 +36,8 @@ impl Eq for ReadQuery {}
 
 #[derive(Clone)]
 enum ReadResponse {
-    Read(weld::FileIdentifier),
-    ListFiles(weld::ListFilesResponse),
+    Read(weld::File),
+    ListFiles(Vec<weld::File>),
 }
 
 impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
@@ -77,6 +77,14 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
     pub fn read_remote(&self, id: u64, path: &str, index: u64) -> Option<File> {
         let filename = normalize_filename(path);
 
+        // First, check cache. If it's in there, quickly return.
+        let query = ReadQuery::Read(id, path.to_owned(), index);
+
+        match self.cache.get(&query) {
+            Some(ReadResponse::Read(f)) => return if f.get_found() { Some(f) } else { None },
+            _ => (),
+        };
+
         match self.remote_server {
             Some(ref client) => {
                 let mut ident = weld::FileIdentifier::new();
@@ -84,6 +92,12 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
                 ident.set_filename(filename);
                 ident.set_index(index);
                 let file = client.read(ident);
+
+                // Save to the cache, unless we're reading with index 0 (i.e. latest)
+                if index != 0 {
+                    self.cache.insert(query, ReadResponse::Read(file.clone()));
+                }
+
                 match file.get_found() {
                     true => Some(file),
                     false => None,
@@ -277,13 +291,29 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
     }
 
     pub fn list_files_remote(&self, id: u64, directory: &str, index: u64) -> Vec<File> {
+        // First, check cache. If it's in there, quickly return.
+        let query = ReadQuery::ListFiles(id, directory.to_owned(), index);
+
+        match self.cache.get(&query) {
+            Some(ReadResponse::ListFiles(f)) => return f,
+            _ => (),
+        };
+
         match self.remote_server {
             Some(ref client) => {
                 let mut ident = weld::FileIdentifier::new();
                 ident.set_id(id);
                 ident.set_filename(directory.to_owned());
                 ident.set_index(index);
-                client.list_files(ident)
+                let response = client.list_files(ident);
+
+                // Save to the cache, unless we're reading with index 0 (i.e. latest)
+                if index != 0 {
+                    self.cache
+                        .insert(query, ReadResponse::ListFiles(response.clone()));
+                }
+
+                response
             }
             None => vec![],
         }
