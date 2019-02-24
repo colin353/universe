@@ -13,6 +13,8 @@ extern crate weld_repo;
 mod client_service;
 mod fs;
 
+use std::sync::Arc;
+
 fn main() {
     let mount_point = define_flag!(
         "mount_point",
@@ -32,17 +34,28 @@ fn main() {
     );
     let server_port = define_flag!("server_port", 8001, "the port to connect to");
     let username = define_flag!("username", String::from(""), "The username to use.");
+    let largetable_hostname = define_flag!(
+        "largetable_hostname",
+        String::from("127.0.0.1"),
+        "the hostname of the largetable service"
+    );
+    let largetable_port = define_flag!("largetable_port", 50051, "the on the largetable service");
     parse_flags!(
         mount_point,
         mount,
         weld_hostname,
         port,
         server_port,
-        username
+        username,
+        largetable_hostname,
+        largetable_port
     );
 
-    let db = largetable_test::LargeTableMockClient::new();
-    let mut repo = weld_repo::Repo::new(db);
+    let db = largetable_client::LargeTableRemoteClient::new(
+        &largetable_hostname.value(),
+        largetable_port.value(),
+    );
+    let mut repo = weld_repo::Repo::new(Arc::new(db));
 
     let client = weld::WeldServerClient::new(
         &weld_hostname.value(),

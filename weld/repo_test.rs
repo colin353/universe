@@ -474,4 +474,23 @@ mod tests {
         let response = repo.read_remote(id, "/config.txt", index);
         assert!(response.is_some());
     }
+
+    #[test]
+    fn test_reboot() {
+        let db = largetable_test::LargeTableMockClient::new();
+        {
+            let repo: TestRepo = Repo::new(db.clone());
+            let mut c = weld::Change::new();
+            c.set_friendly_name(String::from("test"));
+            repo.make_change(c);
+            assert_eq!(repo.list_changes().count(), 1);
+            assert!(repo.lookup_friendly_name("test").is_some());
+        }
+
+        {
+            let repo: TestRepo = Repo::new(db);
+            assert_eq!(repo.list_changes().count(), 1);
+            assert!(repo.lookup_friendly_name("test").is_some());
+        }
+    }
 }

@@ -287,9 +287,9 @@ impl<'a> LargeTable {
 
         // Then write to the journal, if necessary.
         if self.journals.len() > 0 {
-            self.journals[0].write().unwrap().write(&record);
             record.set_col(col.to_owned());
             record.set_row(row.to_owned());
+            self.journals[0].write().unwrap().write(&record);
 
             // The row and col should not be in the proto written to mtable, it just
             // wastes memory.
