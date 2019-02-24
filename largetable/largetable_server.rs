@@ -53,7 +53,7 @@ fn main() {
     let _server = server.build().expect("server");
 
     loop {
-        thread::sleep(std::time::Duration::from_secs(5));
+        thread::sleep(std::time::Duration::from_secs(60));
         handler.check_memory();
     }
 }
