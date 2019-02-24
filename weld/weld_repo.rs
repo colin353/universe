@@ -524,7 +524,27 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
             Some(c) => c,
             None => return weld::SubmitResponse::new(),
         };
-        self.remote_server.as_ref().unwrap().submit(change)
+        let response = self.remote_server.as_ref().unwrap().submit(change);
+
+        if response.get_id() != 0 {
+            // The submit was successful. Delete the client.
+            self.delete_change(id);
+        }
+
+        response
+    }
+
+    pub fn delete_change(&self, id: u64) {
+        let change = match self.get_change(id) {
+            Some(c) => c,
+            None => return eprintln!("Tried to delete non-existant change {}", id),
+        };
+
+        self.db.delete(CHANGE_METADATA, &change_to_rowname(id));
+        self.spaces
+            .write()
+            .unwrap()
+            .remove(change.get_friendly_name());
     }
 }
 
