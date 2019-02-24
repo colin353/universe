@@ -493,4 +493,27 @@ mod tests {
             assert!(repo.lookup_friendly_name("test").is_some());
         }
     }
+
+    #[test]
+    fn test_list_changes() {
+        let mut repo = make_remote_connected_test_repo();
+
+        // Make a change and submit it
+        let mut change = weld::Change::new();
+        let old_id = repo.make_change(change);
+
+        // The change should show up when listing changes.
+        assert_eq!(repo.list_changes().count(), 1);
+
+        let mut test_file = File::new();
+        test_file.set_filename(String::from("/test/config.txt"));
+        test_file.set_contents(String::from("{config: true}").into_bytes());
+        repo.write(old_id, test_file, 0);
+
+        let index = repo.snapshot(&weld::change(old_id)).get_snapshot_id();
+        let submitted_id = repo.submit(old_id).get_id();
+
+        // After the change is submitted, it shouldn't appear in list_changes
+        assert_eq!(repo.list_changes().count(), 0);
+    }
 }

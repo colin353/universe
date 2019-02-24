@@ -204,7 +204,8 @@ impl<'a> LargeTable {
                 (key.to_owned(), index.to_owned(), record.to_owned())
             };
 
-            if found_record && record.get_col() != prev_col {
+            // If the record is a deletion, omit it from the read_range.
+            if found_record && record.get_col() != prev_col && !prev_record.get_deleted() {
                 output.push(prev_record);
 
                 // If we already have enough values to pass the limit,
@@ -227,8 +228,8 @@ impl<'a> LargeTable {
             };
         }
 
-        // Push the last one in there as well.
-        if found_record {
+        // Push the last one in there as well, unless it was a deletion.
+        if found_record && !prev_record.get_deleted() {
             output.push(prev_record);
         }
 
@@ -528,6 +529,38 @@ mod tests {
         assert_eq!(out[2], make_record("a", "couscous", 1000));
         assert_eq!(out[3], make_record("a", "dandelion", 1000));
         assert_eq!(out[4], make_record("a", "fruit", 1000));
+    }
+
+    #[test]
+    fn read_range_with_deletion() {
+        let mut l = LargeTable::new();
+        write_record(&mut l, "a", "apple", 1000);
+        write_record(&mut l, "a", "cantaloupe", 3000);
+        write_record(&mut l, "a", "cherry", 1000);
+        write_record(&mut l, "a", "durian", 3000);
+        write_record(&mut l, "a", "fruit", 1000);
+
+        // Read it out again.
+        let out = l.read_range("a", "", "", "", 100, 9999);
+        assert_eq!(out.len(), 5);
+        assert_eq!(out[0], make_record("a", "apple", 1000));
+        assert_eq!(out[1], make_record("a", "cantaloupe", 3000));
+        assert_eq!(out[2], make_record("a", "cherry", 1000));
+        assert_eq!(out[3], make_record("a", "durian", 3000));
+        assert_eq!(out[4], make_record("a", "fruit", 1000));
+
+        // Delete one of the records
+        let mut record = make_record("a", "cantaloupe", 4000);
+        record.set_deleted(true);
+        l.write("a", "cantaloupe", record);
+
+        // Read it out again.
+        let out = l.read_range("a", "", "", "", 100, 9999);
+        assert_eq!(out.len(), 4);
+        assert_eq!(out[0], make_record("a", "apple", 1000));
+        assert_eq!(out[1], make_record("a", "cherry", 1000));
+        assert_eq!(out[2], make_record("a", "durian", 3000));
+        assert_eq!(out[3], make_record("a", "fruit", 1000));
     }
 
     #[test]
