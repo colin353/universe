@@ -8,8 +8,6 @@ RUST_LOG=debug RUST_BACKTRACE=1 blaze run //largetable:largetable_server -- \
 
 sudo umount -l /home/colinmerkel/codefs
 
-sleep 2
-
 RUST_BACKTRACE=1 blaze run //weld:weld_client -- \
   --weld_hostname=35.196.58.206 \
   --mount_point=/home/colinmerkel/codefs
