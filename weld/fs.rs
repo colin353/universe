@@ -6,6 +6,7 @@ use fuse;
 use fuse::FileType;
 use libc::ENOENT;
 use libc::ENOSYS;
+use libc::EPERM;
 use std::hash;
 use time;
 use time::Timespec;
@@ -625,9 +626,20 @@ impl<C: largetable_client::LargeTableClient> fuse::Filesystem for WeldFS<C> {
         _ino: u64,
         _newparent: u64,
         _newname: &OsStr,
-        _reply: fuse::ReplyEntry,
+        reply: fuse::ReplyEntry,
     ) {
-        panic!("link! bad luck!");
+        reply.error(EPERM)
+    }
+
+    fn symlink(
+        &mut self,
+        _req: &fuse::Request,
+        _parent: u64,
+        _name: &OsStr,
+        _link: &std::path::Path,
+        reply: fuse::ReplyEntry,
+    ) {
+        reply.error(EPERM)
     }
 
     fn flush(
