@@ -59,7 +59,10 @@ impl<C: LargeTableClient> WeldServiceHandler<C> {
 
         let mut change = match self.repo.get_change(pending_id) {
             Some(c) => c,
-            None => return weld::SubmitResponse::new(),
+            None => {
+                println!("tried to submit not found change: {}", pending_id);
+                return weld::SubmitResponse::new();
+            }
         };
 
         assert!(
@@ -104,7 +107,10 @@ impl<C: LargeTableClient> WeldServiceHandler<C> {
         // If there's no associated ID, we need to create the repo here first.
         if change.get_id() == 0 {
             let id = self.repo.make_change(change.clone());
+            println!("No such change, creating one ({})", id);
             change.set_id(id);
+        } else {
+            println!("Change exists, adding snapshot to that one");
         }
 
         // Reload any existing data about this change, in case it already exists.

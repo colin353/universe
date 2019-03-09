@@ -76,6 +76,11 @@ mod tests {
 
         repo.write(id, test_file, 0);
 
+        let mut test_dir = File::new();
+        test_dir.set_filename(String::from("/test_directory"));
+        test_dir.set_directory(true);
+        repo.write(id, test_dir, 0);
+
         let mut expected_dir = File::new();
         expected_dir.set_filename(String::from("/test"));
         expected_dir.set_directory(true);
@@ -83,6 +88,14 @@ mod tests {
 
         assert_eq!(repo.read(id, "/test", 0), Some(expected_dir.clone()));
         assert_eq!(repo.read(id, "/test/", 0), Some(expected_dir));
+
+        assert_eq!(
+            repo.list_files(id, "/", 0)
+                .iter()
+                .map(|x| x.get_filename())
+                .collect::<Vec<_>>(),
+            vec!["/test", "/test_directory"]
+        );
     }
 
     #[test]
