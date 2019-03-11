@@ -522,7 +522,10 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
     pub fn submit(&self, id: u64) -> weld::SubmitResponse {
         let mut change = match self.get_change(id) {
             Some(c) => c,
-            None => return weld::SubmitResponse::new(),
+            None => {
+                println!("[repo] tried to submit unknown change {}", id);
+                return weld::SubmitResponse::new();
+            }
         };
 
         // Since this is going to the remote server, we need to reframe the change into the remote

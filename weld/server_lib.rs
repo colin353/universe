@@ -60,7 +60,7 @@ impl<C: LargeTableClient> WeldServiceHandler<C> {
         let mut change = match self.repo.get_change(pending_id) {
             Some(c) => c,
             None => {
-                println!("tried to submit not found change: {}", pending_id);
+                println!("[submit] tried to submit not found change: {}", pending_id);
                 return weld::SubmitResponse::new();
             }
         };
@@ -77,10 +77,14 @@ impl<C: LargeTableClient> WeldServiceHandler<C> {
         change.set_submitted_id(id);
 
         // Write all file changes to HEAD.
+        let mut num_changed_files = 0;
         for file in self.repo.list_changed_files(pending_id, 0) {
             println!("[submit] writing: {} @ {}", file.get_filename(), id);
             self.repo.write(HEAD_ID, file.clone(), id);
+            num_changed_files += 1;
         }
+
+        println!("[submit] {} total changed files", num_changed_files);
 
         self.database
             .write_proto(SUBMITTED, &index_to_rowname(id), 0, &change);

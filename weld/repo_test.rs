@@ -529,4 +529,44 @@ mod tests {
         // After the change is submitted, it shouldn't appear in list_changes
         assert_eq!(repo.list_changes().count(), 0);
     }
+
+    #[test]
+    fn test_multiple_submits() {
+        let mut repo = make_remote_connected_test_repo();
+
+        println!("[test] Write a README file");
+        {
+            let mut change = weld::Change::new();
+            let id = repo.make_change(change);
+
+            let mut test_file = File::new();
+            test_file.set_filename(String::from("/README.md"));
+            test_file.set_contents(String::from("test content").into_bytes());
+            repo.write(id, test_file, 0);
+
+            repo.snapshot(&weld::change(id)).get_change_id();
+            let submitted_id = repo.submit(id).get_id();
+
+            assert_ne!(submitted_id, 0, "Error submitting change");
+        }
+
+        println!("[test] Make a change on top of the README.md file");
+        {
+            let mut change = weld::Change::new();
+            let id = repo.make_change(change);
+
+            let f = repo.read(id, "/README.md", 0).unwrap();
+            assert_eq!(f.get_contents(), String::from("test content").as_bytes());
+
+            let mut test_file = weld::File::new();
+            test_file.set_filename(String::from("/README.md"));
+            test_file.set_contents(String::from("test content\nextra content").into_bytes());
+            repo.write(id, test_file, 0);
+
+            repo.snapshot(&weld::change(id)).get_change_id();
+            let submitted_id = repo.submit(id).get_id();
+
+            assert_ne!(submitted_id, 0, "Error submitting change");
+        }
+    }
 }
