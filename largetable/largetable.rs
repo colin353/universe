@@ -105,8 +105,23 @@ impl<'a> LargeTable {
         // Reserve the next index.
         let reserved_id = max_id + 1;
 
+        // Prepare the record to write
         let mut record = Record::new();
         record.set_timestamp(reserved_id);
+
+        // Then write to the journal, if necessary
+        if self.journals.len() > 0 {
+            record.set_col(col.to_owned());
+            record.set_row(row.to_owned());
+            self.journals[0].write().unwrap().write(&record);
+
+            // The row and col should not be in the proto written to mtable, it just
+            // wastes memory.
+            record.clear_col();
+            record.clear_row();
+        }
+
+        // Finally write the record
         reserved_mtables[0].write(row, col, record);
 
         reserved_id
@@ -590,7 +605,7 @@ mod tests {
 
     #[test]
     fn test_reserve_id() {
-        let mut l = LargeTable::new();
+        let l = LargeTable::new();
         assert_eq!(l.reserve_id("hello", "world"), 1);
         assert_eq!(l.reserve_id("hello", "world"), 2);
         assert_eq!(l.reserve_id("hello", "zerld"), 1);
@@ -599,7 +614,7 @@ mod tests {
 
     #[test]
     fn read_and_write_proto() {
-        let mut l = LargeTable::new();
+        let l = LargeTable::new();
 
         let record = make_record("fake_serialized", "abcdef", 12345);
         l.write_proto("row", "col", 55555, &record);
