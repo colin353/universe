@@ -9,7 +9,7 @@ RUST_LOG=debug RUST_BACKTRACE=1 blaze run //largetable:largetable_server -- \
 sudo umount -l /home/colinmerkel/codefs
 
 RUST_BACKTRACE=1 blaze run //weld:weld_client -- \
-  --weld_hostname=35.196.58.206 \
+  --weld_hostname=$IP_ADDR \
   --mount_point=/home/colinmerkel/codefs
 
 jobs -p | xargs -I{} kill -- {}
