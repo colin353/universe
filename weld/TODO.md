@@ -1,10 +1,5 @@
 # Todo list
 
-*Write a lot more tests for integration*: I noticed that there
-are issues with some clients being created which are suddenly
-based on some old stuff. No clue why. May have to do with having
-several clients open in parallel.
-
 *Get multi-user support going*: need multi-user support before
 you can put review on the cloud
 

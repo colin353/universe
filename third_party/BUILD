@@ -33,6 +33,18 @@ alias(
     actual = "//third_party/vendor/libc-0.2.43:libc",
 )
 alias(
+    name = "openssl",
+    actual = "//third_party/vendor/openssl-0.9.24:openssl",
+)
+alias(
+    name = "openssl_sys",
+    actual = "//third_party/vendor/openssl-sys-0.9.42:openssl_sys",
+)
+alias(
     name = "time",
     actual = "//third_party/vendor/time-0.1.38:time",
+)
+alias(
+    name = "tls_api_native_tls",
+    actual = "//third_party/vendor/tls-api-native-tls-0.1.19:tls_api_native_tls",
 )
