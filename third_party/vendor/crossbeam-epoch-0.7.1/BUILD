@@ -32,9 +32,9 @@ rust_library(
     srcs = glob(["**/*.rs"]),
     deps = [
         "//third_party/vendor/arrayvec-0.4.10:arrayvec",
-        "//third_party/vendor/cfg-if-0.1.6:cfg_if",
+        "//third_party/vendor/cfg-if-0.1.7:cfg_if",
         "//third_party/vendor/crossbeam-utils-0.6.5:crossbeam_utils",
-        "//third_party/vendor/lazy_static-1.2.0:lazy_static",
+        "//third_party/vendor/lazy_static-1.3.0:lazy_static",
         "//third_party/vendor/memoffset-0.2.1:memoffset",
         "//third_party/vendor/scopeguard-0.3.3:scopeguard",
     ],

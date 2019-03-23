@@ -32,7 +32,7 @@ rust_library(
     edition = "2015",
     srcs = glob(["**/*.rs"]),
     deps = [
-        "//third_party/vendor/cfg-if-0.1.6:cfg_if",
+        "//third_party/vendor/cfg-if-0.1.7:cfg_if",
         "//third_party/vendor/libc-0.2.43:libc",
     ],
     rustc_flags = [

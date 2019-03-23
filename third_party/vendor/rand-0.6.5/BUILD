@@ -43,8 +43,8 @@ rust_library(
         "//third_party/vendor/rand_hc-0.1.0:rand_hc",
         "//third_party/vendor/rand_isaac-0.1.1:rand_isaac",
         "//third_party/vendor/rand_jitter-0.1.3:rand_jitter",
-        "//third_party/vendor/rand_os-0.1.2:rand_os",
-        "//third_party/vendor/rand_pcg-0.1.1:rand_pcg",
+        "//third_party/vendor/rand_os-0.1.3:rand_os",
+        "//third_party/vendor/rand_pcg-0.1.2:rand_pcg",
         "//third_party/vendor/rand_xorshift-0.1.1:rand_xorshift",
     ],
     rustc_flags = [

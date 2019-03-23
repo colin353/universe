@@ -36,12 +36,12 @@ rust_library(
     edition = "2015",
     srcs = glob(["**/*.rs"]),
     deps = [
-        "//third_party/vendor/bytes-0.4.11:bytes",
+        "//third_party/vendor/bytes-0.4.12:bytes",
         "//third_party/vendor/futures-0.1.25:futures",
         "//third_party/vendor/iovec-0.1.2:iovec",
         "//third_party/vendor/mio-0.6.16:mio",
-        "//third_party/vendor/tokio-io-0.1.11:tokio_io",
-        "//third_party/vendor/tokio-reactor-0.1.8:tokio_reactor",
+        "//third_party/vendor/tokio-io-0.1.12:tokio_io",
+        "//third_party/vendor/tokio-reactor-0.1.9:tokio_reactor",
     ],
     rustc_flags = [
         "--cap-lints=allow",
