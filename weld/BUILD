@@ -33,8 +33,11 @@ rust_library(
         ":weld_proto_rust",
         "//third_party:futures",
         "//third_party:time",
+        "//third_party:tls_api_native_tls",
         "@io_bazel_rules_rust//proto/raze:grpc",
         "@io_bazel_rules_rust//proto/raze:protobuf",
+        "@io_bazel_rules_rust//proto/raze:tls_api",
+        "@raze__httpbis__0_6_1//:httpbis",
     ],
 )
 
@@ -95,6 +98,7 @@ rust_binary(
         "//third_party:fuse",
         "//third_party:libc",
         "//third_party:time",
+        "//third_party:tls_api_native_tls",
         "//util/flags",
         "@io_bazel_rules_rust//proto/raze:grpc",
         "@io_bazel_rules_rust//proto/raze:protobuf",

@@ -7,12 +7,15 @@ extern crate time;
 extern crate flags;
 extern crate largetable_client;
 extern crate largetable_test;
+extern crate tls_api_native_tls;
 extern crate weld;
 extern crate weld_repo;
 
 mod client_service;
 mod fs;
 
+use std::fs::File;
+use std::io::Read;
 use std::sync::Arc;
 
 fn main() {
@@ -40,6 +43,17 @@ fn main() {
         "the hostname of the largetable service"
     );
     let largetable_port = define_flag!("largetable_port", 50051, "the on the largetable service");
+    let use_tls = define_flag!("use_tls", true, "Whether or not to use TLS encryption");
+    let tls_hostname = define_flag!(
+        "tls_hostname",
+        String::from("weld.io"),
+        "the hostname to require the server to authenticate itself as"
+    );
+    let root_ca = define_flag!(
+        "root_ca",
+        String::from(""),
+        "path to a file containing the root CA .der file"
+    );
     parse_flags!(
         mount_point,
         mount,
@@ -48,7 +62,10 @@ fn main() {
         server_port,
         username,
         largetable_hostname,
-        largetable_port
+        largetable_port,
+        use_tls,
+        tls_hostname,
+        root_ca
     );
 
     let db = largetable_client::LargeTableRemoteClient::new(
@@ -57,17 +74,33 @@ fn main() {
     );
     let mut repo = weld_repo::Repo::new(Arc::new(db));
 
-    let client = weld::WeldServerClient::new(
-        &weld_hostname.value(),
-        username.value(),
-        server_port.value(),
-    );
-    repo.add_remote_server(client);
+    if use_tls.value() {
+        let mut cert_contents = Vec::new();
+        File::open(root_ca.value())
+            .unwrap()
+            .read_to_end(&mut cert_contents)
+            .unwrap();
+        let client = weld::WeldServerClient::new_tls(
+            &weld_hostname.value(),
+            &tls_hostname.value(),
+            username.value(),
+            server_port.value(),
+            cert_contents,
+        );
+        repo.add_remote_server(client);
+    } else {
+        let client = weld::WeldServerClient::new(
+            &weld_hostname.value(),
+            username.value(),
+            server_port.value(),
+        );
+        repo.add_remote_server(client);
+    }
 
     // Start gRPC service.
     let handler = client_service::WeldLocalServiceHandler::new(repo.clone());
 
-    let mut server = grpc::ServerBuilder::<tls_api_stub::TlsAcceptor>::new();
+    let mut server = grpc::ServerBuilder::<tls_api_native_tls::TlsAcceptor>::new();
     server.http.set_port(port.value());
     server.add_service(weld::WeldLocalServiceServer::new_service_def(
         handler.clone(),

@@ -1,13 +1,20 @@
 extern crate futures;
 extern crate grpc;
+extern crate httpbis;
 extern crate protobuf;
 extern crate time;
+extern crate tls_api;
+extern crate tls_api_native_tls;
 extern crate weld_grpc_rust;
 
 pub use weld_grpc_rust::WeldLocalService;
 pub use weld_grpc_rust::WeldService;
 pub use weld_grpc_rust::*;
 
+use tls_api::TlsConnector;
+use tls_api::TlsConnectorBuilder;
+
+use std::net::SocketAddr;
 use std::sync::Arc;
 
 #[derive(Clone)]
@@ -38,6 +45,32 @@ impl WeldServerClient {
                 weld_grpc_rust::WeldServiceClient::new_plain(hostname, port, Default::default())
                     .unwrap(),
             ),
+            username: username,
+        }
+    }
+
+    pub fn new_tls(
+        hostname: &str,
+        tls_hostname: &str,
+        username: String,
+        port: u16,
+        root_ca: Vec<u8>,
+    ) -> Self {
+        let root_ca = tls_api::Certificate::from_der(root_ca);
+        let mut builder = tls_api_native_tls::TlsConnector::builder().unwrap();
+        builder
+            .add_root_certificate(root_ca)
+            .expect("add_root_certificate");
+        let connector = Arc::new(builder.build().unwrap());
+
+        let mut tls_option = httpbis::ClientTlsOption::Tls(tls_hostname.to_owned(), connector);
+
+        let addr = SocketAddr::new("::1".parse().unwrap(), port);
+        let grpc_client =
+            grpc::Client::new_expl(&addr, tls_hostname, tls_option, Default::default()).unwrap();
+
+        WeldServerClient {
+            client: Arc::new(weld_grpc_rust::WeldServiceClient::with_client(grpc_client)),
             username: username,
         }
     }

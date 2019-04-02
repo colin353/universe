@@ -18,15 +18,10 @@ use tls_api::TlsAcceptorBuilder;
 
 fn main() {
     let port = define_flag!("port", 8001, "The port to bind to.");
-    let cert = define_flag!(
-        "cert",
+    let pkcs12 = define_flag!(
+        "pkcs12",
         String::from(""),
-        "Where to look up the root CA cert"
-    );
-    let key = define_flag!(
-        "key",
-        String::from(""),
-        "Where to look up the root CA private key"
+        "Where to look up the root CA cert (pkcs12)"
     );
     let largetable_hostname = define_flag!(
         "largetable_hostname",
@@ -46,8 +41,7 @@ fn main() {
     let use_tls = define_flag!("use_tls", true, "Whether or not to use TLS encryption");
     parse_flags!(
         port,
-        cert,
-        key,
+        pkcs12,
         largetable_hostname,
         largetable_port,
         use_mock_largetable,
@@ -59,23 +53,16 @@ fn main() {
     server.http.set_cpu_pool_threads(4);
 
     if use_tls.value() {
-        let mut cert_contents = String::new();
-        File::open(cert.value())
+        let mut p12_contents = Vec::new();
+        File::open(pkcs12.value())
             .unwrap()
-            .read_to_string(&mut cert_contents)
+            .read_to_end(&mut p12_contents)
             .unwrap();
 
-        let mut key_contents = String::new();
-        File::open(key.value())
-            .unwrap()
-            .read_to_string(&mut key_contents)
-            .unwrap();
+        println!("Read {} bytes of pkcs12", p12_contents.len());
 
-        let acceptor = tls_api_native_tls::TlsAcceptorBuilder::from_pkcs12(
-            cert_contents.as_bytes(),
-            &key_contents,
-        )
-        .unwrap();
+        let acceptor =
+            tls_api_native_tls::TlsAcceptorBuilder::from_pkcs12(&p12_contents, "test").unwrap();
 
         server.http.set_tls(acceptor.build().unwrap());
     }
