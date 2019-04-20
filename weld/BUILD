@@ -138,6 +138,8 @@ rust_binary(
         ":weld_server_lib",
         "//largetable:largetable_client",
         "//largetable:largetable_test",
+        "//third_party:native_tls",
+        "//third_party:openssl",
         "//third_party:tls_api_native_tls",
         "//util/flags",
         "@io_bazel_rules_rust//proto/raze:grpc",

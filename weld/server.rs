@@ -4,6 +4,8 @@ extern crate grpc;
 extern crate flags;
 extern crate largetable_client;
 extern crate largetable_test;
+extern crate native_tls;
+extern crate openssl;
 extern crate tls_api;
 extern crate tls_api_native_tls;
 extern crate weld;
@@ -11,6 +13,8 @@ extern crate weld_repo;
 
 extern crate weld_server_lib;
 
+use native_tls::backend::openssl::TlsAcceptorBuilderExt;
+use openssl::ssl::SslVerifyMode;
 use std::fs::File;
 use std::io::Read;
 use std::sync::Arc;
@@ -61,8 +65,12 @@ fn main() {
 
         println!("Read {} bytes of pkcs12", p12_contents.len());
 
-        let acceptor =
+        let mut acceptor =
             tls_api_native_tls::TlsAcceptorBuilder::from_pkcs12(&p12_contents, "test").unwrap();
+
+        acceptor.underlying_mut().builder_mut().set_verify(
+            openssl::ssl::SSL_VERIFY_PEER | openssl::ssl::SSL_VERIFY_FAIL_IF_NO_PEER_CERT,
+        );
 
         server.http.set_tls(acceptor.build().unwrap());
     }

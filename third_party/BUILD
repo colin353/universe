@@ -33,6 +33,10 @@ alias(
     actual = "//third_party/vendor/libc-0.2.43:libc",
 )
 alias(
+    name = "native_tls",
+    actual = "//third_party/vendor/native-tls-0.1.5:native_tls",
+)
+alias(
     name = "openssl",
     actual = "//third_party/vendor/openssl-0.9.24:openssl",
 )

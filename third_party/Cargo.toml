@@ -15,6 +15,7 @@ fuse = "=0.3.1"
 libc = "=0.2.43"
 hyper = "=0.12.24"
 tls-api-native-tls = "=0.1.19"
+native-tls = "=0.1.5"
 openssl = "=0.9.24"
 openssl-sys = "=0.9.42"
 

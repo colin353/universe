@@ -46,7 +46,7 @@ fn main() {
     let use_tls = define_flag!("use_tls", true, "Whether or not to use TLS encryption");
     let tls_hostname = define_flag!(
         "tls_hostname",
-        String::from("weld.io"),
+        String::from("server.weld.io"),
         "the hostname to require the server to authenticate itself as"
     );
     let root_ca = define_flag!(
