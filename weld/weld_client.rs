@@ -54,6 +54,11 @@ fn main() {
         String::from(""),
         "path to a file containing the root CA .der file"
     );
+    let cert = define_flag!(
+        "cert",
+        String::from(""),
+        "path to a file containing the client cert .der file"
+    );
     parse_flags!(
         mount_point,
         mount,
@@ -65,7 +70,8 @@ fn main() {
         largetable_port,
         use_tls,
         tls_hostname,
-        root_ca
+        root_ca,
+        cert
     );
 
     let db = largetable_client::LargeTableRemoteClient::new(
@@ -75,8 +81,13 @@ fn main() {
     let mut repo = weld_repo::Repo::new(Arc::new(db));
 
     if use_tls.value() {
-        let mut cert_contents = Vec::new();
+        let mut root_ca_contents = Vec::new();
         File::open(root_ca.value())
+            .unwrap()
+            .read_to_end(&mut root_ca_contents)
+            .unwrap();
+        let mut cert_contents = Vec::new();
+        File::open(cert.value())
             .unwrap()
             .read_to_end(&mut cert_contents)
             .unwrap();
@@ -85,6 +96,7 @@ fn main() {
             &tls_hostname.value(),
             username.value(),
             server_port.value(),
+            root_ca_contents,
             cert_contents,
         );
         repo.add_remote_server(client);

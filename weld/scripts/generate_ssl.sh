@@ -25,4 +25,3 @@ openssl x509 -req -in client.csr -CA root.crt -CAkey root.key -CAcreateserial -o
 # Generate pkcs12
 openssl pkcs12 -export -out client.p12 -inkey client.key -in client.crt -descert
 
-

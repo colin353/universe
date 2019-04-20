@@ -6,6 +6,7 @@ RUST_LOG=debug RUST_BACKTRACE=1 blaze run //largetable:largetable_server -- \
   --data_directory="/usr/local/largetable/" &
 
 RUST_BACKTRACE=1 blaze run //weld:weld_server -- \
+  --root_cert="/home/colinmerkel/scratch/certstrap/out5/root.crt" \
   --pkcs12="/home/colinmerkel/scratch/certstrap/out5/server.p12" \
   --use_mock_largetable=true &
 
@@ -14,6 +15,7 @@ sudo umount -l /home/colinmerkel/codefs
 RUST_BACKTRACE=1 blaze run //weld:weld_client -- \
   --use_tls=true \
   --root_ca="/home/colinmerkel/scratch/certstrap/out5/root.der" \
+  --cert="/home/colinmerkel/scratch/certstrap/out5/client.p12" \
   --weld_hostname=127.0.0.1 \
   --mount_point=/home/colinmerkel/codefs
 

@@ -14,18 +14,23 @@ extern crate weld_repo;
 extern crate weld_server_lib;
 
 use native_tls::backend::openssl::TlsAcceptorBuilderExt;
-use openssl::ssl::SslVerifyMode;
 use std::fs::File;
 use std::io::Read;
+use std::path::Path;
 use std::sync::Arc;
 use tls_api::TlsAcceptorBuilder;
 
 fn main() {
     let port = define_flag!("port", 8001, "The port to bind to.");
+    let root_cert = define_flag!(
+        "root_cert",
+        String::from(""),
+        "Where to look up the root CA cert"
+    );
     let pkcs12 = define_flag!(
         "pkcs12",
         String::from(""),
-        "Where to look up the root CA cert (pkcs12)"
+        "Where to look up the server cert (pkcs12)"
     );
     let largetable_hostname = define_flag!(
         "largetable_hostname",
@@ -49,7 +54,8 @@ fn main() {
         largetable_hostname,
         largetable_port,
         use_mock_largetable,
-        use_tls
+        use_tls,
+        root_cert
     );
 
     let mut server = grpc::ServerBuilder::<tls_api_native_tls::TlsAcceptor>::new();
@@ -68,9 +74,15 @@ fn main() {
         let mut acceptor =
             tls_api_native_tls::TlsAcceptorBuilder::from_pkcs12(&p12_contents, "test").unwrap();
 
-        acceptor.underlying_mut().builder_mut().set_verify(
-            openssl::ssl::SSL_VERIFY_PEER | openssl::ssl::SSL_VERIFY_FAIL_IF_NO_PEER_CERT,
-        );
+        {
+            let underlying_acceptor = acceptor.underlying_mut().builder_mut();
+            underlying_acceptor.set_verify(
+                openssl::ssl::SSL_VERIFY_PEER | openssl::ssl::SSL_VERIFY_FAIL_IF_NO_PEER_CERT,
+            );
+            underlying_acceptor
+                .set_ca_file(&Path::new(&root_cert.value()))
+                .expect("Can't extract CA file");
+        }
 
         server.http.set_tls(acceptor.build().unwrap());
     }

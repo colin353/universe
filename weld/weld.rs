@@ -1,6 +1,7 @@
 extern crate futures;
 extern crate grpc;
 extern crate httpbis;
+extern crate native_tls;
 extern crate protobuf;
 extern crate time;
 extern crate tls_api;
@@ -55,12 +56,23 @@ impl WeldServerClient {
         username: String,
         port: u16,
         root_ca: Vec<u8>,
+        client_key: Vec<u8>,
     ) -> Self {
+        // Add the root certificate.
         let root_ca = tls_api::Certificate::from_der(root_ca);
         let mut builder = tls_api_native_tls::TlsConnector::builder().unwrap();
         builder
             .add_root_certificate(root_ca)
             .expect("add_root_certificate");
+
+        // Add the client certificate (for peer authentication)
+        let client_pkcs12 = native_tls::Pkcs12::from_der(&client_key, "test")
+            .expect("Unable to decode client pkcs12 DER file");
+        builder
+            .underlying_mut()
+            .identity(client_pkcs12)
+            .expect("Unable to add client identity");
+
         let connector = Arc::new(builder.build().unwrap());
 
         let mut tls_option = httpbis::ClientTlsOption::Tls(tls_hostname.to_owned(), connector);

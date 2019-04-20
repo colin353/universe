@@ -32,6 +32,7 @@ rust_library(
         ":weld_grpc_rust",
         ":weld_proto_rust",
         "//third_party:futures",
+        "//third_party:native_tls",
         "//third_party:time",
         "//third_party:tls_api_native_tls",
         "@io_bazel_rules_rust//proto/raze:grpc",
