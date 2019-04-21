@@ -196,15 +196,14 @@ mod tests {
         client.write("row", "another_col", 0, vec![]);
         client.write("row", "my_other_col", 0, vec![]);
 
-        let mut iter =
-            largetable_client::LargeTableScopedIterator::<largetable_client::Record, _>::new(
-                &client,
-                String::from("row"),
-                String::from(""),
-                String::from(""),
-                String::from(""),
-                std::u64::MAX,
-            );
+        let iter = largetable_client::LargeTableScopedIterator::<largetable_client::Record, _>::new(
+            &client,
+            String::from("row"),
+            String::from(""),
+            String::from(""),
+            String::from(""),
+            std::u64::MAX,
+        );
 
         assert_eq!(iter.count(), 3);
     }
