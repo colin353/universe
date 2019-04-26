@@ -2,9 +2,9 @@
 extern crate tmpl;
 extern crate server;
 extern crate ws;
-use ws::{Body, Request, Response, Server};
+use ws::Server;
 
 fn main() {
-    server::ReviewServer::new().serve(8080);
     println!("Starting server...");
+    server::ReviewServer::new().serve(8080);
 }
