@@ -116,7 +116,7 @@ docker_push(
     tag = "dev",
 )
 
-rust_test(
+rust_library(
     name = "largetable_test",
     srcs = ["largetable_test.rs"],
     deps = [

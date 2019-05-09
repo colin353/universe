@@ -302,12 +302,6 @@ mod tests {
         f
     }
 
-    fn test_change(id: u64) -> weld::Change {
-        let mut c = weld::Change::new();
-        c.set_id(id);
-        c
-    }
-
     #[test]
     fn test_write() {
         // Check that the file is not written.
@@ -326,7 +320,7 @@ mod tests {
             .push(test_file("/test/config.txt", "working = true"));
 
         let change_id = handler.snapshot("tester", change).get_change_id();
-        let response = handler.submit("tester", change_id);
+        handler.submit("tester", change_id);
 
         assert_eq!(
             handler
@@ -408,7 +402,7 @@ mod tests {
             .push(test_file("/test/README.txt", "hello, world"));
 
         let change_id = handler.snapshot("tester", change).get_change_id();
-        let response = handler.submit("tester", change_id);
+        handler.submit("tester", change_id);
 
         let results = handler
             .list_files(test_ident(HEAD_ID, "/test", 0))
@@ -433,7 +427,7 @@ mod tests {
             .push(test_file("/test/README.txt", "hello, world"));
 
         let change_id = handler.snapshot("tester", change).get_change_id();
-        let response = handler.submit("tester", change_id);
+        handler.submit("tester", change_id);
 
         // Write some more files and snapshot them.
         let mut change = weld::Change::new();
@@ -478,7 +472,7 @@ mod tests {
             .push(test_file("/test/README.txt", "hello, world"));
 
         let change_id = handler.snapshot("tester", change).get_change_id();
-        let response = handler.submit("tester", change_id);
+        handler.submit("tester", change_id);
 
         let mut c = weld::Change::new();
         c.set_id(change_id);
@@ -502,7 +496,7 @@ mod tests {
             .push(test_file("/test/config.txt", "working = false"));
 
         let change_id = handler.snapshot("tester", change).get_change_id();
-        let response = handler.submit("tester", change_id);
+        handler.submit("tester", change_id);
 
         // Make a change that updates the same file.
         let mut change = weld::Change::new();

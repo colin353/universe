@@ -9,7 +9,6 @@ mod tests {
     use self::weld_repo::*;
 
     use std::collections::HashMap;
-    use std::sync::Arc;
 
     type TestRepo = Repo<largetable_test::LargeTableMockClient, weld_test::WeldServerTestClient>;
 
@@ -222,7 +221,7 @@ mod tests {
         let repo = make_test_repo();
 
         // First, set up the change we are basing on.
-        let mut change = weld::Change::new();
+        let change = weld::Change::new();
         let id = repo.make_change(change);
 
         let mut test_file = File::new();
@@ -295,7 +294,7 @@ mod tests {
         let repo = make_remote_connected_test_repo();
 
         // Make a change and submit it
-        let mut change = weld::Change::new();
+        let change = weld::Change::new();
         let old_id = repo.make_change(change);
 
         let mut test_file = File::new();
@@ -303,14 +302,14 @@ mod tests {
         test_file.set_contents(String::from("{config: true}").into_bytes());
         repo.write(old_id, test_file, 0);
 
-        let index = repo.snapshot(&weld::change(old_id)).get_snapshot_id();
+        repo.snapshot(&weld::change(old_id)).get_snapshot_id();
         let submitted_id = repo.submit(old_id).get_id();
 
         // Snapshot takes id 1, then submitted id is 2
         assert_eq!(submitted_id, 2);
 
         // Make another change and submit it
-        let mut change = weld::Change::new();
+        let change = weld::Change::new();
         let new_id = repo.make_change(change);
 
         // Inspect returned change.
@@ -415,7 +414,7 @@ mod tests {
         let repo = make_remote_connected_test_repo();
 
         // Make a change with a modified file
-        let mut change = weld::Change::new();
+        let change = weld::Change::new();
         let id = repo.make_change(change);
 
         let mut test_file = File::new();
@@ -424,7 +423,7 @@ mod tests {
         repo.write(id, test_file, 0);
 
         // Take snapshot
-        let index = repo.snapshot(&weld::change(id)).get_snapshot_id();
+        repo.snapshot(&weld::change(id)).get_snapshot_id();
 
         // Now change that file again.
         let mut test_file = File::new();
@@ -467,7 +466,7 @@ mod tests {
         let mut repo = make_remote_connected_test_repo();
 
         // Make a change with a modified file
-        let mut change = weld::Change::new();
+        let change = weld::Change::new();
         let id = repo.make_change(change);
 
         let mut test_file = File::new();
@@ -509,10 +508,10 @@ mod tests {
 
     #[test]
     fn test_list_changes() {
-        let mut repo = make_remote_connected_test_repo();
+        let repo = make_remote_connected_test_repo();
 
         // Make a change and submit it
-        let mut change = weld::Change::new();
+        let change = weld::Change::new();
         let old_id = repo.make_change(change);
 
         // The change should show up when listing changes.
@@ -523,8 +522,8 @@ mod tests {
         test_file.set_contents(String::from("{config: true}").into_bytes());
         repo.write(old_id, test_file, 0);
 
-        let index = repo.snapshot(&weld::change(old_id)).get_snapshot_id();
-        let submitted_id = repo.submit(old_id).get_id();
+        repo.snapshot(&weld::change(old_id)).get_snapshot_id();
+        repo.submit(old_id).get_id();
 
         // After the change is submitted, it shouldn't appear in list_changes
         assert_eq!(repo.list_changes().count(), 0);
@@ -532,11 +531,11 @@ mod tests {
 
     #[test]
     fn test_multiple_submits() {
-        let mut repo = make_remote_connected_test_repo();
+        let repo = make_remote_connected_test_repo();
 
         println!("[test] Write a README file");
         {
-            let mut change = weld::Change::new();
+            let change = weld::Change::new();
             let id = repo.make_change(change);
 
             let mut test_file = File::new();
@@ -552,7 +551,7 @@ mod tests {
 
         println!("[test] Make a change on top of the README.md file");
         {
-            let mut change = weld::Change::new();
+            let change = weld::Change::new();
             let id = repo.make_change(change);
 
             let f = repo.read(id, "/README.md", 0).unwrap();
