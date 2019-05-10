@@ -165,9 +165,16 @@ fn decode_key<'a>(key: &'a str) -> Key<'a> {
     // Remove any extraneous whitespace.
     let key = key.trim();
 
+<<<<<<< HEAD
     // Check if it starts with a slash, then it's a close block.
     if key.starts_with("/") {
         return Key::CloseBlock(&key[1..]);
+=======
+    // Check if it is a block close
+    if key.starts_with("/") {
+        let (_, value) = key.split_at(1);
+        return Key::CloseBlock(value);
+>>>>>>> add some random changes
     }
 
     // Check if it is an equality condition.
@@ -212,7 +219,11 @@ fn decode_key<'a>(key: &'a str) -> Key<'a> {
 }
 
 struct Parser<'a> {
+<<<<<<< HEAD
     index: usize,
+=======
+    window_start: usize,
+>>>>>>> add some random changes
     template: &'a str,
 }
 
@@ -225,6 +236,7 @@ impl<'a> Parser<'a> {
     }
 
     fn jump_to_close_tag(&mut self, key: &str) -> &'a str {
+<<<<<<< HEAD
         let start = self.index;
         let mut depth = 0;
         loop {
@@ -257,6 +269,27 @@ impl<'a> Parser<'a> {
                 _ => break
             }
         }
+=======
+        let mut subparser = Parser::new(self.template.clone());
+        let depth = 0;
+
+        let inside = match self.template.find(&close_tag) {
+            Some(idx) => {
+                let (inside, rest) = self.template.split_at(idx);
+                let (_, rest) = rest.split_at(close_tag.len());
+                self.template = rest;
+                inside
+            }
+            None => {
+                eprintln!("No matching close tag!");
+                let rest = self.template;
+                self.template = "";
+                rest
+            }
+        };
+    }
+}
+>>>>>>> add some random changes
 
         eprintln!("No matching close tag!");
         let start = self.index;
@@ -487,8 +520,7 @@ mod tests {
 
     #[test]
     fn test_apply_nested_conditions() {
-        let template =
-            "{{array != 0}}Found some records: [{{array[]}}{{name}} {{/array}}] for you!{{/array}}";
+        let template = "{{array != 0}}Found some records: [{{array[]}}{{name}} {{/array}}] for you!{{/array}}";
 
         let mut contents = HashMap::new();
         contents.insert(

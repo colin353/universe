@@ -5,6 +5,7 @@ use ws::{Body, Request, Response, Server};
 
 static MSG: &str = "Start svr: {}";
 static TEMPLATE: &str = include_str!("template.html");
+static CSS: &str = include_str!("style.css");
 
 #[derive(Copy, Clone)]
 pub struct ReviewServer {}
@@ -23,8 +24,6 @@ impl ReviewServer {
         let response = tmpl::apply(
             TEMPLATE,
             &content!(
-                "title" => "Hello, world!",
-                "name" => name,
                 "noun" => "templates",
                 "verb" => "create"
             ),
@@ -41,6 +40,7 @@ impl ReviewServer {
 impl Server for ReviewServer {
     fn respond(&self, path: String, req: Request) -> Response {
         match path.as_str() {
+            "/static/style.css" => Response::new(Body::from(CSS)),
             "/" => self.index(path, req),
             _ => self.not_found(path, req),
         }
