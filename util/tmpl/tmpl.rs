@@ -41,6 +41,7 @@ pub enum Key<'a> {
     MultiValue(&'a str),
     EqualityCondition(&'a str, &'a str),
     InequalityCondition(&'a str, &'a str),
+    CloseBlock(&'a str),
 }
 
 pub fn apply(template: &str, data: &HashMap<&str, Contents>) -> String {
@@ -51,8 +52,8 @@ pub fn apply(template: &str, data: &HashMap<&str, Contents>) -> String {
 
 pub fn apply_mut(template: &str, data: &HashMap<&str, Contents>, output: &mut String) {
     let mut parser = Parser::new(template);
-    while let Some((start, maybe_key)) = parser.next() {
-        output.push_str(start);
+    while let Some((start, end, maybe_key)) = parser.next() {
+        output.push_str(&parser.template[start..end]);
 
         let key = if let Some(key) = maybe_key {
             key
@@ -151,6 +152,11 @@ pub fn apply_mut(template: &str, data: &HashMap<&str, Contents>, output: &mut St
                     _ => eprintln!("inequality condition key {} not found", key),
                 }
             }
+
+            // If we observe a close block, that's an invalid template.
+            Key::CloseBlock(key) => {
+                eprintln!("invalid closing block: {}", key);
+            }
         }
     }
 }
@@ -158,6 +164,11 @@ pub fn apply_mut(template: &str, data: &HashMap<&str, Contents>, output: &mut St
 fn decode_key<'a>(key: &'a str) -> Key<'a> {
     // Remove any extraneous whitespace.
     let key = key.trim();
+
+    // Check if it starts with a slash, then it's a close block.
+    if key.starts_with("/") {
+        return Key::CloseBlock(&key[1..]);
+    }
 
     // Check if it is an equality condition.
     if let Some(idx) = key.find("==") {
@@ -201,55 +212,73 @@ fn decode_key<'a>(key: &'a str) -> Key<'a> {
 }
 
 struct Parser<'a> {
+    index: usize,
     template: &'a str,
 }
 
 impl<'a> Parser<'a> {
     fn new(template: &'a str) -> Self {
-        Parser { template: template }
+        Parser {
+            index: 0,
+            template: template,
+        }
     }
 
     fn jump_to_close_tag(&mut self, key: &str) -> &'a str {
-        let close_tag = format!("{{{{/{}}}}}", key);
-        match self.template.find(&close_tag) {
-            Some(idx) => {
-                let (inside, rest) = self.template.split_at(idx);
-                let (_, rest) = rest.split_at(close_tag.len());
-                self.template = rest;
-                inside
-            }
-            None => {
-                eprintln!("No matching close tag!");
-                let rest = self.template;
-                self.template = "";
-                rest
+        let start = self.index;
+        let mut depth = 0;
+        loop {
+            match self.next() {
+                Some((_, end, Some(next_key))) => {
+                    match decode_key(next_key) {
+                        Key::Value(a) if a == key => {
+                            depth += 1;
+                        }
+                        Key::MultiValue(a) if a == key => {
+                            depth += 1;
+                        }
+                        Key::EqualityCondition(a, _) if a == key => {
+                            depth += 1;
+                        }
+                        Key::InequalityCondition(a, _) if a == key => {
+                            depth += 1;
+                        }
+                        Key::CloseBlock(a) if a == key => {
+                            if depth == 0 {
+                                return &self.template[start..end];
+                            }
+                            depth -= 1;
+                        }
+                        _ => {
+                            continue
+                        }
+                    }
+                }
+                _ => break
             }
         }
+
+        eprintln!("No matching close tag!");
+        let start = self.index;
+        self.index = self.template.len();
+        return &self.template[start..];
     }
-}
 
-impl<'a> Iterator for Parser<'a> {
-    type Item = (&'a str, Option<&'a str>);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.template == "" {
+    fn next(&mut self) -> Option<(usize, usize, Option<&'a str>)> {
+        let rest_of_template = &self.template[self.index..];
+        if rest_of_template == "" {
             return None;
         }
 
-        match self.template.find("{{") {
-            Some(idx) => {
-                let (start, rest) = self.template.split_at(idx);
+        match rest_of_template.find("{{") {
+            Some(key_start_idx) => {
+                let rest = &rest_of_template[key_start_idx..];
                 match rest.find("}}") {
-                    Some(idx) => {
-                        let (key, rest) = rest.split_at(idx);
-
-                        // Remove the leading {{ from the key.
-                        let (_, key) = key.split_at(2);
-                        // Remove the leading }} from the rest.
-                        let (_, rest) = rest.split_at(2);
-
-                        self.template = rest;
-                        return Some((start, Some(key)));
+                    Some(key_end_idx) => {
+                        let key = &rest[2..key_end_idx];
+                        let start = self.index;
+                        self.index += key_start_idx + key_end_idx + 2;
+                        return Some((start, start + key_start_idx, Some(key)));
                     }
                     None => {
                         eprintln!("No matching }}");
@@ -258,11 +287,19 @@ impl<'a> Iterator for Parser<'a> {
                 }
             }
             None => {
-                let start = self.template;
-                self.template = "";
-                return Some((start, None));
+                let start = self.index;
+                let end = self.template.len();
+                self.index = end;
+                return Some((start, end, None));
             }
         }
+    }
+}
+
+impl<'a> Iterator for Parser<'a> {
+    type Item = (usize, usize, Option<&'a str>);
+    fn next(&mut self) -> Option<Self::Item> {
+        self.next()
     }
 }
 
@@ -323,24 +360,24 @@ mod tests {
     #[test]
     fn test_parser() {
         let mut p = Parser::new("Hello, {{name}}!");
-        assert_eq!(p.next(), Some(("Hello, ", Some("name"))));
-        assert_eq!(p.next(), Some(("!", None)));
+        assert_eq!(p.next(), Some((0, 7, Some("name"))));
+        assert_eq!(p.next(), Some((15, 16, None)));
         assert_eq!(p.next(), None);
     }
 
     #[test]
     fn test_jump_to_close_tag() {
         let mut p = Parser::new("Hello, {{values}}inner content{{/values}}!");
-        assert_eq!(p.next(), Some(("Hello, ", Some("values"))));
+        assert_eq!(p.next(), Some((0, 7, Some("values"))));
         assert_eq!(p.jump_to_close_tag("values"), "inner content");
-        assert_eq!(p.next(), Some(("!", None)));
+        assert_eq!(p.next(), Some((41, 42, None)));
         assert_eq!(p.next(), None);
     }
 
     #[test]
     fn test_apply() {
         let template = "Hello, {{name}}!";
-        let mut contents = content!( "name" => "world");
+        let contents = content!( "name" => "world");
         assert_eq!(apply(template, &contents), "Hello, world!");
     }
 
@@ -445,6 +482,39 @@ mod tests {
         );
 
         let expected = "Found some records!";
+        assert_eq!(apply(template, &contents), expected);
+    }
+
+    #[test]
+    fn test_apply_nested_conditions() {
+        let template =
+            "{{array != 0}}Found some records: [{{array[]}}{{name}} {{/array}}] for you!{{/array}}";
+
+        let mut contents = HashMap::new();
+        contents.insert(
+            "array",
+            Contents::MultiValue(ContentsMultiMap::new(Vec::new())),
+        );
+
+        let expected = "";
+        assert_eq!(apply(template, &contents), expected);
+
+        // Try doing it with some records.
+        let mut contents = HashMap::new();
+        let mut records = Vec::new();
+        records.push(content!(
+            "name" => "Colin"
+        ));
+        records.push(content!(
+            "name" => "Tim"
+        ));
+
+        contents.insert(
+            "array",
+            Contents::MultiValue(ContentsMultiMap::new(records)),
+        );
+
+        let expected = "Found some records: [Colin Tim ] for you!";
         assert_eq!(apply(template, &contents), expected);
     }
 }
