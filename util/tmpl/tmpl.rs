@@ -484,4 +484,37 @@ mod tests {
         let expected = "Found some records!";
         assert_eq!(apply(template, &contents), expected);
     }
+
+    #[test]
+    fn test_apply_nested_conditions() {
+        let template =
+            "{{array != 0}}Found some records: [{{array[]}}{{name}} {{/array}}] for you!{{/array}}";
+
+        let mut contents = HashMap::new();
+        contents.insert(
+            "array",
+            Contents::MultiValue(ContentsMultiMap::new(Vec::new())),
+        );
+
+        let expected = "";
+        assert_eq!(apply(template, &contents), expected);
+
+        // Try doing it with some records.
+        let mut contents = HashMap::new();
+        let mut records = Vec::new();
+        records.push(content!(
+            "name" => "Colin"
+        ));
+        records.push(content!(
+            "name" => "Tim"
+        ));
+
+        contents.insert(
+            "array",
+            Contents::MultiValue(ContentsMultiMap::new(records)),
+        );
+
+        let expected = "Found some records: [Colin Tim ] for you!";
+        assert_eq!(apply(template, &contents), expected);
+    }
 }
