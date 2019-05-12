@@ -51,8 +51,8 @@ pub fn apply(template: &str, data: &HashMap<&str, Contents>) -> String {
 
 pub fn apply_mut(template: &str, data: &HashMap<&str, Contents>, output: &mut String) {
     let mut parser = Parser::new(template);
-    while let Some((start, maybe_key)) = parser.next() {
-        output.push_str(start);
+    while let Some((start, end, maybe_key)) = parser.next() {
+        output.push_str(&parser.template[start..end]);
 
         let key = if let Some(key) = maybe_key {
             key
@@ -232,7 +232,7 @@ impl<'a> Parser<'a> {
 }
 
 impl<'a> Iterator for Parser<'a> {
-    type Item = (&'a str, Option<&'a str>);
+    type Item = (usize, usize, Option<&'a str>);
 
     fn next(&mut self) -> Option<Self::Item> {
         let rest_of_template = &self.template[self.index..];
@@ -246,9 +246,9 @@ impl<'a> Iterator for Parser<'a> {
                 match rest.find("}}") {
                     Some(key_end_idx) => {
                         let key = &rest[2..key_end_idx];
-                        let content = &self.template[self.index..self.index + key_start_idx];
+                        let start = self.index;
                         self.index += key_start_idx + key_end_idx + 2;
-                        return Some((content, Some(key)));
+                        return Some((start, start + key_start_idx, Some(key)));
                     }
                     None => {
                         eprintln!("No matching }}");
@@ -260,8 +260,7 @@ impl<'a> Iterator for Parser<'a> {
                 let start = self.index;
                 let end = self.template.len();
                 self.index = end;
-                let rest = &self.template[start..];
-                return Some((rest, None));
+                return Some((start, end, None));
             }
         }
     }
@@ -324,17 +323,17 @@ mod tests {
     #[test]
     fn test_parser() {
         let mut p = Parser::new("Hello, {{name}}!");
-        assert_eq!(p.next(), Some(("Hello, ", Some("name"))));
-        assert_eq!(p.next(), Some(("!", None)));
+        assert_eq!(p.next(), Some((0, 7, Some("name"))));
+        assert_eq!(p.next(), Some((15, 16, None)));
         assert_eq!(p.next(), None);
     }
 
     #[test]
     fn test_jump_to_close_tag() {
         let mut p = Parser::new("Hello, {{values}}inner content{{/values}}!");
-        assert_eq!(p.next(), Some(("Hello, ", Some("values"))));
+        assert_eq!(p.next(), Some((0, 7, Some("values"))));
         assert_eq!(p.jump_to_close_tag("values"), "inner content");
-        assert_eq!(p.next(), Some(("!", None)));
+        assert_eq!(p.next(), Some((41, 42, None)));
         assert_eq!(p.next(), None);
     }
 
