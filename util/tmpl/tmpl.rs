@@ -201,21 +201,24 @@ fn decode_key<'a>(key: &'a str) -> Key<'a> {
 }
 
 struct Parser<'a> {
+    index: usize,
     template: &'a str,
 }
 
 impl<'a> Parser<'a> {
     fn new(template: &'a str) -> Self {
-        Parser { template: template }
+        Parser {
+            index: 0,
+            template: template,
+        }
     }
 
     fn jump_to_close_tag(&mut self, key: &str) -> &'a str {
         let close_tag = format!("{{{{/{}}}}}", key);
-        match self.template.find(&close_tag) {
+        match self.template[self.index..].find(&close_tag) {
             Some(idx) => {
-                let (inside, rest) = self.template.split_at(idx);
-                let (_, rest) = rest.split_at(close_tag.len());
-                self.template = rest;
+                let (inside, _) = self.template[self.index..].split_at(idx);
+                self.index += idx + close_tag.len();
                 inside
             }
             None => {
@@ -232,24 +235,20 @@ impl<'a> Iterator for Parser<'a> {
     type Item = (&'a str, Option<&'a str>);
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.template == "" {
+        let rest_of_template = &self.template[self.index..];
+        if rest_of_template == "" {
             return None;
         }
 
-        match self.template.find("{{") {
-            Some(idx) => {
-                let (start, rest) = self.template.split_at(idx);
+        match rest_of_template.find("{{") {
+            Some(key_start_idx) => {
+                let rest = &rest_of_template[key_start_idx..];
                 match rest.find("}}") {
-                    Some(idx) => {
-                        let (key, rest) = rest.split_at(idx);
-
-                        // Remove the leading {{ from the key.
-                        let (_, key) = key.split_at(2);
-                        // Remove the leading }} from the rest.
-                        let (_, rest) = rest.split_at(2);
-
-                        self.template = rest;
-                        return Some((start, Some(key)));
+                    Some(key_end_idx) => {
+                        let key = &rest[2..key_end_idx];
+                        let content = &self.template[self.index..self.index + key_start_idx];
+                        self.index += key_start_idx + key_end_idx + 2;
+                        return Some((content, Some(key)));
                     }
                     None => {
                         eprintln!("No matching }}");
@@ -258,9 +257,11 @@ impl<'a> Iterator for Parser<'a> {
                 }
             }
             None => {
-                let start = self.template;
-                self.template = "";
-                return Some((start, None));
+                let start = self.index;
+                let end = self.template.len();
+                self.index = end;
+                let rest = &self.template[start..];
+                return Some((rest, None));
             }
         }
     }
@@ -340,7 +341,7 @@ mod tests {
     #[test]
     fn test_apply() {
         let template = "Hello, {{name}}!";
-        let mut contents = content!( "name" => "world");
+        let contents = content!( "name" => "world");
         assert_eq!(apply(template, &contents), "Hello, world!");
     }
 
