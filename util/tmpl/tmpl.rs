@@ -225,20 +225,43 @@ impl<'a> Parser<'a> {
     }
 
     fn jump_to_close_tag(&mut self, key: &str) -> &'a str {
-        let close_tag = format!("{{{{/{}}}}}", key);
-        match self.template[self.index..].find(&close_tag) {
-            Some(idx) => {
-                let (inside, _) = self.template[self.index..].split_at(idx);
-                self.index += idx + close_tag.len();
-                inside
-            }
-            None => {
-                eprintln!("No matching close tag!");
-                let rest = self.template;
-                self.template = "";
-                rest
+        let start = self.index;
+        let mut depth = 0;
+        loop {
+            match self.next() {
+                Some((_, end, Some(next_key))) => {
+                    match decode_key(next_key) {
+                        Key::Value(a) if a == key => {
+                            depth += 1;
+                        }
+                        Key::MultiValue(a) if a == key => {
+                            depth += 1;
+                        }
+                        Key::EqualityCondition(a, _) if a == key => {
+                            depth += 1;
+                        }
+                        Key::InequalityCondition(a, _) if a == key => {
+                            depth += 1;
+                        }
+                        Key::CloseBlock(a) if a == key => {
+                            if depth == 0 {
+                                return &self.template[start..end];
+                            }
+                            depth -= 1;
+                        }
+                        _ => {
+                            continue
+                        }
+                    }
+                }
+                _ => break
             }
         }
+
+        eprintln!("No matching close tag!");
+        let start = self.index;
+        self.index = self.template.len();
+        return &self.template[start..];
     }
 
     fn next(&mut self) -> Option<(usize, usize, Option<&'a str>)> {
