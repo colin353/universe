@@ -41,6 +41,7 @@ pub enum Key<'a> {
     MultiValue(&'a str),
     EqualityCondition(&'a str, &'a str),
     InequalityCondition(&'a str, &'a str),
+    CloseBlock(&'a str),
 }
 
 pub fn apply(template: &str, data: &HashMap<&str, Contents>) -> String {
@@ -151,6 +152,11 @@ pub fn apply_mut(template: &str, data: &HashMap<&str, Contents>, output: &mut St
                     _ => eprintln!("inequality condition key {} not found", key),
                 }
             }
+
+            // If we observe a close block, that's an invalid template.
+            Key::CloseBlock(key) => {
+                eprintln!("invalid closing block: {}", key);
+            }
         }
     }
 }
@@ -158,6 +164,11 @@ pub fn apply_mut(template: &str, data: &HashMap<&str, Contents>, output: &mut St
 fn decode_key<'a>(key: &'a str) -> Key<'a> {
     // Remove any extraneous whitespace.
     let key = key.trim();
+
+    // Check if it starts with a slash, then it's a close block.
+    if key.starts_with("/") {
+        return Key::CloseBlock(&key[1..]);
+    }
 
     // Check if it is an equality condition.
     if let Some(idx) = key.find("==") {
@@ -229,12 +240,8 @@ impl<'a> Parser<'a> {
             }
         }
     }
-}
 
-impl<'a> Iterator for Parser<'a> {
-    type Item = (usize, usize, Option<&'a str>);
-
-    fn next(&mut self) -> Option<Self::Item> {
+    fn next(&mut self) -> Option<(usize, usize, Option<&'a str>)> {
         let rest_of_template = &self.template[self.index..];
         if rest_of_template == "" {
             return None;
@@ -263,6 +270,13 @@ impl<'a> Iterator for Parser<'a> {
                 return Some((start, end, None));
             }
         }
+    }
+}
+
+impl<'a> Iterator for Parser<'a> {
+    type Item = (usize, usize, Option<&'a str>);
+    fn next(&mut self) -> Option<Self::Item> {
+        self.next()
     }
 }
 
