@@ -1,28 +1,41 @@
 #[macro_use]
 extern crate tmpl;
+extern crate weld;
 extern crate ws;
 use ws::{Body, Request, Response, Server};
+
+use weld::WeldServer;
 
 static TEMPLATE: &str = include_str!("template.html");
 static INDEX: &str = include_str!("homepage.html");
 static CSS: &str = include_str!("style.css");
 
-#[derive(Copy, Clone)]
-pub struct ReviewServer {}
+#[derive(Clone)]
+pub struct ReviewServer {
+    client: weld::WeldServerClient,
+}
+
+mod render {
+    pub fn change(c: &weld::Change) -> tmpl::ContentsMap {
+        content!(
+            "id" => format!("{}", c.get_id()),
+            "author" => c.get_author()
+        )
+    }
+}
 
 impl ReviewServer {
-    pub fn new() -> Self {
-        Self {}
+    pub fn new(client: weld::WeldServerClient) -> Self {
+        Self { client: client }
     }
 
     fn index(&self, _path: String, _req: Request) -> Response {
+        let changes = self.client.list_changes().iter().map(|c| render::change(c)).collect::<Vec<_>>();
+
         let page = tmpl::apply(
             INDEX,
             &content!(;
-                "progress" => vec![
-                    content!("title" => "test 123"),
-                    content!("title" => "test 345")
-                ]
+                "progress" => changes
             ),
         );
 

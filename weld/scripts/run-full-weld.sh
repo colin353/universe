@@ -17,6 +17,12 @@ RUST_BACKTRACE=1 blaze run //weld:weld_client -- \
   --root_ca="/home/colinmerkel/scratch/certstrap/out5/root.der" \
   --cert="/home/colinmerkel/scratch/certstrap/out5/client.p12" \
   --weld_hostname=127.0.0.1 \
-  --mount_point=/home/colinmerkel/codefs
+  --mount_point=/home/colinmerkel/codefs &
+
+RUST_BACKTRACE=1 blaze run //weld/review -- \
+  --use_tls=true \
+  --root_ca="/home/colinmerkel/scratch/certstrap/out5/root.der" \
+  --cert="/home/colinmerkel/scratch/certstrap/out5/client.p12" \
+  --server_hostname=127.0.0.1
 
 jobs -p | xargs -I{} kill -- {}
