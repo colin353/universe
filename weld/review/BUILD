@@ -19,6 +19,7 @@ rust_library(
     name = "server",
     srcs = ["server.rs"],
     data = [
+        "homepage.html",
         "style.css",
         "template.html",
     ],

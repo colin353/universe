@@ -312,7 +312,7 @@ macro_rules! content {
         {
             let mut m = std::collections::HashMap::<&str, $crate::Contents>::new();
             $( m.insert($key, $value.into()); )*
-            $( m.insert($key2, ContentsMultiMap::new($multivalue).into()); )*
+            $( m.insert($key2, $crate::ContentsMultiMap::new($multivalue).into()); )*
             m
         }
     };
