@@ -229,32 +229,28 @@ impl<'a> Parser<'a> {
         let mut depth = 0;
         loop {
             match self.next() {
-                Some((_, end, Some(next_key))) => {
-                    match decode_key(next_key) {
-                        Key::Value(a) if a == key => {
-                            depth += 1;
-                        }
-                        Key::MultiValue(a) if a == key => {
-                            depth += 1;
-                        }
-                        Key::EqualityCondition(a, _) if a == key => {
-                            depth += 1;
-                        }
-                        Key::InequalityCondition(a, _) if a == key => {
-                            depth += 1;
-                        }
-                        Key::CloseBlock(a) if a == key => {
-                            if depth == 0 {
-                                return &self.template[start..end];
-                            }
-                            depth -= 1;
-                        }
-                        _ => {
-                            continue
-                        }
+                Some((_, end, Some(next_key))) => match decode_key(next_key) {
+                    Key::Value(a) if a == key => {
+                        depth += 1;
                     }
-                }
-                _ => break
+                    Key::MultiValue(a) if a == key => {
+                        depth += 1;
+                    }
+                    Key::EqualityCondition(a, _) if a == key => {
+                        depth += 1;
+                    }
+                    Key::InequalityCondition(a, _) if a == key => {
+                        depth += 1;
+                    }
+                    Key::CloseBlock(a) if a == key => {
+                        if depth == 0 {
+                            return &self.template[start..end];
+                        }
+                        depth -= 1;
+                    }
+                    _ => continue,
+                },
+                _ => break,
             }
         }
 
@@ -316,7 +312,7 @@ macro_rules! content {
         {
             let mut m = std::collections::HashMap::<&str, $crate::Contents>::new();
             $( m.insert($key, $value.into()); )*
-            $( m.insert($key2, ContentsMultiMap::new($multivalue).into()); )*
+            $( m.insert($key2, $crate::ContentsMultiMap::new($multivalue).into()); )*
             m
         }
     };

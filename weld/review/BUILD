@@ -18,7 +18,11 @@ rust_binary(
 rust_library(
     name = "server",
     srcs = ["server.rs"],
-    data = ["template.html"],
+    data = [
+        "homepage.html",
+        "style.css",
+        "template.html",
+    ],
     deps = [
         "//util/flags",
         "//util/tmpl",

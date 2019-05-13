@@ -3,8 +3,9 @@ extern crate tmpl;
 extern crate ws;
 use ws::{Body, Request, Response, Server};
 
-static MSG: &str = "Start svr: {}";
 static TEMPLATE: &str = include_str!("template.html");
+static INDEX: &str = include_str!("homepage.html");
+static CSS: &str = include_str!("style.css");
 
 #[derive(Copy, Clone)]
 pub struct ReviewServer {}
@@ -14,26 +15,30 @@ impl ReviewServer {
         Self {}
     }
 
-    fn index(&self, path: String, req: Request) -> Response {
-        let name = match req.uri().query() {
-            Some(x) => x,
-            None => "someone",
-        };
-
-        let response = tmpl::apply(
-            TEMPLATE,
-            &content!(
-                "title" => "Hello, world!",
-                "name" => name,
-                "noun" => "templates",
-                "verb" => "create"
+    fn index(&self, _path: String, _req: Request) -> Response {
+        let page = tmpl::apply(
+            INDEX,
+            &content!(;
+                "progress" => vec![
+                    content!("title" => "test 123"),
+                    content!("title" => "test 345")
+                ]
             ),
         );
 
-        Response::new(Body::from(response))
+        Response::new(Body::from(self.wrap_template(page)))
     }
 
-    fn not_found(&self, path: String, req: Request) -> Response {
+    fn wrap_template(&self, content: String) -> String {
+        tmpl::apply(
+            TEMPLATE,
+            &content!(
+                "title" => "weld - review",
+                "content" => content),
+        )
+    }
+
+    fn not_found(&self, path: String, _req: Request) -> Response {
         Response::new(Body::from(format!("404 not found: path {}", path)))
     }
 }
@@ -41,6 +46,7 @@ impl ReviewServer {
 impl Server for ReviewServer {
     fn respond(&self, path: String, req: Request) -> Response {
         match path.as_str() {
+            "/static/style.css" => Response::new(Body::from(CSS)),
             "/" => self.index(path, req),
             _ => self.not_found(path, req),
         }
