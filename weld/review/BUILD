@@ -11,6 +11,7 @@ rust_binary(
         "//util/flags",
         "//util/tmpl",
         "//util/ws",
+        "//weld",
         "//weld/review:server",
     ],
 )
@@ -27,5 +28,6 @@ rust_library(
         "//util/flags",
         "//util/tmpl",
         "//util/ws",
+        "//weld",
     ],
 )

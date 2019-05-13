@@ -1,23 +1,25 @@
 use std::collections::HashMap;
 use std::convert::From;
 
+pub type ContentsMap = HashMap<&'static str, Contents>;
+
 pub enum Contents {
     Value(String),
     MultiValue(ContentsMultiMap),
 }
 
 pub struct ContentsMultiMap {
-    data: Vec<HashMap<&'static str, Contents>>,
+    data: Vec<ContentsMap>,
 }
 
-impl From<Vec<HashMap<&'static str, Contents>>> for ContentsMultiMap {
-    fn from(input: Vec<HashMap<&'static str, Contents>>) -> Self {
+impl From<Vec<ContentsMap>> for ContentsMultiMap {
+    fn from(input: Vec<ContentsMap>) -> Self {
         ContentsMultiMap { data: input }
     }
 }
 
 impl ContentsMultiMap {
-    pub fn new(data: Vec<HashMap<&'static str, Contents>>) -> Self {
+    pub fn new(data: Vec<ContentsMap>) -> Self {
         ContentsMultiMap { data: data }
     }
 }
@@ -44,13 +46,13 @@ pub enum Key<'a> {
     CloseBlock(&'a str),
 }
 
-pub fn apply(template: &str, data: &HashMap<&str, Contents>) -> String {
+pub fn apply(template: &str, data: &ContentsMap) -> String {
     let mut out = String::from("");
     apply_mut(template, data, &mut out);
     out
 }
 
-pub fn apply_mut(template: &str, data: &HashMap<&str, Contents>, output: &mut String) {
+pub fn apply_mut(template: &str, data: &ContentsMap, output: &mut String) {
     let mut parser = Parser::new(template);
     while let Some((start, end, maybe_key)) = parser.next() {
         output.push_str(&parser.template[start..end]);
