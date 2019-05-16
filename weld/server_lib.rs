@@ -117,6 +117,10 @@ impl<C: LargeTableClient> WeldServiceHandler<C> {
             println!("Change exists, adding snapshot to that one");
         }
 
+        for file in change.get_staged_files() {
+            self.repo.write(change.get_id(), file.clone(), 0);
+        }
+
         // Reload any existing data about this change, in case it already exists.
         let mut reloaded_change = self.repo.get_change(change.get_id()).unwrap();
         weld::deserialize_change(
@@ -125,9 +129,6 @@ impl<C: LargeTableClient> WeldServiceHandler<C> {
         )
         .unwrap();
 
-        for file in reloaded_change.get_staged_files() {
-            self.repo.write(reloaded_change.get_id(), file.clone(), 0);
-        }
         let response = self.repo.snapshot(&reloaded_change);
 
         reloaded_change.clear_staged_files();

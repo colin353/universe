@@ -6,6 +6,7 @@ mod tests {
     extern crate weld_test;
 
     use self::weld::File;
+    use self::weld::WeldServer;
     use self::weld_repo::*;
 
     use std::collections::HashMap;
@@ -567,5 +568,40 @@ mod tests {
 
             assert_ne!(submitted_id, 0, "Error submitting change");
         }
+    }
+
+    #[test]
+    fn test_several_updates() {
+        let repo = make_remote_connected_test_repo();
+
+        let change = weld::Change::new();
+        let id = repo.make_change(change);
+
+        let mut test_file = File::new();
+        test_file.set_filename(String::from("/README.md"));
+        test_file.set_contents(String::from("test content").into_bytes());
+        repo.write(id, test_file, 0);
+
+        repo.snapshot(&weld::change(id));
+
+        let changes = repo.remote_server.as_ref().unwrap().list_changes();
+
+        assert_eq!(changes.len(), 1);
+        assert_eq!(changes[0].get_changes().len(), 1);
+        assert_eq!(changes[0].get_changes()[0].get_filename(), "/README.md");
+
+        let mut test_file = File::new();
+        test_file.set_filename(String::from("/README2.md"));
+        test_file.set_contents(String::from("more test content").into_bytes());
+        repo.write(id, test_file, 0);
+
+        repo.snapshot(&weld::change(id));
+
+        let changes = repo.remote_server.unwrap().list_changes();
+
+        assert_eq!(changes.len(), 1);
+        assert_eq!(changes[0].get_changes().len(), 2);
+        assert_eq!(changes[0].get_changes()[0].get_filename(), "/README2.md");
+        assert_eq!(changes[0].get_changes()[1].get_filename(), "/README.md");
     }
 }
