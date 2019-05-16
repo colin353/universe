@@ -18,8 +18,12 @@ rust_binary(
 
 rust_library(
     name = "server",
-    srcs = ["server.rs"],
+    srcs = [
+        "render.rs",
+        "server.rs",
+    ],
     data = [
+        "change.html",
         "homepage.html",
         "style.css",
         "template.html",
