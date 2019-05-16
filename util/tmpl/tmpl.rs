@@ -3,11 +3,13 @@ use std::convert::From;
 
 pub type ContentsMap = HashMap<&'static str, Contents>;
 
+#[derive(Clone)]
 pub enum Contents {
     Value(String),
     MultiValue(ContentsMultiMap),
 }
 
+#[derive(Clone)]
 pub struct ContentsMultiMap {
     data: Vec<ContentsMap>,
 }
@@ -76,8 +78,14 @@ pub fn apply_mut(template: &str, data: &ContentsMap, output: &mut String) {
             Key::MultiValue(key) => match data.get(key) {
                 Some(Contents::MultiValue(x)) => {
                     let loop_template = parser.jump_to_close_tag(key);
+                    // Sometimes the inner loop wants to access the parent state. So just clone
+                    // the parent state and merge the element state on top.
+                    let mut cloned_data = data.clone();
                     for value in &x.data {
-                        apply_mut(loop_template, value, output);
+                        for (k, v) in value.iter() {
+                            cloned_data.insert(k, (*v).clone());
+                        }
+                        apply_mut(loop_template, &cloned_data, output);
                     }
                 }
                 _ => eprintln!("multi-value key {} not found", key),
@@ -513,6 +521,22 @@ mod tests {
         );
 
         let expected = "Found some records: [Colin Tim ] for you!";
+        assert_eq!(apply(template, &contents), expected);
+    }
+
+    #[test]
+    fn test_use_parent_data() {
+        let template = "id={{id}}, {{people[]}}{{name}}:{{id}} {{/people}}";
+
+        let mut contents = content!(
+            "id" => "4";
+            "people" => vec![
+                content!("name" => "Colin"),
+                content!("name" => "Tim"),
+            ]
+        );
+
+        let expected = "id=4, Colin:4 Tim:4 ";
         assert_eq!(apply(template, &contents), expected);
     }
 }
