@@ -1,6 +1,63 @@
-<p>Author: {{author}}</p>
-<p>Description: {{description}}</p>
-<p>Modified files:</p>
-{{changes[]}}
-<p>{{filename}}</p>
-{{/changes}}
+<div class="page">
+    <div class="change-overview">
+        <div class="form-field">
+            <div class="title">Change Index</div>
+            <div class="contents">{{id}}</div>
+        </div>
+        <div class="form-field description">
+            <div class="title">Description</div>
+            <div class="contents">{{description}}</div>
+        </div>
+        <div class="form-field">
+            <div class="title">Author</div>
+            <div class="contents">{{author}}</div>
+        </div>
+        <div class="form-field">
+            <div class="title">Reviewers</div>
+            <div class="contents">{{reviewers}}</div>
+        </div>
+        <div class="form-field">
+            <div class="title">Status</div>
+            <div class="contents">{{status}}</div>
+        </div>
+        <div class="form-field">
+            <div class="title">Space</div>
+            <div class="contents">{{friendly_name}}</div>
+        </div>
+        <div class="form-field">
+            <div class="title">Based on</div>
+            <div class="contents">{{based_index}}</div>
+        </div>
+        <div class="form-field">
+            <div class="title">Date</div>
+            <div class="contents"><span class="timestamp" data-timestamp={{last_modified_timestamp}}></span></div>
+        </div>
+    </div>
+
+    <div class="actions">
+        <button type="button">Submit</button>
+    </div>
+
+    <table class="modified-files">
+        <tr>
+            <td>
+                <div class="small-heading">Status</div>
+            </td>
+            <td>
+                <div class="small-heading">Filename</div>
+            </td>
+        </tr>
+        {{changes[]}}
+        <tr>
+            <td style="width: 100px">{{status}}</td>
+            <td>
+                <a href="/{{id}}{{filename}}">
+                    {{filename}}
+                </a>
+            </td>
+        </tr>
+        {{/changes}}
+</div>
+</div>
+
+</div>

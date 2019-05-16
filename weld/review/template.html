@@ -5,10 +5,86 @@
     <meta charset="UTF-8">
     <link rel="stylesheet" type="text/css" href="/static/style.css">
     <title>{{title}}</title>
+
+    <style type="text/css">
+        @import url(https://fonts.googleapis.com/css?family=Merriweather);
+
+        body {
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            color: rgba(0, 0, 0, 0.87);
+            font-family: 'Merriweather', serif;
+        }
+
+        .page {
+            margin-left: auto;
+            margin-right: auto;
+            display: block;
+            width: 1024px;
+        }
+
+        .form-field .title {
+            text-transform: uppercase;
+            font-size: 0.6em;
+        }
+
+        .form-field .contents {
+            height: 1.25em;
+        }
+
+        .form-field {
+            padding: 4px;
+            border: 0.5px solid rgba(0, 0, 0, 0.2);
+        }
+
+        .change-overview {
+            display: grid;
+            grid-template-columns: 240px 256px 256px 272px;
+            width: 1024px;
+            border: 0.5px solid rgba(0, 0, 0, 0.2);
+        }
+
+        .description {
+            grid-row-start: 1;
+            grid-row-end: 4;
+            grid-column-start: 2;
+            grid-column-end: 5;
+        }
+
+        .tests {
+            grid-row-start: 5;
+            grid-column-start: 2;
+            grid-column-end: 5;
+        }
+
+        .small-heading {
+            text-transform: uppercase;
+            font-size: 0.6em;
+        }
+
+        .modified-files {
+            margin-top: 20px;
+        }
+
+        .actions {
+            margin-top: 20px;
+        }
+
+        .status-deleted {
+            color: red
+        }
+
+        .status-modified {
+            color: yellow
+        }
+
+        .status-added {
+            color: green
+        }
+    </style>
 </head>
 
 <body>
-    <h1>Review</h1>
     {{content}}
 </body>
 
