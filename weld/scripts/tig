@@ -1,0 +1,32 @@
+#!/bin/bash
+set -e
+
+WELD_UTIL="$HOME/bin/weld-util"
+BASE_DIR="$HOME/codefs/"
+BASE_DIR_ESCAPED=$(echo $BASE_DIR | sed 's/\//\\\//g')
+
+# Remove the base dir prefix and path suffix.
+SPACE=${PWD##$BASE_DIR}
+SPACE=${SPACE%%/*}
+
+if [ "$1" = "base_dir" ]; then
+  echo $BASE_DIR
+elif  [ "$1" = "new" ]; then
+  $WELD_UTIL new --space=$2
+elif [ "$1" = "space" ]; then
+  echo $SPACE
+elif [ "$1" = "changes" ]; then
+  $WELD_UTIL changes
+elif [ "$1" = "get_change" ]; then
+  $WELD_UTIL --space=$SPACE get_change
+elif [ "$1" = "snapshot" ]; then
+  FILE=$(mktemp)
+  $WELD_UTIL --space=$SPACE get_change > $FILE
+  $EDITOR $FILE
+  $WELD_UTIL snapshot --space=$SPACE --change_file=$FILE
+elif [ "$1" = "submit" ]; then
+  $WELD_UTIL submit --space=$SPACE
+else
+  echo "tig: invalid command: '$1'"
+  exit 1
+fi
