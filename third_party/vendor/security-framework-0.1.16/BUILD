@@ -12,7 +12,7 @@ package(default_visibility = [
 ])
 
 licenses([
-  "notice", # "MIT"
+  "notice", # "MIT,Apache-2.0"
 ])
 
 load(
@@ -23,27 +23,27 @@ load(
 )
 
 
-# Unsupported target "build-script-main" with type "custom-build" omitted
+# Unsupported target "client" with type "example" omitted
 
 rust_library(
-    name = "openssl_sys",
+    name = "security_framework",
     crate_root = "src/lib.rs",
     crate_type = "lib",
     edition = "2015",
     srcs = glob(["**/*.rs"]),
     deps = [
+        "//third_party/vendor/core-foundation-0.2.3:core_foundation",
+        "//third_party/vendor/core-foundation-sys-0.2.3:core_foundation_sys",
         "//third_party/vendor/libc-0.2.43:libc",
-        "//third_party/openssl:crypto",
-        "//third_party/openssl:ssl",
+        "//third_party/vendor/security-framework-sys-0.1.16:security_framework_sys",
     ],
     rustc_flags = [
         "--cap-lints=allow",
-        "--cfg=ossl102",
-        "--cfg=ossl101",
-        "--cfg=version="102"",
     ],
-    version = "0.9.42",
+    version = "0.1.16",
     crate_features = [
+        "OSX_10_8",
+        "security-framework-sys",
     ],
 )
 

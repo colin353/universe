@@ -65,7 +65,7 @@ rust_library(
 
 rust_test(
     name = "test_largetable",
-    deps = [":largetable"],
+    crate = ":largetable",
 )
 
 rust_binary(
