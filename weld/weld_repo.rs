@@ -441,6 +441,7 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
     // Fills a change proto with all staged file modifications
     pub fn fill_change(&self, change: &mut weld::Change) {
         let id = change.get_id();
+        change.clear_staged_files();
 
         for file in self.list_changed_files(id, 0) {
             // Look up the remote file to figure out whether this file is identical to
@@ -508,7 +509,7 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
             };
 
             // Temporarily write the files to disk
-            let (filename_a, git_path_a) = if file.get_deleted() {
+            let (filename_a, git_path_a) = if !file.get_deleted() {
                 let filename = "/tmp/weld_a";
                 let mut f = std::fs::File::create(filename).unwrap();
                 f.write_all(file.get_contents());
@@ -521,9 +522,9 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
             let (filename_b, git_path_b) = if based_file.get_found() {
                 let filename = "/tmp/weld_b";
                 let mut f = std::fs::File::create(filename).unwrap();
-                f.write_all(file.get_contents());
+                f.write_all(based_file.get_contents());
                 f.sync_data();
-                (filename, format!("b{}", file.get_filename()))
+                (filename, format!("b{}", based_file.get_filename()))
             } else {
                 ("/dev/null", String::from("/dev/null"))
             };
@@ -531,12 +532,12 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
             let diff = Command::new("diff")
                 .args(&[
                     "--label",
-                    &git_path_a,
-                    "--label",
                     &git_path_b,
+                    "--label",
+                    &git_path_a,
                     "-u",
-                    filename_a,
                     filename_b,
+                    filename_a,
                 ])
                 .output()
                 .expect("Failed to create patch: is the `diff` command available?");
