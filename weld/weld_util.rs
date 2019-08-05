@@ -59,11 +59,35 @@ fn main() {
             let change = match maybe_id {
                 Some(id) => client.get_change(weld::change(id)),
                 None => {
-                    eprintln!("couldn't find change, giving blank description");
+                    eprintln!("couldn't find change");
                     weld::Change::new()
                 }
             };
             println!("{}", weld::serialize_change(&change, true));
+        }
+        "files" => {
+            let maybe_id = client.lookup_friendly_name(space.value());
+            let change = match maybe_id {
+                Some(id) => client.get_change(weld::change(id)),
+                None => {
+                    eprintln!("couldn't find change");
+                    weld::Change::new()
+                }
+            };
+            for file in change.get_staged_files() {
+                println!("{}", file.get_filename());
+            }
+        }
+        "patch" => {
+            let maybe_id = client.lookup_friendly_name(space.value());
+            let patch = match maybe_id {
+                Some(id) => client.get_patch(weld::change(id)),
+                None => {
+                    println!("No such change.");
+                    std::process::exit(1);
+                }
+            };
+            println!("{}", patch);
         }
         "cat" => {
             let maybe_id = client.lookup_friendly_name(space.value());

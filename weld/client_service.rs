@@ -13,7 +13,11 @@ impl<C: LargeTableClient> WeldLocalServiceHandler<C> {
 
     pub fn get_change(&self, change: weld::Change) -> weld::Change {
         match self.repo.get_change(change.get_id()) {
-            Some(c) => c,
+            Some(mut c) => {
+                // Fill the change with staged file changes
+                self.repo.fill_change(&mut c);
+                c
+            }
             None => weld::Change::new(),
         }
     }
@@ -82,6 +86,13 @@ impl<C: LargeTableClient> WeldLocalServiceHandler<C> {
             x => x,
         };
         self.repo.submit(id)
+    }
+
+    pub fn get_patch(&self, change: weld::Change) -> weld::Patch {
+        let change = self.get_change(change);
+        let mut patch = weld::Patch::new();
+        patch.set_patch(self.repo.patch(&change));
+        patch
     }
 }
 
@@ -171,5 +182,13 @@ impl<C: LargeTableClient> weld::WeldLocalService for WeldLocalServiceHandler<C> 
         let mut response = weld::LookupFriendlyNameResponse::new();
         response.set_id(id);
         grpc::SingleResponse::completed(response)
+    }
+
+    fn get_patch(
+        &self,
+        _m: grpc::RequestOptions,
+        req: weld::Change,
+    ) -> grpc::SingleResponse<weld::Patch> {
+        grpc::SingleResponse::completed(self.get_patch(req))
     }
 }
