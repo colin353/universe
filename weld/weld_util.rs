@@ -3,8 +3,8 @@ extern crate flags;
 extern crate weld;
 
 fn usage() {
-    println!("USAGE: snap <command> <filename>");
-    println!("use snap --help for details.");
+    println!("USAGE: weld_util <command> <filename>");
+    println!("use weld_util --help for details.");
 }
 
 fn load_change_file(change_file: &str) -> weld::Change {
