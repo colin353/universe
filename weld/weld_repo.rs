@@ -3,6 +3,8 @@ extern crate largetable_client;
 extern crate weld;
 
 use std::collections::HashMap;
+use std::io::prelude::*;
+use std::process::Command;
 use std::sync::Arc;
 use std::sync::RwLock;
 
@@ -436,24 +438,9 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
         self.snapshot(&c)
     }
 
-    pub fn snapshot(&self, partial_change: &weld::Change) -> weld::SnapshotResponse {
-        let mut change = match self.get_change(partial_change.get_id()) {
-            Some(c) => c,
-            None => return weld::SnapshotResponse::new(),
-        };
-
-        // Use the fields from the partial change to update the change.
-        weld::deserialize_change(&weld::serialize_change(partial_change, false), &mut change)
-            .unwrap();
-
-        self.update_change(&change);
-
-        // Create an entry in the SNAPSHOTS record with the current filesystem state.
-        let id = partial_change.get_id();
-        let mut entry = weld::SnapshotLogEntry::new();
-        let snapshot_id = weld::get_timestamp_usec();
-        entry.set_index(snapshot_id);
-        self.log_snapshot(id, entry);
+    // Fills a change proto with all staged file modifications
+    pub fn fill_change(&self, change: &mut weld::Change) {
+        let id = change.get_id();
 
         for file in self.list_changed_files(id, 0) {
             // Look up the remote file to figure out whether this file is identical to
@@ -489,6 +476,98 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
 
             change.mut_staged_files().push(file);
         }
+    }
+
+    // Create a patch for this change
+    pub fn patch(&self, change: &weld::Change) -> String {
+        let mut output = String::new();
+        output += "From: Weld <weld@weld.io>\n";
+        output += &format!(
+            "Subject: [PATCH 1/1] {}\n\n",
+            weld::summarize_change(change)
+        );
+
+        for file in change.get_staged_files() {
+            // Look up the based file to create diff
+            let maybe_based_file = match change.get_is_based_locally() {
+                true => self.read(
+                    change.get_based_id(),
+                    file.get_filename(),
+                    change.get_based_index(),
+                ),
+                false => self.read_remote(
+                    change.get_based_id(),
+                    file.get_filename(),
+                    change.get_based_index(),
+                ),
+            };
+
+            let based_file = match maybe_based_file {
+                Some(f) => f,
+                None => weld::File::new(),
+            };
+
+            // Temporarily write the files to disk
+            let (filename_a, git_path_a) = if file.get_deleted() {
+                let filename = "/tmp/weld_a";
+                let mut f = std::fs::File::create(filename).unwrap();
+                f.write_all(file.get_contents());
+                f.sync_data();
+                (filename, format!("a{}", file.get_filename()))
+            } else {
+                ("/dev/null", String::from("/dev/null"))
+            };
+
+            let (filename_b, git_path_b) = if based_file.get_found() {
+                let filename = "/tmp/weld_b";
+                let mut f = std::fs::File::create(filename).unwrap();
+                f.write_all(file.get_contents());
+                f.sync_data();
+                (filename, format!("b{}", file.get_filename()))
+            } else {
+                ("/dev/null", String::from("/dev/null"))
+            };
+
+            let diff = Command::new("diff")
+                .args(&[
+                    "--label",
+                    &git_path_a,
+                    "--label",
+                    &git_path_b,
+                    "-u",
+                    filename_a,
+                    filename_b,
+                ])
+                .output()
+                .expect("Failed to create patch: is the `diff` command available?");
+
+            output += std::str::from_utf8(&diff.stdout).unwrap();
+        }
+
+        output
+    }
+
+    pub fn snapshot(&self, partial_change: &weld::Change) -> weld::SnapshotResponse {
+        let mut change = match self.get_change(partial_change.get_id()) {
+            Some(c) => c,
+            None => return weld::SnapshotResponse::new(),
+        };
+
+        // Use the fields from the partial change to update the change.
+        weld::deserialize_change(&weld::serialize_change(partial_change, false), &mut change)
+            .unwrap();
+
+        self.update_change(&change);
+
+        // Create an entry in the SNAPSHOTS record with the current filesystem state.
+        let id = partial_change.get_id();
+        let mut entry = weld::SnapshotLogEntry::new();
+        let snapshot_id = weld::get_timestamp_usec();
+        entry.set_index(snapshot_id);
+        self.log_snapshot(id, entry);
+
+        // Fill the change with all modified files
+        self.fill_change(&mut change);
 
         // If we are basing against a remote souce, report the snapshot back to the remote source.
         if change.get_is_based_locally() || self.remote_server.is_none() {

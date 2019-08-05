@@ -240,6 +240,16 @@ impl WeldLocalClient {
             x => Some(x),
         }
     }
+
+    pub fn get_patch(&self, req: weld::Change) -> String {
+        self.client
+            .get_patch(self.opts(), req)
+            .wait()
+            .expect("rpc")
+            .1
+            .get_patch()
+            .to_owned()
+    }
 }
 
 pub fn get_timestamp_usec() -> u64 {
@@ -305,6 +315,15 @@ pub fn deserialize_change(input: &str, change: &mut weld::Change) -> Result<(), 
     }
 
     Ok(())
+}
+
+pub fn summarize_change(change: &weld::Change) -> String {
+    let mut summary = match change.get_description().lines().next() {
+        Some(t) => t.to_owned(),
+        None => return String::from(""),
+    };
+    summary.truncate(80);
+    summary
 }
 
 pub fn serialize_change(change: &weld::Change, with_instructions: bool) -> String {
