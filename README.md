@@ -1,3 +1,0 @@
-# Testing
-
-New files
