@@ -601,7 +601,7 @@ mod tests {
 
         assert_eq!(changes.len(), 1);
         assert_eq!(changes[0].get_changes().len(), 2);
-        assert_eq!(changes[0].get_changes()[0].get_filename(), "/README2.md");
-        assert_eq!(changes[0].get_changes()[1].get_filename(), "/README.md");
+        assert_eq!(changes[0].get_changes()[0].get_filename(), "/README.md");
+        assert_eq!(changes[0].get_changes()[1].get_filename(), "/README2.md");
     }
 }
