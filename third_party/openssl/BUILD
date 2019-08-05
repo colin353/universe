@@ -88,7 +88,7 @@ gen_hdrs = [
     "include/openssl/x509_vfy.h",
 ]
 
-native.filegroup(
+filegroup(
     name = "gen-hdrs",
     srcs = gen_hdrs,
 )
@@ -96,7 +96,7 @@ native.filegroup(
 # This is also conveniently used to get the directory of the
 # openssl sources via bash's dirname program. Therefore, only
 # allow this to have a single entry
-native.filegroup(
+filegroup(
     name = "openssl_configure_script",
     srcs = ["openssl/Configure"],
 )
@@ -106,26 +106,26 @@ stat_libs = [
     "libcrypto.a",
 ]
 
-native.filegroup(
+filegroup(
     name = "openssl-exe",
     srcs = [
         "openssl",
     ],
 )
 
-native.filegroup(
+filegroup(
     name = "outs",
     srcs = stat_libs,
 )
 
-native.cc_library(
+cc_library(
     name = "crypto",
     srcs = [":libcrypto.a"],
     includes = ["./openssl/include"],
     visibility = ["//visibility:public"],
 )
 
-native.cc_library(
+cc_library(
     name = "ssl",
     srcs = [":libssl.a"],
     includes = ["./openssl/include"],
@@ -158,8 +158,8 @@ genrule(
 	    pushd $${OPENSSL_ROOT}
 		./Configure $${OPENSSL_CFG_OPTS}
         popd
-        CC=$(CC) make -C $${OPENSSL_ROOT} depend -j1
-        CC=$(CC) AR=$(AR) make -C $${OPENSSL_ROOT} -j1
+        CC=gcc make -C $${OPENSSL_ROOT} depend -j1
+        CC=gcc AR=tar make -C $${OPENSSL_ROOT} -j1
         #mkdir -p $(@D)/openssl
 		
         cp $${OPENSSL_ROOT}/libcrypto.a $(location libcrypto.a)
