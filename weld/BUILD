@@ -53,7 +53,7 @@ rust_binary(
 
 rust_test(
     name = "weld_test_test",
-    deps = [":weld"],
+    crate = ":weld",
 )
 
 rust_library(
@@ -79,9 +79,7 @@ rust_library(
 
 rust_test(
     name = "weld_repo_test",
-    deps = [
-        ":repo_test_lib",
-    ],
+    crate = ":repo_test_lib",
 )
 
 rust_binary(
@@ -125,9 +123,7 @@ rust_library(
 
 rust_test(
     name = "weld_server_test",
-    deps = [
-        ":weld_server_lib",
-    ],
+    crate = ":weld_server_lib",
 )
 
 rust_binary(
