@@ -545,6 +545,10 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
             output += std::str::from_utf8(&diff.stdout).unwrap();
         }
 
+        // I think this last signature just states the git version it is intended for.
+        output += "\n--\n";
+        output += "2.17.1\n";
+
         output
     }
 
