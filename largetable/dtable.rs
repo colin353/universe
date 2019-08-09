@@ -82,8 +82,6 @@ impl DTable {
         let mut current_key = String::from("");
         let mut current_value = Record::new();
         for (key, value) in specd_reader {
-            println!("getting key: {}", key);
-
             // Ignore all records after our desired timestamp.
             if value.get_timestamp() > timestamp {
                 continue;
