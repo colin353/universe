@@ -377,7 +377,7 @@ impl<C: largetable_client::LargeTableClient> fuse::Filesystem for WeldFS<C> {
         ino: u64,
         _fh: u64,
         offset: i64,
-        _size: u32,
+        size: u32,
         reply: fuse::ReplyData,
     ) {
         //println!("read: {}, offset={}, size={}", ino, offset, _size);
@@ -405,7 +405,9 @@ impl<C: largetable_client::LargeTableClient> fuse::Filesystem for WeldFS<C> {
                     return;
                 }
 
-                reply.data(&file.get_contents()[offset as usize..]);
+                let start = std::cmp::min(file.get_contents().len(), offset as usize);
+                let end = std::cmp::min(file.get_contents().len(), offset as usize + size as usize);
+                reply.data(&file.get_contents()[start..end]);
             }
         }
     }
