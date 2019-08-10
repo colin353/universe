@@ -8,12 +8,29 @@ struct DiffChunk {
     contents: String,
 }
 
+#[derive(PartialEq)]
+enum Position {
+    Earlier,
+    Later,
+    Overlapping,
+}
+
 impl DiffChunk {
     fn new(start: usize) -> Self {
         DiffChunk {
             start: start,
             end: start,
             contents: String::new(),
+        }
+    }
+
+    fn relative_position(&self, other: &DiffChunk) -> Position {
+        if other.end < self.start {
+            Position::Earlier
+        } else if other.start > self.end {
+            Position::Later
+        } else {
+            Position::Overlapping
         }
     }
 }
@@ -60,15 +77,114 @@ fn get_chunks(original: &str, modified: &str) -> Vec<DiffChunk> {
 }
 
 pub fn merge(original: &str, a: &str, b: &str) -> (String, bool) {
-    (String::from(a), false)
+    let mut chunks_a = get_chunks(original, a);
+    let mut chunks_b = get_chunks(original, b);
+
+    println!("chunks_a: {:?}", chunks_a);
+    println!("chunks_b: {:?}", chunks_b);
+
+    let mut to_apply = Vec::new();
+    let mut conflict = false;
+    while chunks_a.len() > 0 && chunks_b.len() > 0 {
+        if chunks_a.is_empty() || chunks_b.is_empty() {
+            break;
+        }
+
+        let relative_position = {
+            let a = chunks_a.last().unwrap();
+            let b = chunks_b.last().unwrap();
+            a.relative_position(b)
+        };
+        match relative_position {
+            Position::Earlier => {
+                to_apply.push(chunks_b.pop().unwrap());
+            }
+            Position::Later => {
+                to_apply.push(chunks_a.pop().unwrap());
+            }
+            Position::Overlapping => {
+                conflict = true;
+                let mut a = vec![chunks_a.pop().unwrap()];
+                let mut b = vec![chunks_b.pop().unwrap()];
+                let mut current_chunk = DiffChunk::new(a[0].start);
+
+                loop {
+                    for c_i in a.iter().chain(b.iter()) {
+                        if c_i.start < current_chunk.start {
+                            current_chunk.start = c_i.start;
+                        }
+                        if c_i.end > current_chunk.end {
+                            current_chunk.end = c_i.end
+                        }
+                    }
+
+                    let mut take_a = false;
+                    if let Some(c) = chunks_a.last() {
+                        if c.relative_position(&current_chunk) == Position::Overlapping {
+                            take_a = true;
+                        }
+                    }
+
+                    let mut take_b = false;
+                    if let Some(c) = chunks_b.last() {
+                        if c.relative_position(&current_chunk) == Position::Overlapping {
+                            take_b = true;
+                        }
+                    }
+
+                    if take_a {
+                        a.push(chunks_a.pop().unwrap());
+                    }
+                    if take_b {
+                        b.push(chunks_a.pop().unwrap());
+                    }
+
+                    if !take_a && !take_b {
+                        break;
+                    }
+                }
+
+                current_chunk.contents = String::from("merge conflict");
+                to_apply.push(current_chunk);
+            }
+        }
+    }
+    to_apply.append(&mut chunks_a);
+    to_apply.append(&mut chunks_b);
+
+    println!("to_apply: {:?}", to_apply);
+
+    // Apply the changes.
+    let mut line = 0;
+    let mut original_iter = original.lines();
+    let mut output = String::new();
+    for chunk in to_apply.iter().rev() {
+        output += &(&mut original_iter)
+            .take(chunk.start - line)
+            .collect::<Vec<_>>()
+            .join("\n");
+        line = chunk.start;
+
+        output += "\n";
+        output += &chunk.contents;
+
+        (&mut original_iter)
+            .take(chunk.end - chunk.start)
+            .for_each(drop);
+    }
+
+    println!("{}", output);
+
+    (output, !conflict)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    #[test]
     fn test_merge() {
-        let (joined, ok) = merge("a brown cow", "a cow", "a cow");
+        let (joined, ok) = merge("a brown cow", "a brown cow", "a cow");
         assert!(ok);
         assert_eq!(&joined, "a cow");
     }
@@ -96,7 +212,7 @@ mod tests {
 
         let mut expected = DiffChunk::new(1);
         expected.contents = String::from("a whole new line");
-        expected.end = 2;
+        expected.end = 1;
 
         assert_eq!(chunks, vec![expected]);
     }
