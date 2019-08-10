@@ -186,6 +186,9 @@ rust_library(
 rust_library(
     name = "merge",
     srcs = ["merge.rs"],
+    deps = [
+        "//third_party:difference",
+    ],
 )
 
 rust_test(
