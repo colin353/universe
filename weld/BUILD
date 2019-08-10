@@ -182,3 +182,13 @@ rust_library(
         "//largetable:largetable_test",
     ],
 )
+
+rust_library(
+    name = "merge",
+    srcs = ["merge.rs"],
+)
+
+rust_test(
+    name = "merge_test",
+    crate = ":merge",
+)

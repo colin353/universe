@@ -369,7 +369,7 @@ unsafe impl<A: Array + Sync> Sync for SmallVecData<A> {}
 /// A `Vec`-like container that can store a small number of elements inline.
 ///
 /// `SmallVec` acts like a vector, but can store a limited amount of data inline within the
-/// `Smallvec` struct rather than in a separate allocation.  If the data exceeds this limit, the
+/// `SmallVec` struct rather than in a separate allocation.  If the data exceeds this limit, the
 /// `SmallVec` will "spill" its data onto the heap, allocating a new buffer to hold it.
 ///
 /// The amount of data that a `SmallVec` can store inline depends on its backing store. The backing
@@ -654,6 +654,7 @@ impl<A: Array> SmallVec<A> {
                 }
                 self.data = SmallVecData::from_inline(mem::uninitialized());
                 ptr::copy_nonoverlapping(ptr, self.data.inline_mut().ptr_mut(), len);
+                self.capacity = len;
             } else if new_cap != cap {
                 let mut vec = Vec::with_capacity(new_cap);
                 let new_alloc = vec.as_mut_ptr();
@@ -664,6 +665,8 @@ impl<A: Array> SmallVec<A> {
                 if unspilled {
                     return;
                 }
+            } else {
+                return;
             }
             deallocate(ptr, cap);
         }
@@ -1355,7 +1358,7 @@ impl<A: Array> Extend<A::Item> for SmallVec<A> {
                     ptr::write(ptr.offset(len.get() as isize), out);
                     len.increment_len(1);
                 } else {
-                    break;
+                    return;
                 }
             }
         }
@@ -2310,5 +2313,48 @@ mod tests {
         let encoded = config().limit(100).serialize(&small_vec).unwrap();
         let decoded: SmallVec<[i32; 2]> = deserialize(&encoded).unwrap();
         assert_eq!(small_vec, decoded);
+    }
+
+    #[test]
+    fn grow_to_shrink() {
+        let mut v: SmallVec<[u8; 2]> = SmallVec::new();
+        v.push(1);
+        v.push(2);
+        v.push(3);
+        assert!(v.spilled());
+        v.clear();
+        // Shrink to inline.
+        v.grow(2);
+        assert!(!v.spilled());
+        assert_eq!(v.capacity(), 2);
+        assert_eq!(v.len(), 0);
+        v.push(4);
+        assert_eq!(v[..], [4]);
+    }
+
+    #[test]
+    fn resumable_extend() {
+        let s = "a b c";
+        // This iterator yields: (Some('a'), None, Some('b'), None, Some('c')), None
+        let it = s
+            .chars()
+            .scan(0, |_, ch| if ch.is_whitespace() { None } else { Some(ch) });
+        let mut v: SmallVec<[char; 4]> = SmallVec::new();
+        v.extend(it);
+        assert_eq!(v[..], ['a']);
+    }
+
+    #[test]
+    fn grow_spilled_same_size() {
+        let mut v: SmallVec<[u8; 2]> = SmallVec::new();
+        v.push(0);
+        v.push(1);
+        v.push(2);
+        assert!(v.spilled());
+        assert_eq!(v.capacity(), 4);
+        // grow with the same capacity
+        v.grow(4);
+        assert_eq!(v.capacity(), 4);
+        assert_eq!(v[..], [0, 1, 2]);
     }
 }

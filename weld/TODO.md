@@ -1,14 +1,34 @@
-# Todo list
+# Todo before bootstrap
 
-*Get multi-user support going*: need multi-user support before
-you can put review on the cloud
+## Sync, merge
 
-*Retool review code for bazel*: it was last built before bazel,
-  needs to be fixed up to work correctly
+Right now sync status is not checked, which means you could submit an out-of-date
+client and it will just corrupt the codebase.
 
-  *Get review code onto the cloud*: should be straightforward
+1. Check if sync is required and block submit if not synced
+2. Implement merge logic
 
-  *Find some way to bootstrap*: maybe need some way to sync changes
-  back to git? Or automatically create PRs/apply changes to keep
-  things synced on git? Since I don't really trust the code to be
-  stored in itself yet.
+Merge logic:
+
+   ------> [ client ] 
+   |
+[ #1 ] --> [ #2 ] --> [ #3 ]
+
+Two sets of changes: one from 1 --> client and one from 1 --> 3.
+
+Collect up changes in the client.
+For each change from baseline to now:
+ - if it touches any files changed in the client, keep track
+
+For each both modified files:
+ - create a set of changes: [start line, end line]: [ add: "", remove: "", add: "", remove: "" ]
+ - for each non-overlapping set of changes, apply them
+ - for each overlapping set, use SCM change markers and apply both
+
+If there are any overlapping sets, mark the file as requiring manual resolution.
+
+### Design
+
+Create a merge library which handles the case of [original, change1, change2] --> [merged, requires-resolution]
+
+## Some way to mirror to github

@@ -34,7 +34,7 @@ rust_library(
     deps = [
         "//third_party/vendor/libc-0.2.43:libc",
         "//third_party/vendor/rand-0.6.5:rand",
-        "//third_party/vendor/smallvec-0.6.9:smallvec",
+        "//third_party/vendor/smallvec-0.6.10:smallvec",
     ],
     rustc_flags = [
         "--cap-lints=allow",
