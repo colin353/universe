@@ -183,9 +183,18 @@ rust_library(
     ],
 )
 
-rust_library(
+rust_binary(
     name = "merge",
     srcs = ["merge.rs"],
+    deps = [
+        ":merge_lib",
+        "//util/flags",
+    ],
+)
+
+rust_library(
+    name = "merge_lib",
+    srcs = ["merge_lib.rs"],
     deps = [
         "//third_party:difference",
     ],
@@ -193,5 +202,5 @@ rust_library(
 
 rust_test(
     name = "merge_test",
-    crate = ":merge",
+    crate = ":merge_lib",
 )
