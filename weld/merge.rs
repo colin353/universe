@@ -157,21 +157,24 @@ pub fn merge(original: &str, a: &str, b: &str) -> (String, bool) {
     // Apply the changes.
     let mut line = 0;
     let mut original_iter = original.lines();
-    let mut output = String::new();
-    for chunk in to_apply.iter().rev() {
-        output += &(&mut original_iter)
-            .take(chunk.start - line)
-            .collect::<Vec<_>>()
-            .join("\n");
-        line = chunk.start;
+    let mut output = Vec::new();
+    for chunk in to_apply.iter() {
+        output.append(
+            &mut (&mut original_iter)
+                .take(chunk.start - line)
+                .collect::<Vec<_>>(),
+        );
 
-        output += "\n";
-        output += &chunk.contents;
+        output.push(&chunk.contents);
 
         (&mut original_iter)
             .take(chunk.end - chunk.start)
             .for_each(drop);
+
+        line = chunk.end;
     }
+
+    let output = output.join("\n");
 
     println!("{}", output);
 
@@ -183,10 +186,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_merge() {
+    fn test_simple_merge() {
         let (joined, ok) = merge("a brown cow", "a brown cow", "a cow");
         assert!(ok);
         assert_eq!(&joined, "a cow");
+    }
+
+    #[test]
+    fn test_complex_safe_merge() {
+        let (joined, ok) = merge(
+            "a\nvery\nbrown\nold\ncow",
+            "a\nvery\nred\nold\ncow",
+            "a\nvery\nbrown\nold\ntomato",
+        );
+        assert!(ok);
+        assert_eq!(&joined, "a\nvery\nred\nold\ntomato");
     }
 
     #[test]
