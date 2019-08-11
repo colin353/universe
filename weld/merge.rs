@@ -169,7 +169,7 @@ pub fn merge(original: &str, a: &str, b: &str) -> (String, bool) {
                         a.push(chunks_a.pop().unwrap());
                     }
                     if take_b {
-                        b.push(chunks_a.pop().unwrap());
+                        b.push(chunks_b.pop().unwrap());
                     }
 
                     if !take_a && !take_b {
@@ -298,6 +298,20 @@ mod tests {
         );
         assert!(!ok);
         assert_eq!(&joined, "starting line\n<<<<<<< remote\nmodified slime\n=======\nmodified climb\n>>>>>>> local\nending line\n",);
+    }
+
+    #[test]
+    fn test_complex_merge_conflicts() {
+        let (joined, ok) = merge(
+            "L1\nL2\nL3\nL4\nL5\nL6\nL7\nL8",
+            "L8",
+            "L1\nM2\nL3\nM4\nL5\nL6\nL7\nL8",
+        );
+        assert!(!ok);
+        assert_eq!(
+            &joined,
+            "<<<<<<< remote\n\n=======\n1\nM2\nL3\nM4\nL5\nL6\nL7\n>>>>>>> local\nL8\n"
+        );
     }
 
     #[test]
