@@ -250,30 +250,49 @@ pub fn merge(original: &str, a: &str, b: &str) -> (String, bool) {
 
                 println!("shared changes prefix: {:?}", shared_changes_prefix);
 
-                let prefix = shared_changes_prefix.join("\n");
-                let suffix = shared_changes_suffix
-                    .into_iter()
-                    .rev()
-                    .collect::<Vec<_>>()
-                    .join("\n");
-
                 // It's possible no real conflict exists - in which case, we can
                 // just return the prefix and suffix combined together.
                 if changeset.diffs.is_empty() {
                     println!("no real conflict detected");
-                    current_chunk.contents = prefix + &suffix;
+                    shared_changes_prefix.append(&mut shared_changes_suffix);
+                    current_chunk.contents = shared_changes_prefix.join("\n");
                     current_chunk.has_contents = true;
                     to_apply.push(current_chunk);
                     continue;
                 }
 
-                // If we reached here, we have a real conflict.
-                println!("true conflict");
-                conflict = true;
-                current_chunk.contents = format!(
-                    "{}<<<<<<< remote\n{}\n=======\n{}\n>>>>>>> local{}",
-                    prefix, version_a, version_b, suffix
+                // Reconstruct versions A and B with shared changes factored out.
+                let mut lines_a = Vec::new();
+                let mut lines_b = Vec::new();
+                for diff in changeset.diffs {
+                    match diff {
+                        Difference::Same(s) => {
+                            lines_a.push(s.clone());
+                            lines_b.push(s.clone());
+                        }
+                        Difference::Rem(s) => {
+                            lines_a.push(s.clone());
+                        }
+                        Difference::Add(s) => {
+                            lines_b.push(s.clone());
+                        }
+                    }
+                }
+
+                let version_a = lines_a.join("\n");
+                let version_b = lines_b.join("\n");
+
+                let conflict_markers = format!(
+                    "<<<<<<< remote\n{}\n=======\n{}\n>>>>>>> local",
+                    version_a, version_b
                 );
+
+                // Merge together the prefix, conflict markers, and suffix.
+                shared_changes_prefix.push(conflict_markers);
+                shared_changes_prefix.append(&mut shared_changes_suffix);
+
+                conflict = true;
+                current_chunk.contents = shared_changes_prefix.join("\n");
                 current_chunk.has_contents = true;
                 to_apply.push(current_chunk);
             }
@@ -394,6 +413,16 @@ mod tests {
         );
         assert!(ok);
         assert_eq!(&joined, "conflicting identical change\n");
+    }
+
+    #[test]
+    fn test_partially_non_conflicting_conflict() {
+        let (joined, ok) = merge("L1\nL2\nL3\nL4", "M1\nM2\nM3\nL4", "M1\nK2\nM3\nL4");
+        assert!(!ok);
+        assert_eq!(
+            &joined,
+            "M1\n<<<<<<< remote\nM2\n=======\nK2\n>>>>>>> local\nM3\nL4\n"
+        );
     }
 
     #[test]
