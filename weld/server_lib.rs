@@ -184,10 +184,38 @@ impl<C: LargeTableClient> WeldServiceHandler<C> {
             None => weld::Change::new(),
         }
     }
+
+    pub fn get_submitted_changes(
+        &self,
+        req: &weld::GetSubmittedChangesRequest,
+    ) -> weld::GetSubmittedChangesResponse {
+        let start = index_to_rowname(req.get_starting_id());
+        let end = if req.get_ending_id() != 0 {
+            // We want to include the final index, so add one
+            index_to_rowname(req.get_ending_id() + 1)
+        } else {
+            String::new()
+        };
+
+        let changes = largetable_client::LargeTableScopedIterator::new(
+            &self.database,
+            String::from(SUBMITTED),
+            String::from(""),
+            start,
+            end,
+            0,
+        );
+        let mut output = weld::GetSubmittedChangesResponse::new();
+        for (key, change) in changes {
+            println!("{}", key);
+            output.mut_changes().push(change);
+        }
+        output
+    }
 }
 
 fn index_to_rowname(index: u64) -> String {
-    format!("{:016x}", std::u64::MAX - index)
+    format!("{:016x}", index)
 }
 
 impl<C: LargeTableClient> weld::WeldService for WeldServiceHandler<C> {
@@ -264,6 +292,17 @@ impl<C: LargeTableClient> weld::WeldService for WeldServiceHandler<C> {
     ) -> grpc::SingleResponse<weld::ListFilesResponse> {
         match self.authenticate(&m) {
             Some(_) => grpc::SingleResponse::completed(self.list_files(req)),
+            None => grpc::SingleResponse::err(grpc::Error::Other("unauthenticated")),
+        }
+    }
+
+    fn get_submitted_changes(
+        &self,
+        m: grpc::RequestOptions,
+        req: weld::GetSubmittedChangesRequest,
+    ) -> grpc::SingleResponse<weld::GetSubmittedChangesResponse> {
+        match self.authenticate(&m) {
+            Some(_) => grpc::SingleResponse::completed(self.get_submitted_changes(&req)),
             None => grpc::SingleResponse::err(grpc::Error::Other("unauthenticated")),
         }
     }
@@ -555,5 +594,43 @@ mod tests {
             .unwrap(),
             "working = true"
         );
+    }
+
+    #[test]
+    fn test_list_submitted_changes() {
+        let handler = WeldServiceHandler::create_mock();
+
+        // Write /test/config.txt and submit it to head.
+        let mut change = weld::Change::new();
+        change
+            .mut_staged_files()
+            .push(test_file("/test/config.txt", "working = true"));
+
+        let change_id = handler.snapshot("tester", change).get_change_id();
+        handler.submit("tester", change_id);
+
+        // Write /test/config.txt and submit it to head.
+        let mut change = weld::Change::new();
+        change
+            .mut_staged_files()
+            .push(test_file("/test/test.txt", "working = true"));
+
+        let change_id_2 = handler.snapshot("tester", change).get_change_id();
+        handler.submit("tester", change_id_2);
+
+        // Write /test/config.txt and submit it to head.
+        let mut change = weld::Change::new();
+        change
+            .mut_staged_files()
+            .push(test_file("/test/test.txt", "working = true"));
+
+        let change_id = handler.snapshot("tester", change).get_change_id();
+        handler.submit("tester", change_id);
+
+        // Read off all submitted changes
+        let mut req = weld::GetSubmittedChangesRequest::new();
+        req.set_ending_id(4);
+        let resp = handler.get_submitted_changes(&req);
+        assert_eq!(resp.get_changes().len(), 2);
     }
 }

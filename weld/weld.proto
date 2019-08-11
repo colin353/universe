@@ -99,6 +99,13 @@ message SnapshotResponse {
 }
 message GetLatestChangeRequest {}
 
+message GetSubmittedChangesRequest {
+  uint64 starting_id = 1;
+  uint64 ending_id = 2;
+}
+
+message GetSubmittedChangesResponse { repeated Change changes = 1; }
+
 service WeldService {
   rpc ListFiles(FileIdentifier) returns (ListFilesResponse);
   rpc Read(FileIdentifier) returns (File);
@@ -107,6 +114,8 @@ service WeldService {
   rpc GetChange(Change) returns (Change);
   rpc ListChanges(ListChangesRequest) returns (ListChangesResponse);
   rpc GetLatestChange(GetLatestChangeRequest) returns (Change);
+  rpc GetSubmittedChanges(GetSubmittedChangesRequest)
+      returns (GetSubmittedChangesResponse);
 }
 
 // weld local client
