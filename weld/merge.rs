@@ -79,6 +79,33 @@ fn get_chunks(original: &str, modified: &str) -> Vec<DiffChunk> {
     output
 }
 
+fn apply_chunks(original: &str, changes: &[DiffChunk]) -> String {
+    // Apply the changes.
+    let mut line = 0;
+    let mut original_iter = original.lines();
+    let mut output = Vec::new();
+    for chunk in changes.iter().rev() {
+        output.append(
+            &mut (&mut original_iter)
+                .take(chunk.start - line)
+                .collect::<Vec<_>>(),
+        );
+
+        if chunk.has_contents {
+            output.push(&chunk.contents);
+        }
+
+        (&mut original_iter)
+            .take(chunk.end - chunk.start)
+            .for_each(drop);
+
+        line = chunk.end;
+    }
+
+    output.append(&mut (&mut original_iter).collect::<Vec<_>>());
+    output.join("\n") + "\n"
+}
+
 pub fn merge(original: &str, a: &str, b: &str) -> (String, bool) {
     let mut chunks_a = get_chunks(original, a);
     let mut chunks_b = get_chunks(original, b);
@@ -113,6 +140,7 @@ pub fn merge(original: &str, a: &str, b: &str) -> (String, bool) {
                 let mut b = vec![chunks_b.pop().unwrap()];
                 let mut current_chunk = DiffChunk::new(a[0].start);
 
+                // Find the set of overlapping chunks that need to be merged manually.
                 loop {
                     for c_i in a.iter().chain(b.iter()) {
                         if c_i.start < current_chunk.start {
@@ -149,7 +177,47 @@ pub fn merge(original: &str, a: &str, b: &str) -> (String, bool) {
                     }
                 }
 
-                current_chunk.contents = String::from("merge conflict");
+                // Remap the diffs so their line numbers reference the conflicting substring.
+                a.iter_mut()
+                    .map(|c| {
+                        c.start -= current_chunk.start;
+                        c.end -= current_chunk.start;
+                    })
+                    .for_each(drop);
+                b.iter_mut()
+                    .map(|c| {
+                        c.start -= current_chunk.start;
+                        c.end -= current_chunk.start;
+                    })
+                    .for_each(drop);
+
+                let start_idx = match original
+                    .match_indices("\n")
+                    .take(current_chunk.start)
+                    .last()
+                {
+                    Some((i, _)) => i,
+                    None => 0,
+                };
+
+                let end_idx = match original.match_indices("\n").take(current_chunk.end).last() {
+                    Some((i, _)) => i,
+                    None => original.len(),
+                };
+
+                let conflicting_substr = &original[start_idx + 1..end_idx];
+                println!("conflicting_substr: `{}`", conflicting_substr);
+                println!("version_a_diff: `{:?}`", a);
+                println!("version_b_diff: `{:?}`", b);
+
+                let version_a = apply_chunks(conflicting_substr, &a);
+                let version_b = apply_chunks(conflicting_substr, &b);
+
+                current_chunk.contents = format!(
+                    "<<<<<<< remote\n{}=======\n{}>>>>>>> local",
+                    version_a, version_b
+                );
+                current_chunk.has_contents = true;
                 to_apply.push(current_chunk);
             }
         }
@@ -159,34 +227,7 @@ pub fn merge(original: &str, a: &str, b: &str) -> (String, bool) {
 
     println!("to_apply: {:?}", to_apply);
 
-    // Apply the changes.
-    let mut line = 0;
-    let mut original_iter = original.lines();
-    let mut output = Vec::new();
-    for chunk in to_apply.iter().rev() {
-        output.append(
-            &mut (&mut original_iter)
-                .take(chunk.start - line)
-                .collect::<Vec<_>>(),
-        );
-
-        if chunk.has_contents {
-            output.push(&chunk.contents);
-        }
-
-        (&mut original_iter)
-            .take(chunk.end - chunk.start)
-            .for_each(drop);
-
-        line = chunk.end;
-    }
-
-    output.append(&mut (&mut original_iter).collect::<Vec<_>>());
-
-    let output = output.join("\n") + "\n";
-
-    println!("{}", output);
-
+    let output = apply_chunks(original, &to_apply);
     (output, !conflict)
 }
 
@@ -246,6 +287,17 @@ mod tests {
             &joined,
             "dtart\ngets\naeleted\nmiddle\ndart\nstays\nand\ndeleted\n"
         );
+    }
+
+    #[test]
+    fn test_merge_conflicts() {
+        let (joined, ok) = merge(
+            "starting line\nmodified line\nending line\n",
+            "starting line\nmodified slime\nending line\n",
+            "starting line\nmodified climb\nending line\n",
+        );
+        assert!(!ok);
+        assert_eq!(&joined, "starting line\n<<<<<<< remote\nmodified slime\n=======\nmodified climb\n>>>>>>> local\nending line\n",);
     }
 
     #[test]
