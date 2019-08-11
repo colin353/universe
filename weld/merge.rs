@@ -103,7 +103,7 @@ fn apply_chunks(original: &str, changes: &[DiffChunk]) -> String {
     }
 
     output.append(&mut (&mut original_iter).collect::<Vec<_>>());
-    output.join("\n") + "\n"
+    output.join("\n")
 }
 
 pub fn merge(original: &str, a: &str, b: &str) -> (String, bool) {
@@ -135,7 +135,6 @@ pub fn merge(original: &str, a: &str, b: &str) -> (String, bool) {
                 to_apply.push(chunks_b.pop().unwrap());
             }
             Position::Overlapping => {
-                conflict = true;
                 let mut a = vec![chunks_a.pop().unwrap()];
                 let mut b = vec![chunks_b.pop().unwrap()];
                 let mut current_chunk = DiffChunk::new(a[0].start);
@@ -213,9 +212,67 @@ pub fn merge(original: &str, a: &str, b: &str) -> (String, bool) {
                 let version_a = apply_chunks(conflicting_substr, &a);
                 let version_b = apply_chunks(conflicting_substr, &b);
 
+                // It's possible that the two versions are actually sharing some modifications.
+                // Any set of leading or trailing shared modifications should be allowed to go
+                // outside the change markers.
+                let mut changeset = difference::Changeset::new(&version_a, &version_b, "\n");
+                println!("version changeset: {:?}", changeset.diffs);
+                let mut shared_changes_suffix = Vec::new();
+                let mut pop = true;
+                while pop {
+                    pop = false;
+                    {
+                        if let Some(Difference::Same(s)) = changeset.diffs.last() {
+                            pop = true;
+                            shared_changes_suffix.push(s.to_owned());
+                        }
+                    }
+                    if pop {
+                        changeset.diffs.pop();
+                    }
+                }
+                println!("shared changes suffix: {:?}", shared_changes_suffix);
+
+                let mut shared_changes_prefix = Vec::new();
+                let mut pop = true;
+                while pop {
+                    pop = false;
+                    {
+                        if let Some(Difference::Same(s)) = changeset.diffs.first() {
+                            pop = true;
+                            shared_changes_prefix.push(s.to_owned());
+                        }
+                    }
+                    if pop {
+                        changeset.diffs.remove(0);
+                    }
+                }
+
+                println!("shared changes prefix: {:?}", shared_changes_prefix);
+
+                let prefix = shared_changes_prefix.join("\n");
+                let suffix = shared_changes_suffix
+                    .into_iter()
+                    .rev()
+                    .collect::<Vec<_>>()
+                    .join("\n");
+
+                // It's possible no real conflict exists - in which case, we can
+                // just return the prefix and suffix combined together.
+                if changeset.diffs.is_empty() {
+                    println!("no real conflict detected");
+                    current_chunk.contents = prefix + &suffix;
+                    current_chunk.has_contents = true;
+                    to_apply.push(current_chunk);
+                    continue;
+                }
+
+                // If we reached here, we have a real conflict.
+                println!("true conflict");
+                conflict = true;
                 current_chunk.contents = format!(
-                    "<<<<<<< remote\n{}=======\n{}>>>>>>> local",
-                    version_a, version_b
+                    "{}<<<<<<< remote\n{}\n=======\n{}\n>>>>>>> local{}",
+                    prefix, version_a, version_b, suffix
                 );
                 current_chunk.has_contents = true;
                 to_apply.push(current_chunk);
@@ -227,7 +284,7 @@ pub fn merge(original: &str, a: &str, b: &str) -> (String, bool) {
 
     println!("to_apply: {:?}", to_apply);
 
-    let output = apply_chunks(original, &to_apply);
+    let output = apply_chunks(original, &to_apply) + "\n";
     (output, !conflict)
 }
 
@@ -312,6 +369,31 @@ mod tests {
             &joined,
             "<<<<<<< remote\n\n=======\n1\nM2\nL3\nM4\nL5\nL6\nL7\n>>>>>>> local\nL8\n"
         );
+    }
+
+    #[test]
+    fn test_complex_merge_conflicts_2() {
+        let (joined, ok) = merge(
+            "L1\nL2\nL3\nL4\nL5\nL6\nL7\nL8",
+            "L1\nL4\nL7\nL8",
+            "L1\nL2\nL3\nL6\nL7\nL8",
+        );
+        assert!(!ok);
+        assert_eq!(
+            &joined,
+            "L1\n<<<<<<< remote\nL4\n=======\nL2\nL3\nL6\n>>>>>>> local\nL7\nL8\n"
+        );
+    }
+
+    #[test]
+    fn test_non_conflicting_conflict() {
+        let (joined, ok) = merge(
+            "original string",
+            "conflicting identical change",
+            "conflicting identical change",
+        );
+        assert!(ok);
+        assert_eq!(&joined, "conflicting identical change\n");
     }
 
     #[test]
