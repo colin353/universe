@@ -5,6 +5,7 @@ use difference::Difference;
 struct DiffChunk {
     start: usize,
     end: usize,
+    has_contents: bool,
     contents: String,
 }
 
@@ -21,6 +22,7 @@ impl DiffChunk {
             start: start,
             end: start,
             contents: String::new(),
+            has_contents: false,
         }
     }
 
@@ -61,11 +63,12 @@ fn get_chunks(original: &str, modified: &str) -> Vec<DiffChunk> {
                 chunk.end = line;
             }
             Difference::Add(s) => {
-                println!("rem: {}", s);
+                println!("add: {}", s);
                 if !in_progress {
                     in_progress = true;
                     chunk = DiffChunk::new(line);
                 }
+                chunk.has_contents = true;
                 chunk.contents += &s;
             }
         }
@@ -167,7 +170,7 @@ pub fn merge(original: &str, a: &str, b: &str) -> (String, bool) {
                 .collect::<Vec<_>>(),
         );
 
-        if !chunk.contents.is_empty() {
+        if chunk.has_contents {
             output.push(&chunk.contents);
         }
 
@@ -178,7 +181,9 @@ pub fn merge(original: &str, a: &str, b: &str) -> (String, bool) {
         line = chunk.end;
     }
 
-    let output = output.join("\n");
+    output.append(&mut (&mut original_iter).collect::<Vec<_>>());
+
+    let output = output.join("\n") + "\n";
 
     println!("{}", output);
 
@@ -193,7 +198,7 @@ mod tests {
     fn test_simple_merge() {
         let (joined, ok) = merge("a brown cow", "a brown cow", "a cow");
         assert!(ok);
-        assert_eq!(&joined, "a cow");
+        assert_eq!(&joined, "a cow\n");
     }
 
     #[test]
@@ -204,7 +209,7 @@ mod tests {
             "a\nvery\nbrown\nold\ntomato\nwith vitamin c",
         );
         assert!(ok);
-        assert_eq!(&joined, "a\nvery\nred\nold\ntomato\nwith vitamin c");
+        assert_eq!(&joined, "a\nvery\nred\nold\ntomato\nwith vitamin c\n");
     }
 
     #[test]
@@ -215,7 +220,32 @@ mod tests {
             "start\ngets\ndeleted\nmiddle\nbit\nstays\nend\ndeleted\n",
         );
         assert!(ok);
-        assert_eq!(&joined, "middle\nbit\nstays");
+        assert_eq!(&joined, "middle\nbit\nstays\n");
+    }
+
+    #[test]
+    fn test_complex_safe_merge_3() {
+        let (joined, ok) = merge(
+            "start\ngets\ndeleted\nmiddle\npart\nstays\nend\ndeleted\n",
+            "start\ngets\ndeleted\nmiddle\npart\nstays\nend\ndeleted\n",
+            "middle\npart\nstays",
+        );
+        assert!(ok);
+        assert_eq!(&joined, "middle\npart\nstays\n");
+    }
+
+    #[test]
+    fn test_complex_safe_merge_4() {
+        let (joined, ok) = merge(
+            "start\ngets\ndeleted\nmiddle\npart\nstays\nend\ndeleted\n",
+            "start\ngets\ndeleted\nmiddle\npart\nstays\nend\ndeleted\n",
+            "dtart\ngets\naeleted\nmiddle\ndart\nstays\nand\ndeleted\n",
+        );
+        assert!(ok);
+        assert_eq!(
+            &joined,
+            "dtart\ngets\naeleted\nmiddle\ndart\nstays\nand\ndeleted\n"
+        );
     }
 
     #[test]
@@ -227,6 +257,7 @@ mod tests {
 
         let mut expected = DiffChunk::new(1);
         expected.contents = String::from("I took a DNA test\nturns out");
+        expected.has_contents = true;
         expected.end = 2;
 
         assert_eq!(chunks, vec![expected]);
@@ -241,6 +272,7 @@ mod tests {
 
         let mut expected = DiffChunk::new(1);
         expected.contents = String::from("a whole new line");
+        expected.has_contents = true;
         expected.end = 1;
 
         assert_eq!(chunks, vec![expected]);
