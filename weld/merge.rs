@@ -97,10 +97,12 @@ pub fn merge(original: &str, a: &str, b: &str) -> (String, bool) {
         };
         match relative_position {
             Position::Earlier => {
-                to_apply.push(chunks_b.pop().unwrap());
+                println!("add: {:?}", chunks_a.last().unwrap());
+                to_apply.push(chunks_a.pop().unwrap());
             }
             Position::Later => {
-                to_apply.push(chunks_a.pop().unwrap());
+                println!("add: {:?}", chunks_b.last().unwrap());
+                to_apply.push(chunks_b.pop().unwrap());
             }
             Position::Overlapping => {
                 conflict = true;
@@ -149,8 +151,8 @@ pub fn merge(original: &str, a: &str, b: &str) -> (String, bool) {
             }
         }
     }
-    to_apply.append(&mut chunks_a);
-    to_apply.append(&mut chunks_b);
+    to_apply.extend(chunks_a.into_iter().rev());
+    to_apply.extend(chunks_b.into_iter().rev());
 
     println!("to_apply: {:?}", to_apply);
 
@@ -158,14 +160,16 @@ pub fn merge(original: &str, a: &str, b: &str) -> (String, bool) {
     let mut line = 0;
     let mut original_iter = original.lines();
     let mut output = Vec::new();
-    for chunk in to_apply.iter() {
+    for chunk in to_apply.iter().rev() {
         output.append(
             &mut (&mut original_iter)
                 .take(chunk.start - line)
                 .collect::<Vec<_>>(),
         );
 
-        output.push(&chunk.contents);
+        if !chunk.contents.is_empty() {
+            output.push(&chunk.contents);
+        }
 
         (&mut original_iter)
             .take(chunk.end - chunk.start)
@@ -197,10 +201,21 @@ mod tests {
         let (joined, ok) = merge(
             "a\nvery\nbrown\nold\ncow",
             "a\nvery\nred\nold\ncow",
-            "a\nvery\nbrown\nold\ntomato",
+            "a\nvery\nbrown\nold\ntomato\nwith vitamin c",
         );
         assert!(ok);
-        assert_eq!(&joined, "a\nvery\nred\nold\ntomato");
+        assert_eq!(&joined, "a\nvery\nred\nold\ntomato\nwith vitamin c");
+    }
+
+    #[test]
+    fn test_complex_safe_merge_2() {
+        let (joined, ok) = merge(
+            "start\ngets\ndeleted\nmiddle\npart\nstays\nend\ndeleted\n",
+            "middle\npart\nstays",
+            "start\ngets\ndeleted\nmiddle\nbit\nstays\nend\ndeleted\n",
+        );
+        assert!(ok);
+        assert_eq!(&joined, "middle\nbit\nstays");
     }
 
     #[test]
