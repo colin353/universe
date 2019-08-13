@@ -63,6 +63,7 @@ rust_library(
         ":weld",
         "//largetable:largetable_client",
         "//util/cache",
+        "//weld:merge_lib",
     ],
 )
 

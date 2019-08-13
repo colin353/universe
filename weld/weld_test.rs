@@ -45,4 +45,10 @@ impl weld::WeldServer for WeldServerTestClient {
     fn list_files(&self, req: weld::FileIdentifier) -> Vec<weld::File> {
         self.client.list_files(req).take_files().into_vec()
     }
+    fn get_submitted_changes(&self, req: weld::GetSubmittedChangesRequest) -> Vec<weld::Change> {
+        self.client
+            .get_submitted_changes(&req)
+            .take_changes()
+            .into_vec()
+    }
 }

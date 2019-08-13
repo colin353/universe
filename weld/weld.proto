@@ -134,6 +134,12 @@ message LookupFriendlyNameResponse { uint64 id = 1; }
 
 message Patch { string patch = 1; }
 
+message SyncRequest { repeated File conflicted_files = 1; }
+message SyncResponse {
+  repeated File conflicted_files = 1;
+  uint64 snapshot_id = 2;
+}
+
 service WeldLocalService {
   rpc GetChange(Change) returns (Change);
   rpc MakeChange(Change) returns (Change);
@@ -147,4 +153,5 @@ service WeldLocalService {
   rpc LookupFriendlyName(LookupFriendlyNameRequest)
       returns (LookupFriendlyNameResponse);
   rpc GetPatch(Change) returns (Patch);
+  rpc Sync(SyncRequest) returns (SyncResponse);
 }

@@ -1,8 +1,9 @@
 extern crate cache;
 extern crate largetable_client;
+extern crate merge_lib;
 extern crate weld;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::prelude::*;
 use std::process::Command;
 use std::sync::Arc;
@@ -432,7 +433,7 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
         change
     }
 
-    pub fn snashot_from_id(&self, id: u64) -> weld::SnapshotResponse {
+    pub fn snapshot_from_id(&self, id: u64) -> weld::SnapshotResponse {
         let mut c = weld::Change::new();
         c.set_id(id);
         self.snapshot(&c)
@@ -640,6 +641,101 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
             .write()
             .unwrap()
             .remove(change.get_friendly_name());
+    }
+
+    pub fn sync(&self, id: u64, files: &[File]) -> Vec<File> {
+        let mut change = match self.get_change(id) {
+            Some(c) => c,
+            None => {
+                eprintln!("Tried to sync non-existant change {}", id);
+                return Vec::new();
+            }
+        };
+
+        let mut changed_files = HashSet::new();
+        for file in self.list_changed_files(id, 0) {
+            println!("changed files in syncing client: {}", file.get_filename());
+            changed_files.insert(file.get_filename().to_owned());
+        }
+
+        let remote_server = match self.remote_server {
+            Some(ref s) => s,
+            None => {
+                eprintln!("Can't sync without connection to remote server");
+                return Vec::new();
+            }
+        };
+
+        let mut files_requiring_merge = HashSet::new();
+        let mut req = weld::GetSubmittedChangesRequest::new();
+        let mut synced_index = 0;
+        req.set_starting_id(change.get_based_index() + 1);
+        for change in remote_server.get_submitted_changes(req) {
+            println!("change: {}", change.get_id());
+            synced_index = change.get_id();
+            for file_history in change.get_changes() {
+                println!("modified_file: {}", file_history.get_filename());
+                if changed_files.contains(file_history.get_filename()) {
+                    files_requiring_merge.insert(file_history.get_filename().to_owned());
+                }
+            }
+        }
+
+        let mut merged_files = Vec::new();
+        let mut conflicted_files = Vec::new();
+        for filename in files_requiring_merge {
+            println!("trying to merge: {}", filename);
+
+            let original = match self.read_remote(0, &filename, change.get_based_index()) {
+                Some(mut f) => String::from_utf8(f.take_contents()).unwrap(),
+                None => String::new(),
+            };
+            let modified_remote = match self.read_remote(0, &filename, synced_index) {
+                Some(mut f) => String::from_utf8(f.take_contents()).unwrap(),
+                None => String::new(),
+            };
+            let mut modified_local_file = match self.read(change.get_id(), &filename, 0) {
+                Some(mut f) => f,
+                None => {
+                    eprintln!("Couldn't find locally modified file during merge??");
+                    return Vec::new();
+                }
+            };
+
+            println!("original: `{}`", original);
+            println!("modified_remote: `{}`", modified_remote);
+            println!(
+                "modified_remote: `{}`",
+                &std::str::from_utf8(modified_local_file.get_contents()).unwrap()
+            );
+            let (merged, ok) = merge_lib::merge(
+                &original,
+                &modified_remote,
+                &std::str::from_utf8(modified_local_file.get_contents()).unwrap(),
+            );
+            modified_local_file.set_contents(merged.into_bytes());
+            if ok {
+                println!("auto-merged ok");
+                merged_files.push(modified_local_file);
+            } else {
+                println!("conflicted");
+                conflicted_files.push(modified_local_file);
+            }
+        }
+
+        if !conflicted_files.is_empty() {
+            return conflicted_files;
+        }
+
+        // There's no conflict - so write all merged files and sync, then return.
+        for file in merged_files {
+            self.write(change.get_id(), file, 0);
+        }
+
+        change.set_based_id(synced_index);
+        self.update_change(&change);
+
+        conflicted_files
     }
 }
 

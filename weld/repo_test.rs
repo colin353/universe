@@ -601,7 +601,61 @@ mod tests {
 
         assert_eq!(changes.len(), 1);
         assert_eq!(changes[0].get_changes().len(), 2);
-        assert_eq!(changes[0].get_changes()[0].get_filename(), "/README.md");
-        assert_eq!(changes[0].get_changes()[1].get_filename(), "/README2.md");
+    }
+
+    #[test]
+    fn test_conflict() {
+        let repo = make_remote_connected_test_repo();
+
+        {
+            // Dumb hack - need to submit an initial change in order to not end up with a based
+            // index of 0 which is the canary for HEAD
+            let change = weld::Change::new();
+            let id = repo.make_change(change);
+
+            let mut test_file = File::new();
+            test_file.set_filename(String::from("/README.md"));
+            test_file.set_contents(String::from("initial content").into_bytes());
+            repo.write(id, test_file, 0);
+
+            repo.snapshot(&weld::change(id)).get_change_id();
+            let submitted_id = repo.submit(id).get_id();
+
+            assert_ne!(submitted_id, 0, "Error submitting change");
+        }
+
+        let change = weld::Change::new();
+        let id = repo.make_change(change);
+
+        let mut test_file = File::new();
+        test_file.set_filename(String::from("/README.md"));
+        test_file.set_contents(String::from("test content").into_bytes());
+        repo.write(id, test_file, 0);
+
+        repo.snapshot(&weld::change(id)).get_change_id();
+
+        // Before submitting the first one, make a change based on previous state
+        let change_b = weld::Change::new();
+        let id_b = repo.make_change(change_b);
+
+        let change = repo.get_change(id_b).unwrap();
+        println!("change_b: {:?}", change);
+
+        // Submit original change
+        let submitted_id = repo.submit(id).get_id();
+
+        // Make a conflicting change
+        let mut test_file = File::new();
+        test_file.set_filename(String::from("/README.md"));
+        test_file.set_contents(String::from("west content").into_bytes());
+        repo.write(id_b, test_file, 0);
+
+        repo.snapshot(&weld::change(id_b)).get_change_id();
+
+        // Try to sync
+        let conflicting_files = repo.sync(id_b, &[]);
+
+        // Sync should fail due to conflicting files
+        assert_eq!(conflicting_files.len(), 1);
     }
 }

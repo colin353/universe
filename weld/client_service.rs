@@ -191,4 +191,12 @@ impl<C: LargeTableClient> weld::WeldLocalService for WeldLocalServiceHandler<C> 
     ) -> grpc::SingleResponse<weld::Patch> {
         grpc::SingleResponse::completed(self.get_patch(req))
     }
+
+    fn sync(
+        &self,
+        _m: grpc::RequestOptions,
+        req: weld::SyncRequest,
+    ) -> grpc::SingleResponse<weld::SyncResponse> {
+        grpc::SingleResponse::completed(self.sync(&req))
+    }
 }

@@ -196,7 +196,6 @@ pub fn merge(original: &str, a: &str, b: &str) -> (String, bool) {
                     None => original.len(),
                 };
                 let conflicting_substr = &original[start_idx..end_idx];
-                println!("conflicting_substr: {}", conflicting_substr);
 
                 let version_a = apply_chunks(conflicting_substr, &a);
                 let version_b = apply_chunks(conflicting_substr, &b);
