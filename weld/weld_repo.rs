@@ -5,6 +5,7 @@ extern crate weld;
 
 use std::collections::{HashMap, HashSet};
 use std::io::prelude::*;
+use std::iter::FromIterator;
 use std::process::Command;
 use std::sync::Arc;
 use std::sync::RwLock;
@@ -643,7 +644,7 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
             .remove(change.get_friendly_name());
     }
 
-    pub fn sync(&self, id: u64, files: &[File]) -> Vec<File> {
+    pub fn sync(&self, id: u64, manually_merged_files: &[File]) -> Vec<File> {
         let mut change = match self.get_change(id) {
             Some(c) => c,
             None => {
@@ -651,6 +652,11 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
                 return Vec::new();
             }
         };
+
+        if change.get_based_id() != 0 {
+            eprintln!("Sync only implemented against HEAD");
+            return Vec::new();
+        }
 
         let mut changed_files = HashSet::new();
         for file in self.list_changed_files(id, 0) {
@@ -666,6 +672,11 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
             }
         };
 
+        let mut manually_merged_filenames = HashSet::new();
+        for file in manually_merged_files {
+            manually_merged_filenames.insert(file.get_filename().to_owned());
+        }
+
         let mut files_requiring_merge = HashSet::new();
         let mut req = weld::GetSubmittedChangesRequest::new();
         let mut synced_index = 0;
@@ -676,7 +687,10 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
             for file_history in change.get_changes() {
                 println!("modified_file: {}", file_history.get_filename());
                 if changed_files.contains(file_history.get_filename()) {
-                    files_requiring_merge.insert(file_history.get_filename().to_owned());
+                    // If the file has been manually merged, it doesn't require auto merge
+                    if !manually_merged_filenames.contains(file_history.get_filename()) {
+                        files_requiring_merge.insert(file_history.get_filename().to_owned());
+                    }
                 }
             }
         }
@@ -732,7 +746,11 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
             self.write(change.get_id(), file, 0);
         }
 
-        change.set_based_id(synced_index);
+        for file in manually_merged_files {
+            self.write(change.get_id(), file.clone(), 0);
+        }
+
+        change.set_based_index(synced_index);
         self.update_change(&change);
 
         conflicted_files

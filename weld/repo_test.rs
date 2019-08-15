@@ -658,4 +658,163 @@ mod tests {
         // Sync should fail due to conflicting files
         assert_eq!(conflicting_files.len(), 1);
     }
+
+    #[test]
+    fn test_mergeable_conflict() {
+        let repo = make_remote_connected_test_repo();
+
+        {
+            // Dumb hack - need to submit an initial change in order to not end up with a based
+            // index of 0 which is the canary for HEAD
+            let change = weld::Change::new();
+            let id = repo.make_change(change);
+
+            let mut test_file = File::new();
+            test_file.set_filename(String::from("/README.md"));
+            test_file.set_contents(String::from("L1\nL2\nL3").into_bytes());
+            repo.write(id, test_file, 0);
+
+            repo.snapshot(&weld::change(id)).get_change_id();
+            let submitted_id = repo.submit(id).get_id();
+
+            assert_ne!(submitted_id, 0, "Error submitting change");
+        }
+
+        let change = weld::Change::new();
+        let id = repo.make_change(change);
+
+        let mut test_file = File::new();
+        test_file.set_filename(String::from("/README.md"));
+        test_file.set_contents(String::from("M1\nL2\nL3").into_bytes());
+        repo.write(id, test_file, 0);
+
+        let mut test_file = File::new();
+        test_file.set_filename(String::from("/signal.txt"));
+        test_file.set_contents(String::from("hello world").into_bytes());
+        repo.write(id, test_file, 0);
+
+        repo.snapshot(&weld::change(id)).get_change_id();
+
+        // Before submitting the first one, make a change based on previous state
+        let change_b = weld::Change::new();
+        let id_b = repo.make_change(change_b);
+
+        let change = repo.get_change(id_b).unwrap();
+        println!("change_b: {:?}", change);
+
+        // Submit original change
+        let submitted_id = repo.submit(id).get_id();
+
+        // Make a conflicting change
+        let mut test_file = File::new();
+        test_file.set_filename(String::from("/README.md"));
+        test_file.set_contents(String::from("L1\nL2\nM3").into_bytes());
+        repo.write(id_b, test_file, 0);
+
+        repo.snapshot(&weld::change(id_b)).get_change_id();
+
+        // Should be based on #2
+        let change = repo.get_change(id_b).unwrap();
+        assert_eq!(change.get_based_index(), 2);
+
+        // Try to sync
+        let conflicting_files = repo.sync(id_b, &[]);
+
+        // Sync should succeed because merge is OK
+        assert_eq!(conflicting_files.len(), 0);
+
+        // Repo should have ok merge status
+        assert_eq!(
+            std::str::from_utf8(repo.read(id_b, "/README.md", 0).unwrap().get_contents()).unwrap(),
+            "M1\nL2\nM3\n"
+        );
+
+        // Should now be based on #4
+        let change = repo.get_change(id_b).unwrap();
+        assert_eq!(change.get_based_index(), 4);
+
+        // Now the other file should show up
+        assert!(repo.read(id_b, "/signal.txt", 0).is_some());
+    }
+
+    #[test]
+    fn test_manually_merged_conflict() {
+        let repo = make_remote_connected_test_repo();
+
+        {
+            // Dumb hack - need to submit an initial change in order to not end up with a based
+            // index of 0 which is the canary for HEAD
+            let change = weld::Change::new();
+            let id = repo.make_change(change);
+
+            let mut test_file = File::new();
+            test_file.set_filename(String::from("/README.md"));
+            test_file.set_contents(String::from("initial content").into_bytes());
+            repo.write(id, test_file, 0);
+
+            repo.snapshot(&weld::change(id)).get_change_id();
+            let submitted_id = repo.submit(id).get_id();
+
+            assert_ne!(submitted_id, 0, "Error submitting change");
+        }
+
+        let change = weld::Change::new();
+        let id = repo.make_change(change);
+
+        let mut test_file = File::new();
+        test_file.set_filename(String::from("/README.md"));
+        test_file.set_contents(String::from("conflict1").into_bytes());
+        repo.write(id, test_file, 0);
+
+        let mut test_file = File::new();
+        test_file.set_filename(String::from("/signal.txt"));
+        test_file.set_contents(String::from("hello world").into_bytes());
+        repo.write(id, test_file, 0);
+
+        repo.snapshot(&weld::change(id)).get_change_id();
+
+        // Before submitting the first one, make a change based on previous state
+        let change_b = weld::Change::new();
+        let id_b = repo.make_change(change_b);
+
+        let change = repo.get_change(id_b).unwrap();
+        println!("change_b: {:?}", change);
+
+        // Submit original change
+        let submitted_id = repo.submit(id).get_id();
+
+        // Make a conflicting change
+        let mut test_file = File::new();
+        test_file.set_filename(String::from("/README.md"));
+        test_file.set_contents(String::from("conflict2").into_bytes());
+        repo.write(id_b, test_file, 0);
+
+        repo.snapshot(&weld::change(id_b)).get_change_id();
+
+        // Should be based on #2
+        let change = repo.get_change(id_b).unwrap();
+        assert_eq!(change.get_based_index(), 2);
+
+        // Try to sync with manual merge
+        let mut manual_merge = File::new();
+        manual_merge.set_filename(String::from("/README.md"));
+        manual_merge.set_contents(String::from("conflict1, conflict2").into_bytes());
+        let conflicting_files = repo.sync(id_b, &[manual_merge]);
+
+        // Sync should succeed because merge is OK
+        assert_eq!(conflicting_files.len(), 0);
+
+        // Repo should have ok merge status
+        assert_eq!(
+            std::str::from_utf8(repo.read(id_b, "/README.md", 0).unwrap().get_contents()).unwrap(),
+            "conflict1, conflict2"
+        );
+
+        // Should now be based on #4
+        let change = repo.get_change(id_b).unwrap();
+        assert_eq!(change.get_based_index(), 4);
+
+        // Now the other file should show up
+        assert!(repo.read(id_b, "/signal.txt", 0).is_some());
+    }
 }
