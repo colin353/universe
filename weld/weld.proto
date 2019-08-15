@@ -134,7 +134,10 @@ message LookupFriendlyNameResponse { uint64 id = 1; }
 
 message Patch { string patch = 1; }
 
-message SyncRequest { repeated File conflicted_files = 1; }
+message SyncRequest {
+  Change change = 1;
+  repeated File conflicted_files = 2;
+}
 message SyncResponse {
   repeated File conflicted_files = 1;
   uint64 snapshot_id = 2;

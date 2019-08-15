@@ -94,6 +94,15 @@ impl<C: LargeTableClient> WeldLocalServiceHandler<C> {
         patch.set_patch(self.repo.patch(&change));
         patch
     }
+
+    pub fn sync(&self, req: &weld::SyncRequest) -> weld::SyncResponse {
+        let change = self.get_change(req.get_change().clone());
+        let conflicted_files = self.repo.sync(change.get_id(), req.get_conflicted_files());
+
+        let mut response = weld::SyncResponse::new();
+        response.set_conflicted_files(protobuf::RepeatedField::from_vec(conflicted_files));
+        response
+    }
 }
 
 impl<C: LargeTableClient> weld::WeldLocalService for WeldLocalServiceHandler<C> {
