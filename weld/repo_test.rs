@@ -653,7 +653,7 @@ mod tests {
         repo.snapshot(&weld::change(id_b)).get_change_id();
 
         // Try to sync
-        let conflicting_files = repo.sync(id_b, &[]);
+        let (conflicting_files, _) = repo.sync(id_b, &[]);
 
         // Sync should fail due to conflicting files
         assert_eq!(conflicting_files.len(), 1);
@@ -718,7 +718,7 @@ mod tests {
         assert_eq!(change.get_based_index(), 2);
 
         // Try to sync
-        let conflicting_files = repo.sync(id_b, &[]);
+        let (conflicting_files, _) = repo.sync(id_b, &[]);
 
         // Sync should succeed because merge is OK
         assert_eq!(conflicting_files.len(), 0);
@@ -773,8 +773,7 @@ mod tests {
 
         repo.snapshot(&weld::change(id)).get_change_id();
 
-        // Before submitting the first one, make a change based on previous state
-        let change_b = weld::Change::new();
+        // Before submitting the first one, make a change based on previous state let change_b = weld::Change::new();
         let id_b = repo.make_change(change_b);
 
         let change = repo.get_change(id_b).unwrap();
@@ -799,7 +798,7 @@ mod tests {
         let mut manual_merge = File::new();
         manual_merge.set_filename(String::from("/README.md"));
         manual_merge.set_contents(String::from("conflict1, conflict2").into_bytes());
-        let conflicting_files = repo.sync(id_b, &[manual_merge]);
+        let (conflicting_files, _) = repo.sync(id_b, &[manual_merge]);
 
         // Sync should succeed because merge is OK
         assert_eq!(conflicting_files.len(), 0);
@@ -816,5 +815,10 @@ mod tests {
 
         // Now the other file should show up
         assert!(repo.read(id_b, "/signal.txt", 0).is_some());
+
+        // Try to sync again (already up to date)
+        let (conflicting_files, synced_to) = repo.sync(id_b, &[]);
+        assert_eq!(conflicting_files.len(), 0);
+        assert_eq!(synced_to, 4);
     }
 }

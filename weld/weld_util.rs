@@ -2,6 +2,10 @@
 extern crate flags;
 extern crate weld;
 
+use std::env;
+use std::io::Write;
+use std::process::{Command, Stdio};
+
 fn usage() {
     println!("USAGE: weld_util <command> <filename>");
     println!("use weld_util --help for details.");
@@ -18,6 +22,20 @@ fn load_change_file(change_file: &str) -> weld::Change {
     let mut c = weld::Change::new();
     weld::deserialize_change(&contents, &mut c).unwrap();
     c
+}
+
+fn edit_file(filename: &str) {
+    let editor = match std::env::var("EDITOR") {
+        Ok(x) => x,
+        Err(_) => String::from("nano"),
+    };
+    println!("command: {}", editor);
+    Command::new(editor)
+        .arg(filename)
+        .stdout(Stdio::inherit())
+        .stdin(Stdio::inherit())
+        .output()
+        .unwrap();
 }
 
 fn main() {
@@ -158,6 +176,58 @@ fn main() {
             } else {
                 eprintln!("No such client '{}`", space.value());
                 std::process::exit(1);
+            }
+        }
+        "sync" => {
+            let id = match client.lookup_friendly_name(space.value()) {
+                Some(x) => x,
+                None => {
+                    eprintln!("No such client '{}'", space.value());
+                    std::process::exit(1);
+                }
+            };
+            let mut sync_request = weld::SyncRequest::new();
+            sync_request.mut_change().set_id(id);
+
+            loop {
+                let result = client.sync(sync_request.clone());
+                if result.get_conflicted_files().len() == 0 {
+                    println!("synced to latest (#{})", result.get_index());
+                    break;
+                }
+
+                println!(
+                    "There are {} conflicts.",
+                    result.get_conflicted_files().len()
+                );
+                for (index, conflict) in result.get_conflicted_files().iter().enumerate() {
+                    println!("Conflict: {}", conflict.get_filename());
+                    let filename = format!("/tmp/conflict-{}", index);
+                    {
+                        let mut file = std::fs::File::create(&filename).unwrap();
+                        file.write_all(conflict.get_contents());
+                    }
+
+                    loop {
+                        println!("Resolve conflict? Edit (e), Accept (a): ");
+                        let mut input = String::new();
+                        std::io::stdin().read_line(&mut input);
+
+                        if input.trim() == "e" {
+                            edit_file(&filename);
+                        } else if input.trim() == "a" {
+                            let file_bytes = std::fs::read(&filename).unwrap();
+                            let mut file = conflict.clone();
+                            println!(
+                                "file contents: `{}`",
+                                std::str::from_utf8(&file_bytes).unwrap()
+                            );
+                            file.set_contents(file_bytes);
+                            sync_request.mut_conflicted_files().push(file);
+                            break;
+                        }
+                    }
+                }
             }
         }
         x => println!("Unknown command: {}", x),

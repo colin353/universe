@@ -644,18 +644,18 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
             .remove(change.get_friendly_name());
     }
 
-    pub fn sync(&self, id: u64, manually_merged_files: &[File]) -> Vec<File> {
+    pub fn sync(&self, id: u64, manually_merged_files: &[File]) -> (Vec<File>, u64) {
         let mut change = match self.get_change(id) {
             Some(c) => c,
             None => {
                 eprintln!("Tried to sync non-existant change {}", id);
-                return Vec::new();
+                return (Vec::new(), 0);
             }
         };
 
         if change.get_based_id() != 0 {
             eprintln!("Sync only implemented against HEAD");
-            return Vec::new();
+            return (Vec::new(), 0);
         }
 
         let mut changed_files = HashSet::new();
@@ -668,7 +668,7 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
             Some(ref s) => s,
             None => {
                 eprintln!("Can't sync without connection to remote server");
-                return Vec::new();
+                return (Vec::new(), 0);
             }
         };
 
@@ -679,7 +679,7 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
 
         let mut files_requiring_merge = HashSet::new();
         let mut req = weld::GetSubmittedChangesRequest::new();
-        let mut synced_index = 0;
+        let mut synced_index = change.get_based_index();
         req.set_starting_id(change.get_based_index() + 1);
         for change in remote_server.get_submitted_changes(req) {
             println!("change: {}", change.get_id());
@@ -712,7 +712,7 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
                 Some(mut f) => f,
                 None => {
                     eprintln!("Couldn't find locally modified file during merge??");
-                    return Vec::new();
+                    return (Vec::new(), 0);
                 }
             };
 
@@ -738,7 +738,7 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
         }
 
         if !conflicted_files.is_empty() {
-            return conflicted_files;
+            return (conflicted_files, 0);
         }
 
         // There's no conflict - so write all merged files and sync, then return.
@@ -753,7 +753,7 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
         change.set_based_index(synced_index);
         self.update_change(&change);
 
-        conflicted_files
+        (conflicted_files, synced_index)
     }
 }
 
@@ -774,7 +774,7 @@ pub fn parent_directory(filename: &str) -> String {
 }
 
 pub fn normalize_directory(directory: &str) -> String {
-    format!("{}/", normalize_filename(directory).trim_right_matches('/'))
+    format!("{}/", normalize_filename(directory).trim_end_matches('/'))
 }
 
 pub fn normalize_filename(filename: &str) -> String {

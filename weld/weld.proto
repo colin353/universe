@@ -140,7 +140,7 @@ message SyncRequest {
 }
 message SyncResponse {
   repeated File conflicted_files = 1;
-  uint64 snapshot_id = 2;
+  uint64 index = 2;
 }
 
 service WeldLocalService {

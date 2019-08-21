@@ -261,6 +261,10 @@ impl WeldLocalClient {
             .get_patch()
             .to_owned()
     }
+
+    pub fn sync(&self, req: weld::SyncRequest) -> weld::SyncResponse {
+        self.client.sync(self.opts(), req).wait().expect("rpc").1
+    }
 }
 
 pub fn get_timestamp_usec() -> u64 {

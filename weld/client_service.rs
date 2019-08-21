@@ -97,10 +97,12 @@ impl<C: LargeTableClient> WeldLocalServiceHandler<C> {
 
     pub fn sync(&self, req: &weld::SyncRequest) -> weld::SyncResponse {
         let change = self.get_change(req.get_change().clone());
-        let conflicted_files = self.repo.sync(change.get_id(), req.get_conflicted_files());
+        let (conflicted_files, synced_index) =
+            self.repo.sync(change.get_id(), req.get_conflicted_files());
 
         let mut response = weld::SyncResponse::new();
         response.set_conflicted_files(protobuf::RepeatedField::from_vec(conflicted_files));
+        response.set_index(synced_index);
         response
     }
 }
