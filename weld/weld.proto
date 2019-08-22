@@ -92,7 +92,16 @@ message FileIdentifier {
 
 message ListFilesResponse { repeated File files = 1; }
 
-message SubmitResponse { uint64 id = 1; }
+enum SubmitStatus {
+  ERROR = 0;
+  OK = 1;
+  REQUIRES_SYNC = 2;
+}
+
+message SubmitResponse {
+  uint64 id = 1;
+  SubmitStatus status = 2;
+}
 message SnapshotResponse {
   uint64 change_id = 1;
   uint64 snapshot_id = 2;

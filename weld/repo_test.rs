@@ -773,7 +773,8 @@ mod tests {
 
         repo.snapshot(&weld::change(id)).get_change_id();
 
-        // Before submitting the first one, make a change based on previous state let change_b = weld::Change::new();
+        // Before submitting the first one, make a change based on previous state
+        let change_b = weld::Change::new();
         let id_b = repo.make_change(change_b);
 
         let change = repo.get_change(id_b).unwrap();

@@ -47,15 +47,10 @@ impl<C: LargeTableClient> WeldServiceHandler<C> {
     }
 
     pub fn submit(&self, _username: &str, pending_id: u64) -> weld::SubmitResponse {
-        // First, acquire an index for this submission.
-        let id = self.repo.reserve_change_id();
-
-        println!("try to submit {}", pending_id);
-
-        assert_ne!(
-            pending_id, HEAD_ID,
-            "Can't submit HEAD, that doesn't make sense"
-        );
+        if pending_id == HEAD_ID {
+            println!("[submit] Can't submit HEAD, that doesn't make sense");
+            return weld::SubmitResponse::new();
+        }
 
         let mut change = match self.repo.get_change(pending_id) {
             Some(c) => c,
@@ -65,11 +60,37 @@ impl<C: LargeTableClient> WeldServiceHandler<C> {
             }
         };
 
+        if !change.get_found() {
+            println!("[submit] no such changelist: {}", &change.get_id());
+            return weld::SubmitResponse::new();
+        }
+
         assert!(
             change.get_found(),
             "try to submit not found changelist: {}",
             &change.get_id()
         );
+
+        // Double check that the change is not out of date.
+        let most_recent_change = self.get_latest_change();
+        println!(
+            "[submit] freshness check (got {}, want {})",
+            change.get_based_index(),
+            most_recent_change.get_submitted_id()
+        );
+        if change.get_based_index() != most_recent_change.get_submitted_id() {
+            println!(
+                "[submit] failed, out of date (got {}, want {})",
+                change.get_based_index(),
+                most_recent_change.get_submitted_id()
+            );
+            let mut response = weld::SubmitResponse::new();
+            response.set_status(weld::SubmitStatus::REQUIRES_SYNC);
+            return response;
+        }
+
+        // Acquire an index for this submission.
+        let id = self.repo.reserve_change_id();
 
         // Save the change into the submitted changes database.
         change.set_found(true);
@@ -79,17 +100,20 @@ impl<C: LargeTableClient> WeldServiceHandler<C> {
         // Write all file changes to HEAD.
         let mut num_changed_files = 0;
         for file in self.repo.list_changed_files(pending_id, 0) {
-            println!("[submit] writing: {} @ {}", file.get_filename(), id);
             self.repo.write(HEAD_ID, file.clone(), id);
             num_changed_files += 1;
         }
 
-        println!("[submit] {} total changed files", num_changed_files);
+        println!(
+            "[submit] #{} with {} total changed files",
+            num_changed_files, id
+        );
 
         self.database
             .write_proto(SUBMITTED, &index_to_rowname(id), 0, &change);
 
         let mut response = weld::SubmitResponse::new();
+        response.set_status(weld::SubmitStatus::OK);
         response.set_id(id);
         response
     }
@@ -100,8 +124,6 @@ impl<C: LargeTableClient> WeldServiceHandler<C> {
         change.set_author(username.to_owned());
         change.set_last_modified_timestamp(weld::get_timestamp_usec());
 
-        println!("user: {} tried to snapshot", username);
-
         assert!(
             self.repo.get_change(change.get_based_id()).is_some(),
             "Must be based on a valid change (tried to base on {}).",
@@ -111,10 +133,7 @@ impl<C: LargeTableClient> WeldServiceHandler<C> {
         // If there's no associated ID, we need to create the repo here first.
         if change.get_id() == 0 {
             let id = self.repo.make_change(change.clone());
-            println!("No such change, creating one ({})", id);
             change.set_id(id);
-        } else {
-            println!("Change exists, adding snapshot to that one");
         }
 
         for file in change.get_staged_files() {
@@ -128,6 +147,9 @@ impl<C: LargeTableClient> WeldServiceHandler<C> {
             &mut reloaded_change,
         )
         .unwrap();
+
+        reloaded_change.set_based_index(change.get_based_index());
+        reloaded_change.set_last_modified_timestamp(change.get_last_modified_timestamp());
 
         let response = self.repo.snapshot(&reloaded_change);
 
@@ -189,8 +211,8 @@ impl<C: LargeTableClient> WeldServiceHandler<C> {
         &self,
         req: &weld::GetSubmittedChangesRequest,
     ) -> weld::GetSubmittedChangesResponse {
-        let start = index_to_rowname(req.get_starting_id());
-        let end = if req.get_ending_id() != 0 {
+        let end = index_to_rowname(req.get_starting_id());
+        let start = if req.get_ending_id() != 0 {
             // We want to include the final index, so add one
             index_to_rowname(req.get_ending_id() + 1)
         } else {
@@ -206,8 +228,7 @@ impl<C: LargeTableClient> WeldServiceHandler<C> {
             0,
         );
         let mut output = weld::GetSubmittedChangesResponse::new();
-        for (key, change) in changes {
-            println!("{}", key);
+        for (_, change) in changes {
             output.mut_changes().push(change);
         }
         output
@@ -215,7 +236,7 @@ impl<C: LargeTableClient> WeldServiceHandler<C> {
 }
 
 fn index_to_rowname(index: u64) -> String {
-    format!("{:016x}", index)
+    format!("{:016x}", std::u64::MAX - index)
 }
 
 impl<C: LargeTableClient> weld::WeldService for WeldServiceHandler<C> {
@@ -523,6 +544,20 @@ mod tests {
         let result = handler.get_latest_change();
         assert_eq!(result.get_found(), true);
         assert_eq!(result.get_id(), 2);
+
+        // Write /test/config.txt and submit it to head.
+        let mut change = weld::Change::new();
+        change.set_based_index(2);
+        change
+            .mut_staged_files()
+            .push(test_file("/test/config.txt", "test123"));
+
+        let change_id = handler.snapshot("tester", change).get_change_id();
+        handler.submit("tester", change_id);
+
+        let result = handler.get_latest_change();
+        assert_eq!(result.get_found(), true);
+        assert_eq!(result.get_id(), 4);
     }
 
     #[test]
@@ -611,6 +646,7 @@ mod tests {
 
         // Write /test/config.txt and submit it to head.
         let mut change = weld::Change::new();
+        change.set_based_index(2);
         change
             .mut_staged_files()
             .push(test_file("/test/test.txt", "working = true"));
@@ -620,6 +656,7 @@ mod tests {
 
         // Write /test/config.txt and submit it to head.
         let mut change = weld::Change::new();
+        change.set_based_index(4);
         change
             .mut_staged_files()
             .push(test_file("/test/test.txt", "working = true"));
@@ -632,5 +669,43 @@ mod tests {
         req.set_ending_id(4);
         let resp = handler.get_submitted_changes(&req);
         assert_eq!(resp.get_changes().len(), 2);
+    }
+
+    #[test]
+    fn test_out_of_date_change_submission() {
+        let handler = WeldServiceHandler::create_mock();
+
+        // Write /test/config.txt and submit it to head.
+        let mut change = weld::Change::new();
+        change
+            .mut_staged_files()
+            .push(test_file("/test/config.txt", "working = true"));
+
+        let change_id = handler.snapshot("tester", change).get_change_id();
+        handler.submit("tester", change_id);
+
+        // Write /test/config.txt and submit it to head.
+        let mut change = weld::Change::new();
+        change.set_based_index(2);
+        change
+            .mut_staged_files()
+            .push(test_file("/test/test.txt", "working = true"));
+
+        let change_id_2 = handler.snapshot("tester", change).get_change_id();
+        let result = handler.submit("tester", change_id_2);
+        // Expect that this will submit OK, since it's based on #2
+        assert_eq!(result.get_status(), weld::SubmitStatus::OK);
+
+        // Write /test/config.txt and submit it to head.
+        let mut change = weld::Change::new();
+        change.set_based_index(2);
+        change
+            .mut_staged_files()
+            .push(test_file("/test/test.txt", "working = true"));
+
+        let change_id = handler.snapshot("tester", change).get_change_id();
+        let result = handler.submit("tester", change_id);
+        // This should fail since it's based on #2, which is out of date
+        assert_eq!(result.get_status(), weld::SubmitStatus::REQUIRES_SYNC);
     }
 }

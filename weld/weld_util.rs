@@ -2,7 +2,6 @@
 extern crate flags;
 extern crate weld;
 
-use std::env;
 use std::io::Write;
 use std::process::{Command, Stdio};
 
@@ -172,7 +171,17 @@ fn main() {
                 let mut change = weld::Change::new();
                 change.set_id(id);
                 let response = client.submit(change);
-                println!("submitted as #{}", response.get_id());
+                match response.get_status() {
+                    weld::SubmitStatus::OK => println!("submitted as #{}", response.get_id()),
+                    weld::SubmitStatus::REQUIRES_SYNC => {
+                        println!("out of date - sync required");
+                        std::process::exit(1);
+                    }
+                    _ => {
+                        println!("unknown submit error");
+                        std::process::exit(1);
+                    }
+                }
             } else {
                 eprintln!("No such client '{}`", space.value());
                 std::process::exit(1);
