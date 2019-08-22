@@ -32,6 +32,11 @@ impl<K: Eq + Hash + Clone, V: Clone> Cache<K, V> {
 
         writable_map.insert(key, value);
     }
+
+    pub fn invalidate(&self, key: &K) {
+        let mut writable_map = self.map.write().unwrap();
+        writable_map.remove(key);
+    }
 }
 
 #[cfg(test)]
@@ -46,6 +51,15 @@ mod test {
         c.insert(7, 14);
 
         assert_eq!(c.get(&5), Some(10));
+    }
+
+    #[test]
+    fn test_remove() {
+        let c = Cache::new(5);
+        c.insert(5, 10);
+        c.invalidate(&5);
+
+        assert_eq!(c.get(&5), None);
     }
 
     #[test]

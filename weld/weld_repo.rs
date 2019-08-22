@@ -34,6 +34,7 @@ pub struct Repo<C: largetable_client::LargeTableClient, W: weld::WeldServer> {
 enum ReadQuery {
     Read(u64, String, u64),
     ListFiles(u64, String, u64),
+    GetChange(u64),
 }
 
 impl Eq for ReadQuery {}
@@ -42,6 +43,7 @@ impl Eq for ReadQuery {}
 enum ReadResponse {
     Read(weld::File),
     ListFiles(Vec<weld::File>),
+    GetChange(Option<weld::Change>),
 }
 
 impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
@@ -79,6 +81,7 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
     }
 
     pub fn read_remote(&self, id: u64, path: &str, index: u64) -> Option<File> {
+        println!("[weld-repo] read_remote: {}", path);
         let filename = normalize_filename(path);
 
         // First, check cache. If it's in there, quickly return.
@@ -113,6 +116,7 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
     }
 
     pub fn read(&self, id: u64, path: &str, index: u64) -> Option<File> {
+        println!("[weld-repo] read: {}", path);
         let filename = normalize_filename(path);
 
         let change = match self.get_change(id) {
@@ -240,8 +244,17 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
     }
 
     pub fn get_change(&self, id: u64) -> Option<weld::Change> {
-        self.db
-            .read_proto(CHANGE_METADATA, &change_to_rowname(id), 0)
+        let query = ReadQuery::GetChange(id);
+        if let Some(ReadResponse::GetChange(c)) = self.cache.get(&query) {
+            return c;
+        }
+
+        let change = self
+            .db
+            .read_proto(CHANGE_METADATA, &change_to_rowname(id), 0);
+        self.cache
+            .insert(query, ReadResponse::GetChange(change.clone()));
+        change
     }
 
     pub fn update_change(&self, change: &weld::Change) {
@@ -256,6 +269,9 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
             0,
             change,
         );
+        let query = ReadQuery::GetChange(change.get_id());
+        self.cache
+            .insert(query, ReadResponse::GetChange(Some(change.clone())));
     }
 
     pub fn list_changes(&self) -> impl Iterator<Item = weld::Change> + '_ {

@@ -78,7 +78,7 @@ fn main() {
         &largetable_hostname.value(),
         largetable_port.value(),
     );
-    let mut repo = weld_repo::Repo::new(Arc::new(db));
+    let mut repo = weld_repo::Repo::new(db);
 
     if use_tls.value() {
         let mut root_ca_contents = Vec::new();
@@ -117,7 +117,7 @@ fn main() {
     server.add_service(weld::WeldLocalServiceServer::new_service_def(
         handler.clone(),
     ));
-    server.http.set_cpu_pool_threads(4);
+    server.http.set_cpu_pool_threads(16);
 
     let _server = server.build().expect("server");
 

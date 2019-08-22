@@ -76,12 +76,16 @@ pub trait LargeTableClient {
 }
 
 pub struct LargeTableRemoteClient {
+    hostname: String,
+    port: u16,
     client: largetable_grpc_rust::LargeTableServiceClient,
 }
 
 impl LargeTableRemoteClient {
     pub fn new(hostname: &str, port: u16) -> Self {
         LargeTableRemoteClient {
+            hostname: hostname.to_owned(),
+            port: port,
             client: largetable_grpc_rust::LargeTableServiceClient::new_plain(
                 hostname,
                 port,
@@ -93,6 +97,12 @@ impl LargeTableRemoteClient {
 
     fn opts(&self) -> grpc::RequestOptions {
         grpc::RequestOptions::new()
+    }
+}
+
+impl Clone for LargeTableRemoteClient {
+    fn clone(&self) -> LargeTableRemoteClient {
+        LargeTableRemoteClient::new(&self.hostname, self.port)
     }
 }
 
@@ -185,7 +195,7 @@ impl<'a, T: protobuf::Message, C: LargeTableClient> Iterator
     }
 }
 
-impl LargeTableClient for Arc<LargeTableRemoteClient> {
+impl LargeTableClient for LargeTableRemoteClient {
     fn write(
         &self,
         row: &str,

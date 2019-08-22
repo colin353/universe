@@ -98,7 +98,7 @@ fn main() {
             &largetable_hostname.value(),
             largetable_port.value(),
         );
-        let handler = weld_server_lib::WeldServiceHandler::new(Arc::new(database));
+        let handler = weld_server_lib::WeldServiceHandler::new(database);
 
         server.add_service(weld::WeldServiceServer::new_service_def(handler));
     }

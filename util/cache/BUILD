@@ -12,7 +12,5 @@ rust_library(
 
 rust_test(
     name = "cache_test",
-    deps = [
-        ":cache",
-    ],
+    crate = ":cache",
 )
