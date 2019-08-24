@@ -28,7 +28,6 @@ fn edit_file(filename: &str) {
         Ok(x) => x,
         Err(_) => String::from("nano"),
     };
-    println!("command: {}", editor);
     Command::new(editor)
         .arg(filename)
         .stdout(Stdio::inherit())
@@ -152,7 +151,26 @@ fn main() {
         "snapshot" => {
             let maybe_id = client.lookup_friendly_name(space.value());
             if let Some(id) = maybe_id {
-                let mut c = load_change_file(&change_file.value());
+                let change = match maybe_id {
+                    Some(id) => client.get_change(weld::change(id)),
+                    None => {
+                        eprintln!("couldn't find change");
+                        weld::Change::new()
+                    }
+                };
+
+                let mut c = if change.get_description().is_empty() {
+                    // Edit the description (if it isn't already set)
+                    let filename = format!("/tmp/change-{}", id);
+                    {
+                        let mut f = std::fs::File::create(&filename).unwrap();
+                        f.write_all(weld::serialize_change(&change, true).as_bytes());
+                    }
+                    edit_file(&filename);
+                    load_change_file(&filename)
+                } else {
+                    change
+                };
                 c.set_id(id);
                 let response = client.snapshot(c);
                 println!(

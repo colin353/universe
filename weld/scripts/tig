@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-WELD_UTIL="$HOME/bin/weld-util"
+WELD_UTIL="$HOME/bin/weld_util"
 BASE_DIR="$HOME/codefs/"
 BASE_DIR_ESCAPED=$(echo $BASE_DIR | sed 's/\//\\\//g')
 
@@ -19,14 +19,18 @@ elif [ "$1" = "changes" ]; then
   $WELD_UTIL changes
 elif [ "$1" = "get_change" ]; then
   $WELD_UTIL --space=$SPACE get_change
+elif [ "$1" = "files" ]; then
+  $WELD_UTIL --space=$SPACE files
+elif [ "$1" = "patch" ]; then
+  $WELD_UTIL --space=$SPACE patch
+elif [ "$1" = "sync" ]; then
+  $WELD_UTIL --space=$SPACE sync
 elif [ "$1" = "snapshot" ]; then
-  FILE=$(mktemp)
-  $WELD_UTIL --space=$SPACE get_change > $FILE
-  $EDITOR $FILE
-  $WELD_UTIL snapshot --space=$SPACE --change_file=$FILE
+  $WELD_UTIL snapshot --space=$SPACE
 elif [ "$1" = "submit" ]; then
   $WELD_UTIL submit --space=$SPACE
 else
   echo "tig: invalid command: '$1'"
   exit 1
 fi
+
