@@ -292,7 +292,7 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
     // fuse::Filesystem implementation starts ----
     // -------------------------------------------
     pub fn lookup(&self, parent: u64, name: String, reply: fuse::ReplyEntry) {
-        println!("lookup: {}", name);
+        //println!("lookup: {}", name);
         let (origin, parent_path) = match self.node_to_path(parent) {
             Some(x) => x,
             None => {
@@ -341,7 +341,7 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
     }
 
     pub fn getattr(&self, ino: u64, reply: fuse::ReplyAttr) {
-        println!("getattr: {}", ino);
+        //println!("getattr: {}", ino);
         // Special case for the root inode, which is always 1.
         if ino == 1 {
             reply.attr(&TTL, &make_dir_attr(0, 0));
@@ -392,7 +392,7 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
     }
 
     pub fn read(&self, ino: u64, _fh: u64, offset: i64, size: u32, reply: fuse::ReplyData) {
-        println!("read: {}, offset={}, size={}", ino, offset, size);
+        //println!("read: {}, offset={}, size={}", ino, offset, size);
         let (origin, path) = match self.node_to_path(ino) {
             Some(x) => x,
             None => {
@@ -425,7 +425,7 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
     }
 
     pub fn rmdir(&self, parent: u64, name: String, reply: fuse::ReplyEmpty) {
-        println!("rmdir: {}", name);
+        //println!("rmdir: {}", name);
         let (origin, path) = match self.route(parent, &name) {
             Some(x) => x,
             None => {
@@ -459,7 +459,7 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
         flags: Option<u32>,
         reply: fuse::ReplyAttr,
     ) {
-        println!("setattr: {}", ino);
+        //println!("setattr: {}", ino);
         let (origin, path) = match self.node_to_path(ino) {
             Some(x) => x,
             None => {
@@ -508,7 +508,7 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
     }
 
     pub fn readdir(&self, ino: u64, _fh: u64, offset: i64, mut reply: fuse::ReplyDirectory) {
-        println!("readdir: {}", ino);
+        //println!("readdir: {}", ino);
         let (origin, path) = match self.node_to_path(ino) {
             Some(x) => x,
             None => {
@@ -543,7 +543,7 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
         _flags: u32,
         reply: fuse::ReplyWrite,
     ) {
-        println!("write: {}", ino);
+        //println!("write: {}", ino);
         let (origin, path) = match self.node_to_path(ino) {
             Some(x) => x,
             None => {
@@ -574,7 +574,7 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
             Some(x) => x,
             None => return reply.error(ENOENT),
         };
-        println!("mkdir: path {}", path);
+        //println!("mkdir: path {}", path);
 
         match origin {
             Origin::Root => return reply.error(ENOSYS),
@@ -585,7 +585,6 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
 
                 self.repo.write(id, dir, 0);
                 let ino = self.path_to_node(Origin::from_change(id), &path);
-                println!("ino: {}", ino);
                 reply.entry(&TTL, &make_dir_attr(ino, 0), 0);
             }
         };
@@ -694,7 +693,7 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
         newname: String,
         reply: fuse::ReplyEmpty,
     ) {
-        println!("rename");
+        //println!("rename");
         let (source_origin, source_path) = match self.route(parent, &name) {
             Some(x) => x,
             None => return reply.error(ENOENT),
@@ -729,7 +728,7 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
     }
 
     pub fn open(&self, ino: u64, flags: u32, reply: fuse::ReplyOpen) {
-        println!("open: ino={} flags={}", ino, flags);
+        //println!("open: ino={} flags={}", ino, flags);
         let (origin, path) = match self.node_to_path(ino) {
             Some(x) => x,
             None => {
@@ -755,7 +754,7 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
     }
 
     pub fn unlink(&self, parent: u64, name: String, reply: fuse::ReplyEmpty) {
-        println!("unlink: {:?} within {}", name, parent);
+        //println!("unlink: {:?} within {}", name, parent);
 
         let (origin, path) = match self.route(parent, &name) {
             Some(x) => x,
@@ -780,7 +779,7 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
         _flags: u32,
         reply: fuse::ReplyCreate,
     ) {
-        println!("create: {:?} within {}", name, parent);
+        //println!("create: {:?} within {}", name, parent);
         let (origin, path) = match self.route(parent, &name) {
             Some(x) => x,
             None => {
