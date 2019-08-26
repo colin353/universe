@@ -1,6 +1,7 @@
 extern crate fuse;
 extern crate grpc;
 extern crate libc;
+extern crate pool;
 extern crate time;
 
 #[macro_use]
@@ -13,6 +14,7 @@ extern crate weld_repo;
 
 mod client_service;
 mod fs;
+mod parallel_fs;
 
 use std::fs::File;
 use std::io::Read;
@@ -74,10 +76,11 @@ fn main() {
         cert
     );
 
-    let db = largetable_client::LargeTableRemoteClient::new(
+    /*let db = largetable_client::LargeTableRemoteClient::new(
         &largetable_hostname.value(),
         largetable_port.value(),
-    );
+    );*/
+    let db = largetable_test::LargeTableMockClient::new();
     let mut repo = weld_repo::Repo::new(db);
 
     if use_tls.value() {
@@ -122,7 +125,7 @@ fn main() {
     let _server = server.build().expect("server");
 
     // Mount filesystem.
-    let filesystem = fs::WeldFS::new(repo);
+    let filesystem = parallel_fs::WeldParallelFs::new(repo);
 
     if mount.value() {
         let options = ["-o", "fsname=hello"]
@@ -130,6 +133,7 @@ fn main() {
             .map(|o| o.as_ref())
             .collect::<Vec<&std::ffi::OsStr>>();
         ::fuse::mount(filesystem, &mount_point.value(), &options).unwrap();
+        std::thread::park();
     } else {
         std::thread::park();
     }

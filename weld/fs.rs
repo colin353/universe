@@ -8,12 +8,13 @@ use libc::ENOENT;
 use libc::ENOSYS;
 use libc::EPERM;
 use std::hash;
+use std::sync::{Mutex, RwLock};
 use time;
 use time::Timespec;
 
 use weld::File;
 
-const TTL: Timespec = Timespec { sec: 1, nsec: 0 }; // 10 seconds
+const TTL: Timespec = Timespec { sec: 60, nsec: 0 }; // 60 seconds
 
 const CREATE_TIME: Timespec = Timespec {
     sec: 1381237736,
@@ -129,125 +130,9 @@ impl DirectoryListingEntry {
 
 pub struct WeldFS<C: largetable_client::LargeTableClient> {
     repo: weld_repo::Repo<C, weld::WeldServerClient>,
-    nodes: HashMap<u64, (Origin, String)>,
-    paths: HashMap<(Origin, String), u64>,
-    next_ino: u64,
-}
-
-impl<C: largetable_client::LargeTableClient> WeldFS<C> {
-    pub fn new(repo: weld_repo::Repo<C, weld::WeldServerClient>) -> Self {
-        let nodes = HashMap::new();
-        let paths = HashMap::new();
-
-        let mut fs = WeldFS {
-            repo: repo,
-            nodes: nodes,
-            paths: paths,
-            next_ino: 1,
-        };
-
-        fs.link_path_ino(Origin::Root, String::from("/"));
-        fs.link_path_ino(Origin::Root, String::from("."));
-        fs
-    }
-
-    fn link_path_ino(&mut self, origin: Origin, path: String) -> u64 {
-        let ino = self.next_ino;
-        self.next_ino += 1;
-
-        self.nodes.insert(ino, (origin.clone(), path.clone()));
-        self.paths.insert((origin, path), ino);
-
-        ino
-    }
-
-    fn node_to_path(&self, node: u64) -> Option<(Origin, String)> {
-        match self.nodes.get(&node) {
-            Some(x) => Some(x.clone()),
-            None => None,
-        }
-    }
-
-    // Get the node for a path, and remember that path for the future.
-    fn path_to_node(&mut self, origin: Origin, path: &str) -> u64 {
-        // First, see if this path/node already exists. If so, we can
-        // just return it.
-        if let Some(ino) = self.paths.get(&(origin.clone(), path.to_owned())) {
-            return *ino;
-        }
-
-        self.link_path_ino(origin, path.to_owned())
-    }
-
-    fn update_path(&mut self, origin: Origin, old_path: &str, new_path: &str) -> u64 {
-        match self.paths.get(&(origin.clone(), old_path.to_owned())) {
-            Some(&ino) => {
-                // If the node already exists, we need to update it.
-                self.nodes
-                    .insert(ino, (origin.clone(), new_path.to_owned()));
-                // Delete the old path entry.
-                self.paths.remove(&(origin.clone(), old_path.to_owned()));
-                // Insert a new path entry with the old ino.
-                self.paths.insert((origin, new_path.to_owned()), ino);
-                ino
-            }
-            None => self.link_path_ino(origin, new_path.to_owned()),
-        }
-    }
-
-    fn route(&self, parent_ino: u64, filename: &OsStr) -> Option<(Origin, String)> {
-        let (origin, parent_path) = match self.node_to_path(parent_ino) {
-            Some(x) => x,
-            None => {
-                return None;
-            }
-        };
-
-        let assembled_path = format!(
-            "{}/{}",
-            parent_path.trim_right_matches('/'),
-            filename.to_string_lossy()
-        );
-
-        Some((origin, assembled_path))
-    }
-
-    fn readdir_space(&mut self, id: u64, path: &str) -> Vec<DirectoryListingEntry> {
-        println!("readdir_space");
-        let mut entries = Vec::new();
-
-        for file in self.repo.list_files(id, &path, 0) {
-            let node = self.path_to_node(Origin::from_change(id), file.get_filename());
-            let filename: String;
-            {
-                filename = path_to_filename(file.get_filename()).to_owned()
-            };
-            let filetype = match file.get_directory() {
-                true => FileType::Directory,
-                false => FileType::RegularFile,
-            };
-            entries.push(DirectoryListingEntry::new(node, filename, filetype));
-        }
-
-        entries
-    }
-
-    fn readdir_root(&mut self) -> Vec<DirectoryListingEntry> {
-        println!("readdir_root");
-        let changes = self.repo.list_changes().collect::<Vec<_>>();
-
-        changes
-            .iter()
-            .map(|change| {
-                let node = self.path_to_node(Origin::Root, change.get_friendly_name());
-                DirectoryListingEntry::new(
-                    node,
-                    change.get_friendly_name().to_owned(),
-                    FileType::Directory,
-                )
-            })
-            .collect()
-    }
+    nodes: RwLock<HashMap<u64, (Origin, String)>>,
+    paths: RwLock<HashMap<(Origin, String), u64>>,
+    next_ino: Mutex<u64>,
 }
 
 pub fn path_to_filename(path: &str) -> String {
@@ -270,17 +155,150 @@ pub fn path_to_filename(path: &str) -> String {
     }
 }
 
-impl<C: largetable_client::LargeTableClient> fuse::Filesystem for WeldFS<C> {
-    fn lookup(&mut self, _req: &fuse::Request, parent: u64, name: &OsStr, reply: fuse::ReplyEntry) {
-        println!("lookup: {} -> {:?}", parent, name);
+impl<C: largetable_client::LargeTableClient> WeldFS<C> {
+    pub fn new(repo: weld_repo::Repo<C, weld::WeldServerClient>) -> Self {
+        let nodes = RwLock::new(HashMap::new());
+        let paths = RwLock::new(HashMap::new());
+
+        let mut fs = WeldFS {
+            repo: repo,
+            nodes: nodes,
+            paths: paths,
+            next_ino: Mutex::new(1),
+        };
+
+        fs.link_path_ino(Origin::Root, String::from("/"));
+        fs.link_path_ino(Origin::Root, String::from("."));
+        fs
+    }
+
+    fn link_path_ino(&self, origin: Origin, path: String) -> u64 {
+        let ino = {
+            let mut ino_mut = self.next_ino.lock().unwrap();
+            let ino = ino_mut.clone();
+            *ino_mut += 1;
+            ino
+        };
+
+        self.nodes
+            .write()
+            .unwrap()
+            .insert(ino, (origin.clone(), path.clone()));
+        self.paths.write().unwrap().insert((origin, path), ino);
+
+        ino
+    }
+
+    fn node_to_path(&self, node: u64) -> Option<(Origin, String)> {
+        match self.nodes.read().unwrap().get(&node) {
+            Some(x) => Some(x.clone()),
+            None => None,
+        }
+    }
+
+    // Get the node for a path, and remember that path for the future.
+    fn path_to_node(&self, origin: Origin, path: &str) -> u64 {
+        // First, see if this path/node already exists. If so, we can
+        // just return it.
+        if let Some(ino) = self
+            .paths
+            .read()
+            .unwrap()
+            .get(&(origin.clone(), path.to_owned()))
+        {
+            return *ino;
+        }
+
+        self.link_path_ino(origin, path.to_owned())
+    }
+
+    fn update_path(&self, origin: Origin, old_path: &str, new_path: &str) -> u64 {
+        match self
+            .paths
+            .read()
+            .unwrap()
+            .get(&(origin.clone(), old_path.to_owned()))
+        {
+            Some(&ino) => {
+                // If the node already exists, we need to update it.
+                self.nodes
+                    .write()
+                    .unwrap()
+                    .insert(ino, (origin.clone(), new_path.to_owned()));
+                {
+                    let mut mut_paths = self.paths.write().unwrap();
+                    // Delete the old path entry.
+                    mut_paths.remove(&(origin.clone(), old_path.to_owned()));
+                    // Insert a new path entry with the old ino.
+                    mut_paths.insert((origin, new_path.to_owned()), ino);
+                }
+                ino
+            }
+            None => self.link_path_ino(origin, new_path.to_owned()),
+        }
+    }
+
+    fn route(&self, parent_ino: u64, filename: &str) -> Option<(Origin, String)> {
+        let (origin, parent_path) = match self.node_to_path(parent_ino) {
+            Some(x) => x,
+            None => {
+                return None;
+            }
+        };
+
+        let assembled_path = format!("{}/{}", parent_path.trim_right_matches('/'), filename,);
+
+        Some((origin, assembled_path))
+    }
+
+    fn readdir_space(&self, id: u64, path: &str) -> Vec<DirectoryListingEntry> {
+        ////println!("readdir_space");
+        let mut entries = Vec::new();
+
+        for file in self.repo.list_files(id, &path, 0) {
+            let node = self.path_to_node(Origin::from_change(id), file.get_filename());
+            let filename: String;
+            {
+                filename = path_to_filename(file.get_filename()).to_owned()
+            };
+            let filetype = match file.get_directory() {
+                true => FileType::Directory,
+                false => FileType::RegularFile,
+            };
+            entries.push(DirectoryListingEntry::new(node, filename, filetype));
+        }
+
+        entries
+    }
+
+    fn readdir_root(&self) -> Vec<DirectoryListingEntry> {
+        ////println!("readdir_root");
+        let changes = self.repo.list_changes().collect::<Vec<_>>();
+
+        changes
+            .iter()
+            .map(|change| {
+                let node = self.path_to_node(Origin::Root, change.get_friendly_name());
+                DirectoryListingEntry::new(
+                    node,
+                    change.get_friendly_name().to_owned(),
+                    FileType::Directory,
+                )
+            })
+            .collect()
+    }
+
+    // -------------------------------------------
+    // fuse::Filesystem implementation starts ----
+    // -------------------------------------------
+    pub fn lookup(&self, parent: u64, name: String, reply: fuse::ReplyEntry) {
+        println!("lookup: {}", name);
         let (origin, parent_path) = match self.node_to_path(parent) {
             Some(x) => x,
             None => {
                 return reply.error(ENOENT);
             }
         };
-
-        let name = name.to_string_lossy().to_string();
 
         match origin {
             Origin::Root => {
@@ -322,7 +340,7 @@ impl<C: largetable_client::LargeTableClient> fuse::Filesystem for WeldFS<C> {
         }
     }
 
-    fn getattr(&mut self, _req: &fuse::Request, ino: u64, reply: fuse::ReplyAttr) {
+    pub fn getattr(&self, ino: u64, reply: fuse::ReplyAttr) {
         println!("getattr: {}", ino);
         // Special case for the root inode, which is always 1.
         if ino == 1 {
@@ -373,15 +391,7 @@ impl<C: largetable_client::LargeTableClient> fuse::Filesystem for WeldFS<C> {
         };
     }
 
-    fn read(
-        &mut self,
-        _req: &fuse::Request,
-        ino: u64,
-        _fh: u64,
-        offset: i64,
-        size: u32,
-        reply: fuse::ReplyData,
-    ) {
+    pub fn read(&self, ino: u64, _fh: u64, offset: i64, size: u32, reply: fuse::ReplyData) {
         println!("read: {}, offset={}, size={}", ino, offset, size);
         let (origin, path) = match self.node_to_path(ino) {
             Some(x) => x,
@@ -414,9 +424,9 @@ impl<C: largetable_client::LargeTableClient> fuse::Filesystem for WeldFS<C> {
         }
     }
 
-    fn rmdir(&mut self, _req: &fuse::Request, parent: u64, name: &OsStr, reply: fuse::ReplyEmpty) {
-        println!("rmdir: {}", name.to_string_lossy());
-        let (origin, path) = match self.route(parent, name) {
+    pub fn rmdir(&self, parent: u64, name: String, reply: fuse::ReplyEmpty) {
+        println!("rmdir: {}", name);
+        let (origin, path) = match self.route(parent, &name) {
             Some(x) => x,
             None => {
                 reply.error(ENOENT);
@@ -433,9 +443,8 @@ impl<C: largetable_client::LargeTableClient> fuse::Filesystem for WeldFS<C> {
         };
     }
 
-    fn setattr(
-        &mut self,
-        _req: &fuse::Request,
+    pub fn setattr(
+        &self,
         ino: u64,
         mode: Option<u32>,
         _uid: Option<u32>,
@@ -498,14 +507,7 @@ impl<C: largetable_client::LargeTableClient> fuse::Filesystem for WeldFS<C> {
         }
     }
 
-    fn readdir(
-        &mut self,
-        _req: &fuse::Request,
-        ino: u64,
-        _fh: u64,
-        offset: i64,
-        mut reply: fuse::ReplyDirectory,
-    ) {
+    pub fn readdir(&self, ino: u64, _fh: u64, offset: i64, mut reply: fuse::ReplyDirectory) {
         println!("readdir: {}", ino);
         let (origin, path) = match self.node_to_path(ino) {
             Some(x) => x,
@@ -532,13 +534,12 @@ impl<C: largetable_client::LargeTableClient> fuse::Filesystem for WeldFS<C> {
         reply.ok();
     }
 
-    fn write(
-        &mut self,
-        _req: &fuse::Request,
+    pub fn write(
+        &self,
         ino: u64,
         _fh: u64,
         _offset: i64,
-        data: &[u8],
+        data: Vec<u8>,
         _flags: u32,
         reply: fuse::ReplyWrite,
     ) {
@@ -558,24 +559,19 @@ impl<C: largetable_client::LargeTableClient> fuse::Filesystem for WeldFS<C> {
                     Some(f) => f,
                     None => make_default_file(),
                 };
-                file.set_contents(data.to_owned());
+                let len = data.len();
+                file.set_contents(data);
                 file.set_filename(path);
                 self.repo.write(id, file, 0);
 
-                reply.written(data.len() as u32);
+                reply.written(len as u32);
             }
         }
     }
 
-    fn mkdir(
-        &mut self,
-        _req: &fuse::Request,
-        parent: u64,
-        name: &OsStr,
-        _mode: u32,
-        reply: fuse::ReplyEntry,
-    ) {
-        let (origin, path) = match self.route(parent, name) {
+    pub fn mkdir(&self, parent: u64, name: String, _mode: u32, reply: fuse::ReplyEntry) {
+        println!("mkdir");
+        let (origin, path) = match self.route(parent, &name) {
             Some(x) => x,
             None => return reply.error(ENOENT),
         };
@@ -606,6 +602,7 @@ impl<C: largetable_client::LargeTableClient> fuse::Filesystem for WeldFS<C> {
         _pid: u32,
         reply: fuse::ReplyLock,
     ) {
+        println!("getlk");
         reply.error(ENOSYS);
     }
 
@@ -622,6 +619,7 @@ impl<C: largetable_client::LargeTableClient> fuse::Filesystem for WeldFS<C> {
         _sleep: bool,
         reply: fuse::ReplyEmpty,
     ) {
+        println!("getlk");
         reply.error(ENOSYS)
     }
 
@@ -633,6 +631,7 @@ impl<C: largetable_client::LargeTableClient> fuse::Filesystem for WeldFS<C> {
         _newname: &OsStr,
         reply: fuse::ReplyEntry,
     ) {
+        println!("link");
         reply.error(EPERM)
     }
 
@@ -644,6 +643,7 @@ impl<C: largetable_client::LargeTableClient> fuse::Filesystem for WeldFS<C> {
         _link: &std::path::Path,
         reply: fuse::ReplyEntry,
     ) {
+        println!("symlink");
         reply.error(EPERM)
     }
 
@@ -655,6 +655,7 @@ impl<C: largetable_client::LargeTableClient> fuse::Filesystem for WeldFS<C> {
         _lock_owner: u64,
         reply: fuse::ReplyEmpty,
     ) {
+        println!("flush");
         reply.ok()
     }
 
@@ -668,6 +669,7 @@ impl<C: largetable_client::LargeTableClient> fuse::Filesystem for WeldFS<C> {
         _flush: bool,
         reply: fuse::ReplyEmpty,
     ) {
+        println!("release");
         reply.ok()
     }
 
@@ -679,25 +681,25 @@ impl<C: largetable_client::LargeTableClient> fuse::Filesystem for WeldFS<C> {
         _datasync: bool,
         reply: fuse::ReplyEmpty,
     ) {
+        println!("fsync");
         reply.ok()
     }
 
-    fn rename(
-        &mut self,
-        _req: &fuse::Request,
+    pub fn rename(
+        &self,
         parent: u64,
-        name: &OsStr,
+        name: String,
         newparent: u64,
-        newname: &OsStr,
+        newname: String,
         reply: fuse::ReplyEmpty,
     ) {
         println!("rename");
-        let (source_origin, source_path) = match self.route(parent, name) {
+        let (source_origin, source_path) = match self.route(parent, &name) {
             Some(x) => x,
             None => return reply.error(ENOENT),
         };
 
-        let (dest_origin, dest_path) = match self.route(newparent, newname) {
+        let (dest_origin, dest_path) = match self.route(newparent, &newname) {
             Some(x) => x,
             None => return reply.error(ENOENT),
         };
@@ -725,7 +727,7 @@ impl<C: largetable_client::LargeTableClient> fuse::Filesystem for WeldFS<C> {
         reply.ok();
     }
 
-    fn open(&mut self, _req: &fuse::Request, ino: u64, flags: u32, reply: fuse::ReplyOpen) {
+    pub fn open(&self, ino: u64, flags: u32, reply: fuse::ReplyOpen) {
         println!("open: ino={} flags={}", ino, flags);
         let (origin, path) = match self.node_to_path(ino) {
             Some(x) => x,
@@ -751,10 +753,10 @@ impl<C: largetable_client::LargeTableClient> fuse::Filesystem for WeldFS<C> {
         reply.opened(ino, flags);
     }
 
-    fn unlink(&mut self, _req: &fuse::Request, parent: u64, name: &OsStr, reply: fuse::ReplyEmpty) {
+    pub fn unlink(&self, parent: u64, name: String, reply: fuse::ReplyEmpty) {
         println!("unlink: {:?} within {}", name, parent);
 
-        let (origin, path) = match self.route(parent, name) {
+        let (origin, path) = match self.route(parent, &name) {
             Some(x) => x,
             None => return reply.error(ENOENT),
         };
@@ -762,24 +764,23 @@ impl<C: largetable_client::LargeTableClient> fuse::Filesystem for WeldFS<C> {
         match origin {
             Origin::Root => return reply.error(ENOSYS),
             Origin::Change(id) => {
-                println!("deleting: {}", path);
+                //println!("deleting: {}", path);
                 self.repo.delete(id, &path, 0);
             }
         }
         reply.ok();
     }
 
-    fn create(
-        &mut self,
-        _req: &fuse::Request,
+    pub fn create(
+        &self,
         parent: u64,
-        name: &OsStr,
+        name: String,
         _mode: u32,
         _flags: u32,
         reply: fuse::ReplyCreate,
     ) {
         println!("create: {:?} within {}", name, parent);
-        let (origin, path) = match self.route(parent, name) {
+        let (origin, path) = match self.route(parent, &name) {
             Some(x) => x,
             None => {
                 reply.error(ENOENT);
@@ -795,7 +796,7 @@ impl<C: largetable_client::LargeTableClient> fuse::Filesystem for WeldFS<C> {
 
                 let ino = self.path_to_node(Origin::from_change(id), &path);
 
-                println!("\tas {}", ino);
+                //println!("\tas {}", ino);
                 reply.created(&TTL, &file_attr_from_file(ino, &file), 0, ino, _flags);
                 self.repo.write(id, file, 0);
             }

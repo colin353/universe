@@ -30,7 +30,7 @@ pub struct Repo<C: largetable_client::LargeTableClient, W: weld::WeldServer> {
     spaces: Arc<RwLock<HashMap<String, u64>>>,
 }
 
-#[derive(Clone, PartialEq, Hash)]
+#[derive(Clone, Debug, PartialEq, Hash)]
 enum ReadQuery {
     Read(u64, String, u64),
     ListFiles(u64, String, u64),
@@ -81,7 +81,10 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
     }
 
     pub fn read_remote(&self, id: u64, path: &str, index: u64) -> Option<File> {
-        println!("[weld-repo] read_remote: {}", path);
+        if self.remote_server.is_none() {
+            return None;
+        }
+
         let filename = normalize_filename(path);
 
         // First, check cache. If it's in there, quickly return.
@@ -116,7 +119,6 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
     }
 
     pub fn read(&self, id: u64, path: &str, index: u64) -> Option<File> {
-        println!("[weld-repo] read: {}", path);
         let filename = normalize_filename(path);
 
         let change = match self.get_change(id) {
@@ -676,7 +678,6 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
 
         let mut changed_files = HashSet::new();
         for file in self.list_changed_files(id, 0) {
-            println!("changed files in syncing client: {}", file.get_filename());
             changed_files.insert(file.get_filename().to_owned());
         }
 
@@ -698,10 +699,8 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
         let mut synced_index = change.get_based_index();
         req.set_starting_id(change.get_based_index() + 1);
         for change in remote_server.get_submitted_changes(req) {
-            println!("change: {}", change.get_id());
             synced_index = change.get_id();
             for file_history in change.get_changes() {
-                println!("modified_file: {}", file_history.get_filename());
                 if changed_files.contains(file_history.get_filename()) {
                     // If the file has been manually merged, it doesn't require auto merge
                     if !manually_merged_filenames.contains(file_history.get_filename()) {

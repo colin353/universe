@@ -88,6 +88,7 @@ rust_binary(
     srcs = [
         "client_service.rs",
         "fs.rs",
+        "parallel_fs.rs",
         "weld_client.rs",
     ],
     deps = [
@@ -100,6 +101,7 @@ rust_binary(
         "//third_party:time",
         "//third_party:tls_api_native_tls",
         "//util/flags",
+        "//util/pool",
         "@io_bazel_rules_rust//proto/raze:grpc",
         "@io_bazel_rules_rust//proto/raze:protobuf",
         "@io_bazel_rules_rust//proto/raze:tls_api",
