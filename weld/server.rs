@@ -17,7 +17,6 @@ use native_tls::backend::openssl::TlsAcceptorBuilderExt;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
-use std::sync::Arc;
 use tls_api::TlsAcceptorBuilder;
 
 fn main() {

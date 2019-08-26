@@ -210,7 +210,7 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
             if let Some(ref client) = self.remote_server {
                 let latest_change = client.get_latest_change();
                 change.set_based_id(0); // based on HEAD.
-                change.set_based_index(latest_change.get_id());
+                change.set_based_index(latest_change.get_submitted_id());
             }
         }
 
@@ -382,7 +382,7 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
     }
 
     pub fn reserve_change_id(&self) -> u64 {
-        self.db.reserve_id(CHANGE_IDS, "")
+        self.db.reserve_id(CHANGE_IDS, "") + 1
     }
 
     pub fn populate_change(&self, mut change: weld::Change) -> weld::Change {

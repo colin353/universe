@@ -306,8 +306,8 @@ mod tests {
         repo.snapshot(&weld::change(old_id)).get_snapshot_id();
         let submitted_id = repo.submit(old_id).get_id();
 
-        // Snapshot takes id 1, then submitted id is 2
-        assert_eq!(submitted_id, 2);
+        // Snapshot takes id 2, then submitted id is 3
+        assert_eq!(submitted_id, 3);
 
         // Make another change and submit it
         let change = weld::Change::new();
@@ -317,11 +317,11 @@ mod tests {
         let change = repo.get_change(new_id).unwrap();
         assert_eq!(change.get_is_based_locally(), false);
         assert_eq!(change.get_based_id(), 0);
-        assert_eq!(change.get_based_index(), 2);
+        assert_eq!(change.get_based_index(), 3);
 
         // Try directly reading remote repo.
         assert!(
-            repo.read_remote(0, "/test/config.txt", 2).is_some(),
+            repo.read_remote(0, "/test/config.txt", 3).is_some(),
             "Unable to read submitted file"
         );
 
@@ -343,7 +343,7 @@ mod tests {
         assert_eq!(listing[0].get_filename(), "/test/config.txt");
 
         // Also try listing remotely.
-        let listing = repo.list_files_remote(0, "/test", 2);
+        let listing = repo.list_files_remote(0, "/test", 3);
         assert_eq!(listing.len(), 1, "Should list one file");
         assert_eq!(listing[0].get_filename(), "/test/config.txt");
 
@@ -393,7 +393,7 @@ mod tests {
                 .get(0)
                 .unwrap()
                 .get_change_id(),
-            2,
+            3,
             "Original change should be based on change ID 2"
         );
         assert_eq!(
@@ -464,7 +464,7 @@ mod tests {
 
     #[test]
     fn test_cache() {
-        let mut repo = make_remote_connected_test_repo();
+        let repo = make_remote_connected_test_repo();
 
         // Make a change with a modified file
         let change = weld::Change::new();
@@ -480,9 +480,6 @@ mod tests {
 
         let response = repo.read_remote(id, "/config.txt", index);
         assert!(response.is_some());
-
-        // Delete the remote server
-        repo.remote_server = None;
 
         let response = repo.read_remote(id, "/config.txt", index);
         assert!(response.is_some());
@@ -642,7 +639,7 @@ mod tests {
         println!("change_b: {:?}", change);
 
         // Submit original change
-        let submitted_id = repo.submit(id).get_id();
+        repo.submit(id).get_id();
 
         // Make a conflicting change
         let mut test_file = File::new();
@@ -703,7 +700,7 @@ mod tests {
         println!("change_b: {:?}", change);
 
         // Submit original change
-        let submitted_id = repo.submit(id).get_id();
+        repo.submit(id).get_id();
 
         // Make a conflicting change
         let mut test_file = File::new();
@@ -713,9 +710,9 @@ mod tests {
 
         repo.snapshot(&weld::change(id_b)).get_change_id();
 
-        // Should be based on #2
+        // Should be based on #3
         let change = repo.get_change(id_b).unwrap();
-        assert_eq!(change.get_based_index(), 2);
+        assert_eq!(change.get_based_index(), 3);
 
         // Try to sync
         let (conflicting_files, _) = repo.sync(id_b, &[]);
@@ -731,7 +728,7 @@ mod tests {
 
         // Should now be based on #4
         let change = repo.get_change(id_b).unwrap();
-        assert_eq!(change.get_based_index(), 4);
+        assert_eq!(change.get_based_index(), 5);
 
         // Now the other file should show up
         assert!(repo.read(id_b, "/signal.txt", 0).is_some());
@@ -781,7 +778,7 @@ mod tests {
         println!("change_b: {:?}", change);
 
         // Submit original change
-        let submitted_id = repo.submit(id).get_id();
+        repo.submit(id).get_id();
 
         // Make a conflicting change
         let mut test_file = File::new();
@@ -793,7 +790,7 @@ mod tests {
 
         // Should be based on #2
         let change = repo.get_change(id_b).unwrap();
-        assert_eq!(change.get_based_index(), 2);
+        assert_eq!(change.get_based_index(), 3);
 
         // Try to sync with manual merge
         let mut manual_merge = File::new();
@@ -812,7 +809,7 @@ mod tests {
 
         // Should now be based on #4
         let change = repo.get_change(id_b).unwrap();
-        assert_eq!(change.get_based_index(), 4);
+        assert_eq!(change.get_based_index(), 5);
 
         // Now the other file should show up
         assert!(repo.read(id_b, "/signal.txt", 0).is_some());
@@ -820,6 +817,6 @@ mod tests {
         // Try to sync again (already up to date)
         let (conflicting_files, synced_to) = repo.sync(id_b, &[]);
         assert_eq!(conflicting_files.len(), 0);
-        assert_eq!(synced_to, 4);
+        assert_eq!(synced_to, 5);
     }
 }

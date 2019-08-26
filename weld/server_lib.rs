@@ -203,7 +203,12 @@ impl<C: LargeTableClient> WeldServiceHandler<C> {
         iter.batch_size = 1;
         match iter.next() {
             Some((_, c)) => c,
-            None => weld::Change::new(),
+            None => {
+                let mut c = weld::Change::new();
+                c.set_submitted_id(1);
+                c.set_found(true);
+                c
+            }
         }
     }
 
@@ -376,6 +381,7 @@ mod tests {
         );
 
         let mut change = weld::Change::new();
+        change.set_based_index(1);
         change
             .mut_staged_files()
             .push(test_file("/test/config.txt", "working = true"));
@@ -417,6 +423,7 @@ mod tests {
 
         // Write /test/config.txt and submit it to head.
         let mut change = weld::Change::new();
+        change.set_based_index(1);
         change
             .mut_staged_files()
             .push(test_file("/test/config.txt", "working = true"));
@@ -454,6 +461,7 @@ mod tests {
 
         // Write /test/config.txt and submit it to head.
         let mut change = weld::Change::new();
+        change.set_based_index(1);
         change
             .mut_staged_files()
             .push(test_file("/test/config.txt", "working = true"));
@@ -480,6 +488,7 @@ mod tests {
 
         // Write /test/config.txt and submit it to head.
         let mut change = weld::Change::new();
+        change.set_based_index(1);
         change
             .mut_staged_files()
             .push(test_file("/test/config.txt", "working = true"));
@@ -525,6 +534,7 @@ mod tests {
 
         // Write /test/config.txt and submit it to head.
         let mut change = weld::Change::new();
+        change.set_based_index(1);
         change
             .mut_staged_files()
             .push(test_file("/test/config.txt", "working = true"));
@@ -537,17 +547,18 @@ mod tests {
 
         let mut c = weld::Change::new();
         c.set_id(change_id);
+        c.set_based_index(1);
         let result = handler.get_change(c);
-        assert_eq!(result.get_found(), true);
-        assert_eq!(result.get_id(), 1);
-
-        let result = handler.get_latest_change();
         assert_eq!(result.get_found(), true);
         assert_eq!(result.get_id(), 2);
 
+        let result = handler.get_latest_change();
+        assert_eq!(result.get_found(), true);
+        assert_eq!(result.get_id(), 3);
+
         // Write /test/config.txt and submit it to head.
         let mut change = weld::Change::new();
-        change.set_based_index(2);
+        change.set_based_index(3);
         change
             .mut_staged_files()
             .push(test_file("/test/config.txt", "test123"));
@@ -557,7 +568,7 @@ mod tests {
 
         let result = handler.get_latest_change();
         assert_eq!(result.get_found(), true);
-        assert_eq!(result.get_id(), 4);
+        assert_eq!(result.get_id(), 5);
     }
 
     #[test]
@@ -566,6 +577,7 @@ mod tests {
 
         // Write /test/config.txt and submit it to head.
         let mut change = weld::Change::new();
+        change.set_based_index(1);
         change
             .mut_staged_files()
             .push(test_file("/test/config.txt", "working = false"));
@@ -637,6 +649,7 @@ mod tests {
 
         // Write /test/config.txt and submit it to head.
         let mut change = weld::Change::new();
+        change.set_based_index(1);
         change
             .mut_staged_files()
             .push(test_file("/test/config.txt", "working = true"));
@@ -646,7 +659,7 @@ mod tests {
 
         // Write /test/config.txt and submit it to head.
         let mut change = weld::Change::new();
-        change.set_based_index(2);
+        change.set_based_index(3);
         change
             .mut_staged_files()
             .push(test_file("/test/test.txt", "working = true"));
@@ -656,7 +669,7 @@ mod tests {
 
         // Write /test/config.txt and submit it to head.
         let mut change = weld::Change::new();
-        change.set_based_index(4);
+        change.set_based_index(5);
         change
             .mut_staged_files()
             .push(test_file("/test/test.txt", "working = true"));
@@ -677,6 +690,7 @@ mod tests {
 
         // Write /test/config.txt and submit it to head.
         let mut change = weld::Change::new();
+        change.set_based_index(1);
         change
             .mut_staged_files()
             .push(test_file("/test/config.txt", "working = true"));
@@ -686,7 +700,7 @@ mod tests {
 
         // Write /test/config.txt and submit it to head.
         let mut change = weld::Change::new();
-        change.set_based_index(2);
+        change.set_based_index(3);
         change
             .mut_staged_files()
             .push(test_file("/test/test.txt", "working = true"));
