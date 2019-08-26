@@ -6,30 +6,28 @@ load("@io_bazel_rules_rust//proto:proto.bzl", "rust_proto_library")
 
 proto_library(
     name = "sstable_proto",
-    srcs = [ "sstable.proto" ],
-    )
+    srcs = ["sstable.proto"],
+)
 
 rust_proto_library(
     name = "sstable_proto_rust",
-    deps = [ ":sstable_proto" ],
-    )
+    deps = [":sstable_proto"],
+)
 
 rust_library(
     name = "sstable",
     srcs = [
         "sstable.rs",
-        ],
+    ],
     deps = [
-        "//util/primitive",
         ":sstable_proto_rust",
-        "@io_bazel_rules_rust//proto/raze:protobuf",
         "//third_party:byteorder",
-        ]
-    )
+        "//util/primitive",
+        "@io_bazel_rules_rust//proto/raze:protobuf",
+    ],
+)
 
 rust_test(
     name = "sstable_test",
-    deps = [
-        ":sstable",
-        ]
-    )
+    crate = ":sstable",
+)

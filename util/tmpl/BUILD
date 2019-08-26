@@ -12,5 +12,5 @@ rust_library(
 
 rust_test(
     name = "tmpl_test",
-    deps = [":tmpl"],
+    crate = ":tmpl",
 )

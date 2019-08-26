@@ -8,16 +8,14 @@ rust_library(
     name = "recordio",
     srcs = [
         "recordio.rs",
-        ],
+    ],
     deps = [
-        "@io_bazel_rules_rust//proto/raze:protobuf",
         "//third_party:byteorder",
-        ]
-    )
-
+        "@io_bazel_rules_rust//proto/raze:protobuf",
+    ],
+)
 
 rust_test(
     name = "recordio_test",
-    deps = [ ":recordio" ],
-    )
-
+    crate = ":recordio",
+)
