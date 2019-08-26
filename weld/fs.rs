@@ -479,7 +479,7 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
                     }
                 };
 
-                if file.get_deleted() || file.get_directory() {
+                if file.get_deleted() {
                     reply.error(ENOENT);
                     return;
                 }
@@ -570,11 +570,11 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
     }
 
     pub fn mkdir(&self, parent: u64, name: String, _mode: u32, reply: fuse::ReplyEntry) {
-        println!("mkdir");
         let (origin, path) = match self.route(parent, &name) {
             Some(x) => x,
             None => return reply.error(ENOENT),
         };
+        println!("mkdir: path {}", path);
 
         match origin {
             Origin::Root => return reply.error(ENOSYS),
@@ -585,6 +585,7 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
 
                 self.repo.write(id, dir, 0);
                 let ino = self.path_to_node(Origin::from_change(id), &path);
+                println!("ino: {}", ino);
                 reply.entry(&TTL, &make_dir_attr(ino, 0), 0);
             }
         };
