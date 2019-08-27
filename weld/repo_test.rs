@@ -735,6 +735,29 @@ mod tests {
     }
 
     #[test]
+    fn test_huge_number_of_files() {
+        let repo = make_remote_connected_test_repo();
+
+        // index of 0 which is the canary for HEAD
+        let change = weld::Change::new();
+        let id = repo.make_change(change);
+
+        for index in 0..4096 {
+            let mut test_file = File::new();
+            test_file.set_filename(format!("/file{}.txt", index));
+            test_file.set_contents(String::from("initial content").into_bytes());
+            repo.write(id, test_file, 0);
+        }
+
+        assert_eq!(repo.list_changed_files(id, 0).count(), 4096);
+
+        repo.snapshot(&weld::change(id)).get_change_id();
+        let submitted_id = repo.submit(id).get_id();
+
+        assert_ne!(submitted_id, 0);
+    }
+
+    #[test]
     fn test_manually_merged_conflict() {
         let repo = make_remote_connected_test_repo();
 

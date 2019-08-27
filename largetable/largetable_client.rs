@@ -121,7 +121,6 @@ pub struct LargeTableScopedIterator<'a, T: protobuf::Message, C: LargeTableClien
 
     // Number of result to get per query.
     pub batch_size: u64,
-    steps: u64,
 }
 
 impl<'a, T: protobuf::Message, C: LargeTableClient> LargeTableScopedIterator<'a, T, C> {
@@ -144,7 +143,6 @@ impl<'a, T: protobuf::Message, C: LargeTableClient> LargeTableScopedIterator<'a,
             max_col: max_col,
             timestamp: timestamp,
             batch_size: 1024,
-            steps: 0,
         }
     }
 }
@@ -154,11 +152,6 @@ impl<'a, T: protobuf::Message, C: LargeTableClient> Iterator
 {
     type Item = (String, T);
     fn next(&mut self) -> Option<(String, T)> {
-        self.steps += 1;
-        if self.steps > 10 {
-            return None;
-        }
-
         // If we have any data, return that. If there's just one record left, then we'll use that
         // as the min_col value and make another call to the server.
         if self.buffer.len() > 1 || self.finished {
