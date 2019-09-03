@@ -76,11 +76,11 @@ fn main() {
         cert
     );
 
-    /*let db = largetable_client::LargeTableRemoteClient::new(
+    let db = largetable_client::LargeTableRemoteClient::new(
         &largetable_hostname.value(),
         largetable_port.value(),
-    );*/
-    let db = largetable_test::LargeTableMockClient::new();
+    );
+    //let db = largetable_test::LargeTableMockClient::new();
     let mut repo = weld_repo::Repo::new(db);
 
     if use_tls.value() {
@@ -128,7 +128,7 @@ fn main() {
     let filesystem = parallel_fs::WeldParallelFs::new(repo);
 
     if mount.value() {
-        let options = ["-o", "fsname=hello"]
+        let options = ["-o", "fsname=hello", "async_read=true"]
             .iter()
             .map(|o| o.as_ref())
             .collect::<Vec<&std::ffi::OsStr>>();

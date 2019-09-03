@@ -9,27 +9,22 @@ use libc::ENOSYS;
 use libc::EPERM;
 use std::hash;
 use std::sync::{Mutex, RwLock};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use time;
-use time::Timespec;
 
 use weld::File;
 
-const TTL: Timespec = Timespec { sec: 60, nsec: 0 }; // 60 seconds
-
-const CREATE_TIME: Timespec = Timespec {
-    sec: 1381237736,
-    nsec: 0,
-}; // 2013-10-08 08:56
+const TTL: u64 = 5;
 
 fn file_attr_from_file(ino: u64, file: &File) -> fuse::FileAttr {
     fuse::FileAttr {
         ino: ino,
         size: file.get_contents().len() as u64,
         blocks: 1,
-        atime: Timespec::new(file.get_atime() as i64, 0),
-        mtime: Timespec::new(file.get_mtime() as i64, 0),
-        ctime: Timespec::new(file.get_ctime() as i64, 0),
-        crtime: Timespec::new(file.get_crtime() as i64, 0),
+        atime: UNIX_EPOCH + Duration::new(file.get_atime(), 0),
+        mtime: UNIX_EPOCH + Duration::new(file.get_mtime(), 0),
+        ctime: UNIX_EPOCH + Duration::new(file.get_ctime(), 0),
+        crtime: UNIX_EPOCH + Duration::new(file.get_crtime(), 0),
         kind: if file.get_directory() {
             FileType::Directory
         } else {
@@ -49,10 +44,10 @@ fn make_dir_attr(ino: u64, size: u64) -> fuse::FileAttr {
         ino: ino,
         size: size,
         blocks: 1,
-        atime: CREATE_TIME,
-        mtime: CREATE_TIME,
-        ctime: CREATE_TIME,
-        crtime: CREATE_TIME,
+        atime: UNIX_EPOCH,
+        mtime: UNIX_EPOCH,
+        ctime: UNIX_EPOCH,
+        crtime: UNIX_EPOCH,
         kind: FileType::Directory,
         perm: 0o644,
         nlink: 1,
@@ -312,7 +307,7 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
                 }
 
                 let ino = self.path_to_node(Origin::from_change(id), "/");
-                return reply.entry(&TTL, &make_dir_attr(ino, 0), 0);
+                return reply.entry(&Duration::from_secs(TTL), &make_dir_attr(ino, 0), 0);
             }
             Origin::Change(id) => {
                 let path = format!("{}/{}", parent_path.trim_right_matches('/'), name);
@@ -332,9 +327,13 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
                 }
 
                 if file.get_directory() {
-                    reply.entry(&TTL, &make_dir_attr(ino, 0), 0);
+                    reply.entry(&Duration::from_secs(TTL), &make_dir_attr(ino, 0), 0);
                 } else {
-                    reply.entry(&TTL, &file_attr_from_file(ino, &file), 0);
+                    reply.entry(
+                        &Duration::from_secs(TTL),
+                        &file_attr_from_file(ino, &file),
+                        0,
+                    );
                 }
             }
         }
@@ -344,7 +343,7 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
         //println!("getattr: {}", ino);
         // Special case for the root inode, which is always 1.
         if ino == 1 {
-            reply.attr(&TTL, &make_dir_attr(0, 0));
+            reply.attr(&Duration::from_secs(TTL), &make_dir_attr(0, 0));
             return;
         }
 
@@ -360,12 +359,12 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
 
         // All inodes in the root are just client names.
         match origin {
-            Origin::Root => return reply.attr(&TTL, &make_dir_attr(ino, 0)),
+            Origin::Root => return reply.attr(&Duration::from_secs(TTL), &make_dir_attr(ino, 0)),
             Origin::Change(id) => {
                 // The root path isn't written into the database. We have to
                 // handle that case as a special case.
                 if path == "/" {
-                    reply.attr(&TTL, &make_dir_attr(ino, 0));
+                    reply.attr(&Duration::from_secs(TTL), &make_dir_attr(ino, 0));
                     return;
                 }
 
@@ -384,8 +383,10 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
                 //println!("directory={}", file.get_directory());
 
                 match file.get_directory() {
-                    true => reply.attr(&TTL, &make_dir_attr(ino, 0)),
-                    false => reply.attr(&TTL, &file_attr_from_file(ino, &file)),
+                    true => reply.attr(&Duration::from_secs(TTL), &make_dir_attr(ino, 0)),
+                    false => {
+                        reply.attr(&Duration::from_secs(TTL), &file_attr_from_file(ino, &file))
+                    }
                 }
             }
         };
@@ -450,12 +451,12 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
         _uid: Option<u32>,
         _gid: Option<u32>,
         _size: Option<u64>,
-        atime: Option<Timespec>,
-        mtime: Option<Timespec>,
+        atime: Option<SystemTime>,
+        mtime: Option<SystemTime>,
         _fh: Option<u64>,
-        crtime: Option<Timespec>,
-        _chgtime: Option<Timespec>,
-        _bkuptime: Option<Timespec>,
+        crtime: Option<SystemTime>,
+        _chgtime: Option<SystemTime>,
+        _bkuptime: Option<SystemTime>,
         flags: Option<u32>,
         reply: fuse::ReplyAttr,
     ) {
@@ -485,13 +486,13 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
                 }
 
                 if let Some(x) = atime {
-                    file.set_atime(x.sec as u64);
+                    file.set_atime(x.duration_since(UNIX_EPOCH).unwrap().as_secs());
                 }
                 if let Some(x) = mtime {
-                    file.set_mtime(x.sec as u64);
+                    file.set_mtime(x.duration_since(UNIX_EPOCH).unwrap().as_secs());
                 }
                 if let Some(x) = crtime {
-                    file.set_crtime(x.sec as u64);
+                    file.set_crtime(x.duration_since(UNIX_EPOCH).unwrap().as_secs());
                 }
                 if let Some(x) = flags {
                     file.set_flags(x as u64);
@@ -501,7 +502,7 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
                 }
 
                 file.set_filename(path.to_owned());
-                reply.attr(&TTL, &file_attr_from_file(ino, &file));
+                reply.attr(&Duration::from_secs(TTL), &file_attr_from_file(ino, &file));
                 self.repo.write(id, file, 0);
             }
         }
@@ -585,7 +586,7 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
 
                 self.repo.write(id, dir, 0);
                 let ino = self.path_to_node(Origin::from_change(id), &path);
-                reply.entry(&TTL, &make_dir_attr(ino, 0), 0);
+                reply.entry(&Duration::from_secs(TTL), &make_dir_attr(ino, 0), 0);
             }
         };
     }
@@ -779,7 +780,7 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
         _flags: u32,
         reply: fuse::ReplyCreate,
     ) {
-        //println!("create: {:?} within {}", name, parent);
+        println!("create: {:?} within {}", name, parent);
         let (origin, path) = match self.route(parent, &name) {
             Some(x) => x,
             None => {
@@ -796,8 +797,13 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
 
                 let ino = self.path_to_node(Origin::from_change(id), &path);
 
-                //println!("\tas {}", ino);
-                reply.created(&TTL, &file_attr_from_file(ino, &file), 0, ino, _flags);
+                reply.created(
+                    &Duration::from_secs(TTL),
+                    &file_attr_from_file(ino, &file),
+                    0,
+                    ino,
+                    _flags,
+                );
                 self.repo.write(id, file, 0);
             }
         }

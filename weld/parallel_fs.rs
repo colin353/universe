@@ -2,7 +2,7 @@ use crate::fs;
 use pool::ThreadPool;
 use std::ffi::OsStr;
 use std::sync::Arc;
-use time::Timespec;
+use std::time::SystemTime;
 
 pub struct WeldParallelFs<C: largetable_client::LargeTableClient> {
     filesystem: Arc<fs::WeldFS<C>>,
@@ -71,12 +71,12 @@ where
         uid: Option<u32>,
         gid: Option<u32>,
         size: Option<u64>,
-        atime: Option<Timespec>,
-        mtime: Option<Timespec>,
+        atime: Option<SystemTime>,
+        mtime: Option<SystemTime>,
         fh: Option<u64>,
-        crtime: Option<Timespec>,
-        chgtime: Option<Timespec>,
-        bkuptime: Option<Timespec>,
+        crtime: Option<SystemTime>,
+        chgtime: Option<SystemTime>,
+        bkuptime: Option<SystemTime>,
         flags: Option<u32>,
         reply: fuse::ReplyAttr,
     ) {

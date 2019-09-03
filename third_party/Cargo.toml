@@ -32,6 +32,9 @@ gen_buildrs = true
 additional_deps = [
   "//third_party/fuse:fuse",
 ]
+additional_flags = [
+   "--cfg=feature=abi-7-13"
+]
 
 [raze.crates.openssl-sys.'0.9.42']
 additional_flags = [

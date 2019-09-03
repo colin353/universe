@@ -6,9 +6,11 @@ use std::io;
 use std::ffi::{CString, CStr, OsStr};
 use std::os::unix::ffi::OsStrExt;
 use std::path::{PathBuf, Path};
+use fuse_sys::{fuse_args, fuse_mount_compat25};
 use libc::{self, c_int, c_void, size_t};
-use libfuse::{fuse_args, fuse_mount_compat25};
-use reply::ReplySender;
+use log::error;
+
+use crate::reply::ReplySender;
 
 /// Helper function to provide options as a fuse_args struct
 /// (which contains an argc count and an argv pointer)
@@ -32,9 +34,9 @@ impl Channel {
     /// the given path to the channel. If the channel is dropped, the path is
     /// unmounted.
     pub fn new(mountpoint: &Path, options: &[&OsStr]) -> io::Result<Channel> {
-        let mountpoint = try!(mountpoint.canonicalize());
+        let mountpoint = mountpoint.canonicalize()?;
         with_fuse_args(options, |args| {
-            let mnt = try!(CString::new(mountpoint.as_os_str().as_bytes()));
+            let mnt = CString::new(mountpoint.as_os_str().as_bytes())?;
             let fd = unsafe { fuse_mount_compat25(mnt.as_ptr(), args) };
             if fd < 0 {
                 Err(io::Error::last_os_error())
@@ -131,7 +133,7 @@ pub fn unmount(mountpoint: &Path) -> io::Result<()> {
                   target_os = "openbsd", target_os = "bitrig", target_os = "netbsd")))]
     #[inline]
     fn libc_umount(mnt: &CStr) -> c_int {
-        use libfuse::fuse_unmount_compat22;
+        use fuse_sys::fuse_unmount_compat22;
         use std::io::ErrorKind::PermissionDenied;
 
         let rc = unsafe { libc::umount(mnt.as_ptr()) };
@@ -145,7 +147,7 @@ pub fn unmount(mountpoint: &Path) -> io::Result<()> {
         }
     }
 
-    let mnt = try!(CString::new(mountpoint.as_os_str().as_bytes()));
+    let mnt = CString::new(mountpoint.as_os_str().as_bytes())?;
     let rc = libc_umount(&mnt);
     if rc < 0 {
         Err(io::Error::last_os_error())
