@@ -483,6 +483,15 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
             }
         };
 
+        // Check if there's a symlink. If so, quit early.
+        if let Some(symlink) = self.get_symlink(ino) {
+            reply.attr(
+                &Duration::from_secs(TTL),
+                &file_attr_for_symlink(symlink.ino),
+            );
+            return;
+        }
+
         //println!("extracted path: {}", path);
 
         // All inodes in the root are just client names.
@@ -927,13 +936,33 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
 
     pub fn symlink(
         &self,
-        _parent: u64,
-        _name: String,
-        _link: std::path::PathBuf,
+        parent: u64,
+        name: String,
+        link: std::path::PathBuf,
         reply: fuse::ReplyEntry,
     ) {
-        reply.error(EPERM)
+        let (origin, parent_path) = match self.node_to_path(parent) {
+            Some(x) => x,
+            None => {
+                reply.error(ENOENT);
+                return;
+            }
+        };
+
+        let ino = self.create_symlink(
+            origin,
+            parent_path,
+            name,
+            link.to_string_lossy().to_string(),
+        );
+
+        reply.entry(&Duration::from_secs(TTL), &file_attr_for_symlink(ino), 0);
     }
 
-    pub fn readlink(&self, ino: u64, reply: fuse::ReplyData) {}
+    pub fn readlink(&self, ino: u64, reply: fuse::ReplyData) {
+        match self.get_symlink(ino) {
+            Some(symlink) => reply.data(&symlink.path.as_bytes()),
+            None => reply.error(ENOENT),
+        }
+    }
 }
