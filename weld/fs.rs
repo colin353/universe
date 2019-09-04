@@ -39,6 +39,25 @@ fn file_attr_from_file(ino: u64, file: &File) -> fuse::FileAttr {
     }
 }
 
+fn file_attr_for_symlink(ino: u64) -> fuse::FileAttr {
+    fuse::FileAttr {
+        ino: ino,
+        size: 0,
+        blocks: 1,
+        atime: UNIX_EPOCH,
+        mtime: UNIX_EPOCH,
+        ctime: UNIX_EPOCH,
+        crtime: UNIX_EPOCH,
+        kind: FileType::Symlink,
+        perm: 777,
+        nlink: 1,
+        uid: 1000,
+        gid: 1000,
+        rdev: 0,
+        flags: 0,
+    }
+}
+
 fn make_dir_attr(ino: u64, size: u64) -> fuse::FileAttr {
     fuse::FileAttr {
         ino: ino,
@@ -81,6 +100,14 @@ impl Origin {
     pub fn from_change(id: u64) -> Origin {
         Origin::Change(id)
     }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct Symlink {
+    ino: u64,
+    name: String,
+    path: String,
+    parent_path: String,
 }
 
 impl hash::Hash for Origin {
@@ -127,6 +154,8 @@ pub struct WeldFS<C: largetable_client::LargeTableClient> {
     repo: weld_repo::Repo<C, weld::WeldServerClient>,
     nodes: RwLock<HashMap<u64, (Origin, String)>>,
     paths: RwLock<HashMap<(Origin, String), u64>>,
+    symlinks_paths: RwLock<HashMap<(Origin, String), Vec<Symlink>>>,
+    symlinks_inos: RwLock<HashMap<u64, Symlink>>,
     next_ino: Mutex<u64>,
 }
 
@@ -160,6 +189,8 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
             nodes: nodes,
             paths: paths,
             next_ino: Mutex::new(1),
+            symlinks_inos: RwLock::new(HashMap::new()),
+            symlinks_paths: RwLock::new(HashMap::new()),
         };
 
         fs.link_path_ino(Origin::Root, String::from("/"));
@@ -246,9 +277,94 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
         Some((origin, assembled_path))
     }
 
+    fn get_symlink(&self, ino: u64) -> Option<Symlink> {
+        match self.symlinks_inos.read().unwrap().get(&ino) {
+            Some(x) => Some(x.clone()),
+            None => None,
+        }
+    }
+
+    fn list_symlinks(&self, origin: &Origin, parent_path: &str) -> Vec<Symlink> {
+        match self
+            .symlinks_paths
+            .read()
+            .unwrap()
+            .get(&(origin.to_owned(), parent_path.to_owned()))
+        {
+            Some(x) => x.to_owned(),
+            None => Vec::new(),
+        }
+    }
+
+    fn create_symlink(
+        &self,
+        origin: Origin,
+        parent_path: String,
+        name: String,
+        path: String,
+    ) -> u64 {
+        let ino = {
+            let mut ino_mut = self.next_ino.lock().unwrap();
+            let ino = ino_mut.clone();
+            *ino_mut += 1;
+            ino
+        };
+
+        let symlink = Symlink {
+            ino: ino,
+            name: name,
+            path: path,
+            parent_path: parent_path.clone(),
+        };
+        self.symlinks_inos
+            .write()
+            .unwrap()
+            .insert(ino, symlink.clone());
+        if let Some(ref mut dir) = self
+            .symlinks_paths
+            .write()
+            .unwrap()
+            .get_mut(&(origin.clone(), parent_path.clone()))
+        {
+            dir.push(symlink);
+            return ino;
+        }
+        self.symlinks_paths
+            .write()
+            .unwrap()
+            .insert((origin, parent_path), vec![symlink]);
+
+        ino
+    }
+
+    fn delete_symlink(&self, origin: &Origin, ino: u64) {
+        let s = match self.symlinks_inos.write().unwrap().remove(&ino) {
+            Some(s) => s,
+            None => return,
+        };
+        match self
+            .symlinks_paths
+            .write()
+            .unwrap()
+            .get_mut(&(origin.clone(), s.parent_path))
+        {
+            Some(ref mut dir) => dir.retain(|ref x| x.ino != ino),
+            None => return,
+        }
+    }
+
     fn readdir_space(&self, id: u64, path: &str) -> Vec<DirectoryListingEntry> {
-        ////println!("readdir_space");
+        //println!("readdir_space");
         let mut entries = Vec::new();
+
+        // Read symlinks
+        for symlink in self.list_symlinks(&Origin::from_change(id), &path) {
+            entries.push(DirectoryListingEntry::new(
+                symlink.ino,
+                symlink.name,
+                FileType::Symlink,
+            ));
+        }
 
         for file in self.repo.list_files(id, &path, 0) {
             let node = self.path_to_node(Origin::from_change(id), file.get_filename());
@@ -294,6 +410,18 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
                 return reply.error(ENOENT);
             }
         };
+
+        // Check if there's a symlink. If so, quit early.
+        for symlink in self.list_symlinks(&origin, &parent_path) {
+            if symlink.name == name {
+                reply.entry(
+                    &Duration::from_secs(TTL),
+                    &file_attr_for_symlink(symlink.ino),
+                    0,
+                );
+                return;
+            }
+        }
 
         match origin {
             Origin::Root => {
@@ -636,18 +764,6 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
         reply.error(EPERM)
     }
 
-    fn symlink(
-        &mut self,
-        _req: &fuse::Request,
-        _parent: u64,
-        _name: &OsStr,
-        _link: &std::path::Path,
-        reply: fuse::ReplyEntry,
-    ) {
-        println!("symlink");
-        reply.error(EPERM)
-    }
-
     fn flush(
         &mut self,
         _req: &fuse::Request,
@@ -808,4 +924,16 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
             }
         }
     }
+
+    pub fn symlink(
+        &self,
+        _parent: u64,
+        _name: String,
+        _link: std::path::PathBuf,
+        reply: fuse::ReplyEntry,
+    ) {
+        reply.error(EPERM)
+    }
+
+    pub fn readlink(&self, ino: u64, reply: fuse::ReplyData) {}
 }

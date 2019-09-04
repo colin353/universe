@@ -182,4 +182,27 @@ where
             fs.create(parent, name, mode, flags, reply);
         });
     }
+
+    fn symlink(
+        &mut self,
+        _req: &fuse::Request,
+        parent: u64,
+        name: &OsStr,
+        link: &std::path::Path,
+        reply: fuse::ReplyEntry,
+    ) {
+        let fs = self.filesystem.clone();
+        let name = name.to_string_lossy().to_string();
+        let link = link.to_owned();
+        self.threadpool.execute(move || {
+            fs.symlink(parent, name, link, reply);
+        });
+    }
+
+    fn readlink(&mut self, _req: &fuse::Request, ino: u64, reply: fuse::ReplyData) {
+        let fs = self.filesystem.clone();
+        self.threadpool.execute(move || {
+            fs.readlink(ino, reply);
+        });
+    }
 }
