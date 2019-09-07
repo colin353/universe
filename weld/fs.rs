@@ -893,7 +893,6 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
         _flags: u32,
         reply: fuse::ReplyCreate,
     ) {
-        println!("create: {:?} within {}", name, parent);
         let (origin, path) = match self.route(parent, &name) {
             Some(x) => x,
             None => {
