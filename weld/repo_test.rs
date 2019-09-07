@@ -842,4 +842,85 @@ mod tests {
         assert_eq!(conflicting_files.len(), 0);
         assert_eq!(synced_to, 5);
     }
+
+    #[test]
+    fn test_delete_directory() {
+        let repo = make_remote_connected_test_repo();
+
+        let change = weld::Change::new();
+        let id = repo.make_change(change);
+
+        // Create a directory
+        let mut dir = File::new();
+        dir.set_filename(String::from("/dir"));
+        dir.set_directory(true);
+        repo.write(id, dir, 0);
+
+        // Create subdir
+        let mut dir = File::new();
+        dir.set_filename(String::from("/dir/dir2"));
+        dir.set_directory(true);
+        repo.write(id, dir, 0);
+
+        // Write a bunch of files
+        for index in 0..10 {
+            let mut test_file = File::new();
+            test_file.set_filename(format!("/dir/dir2/file{}.txt", index));
+            test_file.set_contents(String::from("initial content").into_bytes());
+            repo.write(id, test_file, 0);
+        }
+        repo.snapshot(&weld::change(id)).get_change_id();
+        let submitted_id = repo.submit(id).get_id();
+        assert_ne!(submitted_id, 0);
+
+        // Create a based change, and delete the directory
+        let mut change = weld::Change::new();
+        change.set_based_id(submitted_id);
+        let id = repo.make_change(change);
+
+        // Delete the files first
+        for index in 0..10 {
+            let mut test_file = File::new();
+            test_file.set_filename(format!("/dir/dir2/file{}.txt", index));
+            test_file.set_deleted(true);
+            repo.write(id, test_file, 0);
+        }
+
+        // Delete the directory
+        let mut dir = File::new();
+        dir.set_filename(String::from("/dir"));
+        dir.set_deleted(true);
+        repo.write(id, dir, 0);
+
+        // Now create the directory again
+        let mut dir = File::new();
+        dir.set_filename(String::from("/dir/dir2"));
+        dir.set_directory(true);
+        repo.write(id, dir, 0);
+
+        // Create the files again
+        for index in 0..3 {
+            let mut test_file = File::new();
+            test_file.set_filename(format!("/dir/dir2/file{}.txt", index));
+            test_file.set_contents(String::from("initial content").into_bytes());
+            repo.write(id, test_file, 0);
+        }
+
+        assert_eq!(
+            repo.list_files(id, "/dir/dir2", 0)
+                .iter()
+                .map(|x| x.get_filename())
+                .collect::<Vec<_>>(),
+            vec![
+                "/dir/dir2/file0.txt",
+                "/dir/dir2/file1.txt",
+                "/dir/dir2/file2.txt"
+            ]
+        );
+
+        repo.snapshot(&weld::change(id)).get_change_id();
+        let submitted_id = repo.submit(id).get_id();
+
+        assert_ne!(submitted_id, 0);
+    }
 }

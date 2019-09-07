@@ -676,7 +676,13 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
             Origin::Root => reply.error(ENOENT),
             Origin::Change(id) => {
                 let mut file = match self.repo.read(id, &path, 0) {
-                    Some(f) => f,
+                    Some(f) => {
+                        if !f.get_deleted() {
+                            f
+                        } else {
+                            make_default_file()
+                        }
+                    }
                     None => make_default_file(),
                 };
                 let len = data.len();
@@ -696,7 +702,6 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
             Some(x) => x,
             None => return reply.error(ENOENT),
         };
-        //println!("mkdir: path {}", path);
 
         match origin {
             Origin::Root => return reply.error(ENOSYS),

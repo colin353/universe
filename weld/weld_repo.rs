@@ -173,8 +173,10 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
 
     pub fn create_directory(&self, id: u64, path: &str, index: u64) {
         // Check if the directory exists. If so, no work required.
-        if self.read(id, path, index).is_some() {
-            return;
+        if let Some(f) = self.read(id, path, index) {
+            if !f.get_deleted() {
+                return;
+            }
         }
 
         let mut dir = File::new();
