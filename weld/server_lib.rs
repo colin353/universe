@@ -106,7 +106,7 @@ impl<C: LargeTableClient> WeldServiceHandler<C> {
 
         println!(
             "[submit] #{} with {} total changed files",
-            num_changed_files, id
+            id, num_changed_files
         );
 
         self.database

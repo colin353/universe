@@ -128,10 +128,16 @@ fn main() {
     let filesystem = parallel_fs::WeldParallelFs::new(repo);
 
     if mount.value() {
-        let options = ["-o", "fsname=hello", "async_read=true"]
-            .iter()
-            .map(|o| o.as_ref())
-            .collect::<Vec<&std::ffi::OsStr>>();
+        let options = [
+            "-o",
+            "fsname=hello",
+            "async_read=true",
+            "negative_timeout=5",
+            "debug=true",
+        ]
+        .iter()
+        .map(|o| o.as_ref())
+        .collect::<Vec<&std::ffi::OsStr>>();
         ::fuse::mount(filesystem, &mount_point.value(), &options).unwrap();
         std::thread::park();
     } else {

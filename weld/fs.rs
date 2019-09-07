@@ -239,29 +239,30 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
     }
 
     fn update_path(&self, origin: Origin, old_path: &str, new_path: &str) -> u64 {
-        match self
+        let ino = if let Some(ino) = self
             .paths
             .read()
             .unwrap()
             .get(&(origin.clone(), old_path.to_owned()))
         {
-            Some(&ino) => {
-                // If the node already exists, we need to update it.
-                self.nodes
-                    .write()
-                    .unwrap()
-                    .insert(ino, (origin.clone(), new_path.to_owned()));
-                {
-                    let mut mut_paths = self.paths.write().unwrap();
-                    // Delete the old path entry.
-                    mut_paths.remove(&(origin.clone(), old_path.to_owned()));
-                    // Insert a new path entry with the old ino.
-                    mut_paths.insert((origin, new_path.to_owned()), ino);
-                }
-                ino
-            }
-            None => self.link_path_ino(origin, new_path.to_owned()),
+            *ino
+        } else {
+            return self.link_path_ino(origin, new_path.to_owned());
+        };
+
+        // If the node already exists, we need to update it.
+        self.nodes
+            .write()
+            .unwrap()
+            .insert(ino, (origin.clone(), new_path.to_owned()));
+        {
+            let mut mut_paths = self.paths.write().unwrap();
+            // Delete the old path entry.
+            mut_paths.remove(&(origin.clone(), old_path.to_owned()));
+            // Insert a new path entry with the old ino.
+            mut_paths.insert((origin, new_path.to_owned()), ino);
         }
+        return ino;
     }
 
     fn route(&self, parent_ino: u64, filename: &str) -> Option<(Origin, String)> {
@@ -403,7 +404,6 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
     // fuse::Filesystem implementation starts ----
     // -------------------------------------------
     pub fn lookup(&self, parent: u64, name: String, reply: fuse::ReplyEntry) {
-        //println!("lookup: {}", name);
         let (origin, parent_path) = match self.node_to_path(parent) {
             Some(x) => x,
             None => {
@@ -414,12 +414,11 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
         // Check if there's a symlink. If so, quit early.
         for symlink in self.list_symlinks(&origin, &parent_path) {
             if symlink.name == name {
-                reply.entry(
+                return reply.entry(
                     &Duration::from_secs(TTL),
                     &file_attr_for_symlink(symlink.ino),
                     0,
                 );
-                return;
             }
         }
 
@@ -468,28 +467,24 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
     }
 
     pub fn getattr(&self, ino: u64, reply: fuse::ReplyAttr) {
-        //println!("getattr: {}", ino);
         // Special case for the root inode, which is always 1.
         if ino == 1 {
-            reply.attr(&Duration::from_secs(TTL), &make_dir_attr(0, 0));
-            return;
+            return reply.attr(&Duration::from_secs(TTL), &make_dir_attr(0, 0));
         }
 
         let (origin, path) = match self.node_to_path(ino) {
             Some(x) => x,
             None => {
-                reply.error(ENOENT);
-                return;
+                return reply.error(ENOENT);
             }
         };
 
         // Check if there's a symlink. If so, quit early.
         if let Some(symlink) = self.get_symlink(ino) {
-            reply.attr(
+            return reply.attr(
                 &Duration::from_secs(TTL),
                 &file_attr_for_symlink(symlink.ino),
             );
-            return;
         }
 
         //println!("extracted path: {}", path);
@@ -501,8 +496,7 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
                 // The root path isn't written into the database. We have to
                 // handle that case as a special case.
                 if path == "/" {
-                    reply.attr(&Duration::from_secs(TTL), &make_dir_attr(ino, 0));
-                    return;
+                    return reply.attr(&Duration::from_secs(TTL), &make_dir_attr(ino, 0));
                 }
 
                 let file = match self.repo.read(id, &path, 0) {
@@ -530,12 +524,10 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
     }
 
     pub fn read(&self, ino: u64, _fh: u64, offset: i64, size: u32, reply: fuse::ReplyData) {
-        //println!("read: {}, offset={}, size={}", ino, offset, size);
         let (origin, path) = match self.node_to_path(ino) {
             Some(x) => x,
             None => {
-                reply.error(ENOENT);
-                return;
+                return reply.error(ENOENT);
             }
         };
 
@@ -545,14 +537,12 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
                 let file = match self.repo.read(id, &path, 0) {
                     Some(f) => f,
                     None => {
-                        reply.error(ENOENT);
-                        return;
+                        return reply.error(ENOENT);
                     }
                 };
 
                 if file.get_deleted() || file.get_directory() {
-                    reply.error(ENOENT);
-                    return;
+                    return reply.error(ENOENT);
                 }
 
                 let start = std::cmp::min(file.get_contents().len(), offset as usize);
@@ -563,12 +553,10 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
     }
 
     pub fn rmdir(&self, parent: u64, name: String, reply: fuse::ReplyEmpty) {
-        //println!("rmdir: {}", name);
         let (origin, path) = match self.route(parent, &name) {
             Some(x) => x,
             None => {
-                reply.error(ENOENT);
-                return;
+                return reply.error(ENOENT);
             }
         };
 
@@ -597,7 +585,6 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
         flags: Option<u32>,
         reply: fuse::ReplyAttr,
     ) {
-        //println!("setattr: {}", ino);
         let (origin, path) = match self.node_to_path(ino) {
             Some(x) => x,
             None => {
@@ -612,14 +599,12 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
                 let mut file = match self.repo.read(id, &path, 0) {
                     Some(f) => f,
                     None => {
-                        reply.error(ENOENT);
-                        return;
+                        return reply.error(ENOENT);
                     }
                 };
 
                 if file.get_deleted() {
-                    reply.error(ENOENT);
-                    return;
+                    return reply.error(ENOENT);
                 }
 
                 if let Some(x) = atime {
@@ -646,12 +631,10 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
     }
 
     pub fn readdir(&self, ino: u64, _fh: u64, offset: i64, mut reply: fuse::ReplyDirectory) {
-        //println!("readdir: {}", ino);
         let (origin, path) = match self.node_to_path(ino) {
             Some(x) => x,
             None => {
-                reply.error(ENOENT);
-                return;
+                return reply.error(ENOENT);
             }
         };
 
@@ -681,7 +664,6 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
         _flags: u32,
         reply: fuse::ReplyWrite,
     ) {
-        //println!("write: {}", ino);
         let (origin, path) = match self.node_to_path(ino) {
             Some(x) => x,
             None => {
@@ -821,7 +803,6 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
         newname: String,
         reply: fuse::ReplyEmpty,
     ) {
-        //println!("rename");
         let (source_origin, source_path) = match self.route(parent, &name) {
             Some(x) => x,
             None => return reply.error(ENOENT),

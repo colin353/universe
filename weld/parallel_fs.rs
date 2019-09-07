@@ -176,7 +176,6 @@ where
         flags: u32,
         reply: fuse::ReplyCreate,
     ) {
-        let fs = self.filesystem.clone();
         let name = name.to_string_lossy().to_string();
         self.threadpool.execute(move || {
             fs.create(parent, name, mode, flags, reply);
