@@ -686,7 +686,8 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
                     None => make_default_file(),
                 };
                 let len = data.len();
-                let mut joined_data = Vec::from(&file.get_contents()[0..offset as usize]);
+                let offset = std::cmp::min(file.get_contents().len(), offset as usize);
+                let mut joined_data = Vec::from(&file.get_contents()[0..offset]);
                 joined_data.append(&mut data);
                 file.set_contents(joined_data);
                 file.set_filename(path);
