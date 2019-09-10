@@ -80,11 +80,17 @@ message ReserveIDRequest {
 
 message ReserveIDResponse { uint64 id = 1; }
 
+message BatchWriteRequest {
+  repeated WriteRequest writes = 1;
+  repeated DeleteRequest deletes = 2;
+}
+
 service LargeTableService {
   rpc Read(ReadRequest) returns (ReadResponse);
   rpc ReadRange(ReadRangeRequest) returns (ReadRangeResponse);
   rpc ReserveID(ReserveIDRequest) returns (ReserveIDResponse);
   rpc Write(WriteRequest) returns (WriteResponse);
+  rpc BatchWrite(BatchWriteRequest) returns (WriteResponse);
   rpc Delete(DeleteRequest) returns (DeleteResponse);
   rpc GetShardHint(ShardHintRequest) returns (ShardHintResponse);
 }

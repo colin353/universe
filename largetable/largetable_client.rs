@@ -6,7 +6,8 @@ extern crate protobuf;
 mod client_service;
 
 pub use largetable_grpc_rust::{
-    DeleteResponse, ReadRangeResponse, ReadResponse, Record, ShardHintResponse, WriteResponse,
+    BatchWriteRequest, DeleteResponse, ReadRangeResponse, ReadResponse, Record, ShardHintResponse,
+    WriteResponse,
 };
 
 use largetable_grpc_rust::LargeTableService;
@@ -45,6 +46,11 @@ pub trait LargeTableClient {
     ) -> largetable_grpc_rust::ReadRangeResponse;
 
     fn shard_hint(&self, row: &str, col_spec: &str) -> largetable_grpc_rust::ShardHintResponse;
+
+    fn batch_write(
+        &self,
+        largetable_grpc_rust::BatchWriteRequest,
+    ) -> largetable_grpc_rust::WriteResponse;
 
     fn read_proto<T: protobuf::Message>(&self, row: &str, col: &str, timestamp: u64) -> Option<T> {
         let response = self.read(row, col, timestamp);
@@ -103,6 +109,48 @@ impl LargeTableRemoteClient {
 impl Clone for LargeTableRemoteClient {
     fn clone(&self) -> LargeTableRemoteClient {
         LargeTableRemoteClient::new(&self.hostname, self.port)
+    }
+}
+
+pub struct LargeTableBatchWriter {
+    req: largetable_grpc_rust::BatchWriteRequest,
+}
+
+impl LargeTableBatchWriter {
+    fn write(&mut self, row: &str, col: &str, timestamp: u64, data: Vec<u8>) {
+        let mut write = largetable_grpc_rust::WriteRequest::new();
+        write.set_row(row.to_owned());
+        write.set_column(col.to_owned());
+        write.set_timestamp(timestamp);
+        write.set_data(data);
+
+        self.req.mut_writes().push(write);
+    }
+
+    fn delete(&mut self, row: &str, col: &str) {
+        let mut delete = largetable_grpc_rust::DeleteRequest::new();
+        delete.set_row(row.to_owned());
+        delete.set_column(col.to_owned());
+
+        self.req.mut_deletes().push(delete);
+    }
+
+    fn write_proto<T: protobuf::Message>(
+        &mut self,
+        row: &str,
+        col: &str,
+        timestamp: u64,
+        message: &T,
+    ) {
+        let mut message_bytes = Vec::new();
+        message
+            .write_to_vec(&mut message_bytes)
+            .expect("unable to serialize message");
+        self.write(row, col, timestamp, message_bytes)
+    }
+
+    fn finish<C: LargeTableClient>(self, client: &C) -> largetable_grpc_rust::WriteResponse {
+        client.batch_write(self.req)
     }
 }
 
@@ -286,6 +334,17 @@ impl LargeTableClient for LargeTableRemoteClient {
 
         self.client
             .get_shard_hint(self.opts(), req)
+            .wait()
+            .expect("rpc")
+            .1
+    }
+
+    fn batch_write(
+        &self,
+        req: largetable_grpc_rust::BatchWriteRequest,
+    ) -> largetable_grpc_rust::WriteResponse {
+        self.client
+            .batch_write(self.opts(), req)
             .wait()
             .expect("rpc")
             .1

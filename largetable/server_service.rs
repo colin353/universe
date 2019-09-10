@@ -263,6 +263,41 @@ impl largetable_grpc_rust::LargeTableService for LargeTableServiceHandler {
         grpc::SingleResponse::completed(response)
     }
 
+    fn batch_write(
+        &self,
+        _m: grpc::RequestOptions,
+        req: largetable_grpc_rust::BatchWriteRequest,
+    ) -> grpc::SingleResponse<largetable_grpc_rust::WriteResponse> {
+        let request_time = get_timestamp_usec();
+        {
+            let table = self.largetable.read().unwrap();
+            for write in req.get_writes() {
+                let time_usec = match write.get_timestamp() {
+                    0 => request_time,
+                    x => x,
+                };
+                let mut rec = largetable::Record::new();
+                rec.set_timestamp(time_usec);
+                rec.set_data(write.get_data().to_owned());
+                rec.set_deleted(false);
+
+                table.write(write.get_row(), write.get_column(), rec);
+            }
+
+            for delete in req.get_deletes() {
+                let mut rec = largetable::Record::new();
+                rec.set_timestamp(request_time);
+                rec.set_deleted(true);
+
+                table.write(delete.get_row(), delete.get_column(), rec);
+            }
+        }
+
+        let mut response = largetable_grpc_rust::WriteResponse::new();
+        response.set_timestamp(request_time);
+        grpc::SingleResponse::completed(response)
+    }
+
     fn get_shard_hint(
         &self,
         _m: grpc::RequestOptions,

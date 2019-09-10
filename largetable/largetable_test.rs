@@ -68,13 +68,6 @@ impl LargeTableClient for LargeTableMockClient {
         timestamp: u64,
         data: Vec<u8>,
     ) -> largetable_client::WriteResponse {
-        /*println!(
-            "[lt] write row:{} col:{} ts:{} ({} bytes)",
-            row,
-            col,
-            timestamp,
-            data.len()
-        );*/
         let ts = match timestamp {
             0 => get_timestamp_usec(),
             x => x,
@@ -89,6 +82,39 @@ impl LargeTableClient for LargeTableMockClient {
 
         let mut response = largetable_client::WriteResponse::new();
         response.set_timestamp(ts);
+        response
+    }
+
+    fn batch_write(
+        &self,
+        req: largetable_client::BatchWriteRequest,
+    ) -> largetable_client::WriteResponse {
+        let request_time = get_timestamp_usec();
+        {
+            let table = self.database.read().unwrap();
+            for write in req.get_writes() {
+                let time_usec = match write.get_timestamp() {
+                    0 => request_time,
+                    x => x,
+                };
+                let mut rec = largetable::Record::new();
+                rec.set_timestamp(time_usec);
+                rec.set_data(write.get_data().to_owned());
+                rec.set_deleted(false);
+
+                table.write(write.get_row(), write.get_column(), rec);
+            }
+
+            for delete in req.get_deletes() {
+                let mut rec = largetable::Record::new();
+                rec.set_timestamp(request_time);
+                rec.set_deleted(true);
+
+                table.write(delete.get_row(), delete.get_column(), rec);
+            }
+        }
+        let mut response = largetable_client::WriteResponse::new();
+        response.set_timestamp(request_time);
         response
     }
 
