@@ -303,6 +303,13 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
             index,
             &dir,
         );
+
+        self.db.write_proto(
+            &rowname_for_files(id).as_str(),
+            path_to_colname(path).as_str(),
+            index,
+            &dir,
+        );
     }
 
     pub fn initialize_head(&mut self, id: u64) {

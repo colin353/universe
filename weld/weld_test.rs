@@ -24,6 +24,9 @@ impl weld::WeldServer for WeldServerTestClient {
     fn read(&self, req: weld::FileIdentifier) -> weld::File {
         self.client.read(req)
     }
+    fn read_attrs(&self, req: weld::FileIdentifier) -> weld::File {
+        self.client.read_attrs(req)
+    }
     fn submit(&self, req: weld::Change) -> weld::SubmitResponse {
         self.client.submit(&self.username, req.get_id())
     }
