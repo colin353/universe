@@ -117,7 +117,13 @@ pub struct LargeTableBatchWriter {
 }
 
 impl LargeTableBatchWriter {
-    fn write(&mut self, row: &str, col: &str, timestamp: u64, data: Vec<u8>) {
+    pub fn new() -> Self {
+        Self {
+            req: largetable_grpc_rust::BatchWriteRequest::new(),
+        }
+    }
+
+    pub fn write(&mut self, row: &str, col: &str, timestamp: u64, data: Vec<u8>) {
         let mut write = largetable_grpc_rust::WriteRequest::new();
         write.set_row(row.to_owned());
         write.set_column(col.to_owned());
@@ -127,7 +133,7 @@ impl LargeTableBatchWriter {
         self.req.mut_writes().push(write);
     }
 
-    fn delete(&mut self, row: &str, col: &str) {
+    pub fn delete(&mut self, row: &str, col: &str) {
         let mut delete = largetable_grpc_rust::DeleteRequest::new();
         delete.set_row(row.to_owned());
         delete.set_column(col.to_owned());
@@ -135,7 +141,7 @@ impl LargeTableBatchWriter {
         self.req.mut_deletes().push(delete);
     }
 
-    fn write_proto<T: protobuf::Message>(
+    pub fn write_proto<T: protobuf::Message>(
         &mut self,
         row: &str,
         col: &str,
@@ -149,7 +155,7 @@ impl LargeTableBatchWriter {
         self.write(row, col, timestamp, message_bytes)
     }
 
-    fn finish<C: LargeTableClient>(self, client: &C) -> largetable_grpc_rust::WriteResponse {
+    pub fn finish<C: LargeTableClient>(self, client: &C) -> largetable_grpc_rust::WriteResponse {
         client.batch_write(self.req)
     }
 }

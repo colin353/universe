@@ -5,6 +5,7 @@ extern crate largetable;
 extern crate largetable_client;
 
 use largetable::Record;
+use largetable_client::LargeTableBatchWriter;
 use largetable_client::LargeTableClient;
 
 use std::sync::Arc;
@@ -252,4 +253,15 @@ mod tests {
         assert_eq!(response.get_data(), &[10, 20, 30, 40]);
     }
 
+    #[test]
+    fn test_batch_write() {
+        let client = LargeTableMockClient::new();
+        let mut bw = LargeTableBatchWriter::new();
+        bw.write("test_row", "test_col", 0, vec![10, 20, 30, 40]);
+        bw.finish(&client);
+
+        let response = client.read("test_row", "test_col", 0);
+        assert_eq!(response.get_found(), true);
+        assert_eq!(response.get_data(), &[10, 20, 30, 40]);
+    }
 }

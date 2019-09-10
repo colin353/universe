@@ -126,3 +126,8 @@ rust_library(
         "@io_bazel_rules_rust//proto/raze:protobuf",
     ],
 )
+
+rust_test(
+    name = "largetable_test_test",
+    crate = ":largetable_test",
+)
