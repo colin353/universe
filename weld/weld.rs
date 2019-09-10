@@ -31,6 +31,7 @@ pub struct WeldLocalClient {
 
 pub trait WeldServer {
     fn read(&self, req: weld::FileIdentifier) -> weld::File;
+    fn read_attrs(&self, req: weld::FileIdentifier) -> weld::File;
     fn submit(&self, req: weld::Change) -> weld::SubmitResponse;
     fn snapshot(&self, req: weld::Change) -> weld::SnapshotResponse;
     fn get_change(&self, req: weld::Change) -> weld::Change;
@@ -96,6 +97,14 @@ impl WeldServerClient {
 impl WeldServer for WeldServerClient {
     fn read(&self, req: weld::FileIdentifier) -> weld::File {
         self.client.read(self.opts(), req).wait().expect("rpc").1
+    }
+
+    fn read_attrs(&self, req: weld::FileIdentifier) -> weld::File {
+        self.client
+            .read_attrs(self.opts(), req)
+            .wait()
+            .expect("rpc")
+            .1
     }
 
     fn submit(&self, req: weld::Change) -> weld::SubmitResponse {

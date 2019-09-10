@@ -441,7 +441,7 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
 
                 let ino = self.path_to_node(Origin::from_change(id), &path);
 
-                let file = match self.repo.read(id, &path, 0) {
+                let file = match self.repo.read_attrs(id, &path, 0) {
                     Some(f) => f,
                     None => {
                         return reply.error(ENOENT);
@@ -487,8 +487,6 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
             );
         }
 
-        //println!("extracted path: {}", path);
-
         // All inodes in the root are just client names.
         match origin {
             Origin::Root => return reply.attr(&Duration::from_secs(TTL), &make_dir_attr(ino, 0)),
@@ -499,10 +497,9 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
                     return reply.attr(&Duration::from_secs(TTL), &make_dir_attr(ino, 0));
                 }
 
-                let file = match self.repo.read(id, &path, 0) {
+                let file = match self.repo.read_attrs(id, &path, 0) {
                     Some(f) => f,
                     None => {
-                        //println!("no entry for {} in client {}", path, space);
                         return reply.error(ENOENT);
                     }
                 };
@@ -510,8 +507,6 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
                 if file.get_deleted() {
                     return reply.error(ENOENT);
                 }
-
-                //println!("directory={}", file.get_directory());
 
                 match file.get_directory() {
                     true => reply.attr(&Duration::from_secs(TTL), &make_dir_attr(ino, 0)),
@@ -596,7 +591,7 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
         match origin {
             Origin::Root => return reply.error(ENOENT),
             Origin::Change(id) => {
-                let mut file = match self.repo.read(id, &path, 0) {
+                let mut file = match self.repo.read_attrs(id, &path, 0) {
                     Some(f) => f,
                     None => {
                         return reply.error(ENOENT);
@@ -625,7 +620,7 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
 
                 file.set_filename(path.to_owned());
                 reply.attr(&Duration::from_secs(TTL), &file_attr_from_file(ino, &file));
-                self.repo.write(id, file, 0);
+                self.repo.write_attrs(id, file, 0);
             }
         }
     }
@@ -855,7 +850,7 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
         match origin {
             Origin::Root => return reply.error(ENOENT),
             Origin::Change(id) => {
-                let file = match self.repo.read(id, &path, 0) {
+                let file = match self.repo.read_attrs(id, &path, 0) {
                     Some(f) => f,
                     None => return reply.error(ENOENT),
                 };

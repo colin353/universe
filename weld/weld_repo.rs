@@ -18,7 +18,8 @@ const CHANGE_METADATA: &'static str = "metadata";
 const CHANGE_IDS: &'static str = "change_ids";
 const SNAPSHOTS: &'static str = "snapshots";
 const SNAPSHOT_IDS: &'static str = "snapshots_ids";
-const CACHE_SIZE: usize = 4096;
+const CACHE_SIZE: usize = 16384;
+const ATTRS: &'static str = "file_attrs";
 
 #[derive(Clone)]
 pub struct Repo<C: largetable_client::LargeTableClient, W: weld::WeldServer> {
@@ -42,6 +43,7 @@ impl Eq for ReadQuery {}
 #[derive(Clone)]
 enum ReadResponse {
     Read(weld::File),
+    ReadAttrs(weld::File),
     ListFiles(Vec<weld::File>),
     GetChange(Option<weld::Change>),
 }
@@ -78,6 +80,45 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
 
     pub fn add_remote_server(&mut self, client: W) {
         self.remote_server = Some(client);
+    }
+
+    pub fn read_attrs_remote(&self, id: u64, path: &str, index: u64) -> Option<File> {
+        if self.remote_server.is_none() {
+            return None;
+        }
+
+        let filename = normalize_filename(path);
+
+        // First, check cache. If it's in there, quickly return.
+        let query = ReadQuery::Read(id, path.to_owned(), index);
+
+        match self.cache.get(&query) {
+            Some(ReadResponse::ReadAttrs(f)) => return if f.get_found() { Some(f) } else { None },
+            _ => (),
+        };
+
+        match self.remote_server {
+            Some(ref client) => {
+                let mut ident = weld::FileIdentifier::new();
+                ident.set_id(id);
+                ident.set_filename(filename);
+                ident.set_index(index);
+                let file = client.read_attrs(ident);
+
+                // Save to the cache, unless we're reading with index 0 (i.e. latest)
+                if index != 0 {
+                    self.cache
+                        .insert(query, ReadResponse::ReadAttrs(file.clone()));
+                }
+
+                match file.get_found() {
+                    true => Some(file),
+                    false => None,
+                }
+            }
+            // If we don't have a connected remote server, return nothing.
+            None => None,
+        }
     }
 
     pub fn read_remote(&self, id: u64, path: &str, index: u64) -> Option<File> {
@@ -128,7 +169,7 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
 
         // If the current change has a copy of the file, it must be the latest, so return it.
         if let Some(mut file) = self.db.read_proto::<File>(
-            &change_to_rowname(id),
+            &rowname_for_files(id),
             path_to_colname(&filename).as_str(),
             index,
         ) {
@@ -144,6 +185,32 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
         }
     }
 
+    pub fn read_attrs(&self, id: u64, path: &str, index: u64) -> Option<File> {
+        let filename = normalize_filename(path);
+
+        let change = match self.get_change(id) {
+            Some(c) => c,
+            None => return None,
+        };
+
+        // If the current change has a copy of the file, it must be the latest, so return it.
+        if let Some(mut file) = self.db.read_proto::<File>(
+            &rowname_for_attrs(id),
+            path_to_colname(&filename).as_str(),
+            index,
+        ) {
+            file.set_found(true);
+            return Some(file);
+        }
+
+        // Otherwise we can fall back to the based change, if it exists.
+        if change.get_is_based_locally() {
+            self.read_attrs(change.get_based_id(), &filename, change.get_based_index())
+        } else {
+            self.read_attrs_remote(change.get_based_id(), &filename, change.get_based_index())
+        }
+    }
+
     pub fn write(&self, id: u64, mut file: File, index: u64) {
         // Create the associated parent directories.
         let mut directory = parent_directory(file.get_filename());
@@ -156,8 +223,54 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
         // true for file.found.
         file.set_found(true);
 
+        let size = file.get_contents().len();
+        file.set_size(size as u64);
+
         self.db.write_proto(
-            change_to_rowname(id).as_str(),
+            rowname_for_files(id).as_str(),
+            path_to_colname(file.get_filename()).as_str(),
+            index,
+            &file,
+        );
+        self._write_attrs(id, file, index);
+    }
+
+    pub fn write_attrs(&self, id: u64, mut file: File, index: u64) {
+        // Create the associated parent directories.
+        let mut directory = parent_directory(file.get_filename());
+        while directory != "/" {
+            self.create_directory(id, &directory, index);
+            directory = parent_directory(&directory);
+        }
+
+        // Later, when the file is read, we should make sure we return
+        // true for file.found.
+        file.set_found(true);
+
+        self._write_attrs(id, file.clone(), index);
+
+        // Need to update the underlying file as well.
+        if let Some(mut file_contents) = self.db.read_proto::<File>(
+            &rowname_for_files(id),
+            path_to_colname(file.get_filename()).as_str(),
+            index,
+        ) {
+            file.set_contents(file_contents.take_contents());
+            let size = file.get_contents().len();
+            file.set_size(size as u64);
+        }
+        self.db.write_proto(
+            rowname_for_files(id).as_str(),
+            path_to_colname(file.get_filename()).as_str(),
+            index,
+            &file,
+        );
+    }
+
+    fn _write_attrs(&self, id: u64, mut file: File, index: u64) {
+        file.clear_contents();
+        self.db.write_proto(
+            rowname_for_attrs(id).as_str(),
             path_to_colname(file.get_filename()).as_str(),
             index,
             &file,
@@ -185,7 +298,7 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
         dir.set_found(true);
 
         self.db.write_proto(
-            &change_to_rowname(id).as_str(),
+            &rowname_for_attrs(id).as_str(),
             path_to_colname(path).as_str(),
             index,
             &dir,
@@ -195,7 +308,7 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
     pub fn initialize_head(&mut self, id: u64) {
         self.db.write_proto(
             CHANGE_METADATA,
-            &change_to_rowname(id),
+            &change_to_colname(id),
             0,
             &weld::Change::new(),
         );
@@ -219,7 +332,7 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
         change.set_found(true);
         self.db.write_proto(
             CHANGE_METADATA,
-            &change_to_rowname(change.get_id()),
+            &change_to_colname(change.get_id()),
             0,
             &change,
         );
@@ -255,7 +368,7 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
 
         let change = self
             .db
-            .read_proto(CHANGE_METADATA, &change_to_rowname(id), 0);
+            .read_proto(CHANGE_METADATA, &change_to_colname(id), 0);
         self.cache
             .insert(query, ReadResponse::GetChange(change.clone()));
         change
@@ -269,7 +382,7 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
 
         self.db.write_proto(
             CHANGE_METADATA,
-            &change_to_rowname(change.get_id()),
+            &change_to_colname(change.get_id()),
             0,
             change,
         );
@@ -293,7 +406,7 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
     pub fn list_changed_files(&self, id: u64, index: u64) -> impl Iterator<Item = File> + '_ {
         largetable_client::LargeTableScopedIterator::new(
             &self.db,
-            change_to_rowname(id),
+            rowname_for_files(id),
             String::from(""),
             String::from(""),
             String::from(""),
@@ -356,7 +469,7 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
         let mut files = std::collections::BTreeMap::new();
         for (_, file) in largetable_client::LargeTableScopedIterator::<File, _>::new(
             &self.db,
-            change_to_rowname(id),
+            rowname_for_attrs(id),
             path_to_colname(&directory),
             String::from(""),
             String::from(""),
@@ -657,7 +770,7 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
             None => return eprintln!("Tried to delete non-existant change {}", id),
         };
 
-        self.db.delete(CHANGE_METADATA, &change_to_rowname(id));
+        self.db.delete(CHANGE_METADATA, &change_to_colname(id));
         self.spaces
             .write()
             .unwrap()
@@ -798,8 +911,16 @@ pub fn normalize_filename(filename: &str) -> String {
     format!("/{}", filename.trim_matches('/'))
 }
 
-fn change_to_rowname(id: u64) -> String {
+fn change_to_colname(id: u64) -> String {
     format!("{}/{}", CHANGES, id)
+}
+
+fn rowname_for_attrs(id: u64) -> String {
+    format!("{}/{}/a", CHANGES, id)
+}
+
+fn rowname_for_files(id: u64) -> String {
+    format!("{}/{}/f", CHANGES, id)
 }
 
 pub fn path_to_colname(path: &str) -> String {

@@ -46,6 +46,16 @@ impl<C: LargeTableClient> WeldServiceHandler<C> {
         }
     }
 
+    pub fn read_attrs(&self, file: weld::FileIdentifier) -> File {
+        match self
+            .repo
+            .read_attrs(file.get_id(), file.get_filename(), file.get_index())
+        {
+            Some(f) => f,
+            None => File::new(),
+        }
+    }
+
     pub fn submit(&self, _username: &str, pending_id: u64) -> weld::SubmitResponse {
         if pending_id == HEAD_ID {
             println!("[submit] Can't submit HEAD, that doesn't make sense");
@@ -252,6 +262,17 @@ impl<C: LargeTableClient> weld::WeldService for WeldServiceHandler<C> {
     ) -> grpc::SingleResponse<weld::File> {
         match self.authenticate(&m) {
             Some(_username) => grpc::SingleResponse::completed(self.read(req)),
+            None => grpc::SingleResponse::err(grpc::Error::Other("unauthenticated")),
+        }
+    }
+
+    fn read_attrs(
+        &self,
+        m: grpc::RequestOptions,
+        req: weld::FileIdentifier,
+    ) -> grpc::SingleResponse<weld::File> {
+        match self.authenticate(&m) {
+            Some(_username) => grpc::SingleResponse::completed(self.read_attrs(req)),
             None => grpc::SingleResponse::err(grpc::Error::Other("unauthenticated")),
         }
     }

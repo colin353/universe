@@ -30,6 +30,8 @@ message File {
 
   uint64 change_id = 16;
   uint64 snapshot_id = 17;
+
+  uint64 size = 18;
 }
 
 message FileHistory {
@@ -118,6 +120,7 @@ message GetSubmittedChangesResponse { repeated Change changes = 1; }
 service WeldService {
   rpc ListFiles(FileIdentifier) returns (ListFilesResponse);
   rpc Read(FileIdentifier) returns (File);
+  rpc ReadAttrs(FileIdentifier) returns (File);
   rpc Submit(Change) returns (SubmitResponse);
   rpc Snapshot(Change) returns (SnapshotResponse);
   rpc GetChange(Change) returns (Change);

@@ -62,6 +62,7 @@ mod tests {
         repo.write(id, test_file.clone(), 0);
 
         test_file.set_found(true);
+        test_file.set_size(16);
         assert_eq!(repo.read(id, "/test/config.txt", 0), Some(test_file));
     }
 
