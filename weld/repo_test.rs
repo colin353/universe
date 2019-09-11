@@ -193,6 +193,10 @@ mod tests {
             repo.read(id, "/test/config.txt", 1).unwrap().get_found(),
             true
         );
+        assert_eq!(
+            repo.read(id, "/test/config.txt", 1).unwrap().get_contents(),
+            "{config: true}".as_bytes(),
+        );
     }
 
     #[test]

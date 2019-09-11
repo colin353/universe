@@ -34,6 +34,7 @@ pub struct Repo<C: largetable_client::LargeTableClient, W: weld::WeldServer> {
 #[derive(Clone, Debug, PartialEq, Hash)]
 enum ReadQuery {
     Read(u64, String, u64),
+    ReadAttrs(u64, String, u64),
     ListFiles(u64, String, u64),
     GetChange(u64),
 }
@@ -90,7 +91,7 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
         let filename = normalize_filename(path);
 
         // First, check cache. If it's in there, quickly return.
-        let query = ReadQuery::Read(id, path.to_owned(), index);
+        let query = ReadQuery::ReadAttrs(id, path.to_owned(), index);
 
         match self.cache.get(&query) {
             Some(ReadResponse::ReadAttrs(f)) => return if f.get_found() { Some(f) } else { None },
@@ -226,13 +227,23 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
         let size = file.get_contents().len();
         file.set_size(size as u64);
 
-        self.db.write_proto(
+        let mut writer = largetable_client::LargeTableBatchWriter::new();
+        writer.write_proto(
             rowname_for_files(id).as_str(),
             path_to_colname(file.get_filename()).as_str(),
             index,
             &file,
         );
-        self._write_attrs(id, file, index);
+
+        file.clear_contents();
+        writer.write_proto(
+            rowname_for_attrs(id).as_str(),
+            path_to_colname(file.get_filename()).as_str(),
+            index,
+            &file,
+        );
+
+        writer.finish(&self.db);
     }
 
     pub fn write_attrs(&self, id: u64, mut file: File, index: u64) {
@@ -247,7 +258,13 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
         // true for file.found.
         file.set_found(true);
 
-        self._write_attrs(id, file.clone(), index);
+        let mut writer = largetable_client::LargeTableBatchWriter::new();
+        writer.write_proto(
+            rowname_for_attrs(id).as_str(),
+            path_to_colname(file.get_filename()).as_str(),
+            index,
+            &file,
+        );
 
         // Need to update the underlying file as well.
         if let Some(mut file_contents) = self.db.read_proto::<File>(
@@ -259,22 +276,13 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
             let size = file.get_contents().len();
             file.set_size(size as u64);
         }
-        self.db.write_proto(
+        writer.write_proto(
             rowname_for_files(id).as_str(),
             path_to_colname(file.get_filename()).as_str(),
             index,
             &file,
         );
-    }
-
-    fn _write_attrs(&self, id: u64, mut file: File, index: u64) {
-        file.clear_contents();
-        self.db.write_proto(
-            rowname_for_attrs(id).as_str(),
-            path_to_colname(file.get_filename()).as_str(),
-            index,
-            &file,
-        );
+        writer.finish(&self.db);
     }
 
     pub fn delete(&self, id: u64, path: &str, index: u64) {

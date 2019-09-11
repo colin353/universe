@@ -19,7 +19,7 @@ const TTL: u64 = 5;
 fn file_attr_from_file(ino: u64, file: &File) -> fuse::FileAttr {
     fuse::FileAttr {
         ino: ino,
-        size: file.get_contents().len() as u64,
+        size: file.get_size(),
         blocks: 1,
         atime: UNIX_EPOCH + Duration::new(file.get_atime(), 0),
         mtime: UNIX_EPOCH + Duration::new(file.get_mtime(), 0),
