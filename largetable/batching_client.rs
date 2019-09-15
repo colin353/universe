@@ -4,7 +4,7 @@ use std::ops::Bound::{Included, Unbounded};
 use std::sync::RwLock;
 
 pub struct LargeTableBatchingClient<T, C: largetable_client::LargeTableClient> {
-    cache: RwLock<VecDeque<BTreeMap<(String, String), T>>>,
+    cache: RwLock<VecDeque<RwLock<BTreeMap<(String, String), T>>>>,
     pub client: C,
 }
 
@@ -20,14 +20,14 @@ impl<T: protobuf::Message + Clone, C: largetable_client::LargeTableClient>
 
     pub fn new_with_cache(client: C) -> Self {
         Self {
-            cache: RwLock::new(VecDeque::from(vec![BTreeMap::new()])),
+            cache: RwLock::new(VecDeque::from(vec![RwLock::new(BTreeMap::new())])),
             client: client,
         }
     }
 
     pub fn read(&self, row: &str, col: &str) -> Option<T> {
         for cache in self.cache.read().unwrap().iter().rev() {
-            if let Some(x) = cache.get(&(row.to_owned(), col.to_owned())) {
+            if let Some(x) = cache.read().unwrap().get(&(row.to_owned(), col.to_owned())) {
                 return Some(x.clone());
             }
         }
@@ -35,8 +35,11 @@ impl<T: protobuf::Message + Clone, C: largetable_client::LargeTableClient>
     }
 
     pub fn write(&self, row: &str, col: &str, message: T) {
-        if let Some(cache) = self.cache.write().unwrap().back_mut() {
-            cache.insert((row.to_owned(), col.to_owned()), message);
+        if let Some(cache) = self.cache.read().unwrap().back() {
+            cache
+                .write()
+                .unwrap()
+                .insert((row.to_owned(), col.to_owned()), message);
             return;
         }
 
@@ -53,7 +56,7 @@ impl<T: protobuf::Message + Clone, C: largetable_client::LargeTableClient>
         }
 
         for cache in self.cache.read().unwrap().iter() {
-            for ((_row, col), record) in cache.range((
+            for ((_row, col), record) in cache.read().unwrap().range((
                 Included((String::from(row), String::from(col_spec))),
                 Unbounded,
             )) {
@@ -70,32 +73,39 @@ impl<T: protobuf::Message + Clone, C: largetable_client::LargeTableClient>
         output.into_iter().map(|(_, r)| r).collect()
     }
 
-    pub fn flush(&self) {
+    pub fn flush(&self) -> u64 {
         self.prepare_flush();
-        self.perform_flush();
+        let count = self.perform_flush();
         self.finish_flush();
+        count
     }
 
     fn prepare_flush(&self) {
-        self.cache.write().unwrap().push_back(BTreeMap::new());
+        self.cache
+            .write()
+            .unwrap()
+            .push_back(RwLock::new(BTreeMap::new()));
     }
 
     fn finish_flush(&self) {
         self.cache.write().unwrap().pop_front();
     }
 
-    fn perform_flush(&self) {
+    fn perform_flush(&self) -> u64 {
         let cache_locked = self.cache.read().unwrap();
         let cache = match cache_locked.front() {
             Some(x) => x,
-            None => return,
+            None => return 0,
         };
 
         let mut writer = largetable_client::LargeTableBatchWriter::new();
-        for ((row, col), msg) in cache {
+        let mut count = 0;
+        for ((row, col), msg) in cache.read().unwrap().iter() {
+            count += 1;
             writer.write_proto(row, col, 0, msg);
         }
         writer.finish(&self.client);
+        count
     }
 }
 
