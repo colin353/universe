@@ -1,7 +1,10 @@
+extern crate batching_client;
 extern crate cache;
 extern crate largetable_client;
 extern crate merge_lib;
 extern crate weld;
+
+use batching_client::LargeTableBatchingClient;
 
 use std::collections::{HashMap, HashSet};
 use std::io::prelude::*;
@@ -23,9 +26,9 @@ const ATTRS: &'static str = "file_attrs";
 
 #[derive(Clone)]
 pub struct Repo<C: largetable_client::LargeTableClient, W: weld::WeldServer> {
-    db: C,
     pub remote_server: Option<W>,
     cache: Arc<Cache<ReadQuery, ReadResponse>>,
+    batching_client: Arc<LargeTableBatchingClient<File, C>>,
 
     // Map of friendly name to support change lookup by friendly name.
     spaces: Arc<RwLock<HashMap<String, u64>>>,
@@ -52,14 +55,23 @@ enum ReadResponse {
 impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
     pub fn new(client: C) -> Self {
         let mut repo = Repo {
-            db: client,
             remote_server: None,
+            batching_client: Arc::new(LargeTableBatchingClient::new(client)),
             cache: Arc::new(Cache::new(CACHE_SIZE)),
             spaces: Arc::new(RwLock::new(HashMap::new())),
         };
-
         repo.initialize_space_map();
+        repo
+    }
 
+    pub fn new_with_client(batching_client: Arc<LargeTableBatchingClient<File, C>>) -> Self {
+        let mut repo = Repo {
+            remote_server: None,
+            batching_client: batching_client,
+            cache: Arc::new(Cache::new(CACHE_SIZE)),
+            spaces: Arc::new(RwLock::new(HashMap::new())),
+        };
+        repo.initialize_space_map();
         repo
     }
 
@@ -168,14 +180,23 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
             None => return None,
         };
 
-        // If the current change has a copy of the file, it must be the latest, so return it.
-        if let Some(mut file) = self.db.read_proto::<File>(
-            &rowname_for_files(id),
-            path_to_colname(&filename).as_str(),
-            index,
-        ) {
-            file.set_found(true);
-            return Some(file);
+        if index == 0 {
+            if let Some(mut file) = self
+                .batching_client
+                .read(&rowname_for_files(id), path_to_colname(&filename).as_str())
+            {
+                file.set_found(true);
+                return Some(file);
+            }
+        } else {
+            if let Some(mut file) = self.batching_client.client.read_proto::<File>(
+                &rowname_for_files(id),
+                path_to_colname(&filename).as_str(),
+                index,
+            ) {
+                file.set_found(true);
+                return Some(file);
+            }
         }
 
         // Otherwise we can fall back to the based change, if it exists.
@@ -194,14 +215,23 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
             None => return None,
         };
 
-        // If the current change has a copy of the file, it must be the latest, so return it.
-        if let Some(mut file) = self.db.read_proto::<File>(
-            &rowname_for_attrs(id),
-            path_to_colname(&filename).as_str(),
-            index,
-        ) {
-            file.set_found(true);
-            return Some(file);
+        if index == 0 {
+            if let Some(mut file) = self.batching_client.client.read_proto::<File>(
+                &rowname_for_attrs(id),
+                path_to_colname(&filename).as_str(),
+                index,
+            ) {
+                file.set_found(true);
+                return Some(file);
+            }
+        } else {
+            if let Some(mut file) = self
+                .batching_client
+                .read(&rowname_for_attrs(id), path_to_colname(&filename).as_str())
+            {
+                file.set_found(true);
+                return Some(file);
+            }
         }
 
         // Otherwise we can fall back to the based change, if it exists.
@@ -227,23 +257,36 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
         let size = file.get_contents().len();
         file.set_size(size as u64);
 
-        let mut writer = largetable_client::LargeTableBatchWriter::new();
-        writer.write_proto(
-            rowname_for_files(id).as_str(),
-            path_to_colname(file.get_filename()).as_str(),
-            index,
-            &file,
-        );
+        if index == 0 {
+            self.batching_client.write(
+                rowname_for_files(id).as_str(),
+                path_to_colname(file.get_filename()).as_str(),
+                file.clone(),
+            );
+            file.clear_contents();
+            self.batching_client.write(
+                rowname_for_attrs(id).as_str(),
+                path_to_colname(file.get_filename()).as_str(),
+                file,
+            );
+        } else {
+            let mut writer = largetable_client::LargeTableBatchWriter::new();
+            writer.write_proto(
+                rowname_for_files(id).as_str(),
+                path_to_colname(file.get_filename()).as_str(),
+                index,
+                &file,
+            );
 
-        file.clear_contents();
-        writer.write_proto(
-            rowname_for_attrs(id).as_str(),
-            path_to_colname(file.get_filename()).as_str(),
-            index,
-            &file,
-        );
-
-        writer.finish(&self.db);
+            file.clear_contents();
+            writer.write_proto(
+                rowname_for_attrs(id).as_str(),
+                path_to_colname(file.get_filename()).as_str(),
+                index,
+                &file,
+            );
+            writer.finish(&self.batching_client.client);
+        }
     }
 
     pub fn write_attrs(&self, id: u64, mut file: File, index: u64) {
@@ -258,31 +301,53 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
         // true for file.found.
         file.set_found(true);
 
-        let mut writer = largetable_client::LargeTableBatchWriter::new();
-        writer.write_proto(
-            rowname_for_attrs(id).as_str(),
-            path_to_colname(file.get_filename()).as_str(),
-            index,
-            &file,
-        );
+        if index == 0 {
+            self.batching_client.write(
+                rowname_for_attrs(id).as_str(),
+                path_to_colname(file.get_filename()).as_str(),
+                file.clone(),
+            );
 
-        // Need to update the underlying file as well.
-        if let Some(mut file_contents) = self.db.read_proto::<File>(
-            &rowname_for_files(id),
-            path_to_colname(file.get_filename()).as_str(),
-            index,
-        ) {
-            file.set_contents(file_contents.take_contents());
-            let size = file.get_contents().len();
-            file.set_size(size as u64);
+            // Need to update the underlying file as well.
+            if let Some(mut file_contents) = self.batching_client.read(
+                &rowname_for_files(id),
+                path_to_colname(file.get_filename()).as_str(),
+            ) {
+                file.set_contents(file_contents.take_contents());
+                let size = file.get_contents().len();
+                file.set_size(size as u64);
+            }
+            self.batching_client.write(
+                rowname_for_files(id).as_str(),
+                path_to_colname(file.get_filename()).as_str(),
+                file,
+            );
+        } else {
+            let mut writer = largetable_client::LargeTableBatchWriter::new();
+            writer.write_proto(
+                rowname_for_attrs(id).as_str(),
+                path_to_colname(file.get_filename()).as_str(),
+                index,
+                &file,
+            );
+
+            // Need to update the underlying file as well.
+            if let Some(mut file_contents) = self.batching_client.read(
+                &rowname_for_files(id),
+                path_to_colname(file.get_filename()).as_str(),
+            ) {
+                file.set_contents(file_contents.take_contents());
+                let size = file.get_contents().len();
+                file.set_size(size as u64);
+            }
+            writer.write_proto(
+                rowname_for_files(id).as_str(),
+                path_to_colname(file.get_filename()).as_str(),
+                index,
+                &file,
+            );
+            writer.finish(&self.batching_client.client);
         }
-        writer.write_proto(
-            rowname_for_files(id).as_str(),
-            path_to_colname(file.get_filename()).as_str(),
-            index,
-            &file,
-        );
-        writer.finish(&self.db);
     }
 
     pub fn delete(&self, id: u64, path: &str, index: u64) {
@@ -305,23 +370,39 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
         dir.set_directory(true);
         dir.set_found(true);
 
-        self.db.write_proto(
-            &rowname_for_attrs(id).as_str(),
-            path_to_colname(path).as_str(),
-            index,
-            &dir,
-        );
+        if index == 0 {
+            self.batching_client.write(
+                &rowname_for_attrs(id).as_str(),
+                path_to_colname(path).as_str(),
+                dir.clone(),
+            );
+            self.batching_client.write(
+                &rowname_for_files(id).as_str(),
+                path_to_colname(path).as_str(),
+                dir,
+            );
+        } else {
+            let mut writer = largetable_client::LargeTableBatchWriter::new();
+            writer.write_proto(
+                &rowname_for_attrs(id).as_str(),
+                path_to_colname(path).as_str(),
+                index,
+                &dir,
+            );
 
-        self.db.write_proto(
-            &rowname_for_files(id).as_str(),
-            path_to_colname(path).as_str(),
-            index,
-            &dir,
-        );
+            writer.write_proto(
+                &rowname_for_files(id).as_str(),
+                path_to_colname(path).as_str(),
+                index,
+                &dir,
+            );
+
+            writer.finish(&self.batching_client.client);
+        }
     }
 
     pub fn initialize_head(&mut self, id: u64) {
-        self.db.write_proto(
+        self.batching_client.client.write_proto(
             CHANGE_METADATA,
             &change_to_colname(id),
             0,
@@ -345,7 +426,7 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
         }
 
         change.set_found(true);
-        self.db.write_proto(
+        self.batching_client.client.write_proto(
             CHANGE_METADATA,
             &change_to_colname(change.get_id()),
             0,
@@ -370,8 +451,12 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
 
     fn log_snapshot(&self, id: u64, entry: weld::SnapshotLogEntry) {
         let row_name = format!("{}/{}", SNAPSHOTS, id);
-        let snapshot_id = self.db.reserve_id(SNAPSHOT_IDS, &id.to_string());
-        self.db
+        let snapshot_id = self
+            .batching_client
+            .client
+            .reserve_id(SNAPSHOT_IDS, &id.to_string());
+        self.batching_client
+            .client
             .write_proto(&row_name, &snapshot_id.to_string(), 0, &entry);
     }
 
@@ -381,9 +466,10 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
             return c;
         }
 
-        let change = self
-            .db
-            .read_proto(CHANGE_METADATA, &change_to_colname(id), 0);
+        let change =
+            self.batching_client
+                .client
+                .read_proto(CHANGE_METADATA, &change_to_colname(id), 0);
         self.cache
             .insert(query, ReadResponse::GetChange(change.clone()));
         change
@@ -395,7 +481,7 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
             .unwrap()
             .insert(change.get_friendly_name().to_owned(), change.get_id());
 
-        self.db.write_proto(
+        self.batching_client.client.write_proto(
             CHANGE_METADATA,
             &change_to_colname(change.get_id()),
             0,
@@ -408,7 +494,7 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
 
     pub fn list_changes(&self) -> impl Iterator<Item = weld::Change> + '_ {
         largetable_client::LargeTableScopedIterator::new(
-            &self.db,
+            &self.batching_client.client,
             String::from(CHANGE_METADATA),
             String::from(""),
             String::from(""),
@@ -420,7 +506,7 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
 
     pub fn list_changed_files(&self, id: u64, index: u64) -> impl Iterator<Item = File> + '_ {
         largetable_client::LargeTableScopedIterator::new(
-            &self.db,
+            &self.batching_client.client,
             rowname_for_files(id),
             String::from(""),
             String::from(""),
@@ -432,7 +518,7 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
 
     pub fn list_snapshots(&self, id: u64) -> impl Iterator<Item = weld::SnapshotLogEntry> + '_ {
         largetable_client::LargeTableScopedIterator::new(
-            &self.db,
+            &self.batching_client.client,
             format!("{}/{}", SNAPSHOTS, id),
             String::from(""),
             String::from(""),
@@ -482,15 +568,25 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
         };
 
         let mut files = std::collections::BTreeMap::new();
-        for (_, file) in largetable_client::LargeTableScopedIterator::<File, _>::new(
-            &self.db,
-            rowname_for_attrs(id),
-            path_to_colname(&directory),
-            String::from(""),
-            String::from(""),
-            index,
-        ) {
-            files.insert(file.get_filename().to_owned(), file);
+
+        if index == 0 {
+            for file in self
+                .batching_client
+                .read_scoped(&rowname_for_attrs(id), &path_to_colname(&directory))
+            {
+                files.insert(file.get_filename().to_owned(), file);
+            }
+        } else {
+            for (_, file) in largetable_client::LargeTableScopedIterator::<File, _>::new(
+                &self.batching_client.client,
+                rowname_for_attrs(id),
+                path_to_colname(&directory),
+                String::from(""),
+                String::from(""),
+                index,
+            ) {
+                files.insert(file.get_filename().to_owned(), file);
+            }
         }
 
         let based_files = if change.get_is_based_locally() {
@@ -512,7 +608,7 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
     }
 
     pub fn reserve_change_id(&self) -> u64 {
-        self.db.reserve_id(CHANGE_IDS, "") + 1
+        self.batching_client.client.reserve_id(CHANGE_IDS, "") + 1
     }
 
     pub fn populate_change(&self, mut change: weld::Change) -> weld::Change {
@@ -714,6 +810,9 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
 
         self.update_change(&change);
 
+        // Flush the batching cache to the database
+        self.batching_client.flush();
+
         // Create an entry in the SNAPSHOTS record with the current filesystem state.
         let id = partial_change.get_id();
         let mut entry = weld::SnapshotLogEntry::new();
@@ -785,7 +884,9 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
             None => return eprintln!("Tried to delete non-existant change {}", id),
         };
 
-        self.db.delete(CHANGE_METADATA, &change_to_colname(id));
+        self.batching_client
+            .client
+            .delete(CHANGE_METADATA, &change_to_colname(id));
         self.spaces
             .write()
             .unwrap()

@@ -61,6 +61,7 @@ rust_library(
     srcs = ["weld_repo.rs"],
     deps = [
         ":weld",
+        "//largetable:batching_client",
         "//largetable:largetable_client",
         "//util/cache",
         "//weld:merge_lib",
