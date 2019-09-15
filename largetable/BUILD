@@ -117,6 +117,23 @@ docker_push(
 )
 
 rust_library(
+    name = "batching_client",
+    srcs = ["batching_client.rs"],
+    deps = [
+        ":largetable_client",
+        "@io_bazel_rules_rust//proto/raze:protobuf",
+    ],
+)
+
+rust_test(
+    name = "batching_client_test",
+    crate = ":batching_client",
+    deps = [
+        ":largetable_test",
+    ],
+)
+
+rust_library(
     name = "largetable_test",
     srcs = ["largetable_test.rs"],
     deps = [
