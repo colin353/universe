@@ -246,7 +246,9 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
         // Create the associated parent directories.
         let mut directory = parent_directory(file.get_filename());
         while directory != "/" {
-            self.create_directory(id, &directory, index);
+            if self.create_directory(id, &directory, index) {
+                break;
+            }
             directory = parent_directory(&directory);
         }
 
@@ -357,11 +359,11 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
         self.write(id, file, index)
     }
 
-    pub fn create_directory(&self, id: u64, path: &str, index: u64) {
+    pub fn create_directory(&self, id: u64, path: &str, index: u64) -> bool {
         // Check if the directory exists. If so, no work required.
         if let Some(f) = self.read(id, path, index) {
             if !f.get_deleted() {
-                return;
+                return true;
             }
         }
 
@@ -399,6 +401,8 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
 
             writer.finish(&self.batching_client.client);
         }
+
+        false
     }
 
     pub fn initialize_head(&mut self, id: u64) {

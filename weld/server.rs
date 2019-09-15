@@ -59,7 +59,7 @@ fn main() {
 
     let mut server = grpc::ServerBuilder::<tls_api_native_tls::TlsAcceptor>::new();
     server.http.set_port(port.value());
-    server.http.set_cpu_pool_threads(4);
+    server.http.set_cpu_pool_threads(64);
 
     if use_tls.value() {
         let mut p12_contents = Vec::new();
