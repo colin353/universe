@@ -216,19 +216,19 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
         };
 
         if index == 0 {
+            if let Some(mut file) = self
+                .batching_client
+                .read(&rowname_for_attrs(id), path_to_colname(&filename).as_str())
+            {
+                file.set_found(true);
+                return Some(file);
+            }
+        } else {
             if let Some(mut file) = self.batching_client.client.read_proto::<File>(
                 &rowname_for_attrs(id),
                 path_to_colname(&filename).as_str(),
                 index,
             ) {
-                file.set_found(true);
-                return Some(file);
-            }
-        } else {
-            if let Some(mut file) = self
-                .batching_client
-                .read(&rowname_for_attrs(id), path_to_colname(&filename).as_str())
-            {
                 file.set_found(true);
                 return Some(file);
             }

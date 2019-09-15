@@ -95,6 +95,7 @@ rust_binary(
     deps = [
         ":weld",
         ":weld_repo",
+        "//largetable:batching_client",
         "//largetable:largetable_client",
         "//largetable:largetable_test",
         "//third_party:fuse",

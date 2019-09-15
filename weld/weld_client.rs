@@ -80,8 +80,15 @@ fn main() {
         &largetable_hostname.value(),
         largetable_port.value(),
     );
-    //let db = largetable_test::LargeTableMockClient::new();
-    let mut repo = weld_repo::Repo::new(db);
+    let batching_client = Arc::new(batching_client::LargeTableBatchingClient::new_with_cache(
+        db,
+    ));
+    let mut repo = weld_repo::Repo::new_with_client(batching_client.clone());
+
+    std::thread::spawn(move || loop {
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        batching_client.flush();
+    });
 
     if use_tls.value() {
         let mut root_ca_contents = Vec::new();
