@@ -155,8 +155,13 @@ message SyncResponse {
   uint64 index = 2;
 }
 
+message GetChangeRequest {
+  Change change = 1;
+  bool filled = 2;
+}
+
 service WeldLocalService {
-  rpc GetChange(Change) returns (Change);
+  rpc GetChange(GetChangeRequest) returns (Change);
   rpc MakeChange(Change) returns (Change);
   rpc ListFiles(FileIdentifier) returns (ListFilesResponse);
   rpc Read(FileIdentifier) returns (File);

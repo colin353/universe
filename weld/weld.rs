@@ -205,7 +205,7 @@ impl WeldLocalClient {
         self.client.delete(self.opts(), req).wait().expect("rpc");
     }
 
-    pub fn get_change(&self, req: weld::Change) -> weld::Change {
+    pub fn get_change(&self, req: weld::GetChangeRequest) -> weld::Change {
         self.client
             .get_change(self.opts(), req)
             .wait()

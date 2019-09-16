@@ -73,7 +73,11 @@ fn main() {
         "get_change" => {
             let maybe_id = client.lookup_friendly_name(space.value());
             let change = match maybe_id {
-                Some(id) => client.get_change(weld::change(id)),
+                Some(id) => {
+                    let mut req = weld::GetChangeRequest::new();
+                    req.mut_change().set_id(id);
+                    client.get_change(req)
+                }
                 None => {
                     eprintln!("couldn't find change");
                     weld::Change::new()
@@ -84,7 +88,12 @@ fn main() {
         "files" => {
             let maybe_id = client.lookup_friendly_name(space.value());
             let change = match maybe_id {
-                Some(id) => client.get_change(weld::change(id)),
+                Some(id) => {
+                    let mut req = weld::GetChangeRequest::new();
+                    req.mut_change().set_id(id);
+                    req.set_filled(true);
+                    client.get_change(req)
+                }
                 None => {
                     eprintln!("couldn't find change");
                     weld::Change::new()
@@ -152,7 +161,11 @@ fn main() {
             let maybe_id = client.lookup_friendly_name(space.value());
             if let Some(id) = maybe_id {
                 let change = match maybe_id {
-                    Some(id) => client.get_change(weld::change(id)),
+                    Some(id) => {
+                        let mut req = weld::GetChangeRequest::new();
+                        req.mut_change().set_id(id);
+                        client.get_change(req)
+                    }
                     None => {
                         eprintln!("couldn't find change");
                         weld::Change::new()

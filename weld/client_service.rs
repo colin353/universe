@@ -11,11 +11,13 @@ impl<C: LargeTableClient> WeldLocalServiceHandler<C> {
         Self { repo: repo }
     }
 
-    pub fn get_change(&self, change: weld::Change) -> weld::Change {
-        match self.repo.get_change(change.get_id()) {
+    pub fn get_change(&self, change: weld::GetChangeRequest) -> weld::Change {
+        match self.repo.get_change(change.get_change().get_id()) {
             Some(mut c) => {
                 // Fill the change with staged file changes
-                self.repo.fill_change(&mut c);
+                if change.get_filled() {
+                    self.repo.fill_change(&mut c);
+                }
                 c
             }
             None => weld::Change::new(),
@@ -89,14 +91,20 @@ impl<C: LargeTableClient> WeldLocalServiceHandler<C> {
     }
 
     pub fn get_patch(&self, change: weld::Change) -> weld::Patch {
-        let change = self.get_change(change);
+        let mut req = weld::GetChangeRequest::new();
+        req.set_change(change);
+        req.set_filled(true);
+        let change = self.get_change(req);
         let mut patch = weld::Patch::new();
         patch.set_patch(self.repo.patch(&change));
         patch
     }
 
     pub fn sync(&self, req: &weld::SyncRequest) -> weld::SyncResponse {
-        let change = self.get_change(req.get_change().clone());
+        let mut change_req = weld::GetChangeRequest::new();
+        change_req.set_change(req.get_change().clone());
+        change_req.set_filled(true);
+        let change = self.get_change(change_req);
         let (conflicted_files, synced_index) =
             self.repo.sync(change.get_id(), req.get_conflicted_files());
 
@@ -111,7 +119,7 @@ impl<C: LargeTableClient> weld::WeldLocalService for WeldLocalServiceHandler<C> 
     fn get_change(
         &self,
         _m: grpc::RequestOptions,
-        req: weld::Change,
+        req: weld::GetChangeRequest,
     ) -> grpc::SingleResponse<weld::Change> {
         grpc::SingleResponse::completed(self.get_change(req))
     }
