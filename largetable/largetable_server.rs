@@ -48,7 +48,7 @@ fn main() {
     server.add_service(
         largetable_grpc_rust::LargeTableServiceServer::new_service_def(handler.clone()),
     );
-    server.http.set_cpu_pool_threads(16);
+    server.http.set_cpu_pool_threads(32);
 
     let _server = server.build().expect("server");
 

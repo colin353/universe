@@ -91,8 +91,8 @@ impl<'a> Request<'a> {
                     max_readahead: arg.max_readahead, // accept any readahead size
                     flags: arg.flags & INIT_FLAGS, // use features given in INIT_FLAGS and reported as capable
                     max_write: MAX_WRITE_SIZE as u32, // use a max write size that fits into the session's buffer
-                    congestion_threshold: 1024,
-                    max_background: 1024,
+                    congestion_threshold: 4096,
+                    max_background: 4096,
                 };
                 debug!(
                     "INIT response: ABI {}.{}, flags {:#x}, max readahead {}, max write {}",
