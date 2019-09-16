@@ -245,12 +245,6 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
     pub fn write(&self, id: u64, mut file: File, index: u64) {
         // Create the associated parent directories.
         let mut directory = parent_directory(file.get_filename());
-        while directory != "/" {
-            if self.create_directory(id, &directory, index) {
-                break;
-            }
-            directory = parent_directory(&directory);
-        }
 
         // Later, when the file is read, we should make sure we return
         // true for file.found.
