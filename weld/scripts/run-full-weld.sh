@@ -4,17 +4,17 @@ IP_ADDR=$1
 
 sleep 1
 
-RUST_LOG=debug RUST_BACKTRACE=1 bazel run //largetable:largetable_server -- \
+RUST_LOG=debug RUST_BACKTRACE=1 bazel run -c opt //largetable:largetable_server -- \
   --data_directory="/usr/local/largetable/client/" \
   --port=50051 &
 
-RUST_LOG=debug RUST_BACKTRACE=1 bazel run //largetable:largetable_server -- \
+RUST_LOG=debug RUST_BACKTRACE=1 bazel run -c opt //largetable:largetable_server -- \
   --data_directory="/usr/local/largetable/server/" \
   --port=50052 &
 
 sleep 1
 
-RUST_BACKTRACE=1 bazel run //weld:weld_server -- \
+RUST_BACKTRACE=1 bazel run -c opt //weld:weld_server -- \
   --root_cert="/home/colin/Documents/scratch/certs/root.crt" \
   --pkcs12="/home/colin/Documents/scratch/certs/server.p12" \
   --use_mock_largetable=false &
@@ -23,7 +23,7 @@ sleep 1
 
 sudo umount -l $HOME/codefs
 
-RUST_BACKTRACE=1 bazel run //weld:weld_client -- \
+RUST_BACKTRACE=1 bazel run -c opt //weld:weld_client -- \
   --use_tls=true \
   --root_ca="/home/colin/Documents/scratch/certs/root.der" \
   --cert="/home/colin/Documents/scratch/certs/client.p12" \
