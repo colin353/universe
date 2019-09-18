@@ -71,6 +71,11 @@ mod tests {
         let repo = make_test_repo();
         let id = repo.make_change(weld::Change::new());
 
+        let mut test_dir = File::new();
+        test_dir.set_filename(String::from("/test"));
+        test_dir.set_directory(true);
+        repo.write(id, test_dir, 0);
+
         let mut test_file = File::new();
         test_file.set_filename(String::from("/test/config.txt"));
         test_file.set_contents(String::from("/test/config.txt").into_bytes());
@@ -204,6 +209,11 @@ mod tests {
         let repo = make_test_repo();
         let id = repo.make_change(weld::Change::new());
 
+        let mut test_dir = File::new();
+        test_dir.set_filename(String::from("/test"));
+        test_dir.set_directory(true);
+        repo.write(id, test_dir, 0);
+
         let mut test_file = File::new();
         test_file.set_filename(String::from("/test/config.txt"));
         test_file.set_contents(String::from("{config: true}").into_bytes());
@@ -229,6 +239,11 @@ mod tests {
         // First, set up the change we are basing on.
         let change = weld::Change::new();
         let id = repo.make_change(change);
+
+        let mut test_dir = File::new();
+        test_dir.set_filename(String::from("/test"));
+        test_dir.set_directory(true);
+        repo.write(id, test_dir, 0);
 
         let mut test_file = File::new();
         test_file.set_filename(String::from("/test/config.txt"));
