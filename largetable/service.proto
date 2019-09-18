@@ -85,6 +85,9 @@ message BatchWriteRequest {
   repeated DeleteRequest deletes = 2;
 }
 
+message BatchReadRequest { repeated ReadRequest reads = 1; }
+message BatchReadResponse { repeated ReadResponse responses = 1; }
+
 service LargeTableService {
   rpc Read(ReadRequest) returns (ReadResponse);
   rpc ReadRange(ReadRangeRequest) returns (ReadRangeResponse);
@@ -93,4 +96,5 @@ service LargeTableService {
   rpc BatchWrite(BatchWriteRequest) returns (WriteResponse);
   rpc Delete(DeleteRequest) returns (DeleteResponse);
   rpc GetShardHint(ShardHintRequest) returns (ShardHintResponse);
+  rpc BatchRead(BatchReadRequest) returns (BatchReadResponse);
 }

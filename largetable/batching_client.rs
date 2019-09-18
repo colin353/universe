@@ -127,7 +127,6 @@ mod tests {
     fn test_write_with_cache() {
         let client = largetable_test::LargeTableMockClient::new();
         let mut batching_client = LargeTableBatchingClient::new(client);
-        batching_client.add_cache();
         batching_client.write("test_row", "test_col", largetable_client::Record::new());
         batching_client.read("test_row", "test_col").unwrap();
     }
@@ -136,7 +135,6 @@ mod tests {
     fn test_write_with_flush() {
         let client = largetable_test::LargeTableMockClient::new();
         let mut batching_client = LargeTableBatchingClient::new(client);
-        batching_client.add_cache();
         batching_client.write("test_row", "test_col", largetable_client::Record::new());
         batching_client.prepare_flush();
         batching_client.read("test_row", "test_col").unwrap();

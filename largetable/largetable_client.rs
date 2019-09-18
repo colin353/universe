@@ -6,8 +6,8 @@ extern crate protobuf;
 mod client_service;
 
 pub use largetable_grpc_rust::{
-    BatchWriteRequest, DeleteResponse, ReadRangeResponse, ReadResponse, Record, ShardHintResponse,
-    WriteResponse,
+    BatchReadRequest, BatchReadResponse, BatchWriteRequest, DeleteResponse, ReadRangeResponse,
+    ReadResponse, Record, ShardHintResponse, WriteResponse,
 };
 
 use largetable_grpc_rust::LargeTableService;
@@ -51,6 +51,11 @@ pub trait LargeTableClient {
         &self,
         largetable_grpc_rust::BatchWriteRequest,
     ) -> largetable_grpc_rust::WriteResponse;
+
+    fn batch_read(
+        &self,
+        req: largetable_grpc_rust::BatchReadRequest,
+    ) -> largetable_grpc_rust::BatchReadResponse;
 
     fn read_proto<T: protobuf::Message>(&self, row: &str, col: &str, timestamp: u64) -> Option<T> {
         let response = self.read(row, col, timestamp);
@@ -354,5 +359,59 @@ impl LargeTableClient for LargeTableRemoteClient {
             .wait()
             .expect("rpc")
             .1
+    }
+
+    fn batch_read(
+        &self,
+        req: largetable_grpc_rust::BatchReadRequest,
+    ) -> largetable_grpc_rust::BatchReadResponse {
+        self.client
+            .batch_read(self.opts(), req)
+            .wait()
+            .expect("rpc")
+            .1
+    }
+}
+
+pub struct LargeTableBatchReader<T> {
+    req: largetable_grpc_rust::BatchReadRequest,
+    marker: std::marker::PhantomData<T>,
+}
+
+impl<T: protobuf::Message> LargeTableBatchReader<T> {
+    pub fn new() -> Self {
+        Self {
+            req: largetable_grpc_rust::BatchReadRequest::new(),
+            marker: std::marker::PhantomData,
+        }
+    }
+
+    pub fn read(&mut self, row: &str, col: &str, timestamp: u64) -> usize {
+        let mut req = largetable_grpc_rust::ReadRequest::new();
+        req.set_row(row.to_owned());
+        req.set_column(col.to_owned());
+        req.set_timestamp(timestamp);
+        self.req.mut_reads().push(req);
+        self.req.get_reads().len() - 1
+    }
+
+    pub fn finish<C: LargeTableClient>(&mut self, client: C) -> Vec<Option<T>> {
+        let response = client.batch_read(std::mem::replace(
+            &mut self.req,
+            largetable_grpc_rust::BatchReadRequest::new(),
+        ));
+        let mut buffer = Vec::with_capacity(response.get_responses().len());
+        for response in response.get_responses() {
+            if !response.get_found() {
+                buffer.push(None);
+                continue;
+            }
+            let mut message = T::new();
+            message
+                .merge_from_bytes(response.get_data())
+                .expect("unable to deserialize proto");
+            buffer.push(Some(message));
+        }
+        buffer
     }
 }

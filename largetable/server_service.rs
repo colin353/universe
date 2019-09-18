@@ -263,6 +263,14 @@ impl largetable_grpc_rust::LargeTableService for LargeTableServiceHandler {
         grpc::SingleResponse::completed(response)
     }
 
+    fn batch_read(
+        &self,
+        _m: grpc::RequestOptions,
+        req: largetable_grpc_rust::BatchReadRequest,
+    ) -> grpc::SingleResponse<largetable_grpc_rust::BatchReadResponse> {
+        grpc::SingleResponse::completed(largetable_grpc_rust::BatchReadResponse::new())
+    }
+
     fn batch_write(
         &self,
         _m: grpc::RequestOptions,

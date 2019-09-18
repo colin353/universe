@@ -86,6 +86,13 @@ impl LargeTableClient for LargeTableMockClient {
         response
     }
 
+    fn batch_read(
+        &self,
+        req: largetable_client::BatchReadRequest,
+    ) -> largetable_client::BatchReadResponse {
+        largetable_client::BatchReadResponse::new()
+    }
+
     fn batch_write(
         &self,
         req: largetable_client::BatchWriteRequest,
