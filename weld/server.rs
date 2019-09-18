@@ -59,7 +59,7 @@ fn main() {
 
     let mut server = grpc::ServerBuilder::<tls_api_native_tls::TlsAcceptor>::new();
     server.http.set_port(port.value());
-    server.http.set_cpu_pool_threads(64);
+    server.http.set_cpu_pool_threads(8);
 
     if use_tls.value() {
         let mut p12_contents = Vec::new();
@@ -72,16 +72,6 @@ fn main() {
 
         let mut acceptor =
             tls_api_native_tls::TlsAcceptorBuilder::from_pkcs12(&p12_contents, "test").unwrap();
-
-        {
-            let underlying_acceptor = acceptor.underlying_mut().builder_mut();
-            underlying_acceptor.set_verify(
-                openssl::ssl::SSL_VERIFY_PEER | openssl::ssl::SSL_VERIFY_FAIL_IF_NO_PEER_CERT,
-            );
-            underlying_acceptor
-                .set_ca_file(&Path::new(&root_cert.value()))
-                .expect("Can't extract CA file");
-        }
 
         server.http.set_tls(acceptor.build().unwrap());
     }

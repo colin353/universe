@@ -67,16 +67,7 @@ impl WeldServerClient {
             .add_root_certificate(root_ca)
             .expect("add_root_certificate");
 
-        // Add the client certificate (for peer authentication)
-        let client_pkcs12 = native_tls::Pkcs12::from_der(&client_key, "test")
-            .expect("Unable to decode client pkcs12 DER file");
-        builder
-            .underlying_mut()
-            .identity(client_pkcs12)
-            .expect("Unable to add client identity");
-
         let connector = Arc::new(builder.build().unwrap());
-
         let mut tls_option = httpbis::ClientTlsOption::Tls(tls_hostname.to_owned(), connector);
 
         let addr = SocketAddr::new("::1".parse().unwrap(), port);
