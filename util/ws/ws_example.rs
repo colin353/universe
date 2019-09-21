@@ -40,6 +40,9 @@ impl ExampleServer {
 
 impl Server for ExampleServer {
     fn respond(&self, path: String, req: Request) -> Response {
+        if path.starts_with("/static/") {
+            return self.serve_static_files(path, "/static/", "/tmp");
+        }
         match path.as_str() {
             "/" => self.index(path, req),
             _ => self.not_found(path, req),
@@ -49,5 +52,5 @@ impl Server for ExampleServer {
 
 fn main() {
     println!("Start server...");
-    ExampleServer::new().serve(8080);
+    ExampleServer::new().serve(9988);
 }
