@@ -8,6 +8,8 @@ use weld::WeldServer;
 
 mod render;
 
+static MODIFIED_FILES: &str = include_str!("modified_files.html");
+static DIFF_VIEW: &str = include_str!("diff_view.html");
 static TEMPLATE: &str = include_str!("template.html");
 static CHANGE: &str = include_str!("change.html");
 static INDEX: &str = include_str!("homepage.html");
@@ -69,25 +71,38 @@ impl ReviewServer {
             return self.not_found(path.clone(), req);
         }
 
-        let mut content = render::change(&change);
-
         let maybe_filename = path_components.next();
         if let Some(filename) = maybe_filename {
-            let mut found = false;
-            for history in change.get_changes() {
-                if history.get_filename() == format!("/{}", filename) {
-                    found = true;
-                    content.insert("files", render::file_history(history));
-                    break;
-                }
-            }
-            if !found {
-                return self.not_found(path.clone(), req);
-            }
+            return self.change_detail(filename, change, req);
         }
 
-        let page = tmpl::apply(CHANGE, &content);
+        let mut content = render::change(&change);
+        let body = tmpl::apply(MODIFIED_FILES, &content);
+        content.insert("body", body);
 
+        let page = tmpl::apply(CHANGE, &content);
+        Response::new(Body::from(self.wrap_template(page)))
+    }
+
+    fn change_detail(&self, filename: &str, change: weld::Change, req: Request) -> Response {
+        let mut found = false;
+        let mut content = content!();
+        for history in change.get_changes() {
+            if history.get_filename() == format!("/{}", filename) {
+                found = true;
+                content = render::file_history(history);
+                break;
+            }
+        }
+        if !found {
+            return self.not_found(filename.to_owned(), req);
+        }
+
+        let diff_view = tmpl::apply(DIFF_VIEW, &content);
+
+        let mut content = render::change(&change);
+        content.insert("body", diff_view);
+        let page = tmpl::apply(CHANGE, &content);
         Response::new(Body::from(self.wrap_template(page)))
     }
 

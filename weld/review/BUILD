@@ -24,7 +24,9 @@ rust_library(
     ],
     data = [
         "change.html",
+        "diff_view.html",
         "homepage.html",
+        "modified_files.html",
         "style.css",
         "template.html",
     ],

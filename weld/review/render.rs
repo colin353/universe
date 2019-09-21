@@ -14,10 +14,19 @@ pub fn file(f: &weld::File) -> tmpl::ContentsMap {
 }
 
 pub fn file_history(f: &weld::FileHistory) -> tmpl::ContentsMap {
-    content!(
+    let mut c = content!(
         "filename" => f.get_filename();
-        "files" => f.get_snapshots().iter().map(|s| file(s)).collect()
-    )
+    );
+
+    let original = f.get_snapshots().first();
+    if let Some(f) = original {
+        c.insert("original", file(f));
+    }
+    let modified = f.get_snapshots().last();
+    if let Some(f) = modified {
+        c.insert("modified", file(f));
+    }
+    c
 }
 
 pub fn change(c: &weld::Change) -> tmpl::ContentsMap {
