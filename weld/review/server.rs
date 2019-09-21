@@ -73,10 +73,16 @@ impl ReviewServer {
 
         let maybe_filename = path_components.next();
         if let Some(filename) = maybe_filename {
-            println!("history: {:?}", change.get_changes());
             let mut found = false;
             for history in change.get_changes() {
-                content.insert("files", render::file_history(history));
+                if history.get_filename() == format!("/{}", filename) {
+                    found = true;
+                    content.insert("files", render::file_history(history));
+                    break;
+                }
+            }
+            if !found {
+                return self.not_found(path.clone(), req);
             }
         }
 
