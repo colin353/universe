@@ -1,12 +1,42 @@
 use std::collections::HashMap;
 use std::convert::From;
 
-pub type ContentsMap = HashMap<&'static str, Contents>;
+#[derive(Clone)]
+pub struct ContentsMap(HashMap<&'static str, Contents>);
+
+impl ContentsMap {
+    pub fn new(data: HashMap<&'static str, Contents>) -> Self {
+        Self(data)
+    }
+
+    fn get(&self, key: &str) -> Option<&Contents> {
+        self.0.get(key)
+    }
+
+    pub fn insert<T: Into<Contents>>(&mut self, key: &'static str, data: T) {
+        self.0.insert(key, data.into());
+    }
+
+    fn resolve(&self, key: &str) -> Option<&Contents> {
+        let idx = match key.find(".") {
+            Some(idx) => idx,
+            None => return self.get(key),
+        };
+
+        let component = &key[0..idx];
+        let remaining_path = &key[idx + 1..];
+        match self.get(component) {
+            Some(Contents::Object(m)) => m.resolve(remaining_path),
+            x => x,
+        }
+    }
+}
 
 #[derive(Clone)]
 pub enum Contents {
     Value(String),
     MultiValue(ContentsMultiMap),
+    Object(ContentsMap),
 }
 
 #[derive(Clone)]
@@ -36,6 +66,12 @@ impl<T: ToString> From<T> for Contents {
 impl From<ContentsMultiMap> for Contents {
     fn from(input: ContentsMultiMap) -> Self {
         Contents::MultiValue(input)
+    }
+}
+
+impl From<ContentsMap> for Contents {
+    fn from(input: ContentsMap) -> Self {
+        Contents::Object(input)
     }
 }
 
@@ -69,21 +105,21 @@ pub fn apply_mut(template: &str, data: &ContentsMap, output: &mut String) {
 
         match decode_key(key) {
             // Regular key insertion.
-            Key::Value(key) => match data.get(key) {
+            Key::Value(key) => match data.resolve(key) {
                 Some(Contents::Value(x)) => output.push_str(&x),
                 _ => eprintln!("key {} not found", key),
             },
 
             // Array insertion.
-            Key::MultiValue(key) => match data.get(key) {
+            Key::MultiValue(key) => match data.resolve(key) {
                 Some(Contents::MultiValue(x)) => {
                     let loop_template = parser.jump_to_close_tag(key);
                     // Sometimes the inner loop wants to access the parent state. So just clone
                     // the parent state and merge the element state on top.
                     let mut cloned_data = data.clone();
                     for value in &x.data {
-                        for (k, v) in value.iter() {
-                            cloned_data.insert(k, (*v).clone());
+                        for (k, v) in value.0.iter() {
+                            cloned_data.0.insert(k, (*v).clone());
                         }
                         apply_mut(loop_template, &cloned_data, output);
                     }
@@ -103,7 +139,7 @@ pub fn apply_mut(template: &str, data: &ContentsMap, output: &mut String) {
                     key
                 };
 
-                match data.get(key) {
+                match data.resolve(key) {
                     Some(Contents::Value(x)) => {
                         if x == value {
                             apply_mut(block_template, data, output);
@@ -139,7 +175,7 @@ pub fn apply_mut(template: &str, data: &ContentsMap, output: &mut String) {
                     key
                 };
 
-                match data.get(key) {
+                match data.resolve(key) {
                     Some(Contents::Value(x)) => {
                         if x != value {
                             apply_mut(block_template, data, output);
@@ -315,7 +351,7 @@ macro_rules! content {
         {
             let mut m = std::collections::HashMap::<&str, $crate::Contents>::new();
             $( m.insert($key, $value.into()); )*
-            m
+            $crate::ContentsMap::new(m)
         }
     };
     ($($key:expr => $value:expr),*; $($key2:expr => $multivalue:expr)* ) => {
@@ -323,7 +359,7 @@ macro_rules! content {
             let mut m = std::collections::HashMap::<&str, $crate::Contents>::new();
             $( m.insert($key, $value.into()); )*
             $( m.insert($key2, $crate::ContentsMultiMap::new($multivalue).into()); )*
-            m
+            $crate::ContentsMap::new(m)
         }
     };
 }
@@ -344,6 +380,26 @@ mod tests {
                 ),
             ),
             "hello, Colin, you are 300 years old!"
+        );
+    }
+
+    #[test]
+    fn test_recursive() {
+        let template =
+            "object: {{object.schloop}} {{object.candidates[]}}{{name}} {{/object.candidates}}";
+        assert_eq!(
+            apply(
+                template,
+                &content!(
+                    "name" => "Colin",
+                    "age" => 300,
+                    "object" => content!(
+                        "schloop" => "dwoop";
+                        "candidates" => vec![content!("name" => "X"), content!("name" => "Y")]
+                    )
+                ),
+            ),
+            "object: dwoop X Y "
         );
     }
 
@@ -416,13 +472,13 @@ mod tests {
         contents.insert("secret", Contents::Value(String::from("true")));
 
         let expected = "Test... secret message!";
-        assert_eq!(apply(template, &contents), expected);
+        assert_eq!(apply(template, &ContentsMap(contents)), expected);
 
         let mut contents = HashMap::new();
         contents.insert("secret", Contents::Value(String::from("false")));
 
         let expected = "Test... !";
-        assert_eq!(apply(template, &contents), expected);
+        assert_eq!(apply(template, &ContentsMap(contents)), expected);
     }
 
     #[test]
@@ -432,13 +488,13 @@ mod tests {
         contents.insert("secret", Contents::Value(String::from("true")));
 
         let expected = "Test... !";
-        assert_eq!(apply(template, &contents), expected);
+        assert_eq!(apply(template, &ContentsMap(contents)), expected);
 
         let mut contents = HashMap::new();
         contents.insert("secret", Contents::Value(String::from("false")));
 
         let expected = "Test... secret message!";
-        assert_eq!(apply(template, &contents), expected);
+        assert_eq!(apply(template, &ContentsMap(contents)), expected);
     }
 
     #[test]
@@ -451,19 +507,19 @@ mod tests {
         );
 
         let expected = "No records found.";
-        assert_eq!(apply(template, &contents), expected);
+        assert_eq!(apply(template, &ContentsMap(contents)), expected);
 
         // Try doing it with some records.
         let mut contents = HashMap::new();
         let mut records = Vec::new();
-        records.push(HashMap::new());
+        records.push(ContentsMap(HashMap::new()));
         contents.insert(
             "array",
             Contents::MultiValue(ContentsMultiMap::new(records)),
         );
 
         let expected = "";
-        assert_eq!(apply(template, &contents), expected);
+        assert_eq!(apply(template, &ContentsMap(contents)), expected);
     }
 
     #[test]
@@ -476,19 +532,19 @@ mod tests {
         );
 
         let expected = "";
-        assert_eq!(apply(template, &contents), expected);
+        assert_eq!(apply(template, &ContentsMap(contents)), expected);
 
         // Try doing it with some records.
         let mut contents = HashMap::new();
         let mut records = Vec::new();
-        records.push(HashMap::new());
+        records.push(ContentsMap(HashMap::new()));
         contents.insert(
             "array",
             Contents::MultiValue(ContentsMultiMap::new(records)),
         );
 
         let expected = "Found some records!";
-        assert_eq!(apply(template, &contents), expected);
+        assert_eq!(apply(template, &ContentsMap(contents)), expected);
     }
 
     #[test]
@@ -503,7 +559,7 @@ mod tests {
         );
 
         let expected = "";
-        assert_eq!(apply(template, &contents), expected);
+        assert_eq!(apply(template, &ContentsMap(contents)), expected);
 
         // Try doing it with some records.
         let mut contents = HashMap::new();
@@ -521,14 +577,14 @@ mod tests {
         );
 
         let expected = "Found some records: [Colin Tim ] for you!";
-        assert_eq!(apply(template, &contents), expected);
+        assert_eq!(apply(template, &ContentsMap(contents)), expected);
     }
 
     #[test]
     fn test_use_parent_data() {
         let template = "id={{id}}, {{people[]}}{{name}}:{{id}} {{/people}}";
 
-        let mut contents = content!(
+        let contents = content!(
             "id" => "4";
             "people" => vec![
                 content!("name" => "Colin"),
