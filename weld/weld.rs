@@ -215,8 +215,9 @@ impl WeldLocalClient {
     }
 
     pub fn list_changes(&self) -> Vec<Change> {
+        let req = weld::ListChangesRequest::new();
         self.client
-            .list_changes(self.opts(), weld::ListChangesRequest::new())
+            .list_changes(self.opts(), req)
             .wait()
             .expect("rpc")
             .1

@@ -38,7 +38,7 @@ impl weld::WeldServer for WeldServerTestClient {
     }
     fn list_changes(&self) -> Vec<weld::Change> {
         self.client
-            .list_changes(&self.username)
+            .list_changes(&self.username, weld::ListChangesRequest::new())
             .take_changes()
             .into_vec()
     }

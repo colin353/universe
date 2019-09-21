@@ -228,6 +228,8 @@ mod tests {
         let client = LargeTableMockClient::new();
         client.write("row", "test_col", 0, vec![]);
         client.write("row", "another_col", 0, vec![]);
+        client.write("row", "to_delete", 0, vec![]);
+        client.delete("row", "to_delete");
         client.write("row", "my_other_col", 0, vec![]);
 
         let iter = largetable_client::LargeTableScopedIterator::<largetable_client::Record, _>::new(

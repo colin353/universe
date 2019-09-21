@@ -122,6 +122,8 @@ impl<C: LargeTableClient> WeldServiceHandler<C> {
         self.database
             .write_proto(SUBMITTED, &index_to_rowname(id), 0, &change);
 
+        self.repo.delete_change(pending_id);
+
         let mut response = weld::SubmitResponse::new();
         response.set_status(weld::SubmitStatus::OK);
         response.set_id(id);
@@ -180,7 +182,11 @@ impl<C: LargeTableClient> WeldServiceHandler<C> {
         response
     }
 
-    pub fn list_changes(&self, _username: &str) -> weld::ListChangesResponse {
+    pub fn list_changes(
+        &self,
+        _username: &str,
+        _req: weld::ListChangesRequest,
+    ) -> weld::ListChangesResponse {
         let changes = self
             .repo
             .list_changes()
@@ -280,10 +286,10 @@ impl<C: LargeTableClient> weld::WeldService for WeldServiceHandler<C> {
     fn list_changes(
         &self,
         m: grpc::RequestOptions,
-        _req: weld::ListChangesRequest,
+        req: weld::ListChangesRequest,
     ) -> grpc::SingleResponse<weld::ListChangesResponse> {
         match self.authenticate(&m) {
-            Some(username) => grpc::SingleResponse::completed(self.list_changes(&username)),
+            Some(username) => grpc::SingleResponse::completed(self.list_changes(&username, req)),
             None => grpc::SingleResponse::err(grpc::Error::Other("unauthenticated")),
         }
     }
@@ -703,6 +709,10 @@ mod tests {
         req.set_ending_id(4);
         let resp = handler.get_submitted_changes(&req);
         assert_eq!(resp.get_changes().len(), 2);
+        assert!(resp.get_changes()[0].get_submitted_id() > 0);
+        let mut req = weld::ListChangesRequest::new();
+        let resp = handler.list_changes("", req);
+        assert_eq!(resp.get_changes().len(), 0);
     }
 
     #[test]
