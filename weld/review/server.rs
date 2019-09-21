@@ -52,7 +52,8 @@ impl ReviewServer {
 
     fn change(&self, path: String, req: Request) -> Response {
         // The URL will contain a number at the start. Try to extract it.
-        let first_component = match path[1..].split("/").next() {
+        let mut path_components = path[1..].split("/");
+        let first_component = match path_components.next() {
             Some(c) => c,
             None => return self.not_found(path.clone(), req),
         };
@@ -68,7 +69,18 @@ impl ReviewServer {
             return self.not_found(path.clone(), req);
         }
 
-        let page = tmpl::apply(CHANGE, &render::change(&change));
+        let mut content = render::change(&change);
+
+        let maybe_filename = path_components.next();
+        if let Some(filename) = maybe_filename {
+            println!("history: {:?}", change.get_changes());
+            let mut found = false;
+            for history in change.get_changes() {
+                content.insert("files", render::file_history(history));
+            }
+        }
+
+        let page = tmpl::apply(CHANGE, &content);
 
         Response::new(Body::from(self.wrap_template(page)))
     }
