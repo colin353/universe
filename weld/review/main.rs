@@ -1,8 +1,8 @@
 #[macro_use]
 extern crate flags;
 extern crate server;
-extern crate ws;
 extern crate weld;
+extern crate ws;
 
 use std::fs::File;
 use std::io::Read;
@@ -34,10 +34,12 @@ fn main() {
         String::from(""),
         "path to a file containing the client cert .der file"
     );
-    let port = define_flag!(
-        "port",
-        8080,
-        "the port to bind to");
+    let port = define_flag!("port", 8080, "the port to bind to");
+    let static_files = define_flag!(
+        "static_files",
+        String::from("/static/"),
+        "the directory containing static files"
+    );
 
     parse_flags!(
         server_hostname,
@@ -46,7 +48,8 @@ fn main() {
         tls_hostname,
         root_ca,
         cert,
-        port
+        port,
+        static_files
     );
 
     let client = if use_tls.value() {
@@ -76,5 +79,5 @@ fn main() {
         )
     };
 
-    server::ReviewServer::new(client).serve(port.value());
+    server::ReviewServer::new(client, static_files.value()).serve(port.value());
 }

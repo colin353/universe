@@ -13,16 +13,19 @@ static DIFF_VIEW: &str = include_str!("diff_view.html");
 static TEMPLATE: &str = include_str!("template.html");
 static CHANGE: &str = include_str!("change.html");
 static INDEX: &str = include_str!("homepage.html");
-static CSS: &str = include_str!("style.css");
 
 #[derive(Clone)]
 pub struct ReviewServer {
     client: weld::WeldServerClient,
+    static_dir: String,
 }
 
 impl ReviewServer {
-    pub fn new(client: weld::WeldServerClient) -> Self {
-        Self { client: client }
+    pub fn new(client: weld::WeldServerClient, static_dir: String) -> Self {
+        Self {
+            client: client,
+            static_dir: static_dir,
+        }
     }
 
     fn wrap_template(&self, content: String) -> String {
@@ -113,8 +116,11 @@ impl ReviewServer {
 
 impl Server for ReviewServer {
     fn respond(&self, path: String, req: Request) -> Response {
+        if path.starts_with("/static/") {
+            return self.serve_static_files(path, "/static/", &self.static_dir);
+        }
+
         match path.as_str() {
-            "/static/style.css" => Response::new(Body::from(CSS)),
             "/" => self.index(path, req),
             _ => self.change(path, req),
         }

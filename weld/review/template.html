@@ -4,6 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <link rel="stylesheet" type="text/css" href="/static/style.css">
+    <link rel="stylesheet" data-name="static/vs/editor/editor.main" href="static/vs/editor/editor.main.css">
     <title>{{title}}</title>
 
     <style type="text/css">
@@ -86,6 +87,30 @@
 
 <body>
     {{content}}
+
+    <div id="container" style="width:800px;height:600px;border:1px solid grey"></div>
+    <script>
+        var require = {
+            paths: {
+                'vs': 'static/vs'
+            }
+        };
+    </script>
+    <script src="static/vs/loader.js"></script>
+    <script src="static/vs/editor/editor.main.nls.js"></script>
+    <script src="static/vs/editor/editor.main.js"></script>
+    <script>
+        var editor = monaco.editor.create(document.getElementById('container'), {
+            value: [
+                'function x() {',
+                '\tconsole.log("Hello world!");',
+                '}'
+            ].join('\n'),
+            language: 'javascript'
+        });
+    </script>
 </body>
+
+
 
 </html>

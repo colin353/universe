@@ -27,7 +27,6 @@ rust_library(
         "diff_view.html",
         "homepage.html",
         "modified_files.html",
-        "style.css",
         "template.html",
     ],
     deps = [
