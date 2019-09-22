@@ -8,7 +8,7 @@ pub fn file(f: &weld::File) -> tmpl::ContentsMap {
     };
     content!(
         "filename" => f.get_filename(),
-        "contents" => content,
+        "contents" => base64::encode(content),
         "directory" => f.get_directory()
     )
 }

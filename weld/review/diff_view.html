@@ -24,8 +24,8 @@
                 readOnly: true
             });
 
-            var originalModel = monaco.editor.createModel(editorElement.getAttribute("data-left"), "text/plain");
-            var modifiedModel = monaco.editor.createModel(editorElement.getAttribute("data-right"), "text/plain");
+            var originalModel = monaco.editor.createModel(atob(editorElement.getAttribute("data-left")), "text/plain");
+            var modifiedModel = monaco.editor.createModel(atob(editorElement.getAttribute("data-right")), "text/plain");
             diffEditor.setModel({
                 original: originalModel,
                 modified: modifiedModel

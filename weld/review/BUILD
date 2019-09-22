@@ -30,6 +30,7 @@ rust_library(
         "template.html",
     ],
     deps = [
+        "//third_party:base64",
         "//util/flags",
         "//util/tmpl",
         "//util/ws",
