@@ -9,6 +9,10 @@ licenses([
   "notice" # See individual crates for specific licenses
 ])
 alias(
+    name = "base64",
+    actual = "//third_party/vendor/base64-0.10.1:base64",
+)
+alias(
     name = "byteorder",
     actual = "//third_party/vendor/byteorder-1.2.7:byteorder",
 )

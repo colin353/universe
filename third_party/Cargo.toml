@@ -19,6 +19,7 @@ native-tls = "=0.1.5"
 openssl = "=0.9.24"
 openssl-sys = "=0.9.42"
 difference = "2.0"
+base64 = "=0.10.1"
 
 [raze]
 # The WORKSPACE relative path to the Cargo.toml working directory.
