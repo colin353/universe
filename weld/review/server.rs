@@ -94,6 +94,9 @@ impl ReviewServer {
             if history.get_filename() == format!("/{}", filename) {
                 found = true;
                 content = render::file_history(history);
+                content.insert("next_file", "");
+            } else if found {
+                content.insert("next_file", history.get_filename());
                 break;
             }
         }
@@ -101,6 +104,7 @@ impl ReviewServer {
             return self.not_found(filename.to_owned(), req);
         }
 
+        content.insert("id", change.get_id());
         let diff_view = tmpl::apply(DIFF_VIEW, &content);
 
         let mut content = render::change(&change);

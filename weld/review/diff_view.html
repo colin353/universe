@@ -1,7 +1,15 @@
 <link rel="stylesheet" data-name="static/vs/editor/editor.main" href="static/vs/editor/editor.main.css">
 
-<p>{{filename}}</p>
-<div id="editor" data-type="modified" data-filename="{{filename}}" data-left="{{original.contents}}" data-right="{{modified.contents}}" style="width:100%;height:500px">
+<div style="display: flex">
+    <p style="flex: 1">{{filename}} ({{status}})</p>
+    {{next_file != ""}}
+    <p><a href="/{{id}}{{next_file}}">{{next_file}}</a></p>
+    {{/next_file}}
+    {{next_file == ""}}
+    <p><a href="/{{id}}">back to overview</a></p>
+    {{/next_file}}
+</div>
+<div id="editor" data-type="{{status}}" data-filename="{{filename}}" data-left="{{original.contents}}" data-right="{{modified.contents}}" style="width:100%;height:500px">
 </div>
 
 <script>
@@ -47,7 +55,7 @@
 
             });
         } else {
-            var content = editorElement.getAttribute("data-left") + editorElement.getAttribute("data-right");
+            var content = atob(editorElement.getAttribute("data-right"));
             monaco.editor.create(editorElement, {
                 readOnly: true,
                 value: content,

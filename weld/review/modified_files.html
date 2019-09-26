@@ -1,20 +1,22 @@
-<table class="modified-files">
-    <tr>
-        <td>
-            <div class="small-heading">Status</div>
-        </td>
-        <td>
-            <div class="small-heading">Filename</div>
-        </td>
-    </tr>
-    {{changes[]}}
-    <tr>
-        <td style="width: 100px">{{status}}</td>
-        <td>
-            <a href="/{{id}}{{filename}}">
-                {{filename}}
-            </a>
-        </td>
-    </tr>
-    {{/changes}}
-</table>
+<div style="width: 1024px; margin-left: auto; margin-right: auto">
+    <table class="modified-files">
+        <tr>
+            <td>
+                <div class="small-heading">Status</div>
+            </td>
+            <td>
+                <div class="small-heading">Filename</div>
+            </td>
+        </tr>
+        {{changes[]}}
+        <tr>
+            <td style="width: 100px">{{status}}</td>
+            <td>
+                <a href="/{{id}}{{filename}}">
+                    {{filename}}
+                </a>
+            </td>
+        </tr>
+        {{/changes}}
+    </table>
+</div>

@@ -90,4 +90,20 @@
     {{content}}
 </body>
 
+<script>
+    const elements = document.getElementsByClassName("timestamp");
+    for (var i = 0; i < elements.length; i++) {
+        const el = elements[i];
+        console.log(el);
+        const t = el.getAttribute("data-timestamp");
+        const options = {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+        }
+        el.innerHTML = (new Date(parseInt(t) / 1000)).toLocaleDateString("en-US", options);
+    };
+</script>
+
+
 </html>
