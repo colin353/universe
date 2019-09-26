@@ -14,3 +14,15 @@ rust_test(
     name = "tmpl_test",
     crate = ":tmpl",
 )
+
+rust_library(
+    name = "escape",
+    srcs = [
+        "escape.rs",
+    ],
+)
+
+rust_test(
+    name = "escape_test",
+    crate = ":escape",
+)
