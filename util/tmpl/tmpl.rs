@@ -276,9 +276,6 @@ impl<'a> Parser<'a> {
         loop {
             match self.next() {
                 Some((_, end, Some(next_key))) => match decode_key(next_key) {
-                    Key::Value(a) if a == key => {
-                        depth += 1;
-                    }
                     Key::MultiValue(a) if a == key => {
                         depth += 1;
                     }
@@ -593,6 +590,23 @@ mod tests {
         );
 
         let expected = "id=4, Colin:4 Tim:4 ";
+        assert_eq!(apply(template, &contents), expected);
+    }
+
+    #[test]
+    fn test_conditional() {
+        let template = "{{a != \"\"}}{{a}}{{/a}}{{a == \"\"}}hello world{{/a}}";
+
+        let contents = content!(
+            "a" => "hi planet"
+        );
+        let expected = "hi planet";
+        assert_eq!(apply(template, &contents), expected);
+
+        let contents = content!(
+            "a" => ""
+        );
+        let expected = "hello world";
         assert_eq!(apply(template, &contents), expected);
     }
 }
