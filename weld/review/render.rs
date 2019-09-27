@@ -45,7 +45,8 @@ pub fn change(c: &weld::Change) -> tmpl::ContentsMap {
         "submitted_id" => format!("{}", c.get_submitted_id()),
         "author" => c.get_author(),
         "last_modified_timestamp" => c.get_last_modified_timestamp(),
-        "description" => c.get_description();
+        "summary" => weld::summarize_change_description(c.get_description()),
+        "description" => weld::render_change_description(c.get_description());
         "changes" => c.get_changes().iter().map(|f| file_history(f)).collect()
     )
 }

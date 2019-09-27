@@ -371,9 +371,70 @@ pub fn serialize_change(change: &weld::Change, with_instructions: bool) -> Strin
     output
 }
 
+pub fn summarize_change_description<'a>(description: &'a str) -> &'a str {
+    description.lines().next().unwrap_or("")
+}
+
+pub fn render_change_description(description: &str) -> String {
+    let mut output = String::new();
+    let mut chunk = String::new();
+    let mut is_list = false;
+    let mut is_first_line_of_chunk = true;
+    for line in description.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with("- ") {
+            if chunk.is_empty() {
+                chunk = line.to_owned();
+                continue;
+            }
+
+            if is_list {
+                output += &format!("<li>{}</li>", escape::Escape(&chunk));
+            } else {
+                output += &format!("<p>{}</p>", escape::Escape(&chunk));
+            }
+            chunk = line.to_owned();
+            is_first_line_of_chunk = true;
+            is_list = false;
+            continue;
+        }
+
+        if is_first_line_of_chunk && line.starts_with("- ") {
+            is_list = true;
+        }
+        is_first_line_of_chunk = false;
+
+        chunk += " ";
+        chunk += line;
+    }
+
+    if is_list {
+        output += &format!("<li>{}</li>", escape::Escape(&chunk));
+    } else {
+        output += &format!("<p>{}</p>", escape::Escape(&chunk));
+    }
+
+    output
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_summarize() {
+        let d = "Hello, world\nAnother line";
+        assert_eq!(summarize_change_description(d), "Hello, world");
+    }
+
+    #[test]
+    fn test_render() {
+        let d = "Hello, world\n\nAnother line\n\n - Bullet one\n - Bullet two\n";
+        assert_eq!(
+            render_change_description(d),
+            "<p>Hello, world </p><p>Another line </p><li>Bullet one </li><li>Bullet two</li>"
+        );
+    }
 
     #[test]
     fn test_deserialize() {

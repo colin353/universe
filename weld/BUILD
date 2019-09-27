@@ -35,6 +35,7 @@ rust_library(
         "//third_party:native_tls",
         "//third_party:time",
         "//third_party:tls_api_native_tls",
+        "//util/tmpl:escape",
         "@io_bazel_rules_rust//proto/raze:grpc",
         "@io_bazel_rules_rust//proto/raze:protobuf",
         "@io_bazel_rules_rust//proto/raze:tls_api",
