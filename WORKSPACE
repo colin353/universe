@@ -2,11 +2,11 @@ load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
 http_archive(
     name = "io_bazel_rules_rust",
-    sha256 = "e630980fc9f18febda89ce544fe7c3fe3bf31985bae283fbb55b1eff64bd9cdc",
-    strip_prefix = "rules_rust-949b5d69a392fd14b60f7ee3aacc6d69706e6018",
+    sha256 = "b6da34e057a31b8a85e343c732de4af92a762f804fc36b0baa6c001423a70ebc",
+    strip_prefix = "rules_rust-55f77017a7f5b08e525ebeab6e11d8896a4499d2",
     urls = [
         # Master branch as of 2018-12-11
-        "https://github.com/bazelbuild/rules_rust/archive/949b5d69a392fd14b60f7ee3aacc6d69706e6018.tar.gz",
+        "https://github.com/bazelbuild/rules_rust/archive/55f77017a7f5b08e525ebeab6e11d8896a4499d2.tar.gz",
     ],
 )
 
@@ -49,7 +49,6 @@ load("@io_bazel_rules_rust//proto:repositories.bzl", "rust_proto_repositories")
 
 rust_proto_repositories()
 
-
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 load("@io_bazel_rules_rust//rust:repositories.bzl", "rust_repositories")
 
@@ -61,4 +60,3 @@ load(
 )
 
 _rust_image_repos()
-
