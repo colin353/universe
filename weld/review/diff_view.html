@@ -44,15 +44,47 @@
 
         if (changeType == "modified") {
             var diffEditor = monaco.editor.createDiffEditor(editorElement, {
-                readOnly: true
+                readOnly: true,
+                wordWrap: "bounded",
+                theme: "vs-dark",
+                wordWrapCols: 80,
             });
+
+            class Comment {
+                allowEditorOverflow = false;
+                suppressMouseDown = true;
+                visible = true;
+
+                getDomNode() {
+                    console.log("comment: get DOM node");
+                    const p = document.createElement("div");
+                    p.className = "lucky";
+                    p.appendChild(document.createTextNode("hello, world"));
+                    return p;
+                }
+
+                getId() {
+                    console.log("comment: get id");
+                    return "asdf";
+                }
+
+                getPosition() {
+                    return {
+                        position: monaco.Position(5, 10),
+                        preference: [1],
+                    };
+                }
+            };
+
+            let c = new Comment();
+            diffEditor.getModifiedEditor().addContentWidget(c);
+            diffEditor.getModifiedEditor().layoutContentWidget(c);
 
             var originalModel = monaco.editor.createModel(atob(editorElement.getAttribute("data-left")), language);
             var modifiedModel = monaco.editor.createModel(atob(editorElement.getAttribute("data-right")), language);
             diffEditor.setModel({
                 original: originalModel,
                 modified: modifiedModel
-
             });
         } else {
             var content = atob(editorElement.getAttribute("data-right"));
@@ -60,6 +92,9 @@
                 readOnly: true,
                 value: content,
                 language: language,
+                wordWrap: "bounded",
+                theme: "vs-dark",
+                wordWrapCols: 80,
             });
         }
     });
