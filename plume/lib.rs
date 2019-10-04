@@ -17,6 +17,8 @@ pub struct PCollection<T> {
     _marker: std::marker::PhantomData<T>,
 }
 
+pub type PTable<T1, T2> = PCollection<(T1, T2)>;
+
 impl<T> PCollection<T>
 where
     T: 'static,
@@ -37,9 +39,34 @@ where
         DoType: DoFn<Input = T, Output = O> + 'static,
         O: 'static,
     {
-        let mut out: PCollection<O> = PCollection::new();
+        let mut out: PCollection<O> = PCollection::<O>::new();
         out.dependency = Some(Box::new(DoFnWrapper {
             dependency: Rc::new(self),
+            function: Box::new(f),
+        }));
+        out
+    }
+}
+
+impl<K, V> PCollection<(K, V)>
+where
+    K: 'static,
+    V: 'static,
+{
+    pub fn is_ptable(&self) -> bool {
+        true
+    }
+
+    pub fn join<V2, O, JoinType>(self, right: PTable<K, V2>, f: JoinType) -> PCollection<O>
+    where
+        JoinType: JoinFn<Key = K, ValueLeft = V, ValueRight = V2, Output = O> + 'static,
+        V2: 'static,
+        O: 'static,
+    {
+        let mut out = PCollection::<O>::new();
+        out.dependency = Some(Box::new(JoinFnWrapper {
+            dependency_left: Rc::new(self),
+            dependency_right: Rc::new(right),
             function: Box::new(f),
         }));
         out
@@ -67,6 +94,30 @@ pub trait EmitFn<T> {
     fn emit(&mut self, value: T);
 }
 
+pub struct JoinFnWrapper<K, V1, V2, O> {
+    dependency_left: Rc<PCollection<(K, V1)>>,
+    dependency_right: Rc<PCollection<(K, V2)>>,
+    function: Box<JoinFn<Key = K, ValueLeft = V1, ValueRight = V2, Output = O>>,
+}
+
+pub struct Stream<T> {
+    _mark: std::marker::PhantomData<T>,
+}
+
+pub trait JoinFn {
+    type Key;
+    type ValueLeft;
+    type ValueRight;
+    type Output;
+    fn join(
+        &self,
+        key: &Self::Key,
+        left: Stream<Self::ValueLeft>,
+        right: Stream<Self::ValueRight>,
+        emit: &mut dyn EmitFn<Self::Output>,
+    );
+}
+
 pub struct DoFnWrapper<T1, T2> {
     dependency: Rc<PCollection<T1>>,
     function: Box<DoFn<Input = T1, Output = T2>>,
@@ -83,6 +134,40 @@ impl<T1, T2> PFn for DoFnWrapper<T1, T2> {
             output = format!("{}\n|\nV\n", x.render());
         }
         output += &format!("[PCollection]\n|\nV\n[DoFn]\n");
+        output
+    }
+}
+
+impl<K, V1, V2, O> PFn for JoinFnWrapper<K, V1, V2, O> {
+    fn render(&self) -> String {
+        let mut left = String::new();
+        if let Some(ref x) = self.dependency_left.dependency {
+            left = x.render();
+            left += "|\nV\n";
+        }
+        left += "[PCollection]\n";
+
+        let mut right = String::new();
+        if let Some(ref x) = self.dependency_right.dependency {
+            right = x.render();
+            right += "|\nV\n";
+        }
+        right += "[PCollection]\n";
+        let mut lines_left = left.lines();
+        let mut lines_right = right.lines();
+        let mut output = String::new();
+        loop {
+            let left = lines_left.next();
+            let right = lines_right.next();
+            if left.is_none() && right.is_none() {
+                break;
+            }
+            println!("left = {}", left.unwrap_or(""));
+            println!("right = {}", right.unwrap_or(""));
+            output += &format!("{:30} {}\n", left.unwrap_or(""), right.unwrap_or(""));
+        }
+        output += "|\n|\nV\n[JoinFn]\n";
+
         output
     }
 }
