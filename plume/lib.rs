@@ -111,7 +111,7 @@ pub trait JoinFn {
     type Output;
     fn join(
         &self,
-        key: &Self::Key,
+        key: Self::Key,
         left: Stream<Self::ValueLeft>,
         right: Stream<Self::ValueRight>,
         emit: &mut dyn EmitFn<Self::Output>,
@@ -125,7 +125,7 @@ pub struct DoFnWrapper<T1, T2> {
 pub trait DoFn {
     type Input;
     type Output;
-    fn do_it(&self, input: &Self::Input, emit: &mut dyn EmitFn<Self::Output>);
+    fn do_it(&self, input: Self::Input, emit: &mut dyn EmitFn<Self::Output>);
 }
 impl<T1, T2> PFn for DoFnWrapper<T1, T2> {
     fn render(&self) -> String {
