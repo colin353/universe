@@ -3,6 +3,10 @@ package(default_visibility = ["//visibility:public"])
 load("@io_bazel_rules_rust//rust:rust.bzl", "rust_library")
 load("@io_bazel_rules_rust//rust:rust.bzl", "rust_binary")
 load("@io_bazel_rules_rust//rust:rust.bzl", "rust_test")
+load("@io_bazel_rules_docker//rust:image.bzl", "rust_image")
+load("@io_bazel_rules_docker//container:container.bzl", "container_image")
+load("@bazel_tools//tools/build_defs/pkg:pkg.bzl", "pkg_tar")
+load("@io_bazel_rules_docker//docker:docker.bzl", "docker_push")
 
 rust_binary(
     name = "review",
@@ -36,4 +40,39 @@ rust_library(
         "//util/ws",
         "//weld",
     ],
+)
+
+pkg_tar(
+    name = "static_files",
+    srcs = glob([
+        "static/**",
+    ]),
+    package_dir = "/static",
+)
+
+container_image(
+    name = "review_base_img",
+    base = "@cc_image_base//image",
+    tars = [":static_files"],
+)
+
+rust_image(
+    name = "review_img",
+    srcs = ["main.rs"],
+    base = ":review_base_img",
+    deps = [
+        "//util/flags",
+        "//util/tmpl",
+        "//util/ws",
+        "//weld",
+        "//weld/review:server",
+    ],
+)
+
+docker_push(
+    name = "review_img_push",
+    image = ":review_img",
+    registry = "us.gcr.io",
+    repository = "mushu-194218/review",
+    tag = "dev",
 )

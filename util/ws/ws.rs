@@ -32,7 +32,7 @@ pub trait Server: Sync + Send + Clone + 'static {
     }
 
     fn serve(self, port: u16) {
-        let addr = ([127, 0, 0, 1], port).into();
+        let addr = ([0, 0, 0, 0], port).into();
         let self_clone = self.clone();
         let server = hyper::Server::bind(&addr)
             .serve(move || {
