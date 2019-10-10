@@ -47,7 +47,7 @@ pkg_tar(
     srcs = glob([
         "static/**",
     ]),
-    package_dir = "/static",
+    strip_prefix = ".",
 )
 
 container_image(
