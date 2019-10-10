@@ -1,5 +1,6 @@
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
+# Add a comment into the WORKSPACE
 http_archive(
     name = "io_bazel_rules_rust",
     sha256 = "b6da34e057a31b8a85e343c732de4af92a762f804fc36b0baa6c001423a70ebc",
