@@ -1,0 +1,17 @@
+syntax = "proto3";
+message LoginRequest {}
+message LoginChallenge {
+  string url = 1;
+  string token = 2;
+}
+
+message AuthenticateRequest { string token = 1; }
+message AuthenticateResponse {
+  string username = 1;
+  bool success = 2;
+}
+
+service AuthenticationService {
+  rpc Login(LoginRequest) returns (LoginChallenge);
+  rpc Authenticate(AuthenticateRequest) returns (AuthenticateResponse);
+}
