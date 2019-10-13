@@ -4,8 +4,13 @@ use std::ops::Bound::{Included, Unbounded};
 use std::sync::RwLock;
 
 pub struct LargeTableBatchingClient<T, C: largetable_client::LargeTableClient> {
-    cache: RwLock<VecDeque<RwLock<BTreeMap<(String, String), T>>>>,
+    cache: RwLock<VecDeque<RwLock<BTreeMap<(String, String), (u64, T)>>>>,
     pub client: C,
+}
+
+fn get_timestamp_usec() -> u64 {
+    let tm = time::now_utc().to_timespec();
+    (tm.sec as u64) * 1_000_000 + ((tm.nsec / 1000) as u64)
 }
 
 impl<T: protobuf::Message + Clone, C: largetable_client::LargeTableClient>
@@ -27,7 +32,7 @@ impl<T: protobuf::Message + Clone, C: largetable_client::LargeTableClient>
 
     pub fn read(&self, row: &str, col: &str) -> Option<T> {
         for cache in self.cache.read().unwrap().iter().rev() {
-            if let Some(x) = cache.read().unwrap().get(&(row.to_owned(), col.to_owned())) {
+            if let Some((_, x)) = cache.read().unwrap().get(&(row.to_owned(), col.to_owned())) {
                 return Some(x.clone());
             }
         }
@@ -35,15 +40,26 @@ impl<T: protobuf::Message + Clone, C: largetable_client::LargeTableClient>
     }
 
     pub fn write(&self, row: &str, col: &str, message: T) {
+        let timestamp = get_timestamp_usec();
+        println!("write: {:?} @ {}", message, timestamp);
         if let Some(cache) = self.cache.read().unwrap().back() {
-            cache
-                .write()
-                .unwrap()
-                .insert((row.to_owned(), col.to_owned()), message);
+            let mut writeable_cache = cache.write().unwrap();
+
+            // Need to check whether the record in the cache has a larger timestamp - in which case
+            // we just drop the write.
+            if let Some((existing_timestamp, _)) =
+                writeable_cache.get(&(row.to_owned(), col.to_owned()))
+            {
+                if *existing_timestamp > timestamp {
+                    return;
+                }
+            }
+
+            writeable_cache.insert((row.to_owned(), col.to_owned()), (timestamp, message));
             return;
         }
 
-        self.client.write_proto::<T>(row, col, 0, &message);
+        self.client.write_proto::<T>(row, col, timestamp, &message);
     }
 
     pub fn read_scoped(&self, row: &str, col_spec: &str) -> Vec<T> {
@@ -56,7 +72,7 @@ impl<T: protobuf::Message + Clone, C: largetable_client::LargeTableClient>
         }
 
         for cache in self.cache.read().unwrap().iter() {
-            for ((_row, col), record) in cache.read().unwrap().range((
+            for ((_row, col), (_, record)) in cache.read().unwrap().range((
                 Included((String::from(row), String::from(col_spec))),
                 Unbounded,
             )) {
@@ -100,9 +116,9 @@ impl<T: protobuf::Message + Clone, C: largetable_client::LargeTableClient>
 
         let mut writer = largetable_client::LargeTableBatchWriter::new();
         let mut count = 0;
-        for ((row, col), msg) in cache.read().unwrap().iter() {
+        for ((row, col), (timestamp, msg)) in cache.read().unwrap().iter() {
             count += 1;
-            writer.write_proto(row, col, 0, msg);
+            writer.write_proto(row, col, *timestamp, msg);
         }
         writer.finish(&self.client);
         count
