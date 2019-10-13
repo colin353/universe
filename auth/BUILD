@@ -20,3 +20,12 @@ rust_grpc_library(
     name = "auth_grpc_rust",
     deps = [":auth_proto"],
 )
+
+rust_library(
+    name = "auth_service_impl",
+    srcs = ["auth_service_impl.rs"],
+    deps = [
+        ":auth_grpc_rust",
+        "@io_bazel_rules_rust//proto/raze:grpc",
+    ],
+)
