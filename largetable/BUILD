@@ -121,6 +121,7 @@ rust_library(
     srcs = ["batching_client.rs"],
     deps = [
         ":largetable_client",
+        "//third_party:time",
         "@io_bazel_rules_rust//proto/raze:protobuf",
     ],
 )

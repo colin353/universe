@@ -9,6 +9,11 @@ pub struct WeldParallelFs<C: largetable_client::LargeTableClient> {
     threadpool: ThreadPool,
 }
 
+fn get_timestamp_usec() -> u64 {
+    let tm = time::now_utc().to_timespec();
+    (tm.sec as u64) * 1_000_000 + ((tm.nsec / 1000) as u64)
+}
+
 impl<C: largetable_client::LargeTableClient> WeldParallelFs<C>
 where
     C: Send + Sync,
@@ -58,8 +63,9 @@ where
     fn rmdir(&mut self, _req: &fuse::Request, parent: u64, name: &OsStr, reply: fuse::ReplyEmpty) {
         let name = name.to_string_lossy().to_string();
         let fs = self.filesystem.clone();
+        let timestamp = get_timestamp_usec();
         self.threadpool.execute(move || {
-            fs.rmdir(parent, name, reply);
+            fs.rmdir(parent, name, timestamp, reply);
         });
     }
 
@@ -81,10 +87,11 @@ where
         reply: fuse::ReplyAttr,
     ) {
         let fs = self.filesystem.clone();
+        let timestamp = get_timestamp_usec();
         self.threadpool.execute(move || {
             fs.setattr(
                 ino, mode, uid, gid, size, atime, mtime, fh, crtime, chgtime, bkuptime, flags,
-                reply,
+                timestamp, reply,
             );
         });
     }
@@ -115,8 +122,9 @@ where
     ) {
         let fs = self.filesystem.clone();
         let data = data.to_owned();
+        let timestamp = get_timestamp_usec();
         self.threadpool.execute(move || {
-            fs.write(ino, fh, offset, data, flags, reply);
+            fs.write(ino, fh, offset, data, flags, timestamp, reply);
         });
     }
 
@@ -130,8 +138,9 @@ where
     ) {
         let fs = self.filesystem.clone();
         let name = name.to_string_lossy().to_string();
+        let timestamp = get_timestamp_usec();
         self.threadpool.execute(move || {
-            fs.mkdir(parent, name, mode, reply);
+            fs.mkdir(parent, name, mode, timestamp, reply);
         });
     }
 
@@ -147,8 +156,9 @@ where
         let fs = self.filesystem.clone();
         let name = name.to_string_lossy().to_string();
         let newname = newname.to_string_lossy().to_string();
+        let timestamp = get_timestamp_usec();
         self.threadpool.execute(move || {
-            fs.rename(parent, name, newparent, newname, reply);
+            fs.rename(parent, name, newparent, newname, timestamp, reply);
         });
     }
 
@@ -162,8 +172,9 @@ where
     fn unlink(&mut self, _req: &fuse::Request, parent: u64, name: &OsStr, reply: fuse::ReplyEmpty) {
         let fs = self.filesystem.clone();
         let name = name.to_string_lossy().to_string();
+        let timestamp = get_timestamp_usec();
         self.threadpool.execute(move || {
-            fs.unlink(parent, name, reply);
+            fs.unlink(parent, name, timestamp, reply);
         });
     }
 
@@ -178,8 +189,9 @@ where
     ) {
         let fs = self.filesystem.clone();
         let name = name.to_string_lossy().to_string();
+        let timestamp = get_timestamp_usec();
         self.threadpool.execute(move || {
-            fs.create(parent, name, mode, flags, reply);
+            fs.create(parent, name, mode, flags, timestamp, reply);
         });
     }
 

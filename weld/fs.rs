@@ -547,7 +547,7 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
         }
     }
 
-    pub fn rmdir(&self, parent: u64, name: String, reply: fuse::ReplyEmpty) {
+    pub fn rmdir(&self, parent: u64, name: String, timestamp: u64, reply: fuse::ReplyEmpty) {
         let (origin, path) = match self.route(parent, &name) {
             Some(x) => x,
             None => {
@@ -558,7 +558,7 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
         match origin {
             Origin::Root => reply.error(ENOSYS),
             Origin::Change(id) => {
-                self.repo.delete(id, &path, 0);
+                self.repo.delete(id, &path, timestamp);
                 reply.ok();
             }
         };
@@ -578,6 +578,7 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
         _chgtime: Option<SystemTime>,
         _bkuptime: Option<SystemTime>,
         flags: Option<u32>,
+        timestamp: u64,
         reply: fuse::ReplyAttr,
     ) {
         let (origin, path) = match self.node_to_path(ino) {
@@ -620,7 +621,7 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
 
                 file.set_filename(path.to_owned());
                 reply.attr(&Duration::from_secs(TTL), &file_attr_from_file(ino, &file));
-                self.repo.write_attrs(id, file, 0);
+                self.repo.write_attrs(id, file, timestamp);
             }
         }
     }
@@ -657,6 +658,7 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
         offset: i64,
         mut data: Vec<u8>,
         _flags: u32,
+        timestamp: u64,
         reply: fuse::ReplyWrite,
     ) {
         let (origin, path) = match self.node_to_path(ino) {
@@ -670,7 +672,7 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
         match origin {
             Origin::Root => reply.error(ENOENT),
             Origin::Change(id) => {
-                let mut file = match self.repo.read(id, &path, 0) {
+                let mut file = match self.repo.read(id, &path, timestamp) {
                     Some(f) => {
                         if !f.get_deleted() {
                             f
@@ -686,14 +688,21 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
                 joined_data.append(&mut data);
                 file.set_contents(joined_data);
                 file.set_filename(path);
-                self.repo.write(id, file, 0);
+                self.repo.write(id, file, timestamp);
 
                 reply.written(len as u32);
             }
         }
     }
 
-    pub fn mkdir(&self, parent: u64, name: String, _mode: u32, reply: fuse::ReplyEntry) {
+    pub fn mkdir(
+        &self,
+        parent: u64,
+        name: String,
+        _mode: u32,
+        timestamp: u64,
+        reply: fuse::ReplyEntry,
+    ) {
         let (origin, path) = match self.route(parent, &name) {
             Some(x) => x,
             None => return reply.error(ENOENT),
@@ -706,7 +715,7 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
                 dir.set_directory(true);
                 dir.set_filename(path.to_owned());
 
-                self.repo.write(id, dir, 0);
+                self.repo.write(id, dir, timestamp);
                 let ino = self.path_to_node(Origin::from_change(id), &path);
                 reply.entry(&Duration::from_secs(TTL), &make_dir_attr(ino, 0), 0);
             }
@@ -802,6 +811,7 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
         name: String,
         newparent: u64,
         newname: String,
+        timestamp: u64,
         reply: fuse::ReplyEmpty,
     ) {
         let (source_origin, source_path) = match self.route(parent, &name) {
@@ -820,16 +830,16 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
                     return reply.error(ENOENT);
                 }
 
-                let mut file = match self.repo.read(source_id, &source_path, 0) {
+                let mut file = match self.repo.read(source_id, &source_path, timestamp) {
                     Some(f) => f,
                     None => return reply.error(ENOENT),
                 };
-                self.repo.delete(source_id, &source_path, 0);
+                self.repo.delete(source_id, &source_path, timestamp);
 
                 self.path_to_node(Origin::from_change(source_id), &dest_path);
                 self.update_path(Origin::from_change(source_id), &source_path, &dest_path);
                 file.set_filename(dest_path.clone());
-                self.repo.write(source_id, file, 0);
+                self.repo.write(source_id, file, timestamp);
             }
             _ => return reply.error(ENOENT),
         }
@@ -863,7 +873,7 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
         reply.opened(ino, flags);
     }
 
-    pub fn unlink(&self, parent: u64, name: String, reply: fuse::ReplyEmpty) {
+    pub fn unlink(&self, parent: u64, name: String, timestamp: u64, reply: fuse::ReplyEmpty) {
         //println!("unlink: {:?} within {}", name, parent);
 
         let (origin, path) = match self.route(parent, &name) {
@@ -875,7 +885,7 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
             Origin::Root => return reply.error(ENOSYS),
             Origin::Change(id) => {
                 //println!("deleting: {}", path);
-                self.repo.delete(id, &path, 0);
+                self.repo.delete(id, &path, timestamp);
             }
         }
         reply.ok();
@@ -887,6 +897,7 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
         name: String,
         _mode: u32,
         _flags: u32,
+        timestamp: u64,
         reply: fuse::ReplyCreate,
     ) {
         let (origin, path) = match self.route(parent, &name) {
@@ -912,7 +923,7 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
                     ino,
                     _flags,
                 );
-                self.repo.write(id, file, 0);
+                self.repo.write(id, file, timestamp);
             }
         }
     }
