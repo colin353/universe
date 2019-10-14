@@ -162,8 +162,6 @@ impl<K, V1, V2, O> PFn for JoinFnWrapper<K, V1, V2, O> {
             if left.is_none() && right.is_none() {
                 break;
             }
-            println!("left = {}", left.unwrap_or(""));
-            println!("right = {}", right.unwrap_or(""));
             output += &format!("{:30} {}\n", left.unwrap_or(""), right.unwrap_or(""));
         }
         output += "|\n|\nV\n[JoinFn]\n";
