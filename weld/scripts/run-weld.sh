@@ -8,6 +8,8 @@ RUST_LOG=debug RUST_BACKTRACE=1 bazel run //largetable:largetable_server -- \
 
 sudo umount -l $HOME/codefs
 
+sleep 1
+
 RUST_BACKTRACE=1 bazel run //weld:weld_client -- \
   --weld_hostname=$IP_ADDR \
   --mount_point=$HOME/codefs \
