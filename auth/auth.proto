@@ -1,4 +1,5 @@
 syntax = "proto3";
+
 message LoginRequest {}
 message LoginChallenge {
   string url = 1;
