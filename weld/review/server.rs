@@ -74,9 +74,9 @@ impl ReviewServer {
             return self.not_found(path.clone(), req);
         }
 
-        let maybe_filename = path_components.next();
-        if let Some(filename) = maybe_filename {
-            return self.change_detail(filename, change, req);
+        let filename = path_components.collect::<Vec<_>>().join("/");
+        if !filename.is_empty() {
+            return self.change_detail(&filename, change, req);
         }
 
         let mut content = render::change(&change);
