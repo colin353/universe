@@ -16,6 +16,11 @@ alias(
 )
 
 alias(
+    name = "rand",
+    actual = "//third_party/vendor/rand-0.6.5:rand",
+)
+
+alias(
     name = "byteorder",
     actual = "//third_party/vendor/byteorder-1.2.7:byteorder",
 )

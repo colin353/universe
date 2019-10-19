@@ -10,6 +10,7 @@ rust_library(
     ],
     deps = [
         "//third_party:hyper",
+        "//third_party:rand",
     ],
 )
 

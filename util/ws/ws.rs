@@ -1,5 +1,10 @@
 extern crate hyper;
+extern crate rand;
+use rand::Rng;
 
+use hyper::header::HeaderValue;
+use hyper::header::COOKIE;
+use hyper::header::SET_COOKIE;
 use hyper::rt::Future;
 pub use hyper::Body;
 
@@ -8,8 +13,33 @@ pub type Response = hyper::Response<Body>;
 
 use std::io::Read;
 
+fn extract_key(h: &HeaderValue, key: &str) -> Option<String> {
+    let cookie = match std::str::from_utf8(h.as_bytes()) {
+        Ok(c) => c,
+        Err(_) => return None,
+    };
+    for kv in cookie.split(";") {
+        let components: Vec<_> = kv.split("=").collect();
+        if components[0].trim() == key && components.len() == 2 {
+            return Some(components[1].trim().to_owned());
+        }
+    }
+    None
+}
+
+fn random_string() -> String {
+    let mut rng = rand::thread_rng();
+    format!(
+        "{}{}{}{}",
+        rng.gen::<u64>(),
+        rng.gen::<u64>(),
+        rng.gen::<u64>(),
+        rng.gen::<u64>()
+    )
+}
+
 pub trait Server: Sync + Send + Clone + 'static {
-    fn respond(&self, path: String, Request) -> Response;
+    fn respond(&self, path: String, Request, session_key: &str) -> Response;
 
     fn serve_static_files(&self, path: String, prefix: &str, static_directory: &str) -> Response {
         if !path.starts_with(prefix) || path.contains("..") {
@@ -38,7 +68,25 @@ pub trait Server: Sync + Send + Clone + 'static {
             .serve(move || {
                 let s = self_clone.clone();
                 hyper::service::service_fn_ok(move |req: Request| {
-                    s.respond(req.uri().path().into(), req)
+                    let mut maybe_session_key = None;
+                    if let Some(c) = req.headers().get(COOKIE) {
+                        maybe_session_key = extract_key(c, "token");
+                    }
+                    let (has_cookie, session_key) = match maybe_session_key {
+                        Some(k) => (true, k),
+                        None => (false, random_string()),
+                    };
+
+                    let mut response = s.respond(req.uri().path().into(), req, &session_key);
+
+                    if !has_cookie {
+                        response.headers_mut().insert(
+                            SET_COOKIE,
+                            HeaderValue::from_bytes(format!("token={}", session_key).as_bytes())
+                                .unwrap(),
+                        );
+                    }
+                    response
                 })
             })
             .map_err(|_| ());;
