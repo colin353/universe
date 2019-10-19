@@ -61,6 +61,13 @@ pub trait Server: Sync + Send + Clone + 'static {
         Response::new(Body::from(format!("404 not found: path {}", path)))
     }
 
+    fn set_cookie(&self, new_token: &str, response: &mut Response) {
+        response.headers_mut().insert(
+            SET_COOKIE,
+            HeaderValue::from_bytes(format!("token={}", new_token).as_bytes()).unwrap(),
+        );
+    }
+
     fn serve(self, port: u16) {
         let addr = ([0, 0, 0, 0], port).into();
         let self_clone = self.clone();
@@ -80,11 +87,7 @@ pub trait Server: Sync + Send + Clone + 'static {
                     let mut response = s.respond(req.uri().path().into(), req, &session_key);
 
                     if !has_cookie {
-                        response.headers_mut().insert(
-                            SET_COOKIE,
-                            HeaderValue::from_bytes(format!("token={}", session_key).as_bytes())
-                                .unwrap(),
-                        );
+                        s.set_cookie(&session_key, &mut response);
                     }
                     response
                 })
