@@ -15,7 +15,7 @@ impl HomepageServer {
     }
 }
 impl Server for HomepageServer {
-    fn respond(&self, path: String, req: Request) -> Response {
+    fn respond(&self, path: String, req: Request, _: &str) -> Response {
         if path.starts_with("/static/") {
             return self.serve_static_files(path, "/static/", &self.static_dir);
         }
