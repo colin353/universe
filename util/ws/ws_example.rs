@@ -39,7 +39,7 @@ impl ExampleServer {
 }
 
 impl Server for ExampleServer {
-    fn respond(&self, path: String, req: Request) -> Response {
+    fn respond(&self, path: String, req: Request, _: &str) -> Response {
         if path.starts_with("/static/") {
             return self.serve_static_files(path, "/static/", "/tmp");
         }
