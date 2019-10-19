@@ -30,3 +30,29 @@ rust_library(
         "@io_bazel_rules_rust//proto/raze:grpc",
     ],
 )
+
+rust_library(
+    name = "auth_client",
+    srcs = ["client.rs"],
+    deps = [
+        ":auth_grpc_rust",
+        "@io_bazel_rules_rust//proto/raze:grpc",
+    ],
+)
+
+rust_binary(
+    name = "server",
+    srcs = [
+        "server.rs",
+    ],
+    deps = [
+        ":auth_grpc_rust",
+        ":auth_service_impl",
+        "//third_party:native_tls",
+        "//third_party:tls_api_native_tls",
+        "//util/flags",
+        "@io_bazel_rules_rust//proto/raze:grpc",
+        "@io_bazel_rules_rust//proto/raze:protobuf",
+        "@io_bazel_rules_rust//proto/raze:tls_api",
+    ],
+)
