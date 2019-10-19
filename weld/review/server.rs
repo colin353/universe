@@ -119,7 +119,7 @@ impl ReviewServer {
 }
 
 impl Server for ReviewServer {
-    fn respond(&self, path: String, req: Request) -> Response {
+    fn respond(&self, path: String, req: Request, _cookie: &str) -> Response {
         if path.starts_with("/static/") {
             return self.serve_static_files(path, "/static/", &self.static_dir);
         }
