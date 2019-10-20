@@ -3,7 +3,7 @@ extern crate grpc;
 pub use auth_grpc_rust::*;
 use std::sync::Arc;
 
-pub trait AuthServer {
+pub trait AuthServer: Send + Sync + Clone + 'static {
     fn authenticate(&self, token: String) -> AuthenticateResponse;
     fn login(&self) -> LoginChallenge;
 }
@@ -14,7 +14,7 @@ pub struct AuthClient {
 }
 
 impl AuthClient {
-    fn new(hostname: &str, port: u16) -> Self {
+    pub fn new(hostname: &str, port: u16) -> Self {
         Self {
             client: Arc::new(
                 AuthenticationServiceClient::new_plain(hostname, port, Default::default()).unwrap(),

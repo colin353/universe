@@ -44,6 +44,7 @@ rust_binary(
     name = "homepage",
     srcs = ["main.rs"],
     deps = [
+        "//auth:auth_client",
         "//util/flags",
         "//util/ws",
     ],
