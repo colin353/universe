@@ -43,6 +43,11 @@ impl Server for ExampleServer {
         if path.starts_with("/static/") {
             return self.serve_static_files(path, "/static/", "/tmp");
         }
+
+        if path.starts_with("/redirect") {
+            return self.redirect("http://google.com");
+        }
+
         match path.as_str() {
             "/" => self.index(path, req),
             _ => self.not_found(path, req),

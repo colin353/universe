@@ -3,8 +3,8 @@ extern crate rand;
 use rand::Rng;
 
 use hyper::header::HeaderValue;
-use hyper::header::COOKIE;
-use hyper::header::SET_COOKIE;
+use hyper::header::{COOKIE, LOCATION, SET_COOKIE};
+use hyper::http::StatusCode;
 use hyper::rt::Future;
 pub use hyper::Body;
 
@@ -66,6 +66,16 @@ pub trait Server: Sync + Send + Clone + 'static {
             SET_COOKIE,
             HeaderValue::from_bytes(format!("token={}", new_token).as_bytes()).unwrap(),
         );
+    }
+
+    fn redirect(&self, location: &str) -> Response {
+        let mut response = Response::new(Body::from(""));
+        *response.status_mut() = StatusCode::PERMANENT_REDIRECT;
+        response.headers_mut().insert(
+            LOCATION,
+            HeaderValue::from_bytes(location.as_bytes()).unwrap(),
+        );
+        response
     }
 
     fn serve(self, port: u16) {
