@@ -10,14 +10,14 @@ use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
 fn main() {
-    let port = define_flag!("port", 8001, "The port to bind to.");
+    let port = define_flag!("port", 8888, "The port to bind to.");
     let oauth_client_id = define_flag!("oauth_client_id", String::new(), "The oauth client ID");
     let hostname = define_flag!(
         "hostname",
         String::new(),
         "the publicly accessible hostname"
     );
-    parse_flags!(port, oauth_client_id);
+    parse_flags!(port, hostname, oauth_client_id);
 
     let mut server = grpc::ServerBuilder::<tls_api_native_tls::TlsAcceptor>::new();
     server.http.set_port(port.value());
