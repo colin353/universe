@@ -45,10 +45,20 @@ impl ReviewServer {
             .map(|c| render::change(c))
             .collect::<Vec<_>>();
 
+        let mut req = weld::GetSubmittedChangesRequest::new();
+        req.set_limit(3);
+        let submitted_changes = self
+            .client
+            .get_submitted_changes(req)
+            .iter()
+            .map(|c| render::change(c))
+            .collect::<Vec<_>>();
+
         let page = tmpl::apply(
             INDEX,
             &content!(;
                 "progress" => changes
+                "submitted" => submitted_changes
             ),
         );
 

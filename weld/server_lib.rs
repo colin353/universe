@@ -201,10 +201,17 @@ impl<C: LargeTableClient> WeldServiceHandler<C> {
     }
 
     pub fn get_change(&self, change: weld::Change) -> weld::Change {
-        match self.repo.get_change(change.get_id()) {
-            Some(c) => c,
-            None => weld::Change::new(),
+        if let Some(c) = self.repo.get_change(change.get_id()) {
+            return c;
         }
+        if let Some(c) = self
+            .database
+            .read_proto(SUBMITTED, &index_to_rowname(change.get_id()), 0)
+        {
+            return c;
+        }
+
+        weld::Change::new()
     }
 
     pub fn get_latest_change(&self) -> weld::Change {
@@ -249,7 +256,12 @@ impl<C: LargeTableClient> WeldServiceHandler<C> {
             0,
         );
         let mut output = weld::GetSubmittedChangesResponse::new();
+        let mut count = 0;
         for (_, change) in changes {
+            if req.get_limit() > 0 && count == req.get_limit() {
+                break;
+            }
+            count += 1;
             output.mut_changes().push(change);
         }
         output

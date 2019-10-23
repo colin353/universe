@@ -1,12 +1,23 @@
-<p>In progress:</p>
+<div class="content">
+    {{progress == 0}}
+    <p>No recent changes</p>
+    {{/progress}}
 
-{{progress == 0}}
-<p>No recent changes</p>
-{{/progress}}
+    {{progress != 0}}
+    <p>In progress:</p>
+    {{progress[]}}
+    <p><a href="/{{id}}">{{id}}</a> {{author}} {{summary}}</p>
+    {{/progress}}
+    {{/progress}}
 
-{{progress != 0}}
-<p>Some changes:</p>
-{{progress[]}}
-<p><a href="/{{id}}">{{id}}</a> {{author}} {{summary}}</p>
-{{/progress}}
-{{/progress}}
+    {{submitted == 0}}
+    <p>No submitted changes</p>
+    {{/submitted}}
+
+    {{submitted != 0}}
+    <p>Submitted:</p>
+    {{submitted[]}}
+    <p><a href="/{{id}}">{{id}}</a> {{author}} {{summary}}</p>
+    {{/submitted}}
+    {{/submitted}}
+</div>
