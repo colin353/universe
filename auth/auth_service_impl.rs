@@ -1,12 +1,18 @@
+extern crate hyper;
+extern crate rand;
+extern crate ws;
+extern crate ws_utils;
+
+use rand::Rng;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
-extern crate rand;
-use rand::Rng;
+use ws::{Body, Request, Response, Server};
 
 pub struct LoginRecord {
     username: String,
     state: String,
     valid: bool,
+    return_url: String,
 }
 
 impl LoginRecord {
@@ -15,6 +21,7 @@ impl LoginRecord {
             username: String::new(),
             state: String::new(),
             valid: false,
+            return_url: String::new(),
         }
     }
 
@@ -58,9 +65,9 @@ impl auth_grpc_rust::AuthenticationService for AuthServiceHandler {
     fn login(
         &self,
         _m: grpc::RequestOptions,
-        req: auth_grpc_rust::LoginRequest,
+        mut req: auth_grpc_rust::LoginRequest,
     ) -> grpc::SingleResponse<auth_grpc_rust::LoginChallenge> {
-        let redirect_uri = "http%3A%2F%2Fauth.colinmerkel.xyz";
+        let redirect_uri = ws_utils::urlencode(&self.hostname);
         // Construct the challenge URL
         let state = random_string();
         let url = format!(
@@ -83,6 +90,7 @@ impl auth_grpc_rust::AuthenticationService for AuthServiceHandler {
 
         let mut record = LoginRecord::new();
         record.state = state;
+        record.return_url = req.take_return_url();
         self.tokens.write().unwrap().insert(token, record);
 
         grpc::SingleResponse::completed(challenge)
@@ -101,5 +109,28 @@ impl auth_grpc_rust::AuthenticationService for AuthServiceHandler {
             }
         }
         grpc::SingleResponse::completed(response)
+    }
+}
+
+#[derive(Clone)]
+pub struct AuthWebServer {
+    tokens: Arc<RwLock<HashMap<String, LoginRecord>>>,
+}
+
+impl AuthWebServer {
+    pub fn new(tokens: Arc<RwLock<HashMap<String, LoginRecord>>>) -> Self {
+        Self { tokens: tokens }
+    }
+}
+
+impl Server for AuthWebServer {
+    fn respond(&self, path: String, req: Request, _: &str) -> Response {
+        let query = match req.uri().query() {
+            Some(q) => q,
+            None => return Response::new(Body::from("")),
+        };
+
+        let params = ws_utils::parse_params(query);
+        Response::new(Body::from(format!("{:?}", params)))
     }
 }

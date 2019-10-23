@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-message LoginRequest {}
+message LoginRequest { string return_url = 1; }
 message LoginChallenge {
   string url = 1;
   string token = 2;
