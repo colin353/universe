@@ -27,6 +27,8 @@ rust_library(
     deps = [
         ":auth_grpc_rust",
         "//third_party:rand",
+        "//util/ws",
+        "//util/ws:ws_utils",
         "@io_bazel_rules_rust//proto/raze:grpc",
     ],
 )
@@ -51,6 +53,7 @@ rust_binary(
         "//third_party:native_tls",
         "//third_party:tls_api_native_tls",
         "//util/flags",
+        "//util/ws",
         "@io_bazel_rules_rust//proto/raze:grpc",
         "@io_bazel_rules_rust//proto/raze:protobuf",
         "@io_bazel_rules_rust//proto/raze:tls_api",
