@@ -35,7 +35,15 @@ impl<'a> LargeTable {
 
     pub fn add_journal(&mut self, writer: Box<io::Write + Send + Sync>) {
         self.journals
-            .push(RwLock::new(recordio::RecordIOWriter::new(writer)));
+            .insert(0, RwLock::new(recordio::RecordIOWriter::new(writer)));
+    }
+
+    pub fn add_mtable(&mut self) {
+        self.mtables.insert(0, RwLock::new(mtable::MTable::new()));
+    }
+
+    pub fn drop_mtables(&mut self) {
+        self.mtables.drain(1..);
     }
 
     pub fn load_from_journal(&mut self, reader: Box<io::Read>) {
@@ -404,6 +412,8 @@ mod tests {
 
         let mut f = std::io::Cursor::new(Vec::new());
         l.write_to_disk(&mut f);
+        l.add_mtable();
+        l.drop_mtables();
 
         // Writing to disk should clear the mtable, so we shouldn't get
         // any results.
