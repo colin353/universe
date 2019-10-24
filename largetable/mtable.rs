@@ -131,16 +131,12 @@ impl<'short, 'long: 'short> MTable {
         self.tree.get(target_key.as_str())
     }
 
-    pub fn write_to_disk(&mut self, write: &mut io::Write) -> io::Result<()> {
+    pub fn write_to_disk(&self, write: &mut io::Write) -> io::Result<()> {
         let mut table = sstable::SSTableBuilder::new(write);
         for (key, value) in self.tree.iter() {
             table.write_ordered(key, value.clone())?;
         }
         table.finish()?;
-
-        // Delete the contents of the tree, since it has been written to disk.
-        std::mem::swap(&mut self.tree, &mut BTreeMap::new());
-        self.memory_usage = 0;
         Ok(())
     }
 }

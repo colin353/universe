@@ -14,8 +14,7 @@ use time;
 use std::fs;
 use std::io::Write;
 use std::path;
-use std::sync::Arc;
-use std::sync::RwLock;
+use std::sync::{Arc, Mutex, RwLock};
 
 const DTABLE_EXT: &'static str = "sstable";
 const JOURNAL_EXT: &'static str = "recordio";
@@ -25,7 +24,8 @@ pub struct LargeTableServiceHandler {
     largetable: Arc<RwLock<largetable::LargeTable>>,
     memory_limit: u64,
     data_directory: String,
-    next_file_number: u64,
+    next_file_number: Arc<Mutex<u64>>,
+    journals: Arc<Mutex<Vec<String>>>,
 }
 
 impl LargeTableServiceHandler {
@@ -34,7 +34,8 @@ impl LargeTableServiceHandler {
             largetable: Arc::new(RwLock::new(largetable::LargeTable::new())),
             memory_limit,
             data_directory,
-            next_file_number: 0,
+            next_file_number: Arc::new(Mutex::new(0)),
+            journals: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -62,6 +63,10 @@ impl LargeTableServiceHandler {
             match entry {
                 Ok(path) => {
                     println!("adding journal: {:?}", &path);
+                    self.journals
+                        .lock()
+                        .unwrap()
+                        .push(path.to_str().unwrap().to_owned());
                     let f = fs::File::open(path).unwrap();
                     lt.load_from_journal(Box::new(f));
                 }
@@ -72,8 +77,16 @@ impl LargeTableServiceHandler {
 
     pub fn add_journal(&mut self) {
         // First, open the file as writable and dump the mtable to it.
-        let f = self.get_new_filehandle(JOURNAL_EXT);
+        let (filename, f) = self.get_new_filehandle(JOURNAL_EXT);
+        self.journals.lock().unwrap().push(filename);
         self.largetable.write().unwrap().add_journal(Box::new(f));
+    }
+
+    pub fn unlink_journals(&mut self) {
+        let journals = self.journals.lock().unwrap().clone();
+        for filename in journals {
+            fs::remove_file(filename).unwrap();
+        }
     }
 
     fn filename_format(&self, file_number: u64, filetype: &str) -> String {
@@ -84,24 +97,24 @@ impl LargeTableServiceHandler {
     }
 
     fn get_current_filename(&self, filetype: &str) -> String {
-        self.filename_format(self.next_file_number, filetype)
+        self.filename_format(*self.next_file_number.lock().unwrap(), filetype)
     }
 
     // get_new_filehandle finds a fresh filehandle to use. It keeps incrementing the file
     // counter until it finds a file which doesn't exist yet, and uses that.
-    fn get_new_filehandle(&mut self, filetype: &str) -> fs::File {
+    fn get_new_filehandle(&mut self, filetype: &str) -> (String, fs::File) {
         // First, check if the file exists.
         let mut filename: String;
         loop {
             filename = self.get_current_filename(filetype);
             if path::Path::new(filename.as_str()).exists() {
-                self.next_file_number += 1;
+                *self.next_file_number.lock().unwrap() += 1;
             } else {
                 break;
             }
         }
         println!("create file: '{}'", filename);
-        fs::File::create(filename).unwrap()
+        (filename.clone(), fs::File::create(filename).unwrap())
     }
 
     // check_memory checks the current memory usage and dumps the mtable to disk if necessary.
@@ -112,15 +125,31 @@ impl LargeTableServiceHandler {
             memory_usage, self.memory_limit
         );
         if memory_usage > self.memory_limit {
-            // First, open the file as writable and dump the mtable to it.
-            let mut f = self.get_new_filehandle(DTABLE_EXT);
-            let mut lt = self.largetable.write().unwrap();
-            lt.write_to_disk(&mut f);
-            f.flush().unwrap();
+            // Add a new journal file
+            self.add_journal();
 
-            // Now, re-open the file in read mode and construct a dtable from it.
-            let f = fs::File::open(self.get_current_filename(DTABLE_EXT)).unwrap();
-            lt.add_dtable(Box::new(f));
+            // Create a new mtable
+            self.largetable.write().unwrap().add_mtable();
+
+            // Open the file as writable and dump the mtable to it.
+            {
+                let (_, mut f) = self.get_new_filehandle(DTABLE_EXT);
+                let mut lt = self.largetable.read().unwrap();
+                lt.write_to_disk(&mut f);
+                f.flush().unwrap();
+            }
+
+            // Now, re-open the file in read mode and construct a dtable from it, and
+            // simultaneously drop the mtable.
+            {
+                let f = fs::File::open(self.get_current_filename(DTABLE_EXT)).unwrap();
+                let mut lt = self.largetable.write().unwrap();
+                lt.add_dtable(Box::new(f));
+                lt.drop_mtables();
+            }
+
+            // Finally, delete the old journals which have been persisted to disk
+            self.unlink_journals();
         }
     }
 }
