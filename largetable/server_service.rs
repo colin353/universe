@@ -82,9 +82,9 @@ impl LargeTableServiceHandler {
         self.largetable.write().unwrap().add_journal(Box::new(f));
     }
 
-    pub fn unlink_journals(&mut self) {
-        let journals = self.journals.lock().unwrap().clone();
+    pub fn unlink_journals(&mut self, journals: Vec<String>) {
         for filename in journals {
+            println!("deleting: {}", filename);
             fs::remove_file(filename).unwrap();
         }
     }
@@ -126,6 +126,8 @@ impl LargeTableServiceHandler {
         );
         if memory_usage > self.memory_limit {
             // Add a new journal file
+            let journals = self.journals.lock().unwrap().clone();
+            *self.journals.lock().unwrap() = Vec::new();
             self.add_journal();
 
             // Create a new mtable
@@ -135,7 +137,7 @@ impl LargeTableServiceHandler {
             {
                 let (_, mut f) = self.get_new_filehandle(DTABLE_EXT);
                 let mut lt = self.largetable.read().unwrap();
-                lt.write_to_disk(&mut f);
+                lt.write_to_disk(&mut f, 1);
                 f.flush().unwrap();
             }
 
@@ -149,7 +151,7 @@ impl LargeTableServiceHandler {
             }
 
             // Finally, delete the old journals which have been persisted to disk
-            self.unlink_journals();
+            self.unlink_journals(journals);
         }
     }
 }

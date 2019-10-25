@@ -36,6 +36,7 @@ impl<'a> LargeTable {
     pub fn add_journal(&mut self, writer: Box<io::Write + Send + Sync>) {
         self.journals
             .insert(0, RwLock::new(recordio::RecordIOWriter::new(writer)));
+        self.journals.drain(1..);
     }
 
     pub fn add_mtable(&mut self) {
@@ -291,9 +292,9 @@ impl<'a> LargeTable {
         shards
     }
 
-    pub fn write_to_disk(&self, w: &mut io::Write) {
+    pub fn write_to_disk(&self, w: &mut io::Write, idx: usize) {
         let write: &mut io::Write = w.borrow_mut() as &mut io::Write;
-        self.mtables[0]
+        self.mtables[idx]
             .write()
             .unwrap()
             .write_to_disk(write)
@@ -411,7 +412,7 @@ mod tests {
         assert_eq!(l.read("test", "test", 500).unwrap().get_data(), &[42]);
 
         let mut f = std::io::Cursor::new(Vec::new());
-        l.write_to_disk(&mut f);
+        l.write_to_disk(&mut f, 0);
         l.add_mtable();
         l.drop_mtables();
 
@@ -452,7 +453,7 @@ mod tests {
 
         // Write this to a DTable.
         let mut f = std::io::Cursor::new(Vec::new());
-        l.write_to_disk(&mut f);
+        l.write_to_disk(&mut f, 0);
         l.add_dtable(Box::new(f));
 
         write_record(&mut l, "a", "avocado", 1234);
@@ -463,7 +464,7 @@ mod tests {
 
         // Write this to a DTable.
         let mut f = std::io::Cursor::new(Vec::new());
-        l.write_to_disk(&mut f);
+        l.write_to_disk(&mut f, 0);
         l.add_dtable(Box::new(f));
 
         // Read it out again.
@@ -532,7 +533,7 @@ mod tests {
 
         // Write this to a DTable.
         let mut f = std::io::Cursor::new(Vec::new());
-        l.write_to_disk(&mut f);
+        l.write_to_disk(&mut f, 0);
         l.add_dtable(Box::new(f));
 
         write_record(&mut l, "a", "avocado", 3000);
@@ -543,7 +544,7 @@ mod tests {
 
         // Write this to a DTable.
         let mut f = std::io::Cursor::new(Vec::new());
-        l.write_to_disk(&mut f);
+        l.write_to_disk(&mut f, 0);
         l.add_dtable(Box::new(f));
 
         // Read it out again.
