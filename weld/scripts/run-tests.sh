@@ -1,6 +1,6 @@
 #!/bin/bash
 get_files () {
-  bazel query $(echo $1 | tail -c +2) 2>/dev/null
+  bazel query $1 2>/dev/null
 }
 
 get_targets () {
@@ -15,7 +15,7 @@ export -f get_dependencies
 export -f get_targets
 export -f get_files
 
-FILES=$(tig files | xargs -L 1 bash -c 'get_files "$@"' _)
+FILES=$(files | xargs -L 1 bash -c 'get_files "$@"' _)
 echo "found files: $FILES"
 
 TARGETS=$(echo $FILES | xargs -L 1 bash -c 'get_targets "$@"' _)
