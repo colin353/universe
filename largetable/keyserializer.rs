@@ -5,6 +5,7 @@
  * system.
  */
 
+extern crate largetable_proto_rust;
 use largetable_proto_rust::Record;
 
 // serialize_key generates a key string based upon the row, column, and timestamp.
@@ -26,9 +27,21 @@ pub fn get_colspec(row: &str, col: &str) -> String {
     format!("{}\x00{}", row, col)
 }
 
+pub fn deserialize_key(key: &str) -> (&str, &str) {
+    let split: Vec<&str> = key.split("\x00").collect();
+    (split[0], split[1])
+}
+
+pub fn get_prefix(key: &str) -> &str {
+    match key.rfind("\x00") {
+        Some(idx) => &key[0..idx],
+        None => "",
+    }
+}
+
 pub fn deserialize_col(key: &str) -> &str {
     let split: Vec<&str> = key.split("\x00").collect();
-    return split[1];
+    split[1]
 }
 
 #[cfg(test)]

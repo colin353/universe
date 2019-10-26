@@ -29,15 +29,21 @@ rust_grpc_library(
 )
 
 rust_library(
+    name = "keyserializer",
+    srcs = ["keyserializer.rs"],
+    deps = [":largetable_proto_rust"],
+)
+
+rust_library(
     name = "largetable",
     srcs = [
         "dtable.rs",
-        "keyserializer.rs",
         "largetable.rs",
         "lib.rs",
         "mtable.rs",
     ],
     deps = [
+        ":keyserializer",
         ":largetable_proto_rust",
         "//third_party:futures",
         "//third_party:glob",
@@ -143,6 +149,22 @@ rust_library(
         "//third_party:time",
         "@io_bazel_rules_rust//proto/raze:protobuf",
     ],
+)
+
+rust_library(
+    name = "compaction",
+    srcs = ["compaction.rs"],
+    deps = [
+        ":keyserializer",
+        ":largetable_proto_rust",
+        "//third_party:time",
+        "//util/sstable",
+    ],
+)
+
+rust_test(
+    name = "compaction_test",
+    crate = ":compaction",
 )
 
 rust_test(
