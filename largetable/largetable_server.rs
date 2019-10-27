@@ -9,7 +9,10 @@ extern crate largetable;
 extern crate tls_api;
 extern crate tls_api_stub;
 
+extern crate compaction;
 extern crate largetable_grpc_rust;
+extern crate largetable_proto_rust;
+extern crate sstable;
 mod server_service;
 
 #[cfg(test)]
@@ -55,5 +58,6 @@ fn main() {
     loop {
         thread::sleep(std::time::Duration::from_secs(60));
         handler.check_memory();
+        handler.check_compaction();
     }
 }

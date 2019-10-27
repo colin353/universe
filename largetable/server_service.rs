@@ -6,9 +6,12 @@
 
 use largetable;
 use largetable_grpc_rust;
+use largetable_proto_rust;
 
 use glob;
 use protobuf;
+use protobuf::Message;
+use sstable;
 use time;
 
 use std::fs;
@@ -18,6 +21,7 @@ use std::sync::{Arc, Mutex, RwLock};
 
 const DTABLE_EXT: &'static str = "sstable";
 const JOURNAL_EXT: &'static str = "recordio";
+const COMPACTION_POLICIES: &'static str = "__META__POLICIES__";
 
 #[derive(Clone)]
 pub struct LargeTableServiceHandler {
@@ -26,6 +30,7 @@ pub struct LargeTableServiceHandler {
     data_directory: String,
     next_file_number: Arc<Mutex<u64>>,
     journals: Arc<Mutex<Vec<String>>>,
+    dtables: Arc<Mutex<Vec<String>>>,
 }
 
 impl LargeTableServiceHandler {
@@ -36,6 +41,7 @@ impl LargeTableServiceHandler {
             data_directory,
             next_file_number: Arc::new(Mutex::new(0)),
             journals: Arc::new(Mutex::new(Vec::new())),
+            dtables: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -47,6 +53,10 @@ impl LargeTableServiceHandler {
             match entry {
                 Ok(path) => {
                     println!("adding dtable: {:?}", &path);
+                    self.dtables
+                        .lock()
+                        .unwrap()
+                        .push(path.to_str().unwrap().to_owned());
                     let f = fs::File::open(path).unwrap();
                     lt.add_dtable(Box::new(f));
                 }
@@ -136,7 +146,7 @@ impl LargeTableServiceHandler {
             // Open the file as writable and dump the mtable to it.
             {
                 let (_, mut f) = self.get_new_filehandle(DTABLE_EXT);
-                let mut lt = self.largetable.read().unwrap();
+                let lt = self.largetable.read().unwrap();
                 lt.write_to_disk(&mut f, 1);
                 f.flush().unwrap();
             }
@@ -144,7 +154,9 @@ impl LargeTableServiceHandler {
             // Now, re-open the file in read mode and construct a dtable from it, and
             // simultaneously drop the mtable.
             {
-                let f = fs::File::open(self.get_current_filename(DTABLE_EXT)).unwrap();
+                let filename = self.get_current_filename(DTABLE_EXT);
+                let f = fs::File::open(filename.clone()).unwrap();
+                self.dtables.lock().unwrap().push(filename);
                 let mut lt = self.largetable.write().unwrap();
                 lt.add_dtable(Box::new(f));
                 lt.drop_mtables();
@@ -153,6 +165,62 @@ impl LargeTableServiceHandler {
             // Finally, delete the old journals which have been persisted to disk
             self.unlink_journals(journals);
         }
+    }
+
+    pub fn check_compaction(&mut self) {
+        if self.dtables.lock().unwrap().len() > 1 {
+            self.perform_compaction();
+        }
+    }
+
+    pub fn perform_compaction(&mut self) {
+        let records =
+            self.largetable
+                .read()
+                .unwrap()
+                .read_range(COMPACTION_POLICIES, "", "", "", 0, 0);
+        let mut policies = Vec::new();
+        for record in records {
+            let mut p = largetable_proto_rust::CompactionPolicy::new();
+            p.merge_from_bytes(record.get_data()).unwrap();
+            policies.push(p);
+        }
+
+        let tables_to_replace = self.dtables.lock().unwrap().clone();
+        let tables = tables_to_replace
+            .iter()
+            .map(|filename| {
+                let f = fs::File::open(filename).unwrap();
+                sstable::SSTableReader::new(Box::new(f)).unwrap()
+            })
+            .collect();
+
+        let (filename, mut f) = self.get_new_filehandle(DTABLE_EXT);
+
+        println!(
+            "compacting {:?} --> {}",
+            self.dtables.lock().unwrap(),
+            filename
+        );
+
+        let mut builder = sstable::SSTableBuilder::new(&mut f);
+        compaction::compact(policies, tables, get_timestamp_usec(), &mut builder);
+
+        {
+            // Replace the old dtables with the new compacted one
+            *self.dtables.lock().unwrap() = vec![filename.clone()];
+            let reader = fs::File::open(filename).unwrap();
+            let mut lt = self.largetable.write().unwrap();
+            lt.clear_dtables();
+            lt.add_dtable(Box::new(reader));
+        }
+
+        // Delete the old dtable files
+        for filename in tables_to_replace {
+            fs::remove_file(filename).unwrap();
+        }
+
+        println!("compaction complete");
     }
 }
 
