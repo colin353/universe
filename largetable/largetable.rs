@@ -306,6 +306,10 @@ impl<'a> LargeTable {
             .push(RwLock::new(dtable::DTable::new(reader).unwrap()));
     }
 
+    pub fn clear_dtables(&mut self) {
+        self.dtables = Vec::new();
+    }
+
     pub fn write(&self, row: &str, col: &str, mut record: Record) {
         // By tradition, just write to the first entry in the mtable vector.
         assert!(self.mtables.len() > 0);

@@ -107,7 +107,7 @@ fn apply_policy(
     }
 }
 
-fn compact(
+pub fn compact(
     mut policies: Vec<CompactionPolicy>,
     tables: Vec<sstable::SSTableReader<Record>>,
     now: u64,
