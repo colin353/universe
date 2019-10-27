@@ -80,31 +80,29 @@ fn policy_to_key(p: &CompactionPolicy) -> String {
     get_colspec(p.get_row(), p.get_scope())
 }
 
-fn get_timestamp_usec() -> u64 {
-    let tm = time::now_utc().to_timespec();
-    (tm.sec as u64) * 1_000_000 + ((tm.nsec / 1000) as u64)
-}
-
 fn apply_policy(
     builder: &mut sstable::SSTableBuilder<Record>,
     policy: &CompactionPolicy,
+    now: u64,
     buffer: Vec<(String, Record)>,
 ) {
     let horizon = match policy.get_ttl() {
         0 => 0,
-        ttl => get_timestamp_usec() - ttl,
+        ttl => now - ttl,
     };
     let max_elements = match policy.get_history() {
         0 => std::usize::MAX,
         x => x as usize,
     };
 
-    for (key, value) in buffer
+    let to_write = buffer
         .into_iter()
         .rev()
         .take(max_elements)
-        .filter(|(_, value)| value.get_timestamp() < horizon)
-    {
+        .filter(|(_, value)| value.get_timestamp() >= horizon)
+        .collect::<Vec<_>>();
+
+    for (key, value) in to_write.into_iter().rev() {
         builder.write_ordered(&key, value);
     }
 }
@@ -112,6 +110,7 @@ fn apply_policy(
 fn compact(
     mut policies: Vec<CompactionPolicy>,
     tables: Vec<sstable::SSTableReader<Record>>,
+    now: u64,
     builder: &mut sstable::SSTableBuilder<Record>,
 ) {
     policies.sort_by_key(|p| policy_to_key(&p));
@@ -125,16 +124,25 @@ fn compact(
     let mut current_prefix = String::from("");
     let default_policy = CompactionPolicy::new();
     for (key, value) in reader {
+        println!("compact: {} {:?}", key, value);
         {
             let prefix = keyserializer::get_prefix(&key);
             if current_prefix == "" {
                 current_prefix = prefix.to_owned();
             }
-            if current_prefix != prefix.to_owned() {
+            if current_prefix != prefix {
                 let policy = policy_trie
                     .lookup(&current_prefix)
                     .unwrap_or(&default_policy);
-                apply_policy(builder, policy, std::mem::replace(&mut buffer, Vec::new()));
+
+                println!("apply policy: {:?}", policy);
+                println!("on {} collected values", buffer.len());
+                apply_policy(
+                    builder,
+                    policy,
+                    now,
+                    std::mem::replace(&mut buffer, Vec::new()),
+                );
 
                 current_prefix = prefix.to_owned();
                 buffer.clear();
@@ -143,11 +151,26 @@ fn compact(
 
         buffer.push((key, value));
     }
+
+    let policy = policy_trie
+        .lookup(&current_prefix)
+        .unwrap_or(&default_policy);
+    apply_policy(
+        builder,
+        policy,
+        now,
+        std::mem::replace(&mut buffer, Vec::new()),
+    );
+
+    builder.finish();
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sstable::SSTableBuilder;
+    use sstable::SSTableReader;
+    use std::io::Seek;
 
     #[test]
     fn test_trie() {
@@ -170,8 +193,111 @@ mod tests {
         assert_eq!(t.lookup("bees"), Some(&3));
     }
 
+    fn test_rec(data: &str) -> Record {
+        let mut r = Record::new();
+        r.set_data(data.to_owned().into_bytes());
+        r
+    }
+
+    fn test_policy(row: &str, scope: &str, ttl: u64, history: u64) -> CompactionPolicy {
+        let mut p = CompactionPolicy::new();
+        p.set_row(row.to_owned());
+        p.set_scope(scope.to_owned());
+        p.set_ttl(ttl);
+        p.set_history(history);
+        p
+    }
+
+    fn write(w: &mut SSTableBuilder<Record>, row: &str, col: &str, timestamp: u64) {
+        let mut r = Record::new();
+        r.set_row(row.to_owned());
+        r.set_col(col.to_owned());
+        r.set_timestamp(timestamp);
+        w.write_ordered(&keyserializer::serialize_key(row, col, timestamp), r);
+    }
+
     #[test]
     fn test_compaction() {
-        // idk what to do here
+        let mut d1 = std::io::Cursor::new(Vec::new());
+        {
+            let mut t = SSTableBuilder::<Record>::new(&mut d1);
+            write(&mut t, "a", "aardvark", 100);
+            write(&mut t, "a", "baseball", 100);
+            write(&mut t, "a", "calendar", 100);
+            write(&mut t, "a", "diamond", 100);
+            t.finish().unwrap();
+        }
+        d1.seek(std::io::SeekFrom::Start(0)).unwrap();
+
+        let mut d2 = std::io::Cursor::new(Vec::new());
+        {
+            let mut r1 = SSTableReader::<Record>::new(Box::new(d1)).unwrap();
+            compact(
+                Vec::new(),
+                vec![r1],
+                150,
+                &mut SSTableBuilder::<Record>::new(&mut d2),
+            );
+        }
+        d2.seek(std::io::SeekFrom::Start(0)).unwrap();
+
+        let mut s = SSTableReader::<Record>::new(Box::new(d2)).unwrap();
+        let mapped = s.map(|(k, v)| v.get_col().to_owned()).collect::<Vec<_>>();
+        assert_eq!(mapped, vec!["aardvark", "baseball", "calendar", "diamond"]);
+    }
+
+    #[test]
+    fn test_compaction_policies() {
+        let mut policies = Vec::new();
+        // By default, store only one record
+        policies.push(test_policy("a", "", 0, 1));
+        // For all c columns, store all records
+        policies.push(test_policy("a", "c", 0, 0));
+        // For all b records, store only in the past 50 seconds
+        policies.push(test_policy("a", "b", 50, 0));
+        // For all d records, store only in the past 50 seconds
+        policies.push(test_policy("a", "d", 50, 0));
+
+        let mut d1 = std::io::Cursor::new(Vec::new());
+        {
+            let mut t = SSTableBuilder::<Record>::new(&mut d1);
+            write(&mut t, "a", "aardvark", 100);
+            write(&mut t, "a", "aardvark", 125);
+            write(&mut t, "a", "baseball", 100);
+            write(&mut t, "a", "baseball", 125);
+            write(&mut t, "a", "baseball", 135);
+            write(&mut t, "a", "calendar", 100);
+            write(&mut t, "a", "calendar", 100);
+            write(&mut t, "a", "calendar", 100);
+            write(&mut t, "a", "diamond", 100);
+            write(&mut t, "a", "elephant", 0);
+            write(&mut t, "a", "elephant", 100);
+            write(&mut t, "a", "elephant", 200);
+            t.finish().unwrap();
+        }
+        d1.seek(std::io::SeekFrom::Start(0)).unwrap();
+
+        let mut d2 = std::io::Cursor::new(Vec::new());
+        {
+            let mut r1 = SSTableReader::<Record>::new(Box::new(d1)).unwrap();
+            compact(
+                policies,
+                vec![r1],
+                160,
+                &mut SSTableBuilder::<Record>::new(&mut d2),
+            );
+        }
+        d2.seek(std::io::SeekFrom::Start(0)).unwrap();
+        let mut s = SSTableReader::<Record>::new(Box::new(d2)).unwrap();
+        let mapped = s.map(|(k, v)| v.get_col().to_owned()).collect::<Vec<_>>();
+        assert_eq!(
+            mapped,
+            vec![
+                "aardvark", // Falls under default policy, keeps only most recent
+                "baseball", "baseball", // Falls under B policy, keep only last two
+                "calendar", "calendar", "calendar", // Falls under C policy, keep all
+                "elephant", // falls under default policy
+            ]
+        );
     }
 }
