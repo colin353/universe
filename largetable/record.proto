@@ -8,10 +8,3 @@ message Record {
   string row = 4;
   string col = 5;
 }
-
-message CompactionPolicy {
-  string row = 1;
-  string scope = 2;
-  uint64 ttl = 3;
-  uint64 history = 4;
-}

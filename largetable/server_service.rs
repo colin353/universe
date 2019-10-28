@@ -181,7 +181,7 @@ impl LargeTableServiceHandler {
                 .read_range(COMPACTION_POLICIES, "", "", "", 0, 0);
         let mut policies = Vec::new();
         for record in records {
-            let mut p = largetable_proto_rust::CompactionPolicy::new();
+            let mut p = largetable_grpc_rust::CompactionPolicy::new();
             p.merge_from_bytes(record.get_data()).unwrap();
             policies.push(p);
         }
@@ -420,5 +420,21 @@ impl largetable_grpc_rust::LargeTableService for LargeTableServiceHandler {
         let mut hint = largetable_grpc_rust::ShardHintResponse::new();
         hint.set_shards(protobuf::RepeatedField::from_vec(shards));
         grpc::SingleResponse::completed(hint)
+    }
+
+    fn set_compaction_policy(
+        &self,
+        _m: grpc::RequestOptions,
+        req: largetable_grpc_rust::CompactionPolicy,
+    ) -> grpc::SingleResponse<largetable_grpc_rust::SetCompactionPolicyResponse> {
+        let mut rec = largetable_proto_rust::Record::new();
+        req.write_to_vec(&mut rec.mut_data());
+        self.largetable.read().unwrap().write(
+            COMPACTION_POLICIES,
+            &format!("{}_{}", req.get_row(), req.get_scope()),
+            rec,
+        );
+
+        grpc::SingleResponse::completed(largetable_grpc_rust::SetCompactionPolicyResponse::new())
     }
 }

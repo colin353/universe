@@ -152,6 +152,7 @@ rust_library(
     deps = [
         ":largetable",
         ":largetable_client",
+        ":largetable_grpc_rust",
         "//third_party:time",
         "@io_bazel_rules_rust//proto/raze:protobuf",
     ],
@@ -162,6 +163,7 @@ rust_library(
     srcs = ["compaction.rs"],
     deps = [
         ":keyserializer",
+        ":largetable_grpc_rust",
         ":largetable_proto_rust",
         "//third_party:time",
         "//util/sstable",
