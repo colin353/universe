@@ -3,13 +3,18 @@ extern crate time;
 
 extern crate largetable;
 extern crate largetable_client;
+extern crate largetable_grpc_rust;
 
 use largetable::Record;
 use largetable_client::LargeTableBatchWriter;
 use largetable_client::LargeTableClient;
+use largetable_grpc_rust::CompactionPolicy;
 
+use protobuf::Message;
 use std::sync::Arc;
 use std::sync::RwLock;
+
+const COMPACTION_POLICIES: &'static str = "__META__POLICIES__";
 
 #[derive(Clone)]
 pub struct LargeTableMockClient {
@@ -202,6 +207,18 @@ impl LargeTableClient for LargeTableMockClient {
 
     fn reserve_id(&self, col: &str, row: &str) -> u64 {
         self.database.read().unwrap().reserve_id(col, row)
+    }
+
+    fn set_compaction_policy(&self, policy: largetable_grpc_rust::CompactionPolicy) {
+        let mut d = Vec::new();
+        policy.write_to_vec(&mut d);
+
+        self.write(
+            COMPACTION_POLICIES,
+            &format!("{}_{}", policy.get_row(), policy.get_scope()),
+            get_timestamp_usec(),
+            d,
+        );
     }
 }
 

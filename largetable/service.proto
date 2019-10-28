@@ -1,5 +1,12 @@
 syntax = "proto3";
 
+message CompactionPolicy {
+  string row = 1;
+  string scope = 2;
+  uint64 ttl = 3;
+  uint64 history = 4;
+}
+
 message Record {
   string row = 1;
   string column = 2;
@@ -87,6 +94,7 @@ message BatchWriteRequest {
 
 message BatchReadRequest { repeated ReadRequest reads = 1; }
 message BatchReadResponse { repeated ReadResponse responses = 1; }
+message SetCompactionPolicyResponse {}
 
 service LargeTableService {
   rpc Read(ReadRequest) returns (ReadResponse);
@@ -97,4 +105,6 @@ service LargeTableService {
   rpc Delete(DeleteRequest) returns (DeleteResponse);
   rpc GetShardHint(ShardHintRequest) returns (ShardHintResponse);
   rpc BatchRead(BatchReadRequest) returns (BatchReadResponse);
+  rpc SetCompactionPolicy(CompactionPolicy)
+      returns (SetCompactionPolicyResponse);
 }

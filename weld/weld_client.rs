@@ -16,6 +16,7 @@ mod client_service;
 mod fs;
 mod parallel_fs;
 
+use largetable_client::LargeTableClient;
 use std::fs::File;
 use std::io::Read;
 use std::sync::Arc;
@@ -149,8 +150,7 @@ fn main() {
         .map(|o| o.as_ref())
         .collect::<Vec<&std::ffi::OsStr>>();
         ::fuse::mount(filesystem, &mount_point.value(), &options).unwrap();
-        std::thread::park();
-    } else {
-        std::thread::park();
     }
+
+    std::thread::park();
 }

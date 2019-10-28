@@ -1,15 +1,15 @@
 /*
- * compaction.rs
- *
  * Library for doing dtable compaction
  */
 
 extern crate keyserializer;
+extern crate largetable_grpc_rust;
 extern crate largetable_proto_rust;
 extern crate sstable;
 
 use keyserializer::get_colspec;
-use largetable_proto_rust::{CompactionPolicy, Record};
+use largetable_grpc_rust::CompactionPolicy;
+use largetable_proto_rust::Record;
 
 struct Trie<T> {
     prefix: String,
@@ -124,7 +124,6 @@ pub fn compact(
     let mut current_prefix = String::from("");
     let default_policy = CompactionPolicy::new();
     for (key, value) in reader {
-        println!("compact: {} {:?}", key, value);
         {
             let prefix = keyserializer::get_prefix(&key);
             if current_prefix == "" {
@@ -135,8 +134,6 @@ pub fn compact(
                     .lookup(&current_prefix)
                     .unwrap_or(&default_policy);
 
-                println!("apply policy: {:?}", policy);
-                println!("on {} collected values", buffer.len());
                 apply_policy(
                     builder,
                     policy,

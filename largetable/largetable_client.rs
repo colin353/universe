@@ -6,8 +6,8 @@ extern crate protobuf;
 mod client_service;
 
 pub use largetable_grpc_rust::{
-    BatchReadRequest, BatchReadResponse, BatchWriteRequest, DeleteResponse, ReadRangeResponse,
-    ReadResponse, Record, ShardHintResponse, WriteResponse,
+    BatchReadRequest, BatchReadResponse, BatchWriteRequest, CompactionPolicy, DeleteResponse,
+    ReadRangeResponse, ReadResponse, Record, ShardHintResponse, WriteResponse,
 };
 
 use largetable_grpc_rust::LargeTableService;
@@ -44,6 +44,8 @@ pub trait LargeTableClient {
         limit: u64,
         timestamp: u64,
     ) -> largetable_grpc_rust::ReadRangeResponse;
+
+    fn set_compaction_policy(&self, policy: largetable_grpc_rust::CompactionPolicy);
 
     fn shard_hint(&self, row: &str, col_spec: &str) -> largetable_grpc_rust::ShardHintResponse;
 
@@ -276,6 +278,13 @@ impl LargeTableClient for LargeTableRemoteClient {
         req.set_column(col.to_owned());
         req.set_timestamp(timestamp);
         self.client.read(self.opts(), req).wait().expect("rpc").1
+    }
+
+    fn set_compaction_policy(&self, policy: largetable_grpc_rust::CompactionPolicy) {
+        self.client
+            .set_compaction_policy(self.opts(), policy)
+            .wait()
+            .expect("rpc");
     }
 
     fn reserve_id(&self, row: &str, col: &str) -> u64 {
