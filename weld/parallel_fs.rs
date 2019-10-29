@@ -102,7 +102,7 @@ where
         ino: u64,
         fh: u64,
         offset: i64,
-        mut reply: fuse::ReplyDirectory,
+        reply: fuse::ReplyDirectory,
     ) {
         let fs = self.filesystem.clone();
         self.threadpool.execute(move || {

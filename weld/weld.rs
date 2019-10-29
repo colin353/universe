@@ -53,12 +53,12 @@ impl WeldServerClient {
     }
 
     pub fn new_tls(
-        hostname: &str,
+        _hostname: &str,
         tls_hostname: &str,
         username: String,
         port: u16,
         root_ca: Vec<u8>,
-        client_key: Vec<u8>,
+        _client_key: Vec<u8>,
     ) -> Self {
         // Add the root certificate.
         let root_ca = tls_api::Certificate::from_der(root_ca);
@@ -68,7 +68,7 @@ impl WeldServerClient {
             .expect("add_root_certificate");
 
         let connector = Arc::new(builder.build().unwrap());
-        let mut tls_option = httpbis::ClientTlsOption::Tls(tls_hostname.to_owned(), connector);
+        let tls_option = httpbis::ClientTlsOption::Tls(tls_hostname.to_owned(), connector);
 
         let addr = SocketAddr::new("::1".parse().unwrap(), port);
         let grpc_client =
@@ -432,7 +432,7 @@ mod tests {
         let d = "Hello, world\n\nAnother line\n\n - Bullet one\n - Bullet two\n";
         assert_eq!(
             render_change_description(d),
-            "<p>Hello, world </p><p>Another line </p><li>Bullet one </li><li>Bullet two</li>"
+            "<p> Hello, world</p><p> Another line</p><p>- Bullet one</p><p>- Bullet two</p>"
         );
     }
 

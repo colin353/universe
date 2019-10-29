@@ -177,7 +177,8 @@ fn main() {
                     let filename = format!("/tmp/change-{}", id);
                     {
                         let mut f = std::fs::File::create(&filename).unwrap();
-                        f.write_all(weld::serialize_change(&change, true).as_bytes());
+                        f.write_all(weld::serialize_change(&change, true).as_bytes())
+                            .unwrap();
                     }
                     edit_file(&filename);
                     load_change_file(&filename)
@@ -245,13 +246,13 @@ fn main() {
                     let filename = format!("/tmp/conflict-{}", index);
                     {
                         let mut file = std::fs::File::create(&filename).unwrap();
-                        file.write_all(conflict.get_contents());
+                        file.write_all(conflict.get_contents()).unwrap();
                     }
 
                     loop {
                         println!("Resolve conflict? Edit (e), Accept (a): ");
                         let mut input = String::new();
-                        std::io::stdin().read_line(&mut input);
+                        std::io::stdin().read_line(&mut input).unwrap();
 
                         if input.trim() == "e" {
                             edit_file(&filename);
