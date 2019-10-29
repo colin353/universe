@@ -26,6 +26,7 @@ rust_library(
     srcs = ["auth_service_impl.rs"],
     deps = [
         ":auth_grpc_rust",
+        "//third_party:hyper",
         "//third_party:rand",
         "//util/ws",
         "//util/ws:ws_utils",

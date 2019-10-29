@@ -1,12 +1,10 @@
 use std::cmp;
 use std::collections::HashMap;
-use std::ffi::OsStr;
 
 use fuse;
 use fuse::FileType;
 use libc::ENOENT;
 use libc::ENOSYS;
-use libc::EPERM;
 use std::hash;
 use std::sync::{Mutex, RwLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -184,7 +182,7 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
         let nodes = RwLock::new(HashMap::new());
         let paths = RwLock::new(HashMap::new());
 
-        let mut fs = WeldFS {
+        let fs = WeldFS {
             repo: repo,
             nodes: nodes,
             paths: paths,
@@ -273,7 +271,7 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
             }
         };
 
-        let assembled_path = format!("{}/{}", parent_path.trim_right_matches('/'), filename,);
+        let assembled_path = format!("{}/{}", parent_path.trim_end_matches('/'), filename,);
 
         Some((origin, assembled_path))
     }
@@ -338,7 +336,7 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
         ino
     }
 
-    fn delete_symlink(&self, origin: &Origin, ino: u64) {
+    fn _delete_symlink(&self, origin: &Origin, ino: u64) {
         let s = match self.symlinks_inos.write().unwrap().remove(&ino) {
             Some(s) => s,
             None => return,
@@ -437,7 +435,7 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
                 return reply.entry(&Duration::from_secs(TTL), &make_dir_attr(ino, 0), 0);
             }
             Origin::Change(id) => {
-                let path = format!("{}/{}", parent_path.trim_right_matches('/'), name);
+                let path = format!("{}/{}", parent_path.trim_end_matches('/'), name);
 
                 let ino = self.path_to_node(Origin::from_change(id), &path);
 
@@ -720,89 +718,6 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
                 reply.entry(&Duration::from_secs(TTL), &make_dir_attr(ino, 0), 0);
             }
         };
-    }
-
-    fn getlk(
-        &mut self,
-        _req: &fuse::Request,
-        _ino: u64,
-        _fh: u64,
-        _lock_owner: u64,
-        _start: u64,
-        _end: u64,
-        _typ: u32,
-        _pid: u32,
-        reply: fuse::ReplyLock,
-    ) {
-        println!("getlk");
-        reply.error(ENOSYS);
-    }
-
-    fn setlk(
-        &mut self,
-        _req: &fuse::Request,
-        _ino: u64,
-        _fh: u64,
-        _lock_owner: u64,
-        _start: u64,
-        _end: u64,
-        _typ: u32,
-        _pid: u32,
-        _sleep: bool,
-        reply: fuse::ReplyEmpty,
-    ) {
-        println!("getlk");
-        reply.error(ENOSYS)
-    }
-
-    fn link(
-        &mut self,
-        _req: &fuse::Request,
-        _ino: u64,
-        _newparent: u64,
-        _newname: &OsStr,
-        reply: fuse::ReplyEntry,
-    ) {
-        println!("link");
-        reply.error(EPERM)
-    }
-
-    fn flush(
-        &mut self,
-        _req: &fuse::Request,
-        _ino: u64,
-        _fh: u64,
-        _lock_owner: u64,
-        reply: fuse::ReplyEmpty,
-    ) {
-        println!("flush");
-        reply.ok()
-    }
-
-    fn release(
-        &mut self,
-        _req: &fuse::Request,
-        _ino: u64,
-        _fh: u64,
-        _flags: u32,
-        _lock_owner: u64,
-        _flush: bool,
-        reply: fuse::ReplyEmpty,
-    ) {
-        println!("release");
-        reply.ok()
-    }
-
-    fn fsync(
-        &mut self,
-        _req: &fuse::Request,
-        _ino: u64,
-        _fh: u64,
-        _datasync: bool,
-        reply: fuse::ReplyEmpty,
-    ) {
-        println!("fsync");
-        reply.ok()
     }
 
     pub fn rename(

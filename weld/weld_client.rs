@@ -16,7 +16,6 @@ mod client_service;
 mod fs;
 mod parallel_fs;
 
-use largetable_client::LargeTableClient;
 use std::fs::File;
 use std::io::Read;
 use std::sync::Arc;

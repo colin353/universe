@@ -167,7 +167,7 @@ impl<C: LargeTableClient> weld::WeldLocalService for WeldLocalServiceHandler<C> 
     fn list_changes(
         &self,
         _m: grpc::RequestOptions,
-        req: weld::ListChangesRequest,
+        _req: weld::ListChangesRequest,
     ) -> grpc::SingleResponse<weld::ListChangesResponse> {
         grpc::SingleResponse::completed(self.list_changes())
     }

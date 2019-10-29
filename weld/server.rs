@@ -13,10 +13,8 @@ extern crate weld_repo;
 
 extern crate weld_server_lib;
 
-use native_tls::backend::openssl::TlsAcceptorBuilderExt;
 use std::fs::File;
 use std::io::Read;
-use std::path::Path;
 use tls_api::TlsAcceptorBuilder;
 
 fn main() {
@@ -70,7 +68,7 @@ fn main() {
 
         println!("Read {} bytes of pkcs12", p12_contents.len());
 
-        let mut acceptor =
+        let acceptor =
             tls_api_native_tls::TlsAcceptorBuilder::from_pkcs12(&p12_contents, "test").unwrap();
 
         server.http.set_tls(acceptor.build().unwrap());

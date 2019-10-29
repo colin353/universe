@@ -8,7 +8,6 @@ use batching_client::LargeTableBatchingClient;
 
 use std::collections::{HashMap, HashSet};
 use std::io::prelude::*;
-use std::iter::FromIterator;
 use std::process::Command;
 use std::sync::Arc;
 use std::sync::RwLock;
@@ -22,7 +21,6 @@ const CHANGE_IDS: &'static str = "change_ids";
 const SNAPSHOTS: &'static str = "snapshots";
 const SNAPSHOT_IDS: &'static str = "snapshots_ids";
 const CACHE_SIZE: usize = 16384;
-const ATTRS: &'static str = "file_attrs";
 
 #[derive(Clone)]
 pub struct Repo<C: largetable_client::LargeTableClient, W: weld::WeldServer> {
@@ -243,9 +241,6 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
     }
 
     pub fn write(&self, id: u64, mut file: File, index: u64) {
-        // Create the associated parent directories.
-        let mut directory = parent_directory(file.get_filename());
-
         // Later, when the file is read, we should make sure we return
         // true for file.found.
         file.set_found(true);
@@ -756,8 +751,8 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
             let (filename_a, git_path_a) = if !file.get_deleted() {
                 let filename = "/tmp/weld_a";
                 let mut f = std::fs::File::create(filename).unwrap();
-                f.write_all(file.get_contents());
-                f.sync_data();
+                f.write_all(file.get_contents()).unwrap();
+                f.sync_data().unwrap();
                 (filename, format!("a{}", file.get_filename()))
             } else {
                 ("/dev/null", String::from("/dev/null"))
@@ -766,8 +761,8 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
             let (filename_b, git_path_b) = if based_file.get_found() {
                 let filename = "/tmp/weld_b";
                 let mut f = std::fs::File::create(filename).unwrap();
-                f.write_all(based_file.get_contents());
-                f.sync_data();
+                f.write_all(based_file.get_contents()).unwrap();
+                f.sync_data().unwrap();
                 (filename, format!("b{}", based_file.get_filename()))
             } else {
                 ("/dev/null", String::from("/dev/null"))

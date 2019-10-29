@@ -27,6 +27,7 @@ rust_image(
     srcs = ["main.rs"],
     base = ":homepage_base_img",
     deps = [
+        "//auth:auth_client",
         "//util/flags",
         "//util/ws",
     ],

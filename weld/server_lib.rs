@@ -722,7 +722,7 @@ mod tests {
         let resp = handler.get_submitted_changes(&req);
         assert_eq!(resp.get_changes().len(), 2);
         assert!(resp.get_changes()[0].get_submitted_id() > 0);
-        let mut req = weld::ListChangesRequest::new();
+        let req = weld::ListChangesRequest::new();
         let resp = handler.list_changes("", req);
         assert_eq!(resp.get_changes().len(), 0);
     }
