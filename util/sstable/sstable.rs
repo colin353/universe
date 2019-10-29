@@ -760,7 +760,6 @@ pub fn mem_sstable(data: Vec<(String, u64)>) -> SSTableReader<Primitive<u64>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use primitive::*;
     use std::io::Seek;
 
     #[test]
@@ -974,9 +973,9 @@ mod tests {
         a.seek(std::io::SeekFrom::Start(0)).unwrap();
         b.seek(std::io::SeekFrom::Start(0)).unwrap();
         {
-            let mut r1 = SSTableReader::<Primitive<i64>>::new(Box::new(a)).unwrap();
-            let mut r2 = SSTableReader::<Primitive<i64>>::new(Box::new(b)).unwrap();
-            let mut merged = SSTableBuilder::from_sstables(&mut c, &mut [r1, r2]).unwrap();
+            let r1 = SSTableReader::<Primitive<i64>>::new(Box::new(a)).unwrap();
+            let r2 = SSTableReader::<Primitive<i64>>::new(Box::new(b)).unwrap();
+            SSTableBuilder::from_sstables(&mut c, &mut [r1, r2]).unwrap();
         }
         c.seek(std::io::SeekFrom::Start(0)).unwrap();
         {
@@ -1009,7 +1008,7 @@ mod tests {
             let mut r = SSTableReader::<Primitive<i64>>::new(Box::new(d)).unwrap();
             let specd_reader = SpecdSSTableReader::from_reader(&mut r, "hello-");
             assert_eq!(
-                specd_reader.map(|(k, v)| k).collect::<Vec<String>>(),
+                specd_reader.map(|(k, _)| k).collect::<Vec<String>>(),
                 Vec::<String>::new()
             );
         }
@@ -1033,7 +1032,7 @@ mod tests {
             let mut r = SSTableReader::<Primitive<i64>>::new(Box::new(d)).unwrap();
             let specd_reader = SpecdSSTableReader::from_reader(&mut r, "hello-");
             assert_eq!(
-                specd_reader.map(|(k, v)| k).collect::<Vec<_>>(),
+                specd_reader.map(|(k, _)| k).collect::<Vec<_>>(),
                 vec!["hello-1", "hello-2", "hello-3"]
             );
         }
@@ -1111,7 +1110,7 @@ mod tests {
         d.seek(std::io::SeekFrom::Start(0)).unwrap();
         {
             let mut r = SSTableReader::<Primitive<i64>>::new(Box::new(d)).unwrap();
-            r.seek_to_min_key("c");
+            r.seek_to_min_key("c").unwrap();
             assert_eq!(
                 r.map(|(k, v)| k).collect::<Vec<_>>(),
                 vec!["hello-1", "hello-2"]
@@ -1144,17 +1143,17 @@ mod tests {
         d2.seek(std::io::SeekFrom::Start(0)).unwrap();
 
         {
-            let mut r1 = SSTableReader::<Primitive<i64>>::new(Box::new(d1)).unwrap();
-            let mut r2 = SSTableReader::<Primitive<i64>>::new(Box::new(d2)).unwrap();
+            let r1 = SSTableReader::<Primitive<i64>>::new(Box::new(d1)).unwrap();
+            let r2 = SSTableReader::<Primitive<i64>>::new(Box::new(d2)).unwrap();
 
-            let mut s = ShardedSSTableReader::<Primitive<i64>>::from_readers(
+            let s = ShardedSSTableReader::<Primitive<i64>>::from_readers(
                 vec![r1, r2],
                 "c",
                 String::from(""),
             );
 
             assert_eq!(
-                s.map(|(k, v)| k).collect::<Vec<_>>(),
+                s.map(|(k, _)| k).collect::<Vec<_>>(),
                 vec!["cantaloupe", "cat", "dog", "durian"]
             );
         }
@@ -1183,9 +1182,9 @@ mod tests {
         }
 
         {
-            let mut r1 = SSTableReader::<Primitive<i64>>::new(Box::new(d1)).unwrap();
-            let mut r2 = SSTableReader::<Primitive<i64>>::new(Box::new(d2)).unwrap();
-            let mut s = ShardedSSTableReader::<Primitive<i64>>::from_readers(
+            let r1 = SSTableReader::<Primitive<i64>>::new(Box::new(d1)).unwrap();
+            let r2 = SSTableReader::<Primitive<i64>>::new(Box::new(d2)).unwrap();
+            let s = ShardedSSTableReader::<Primitive<i64>>::from_readers(
                 vec![r1, r2],
                 "c",
                 String::from("cucumber"),
