@@ -3,6 +3,8 @@ extern crate rand;
 extern crate ws;
 extern crate ws_utils;
 
+use hyper::rt::Future;
+use hyper::rt::Stream;
 use rand::Rng;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
@@ -115,11 +117,24 @@ impl auth_grpc_rust::AuthenticationService for AuthServiceHandler {
 #[derive(Clone)]
 pub struct AuthWebServer {
     tokens: Arc<RwLock<HashMap<String, LoginRecord>>>,
+    hostname: String,
+    client_id: String,
+    client_secret: String,
 }
 
 impl AuthWebServer {
-    pub fn new(tokens: Arc<RwLock<HashMap<String, LoginRecord>>>) -> Self {
-        Self { tokens: tokens }
+    pub fn new(
+        tokens: Arc<RwLock<HashMap<String, LoginRecord>>>,
+        hostname: String,
+        client_id: String,
+        client_secret: String,
+    ) -> Self {
+        Self {
+            tokens: tokens,
+            hostname: hostname,
+            client_id: client_id,
+            client_secret: client_secret,
+        }
     }
 }
 
@@ -131,6 +146,36 @@ impl Server for AuthWebServer {
         };
 
         let params = ws_utils::parse_params(query);
+
+        let redirect_uri = ws_utils::urlencode(&self.hostname);
+        let body = format!(
+            "code={code}\
+             &client_id={client_id}\
+             &client_secret={client_secret}\
+             &redirect_uri={redirect_uri}\
+             &grant_type=authorization_code",
+            code = params.get("code").unwrap(),
+            client_id = self.client_id,
+            client_secret = self.client_secret,
+            redirect_uri = redirect_uri,
+        );
+
+        let mut req = hyper::Request::builder();
+        req.method("POST")
+            .uri("https://www.googleapis.com/oauth2/v4/token");
+        let req = req.body(hyper::Body::from(body)).unwrap();
+
+        let client = hyper::client::Client::new();
+
+        let res = client.request(req).wait().unwrap();
+
+        println!("Response: {}", res.status());
+        let response = res.into_body().concat2().wait().unwrap();
+        println!(
+            "Body: {}",
+            std::str::from_utf8(&response.into_bytes()).unwrap()
+        );
+
         Response::new(Body::from(format!("{:?}", params)))
     }
 }
