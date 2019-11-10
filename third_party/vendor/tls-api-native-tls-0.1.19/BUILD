@@ -38,7 +38,7 @@ rust_library(
     ],
     version = "0.1.19",
     deps = [
+        "//third_party:tls_api",
         "//third_party/vendor/native-tls-0.1.5:native_tls",
-        "@io_bazel_rules_rust//proto/raze:tls_api",
     ],
 )

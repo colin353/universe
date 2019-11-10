@@ -81,6 +81,21 @@ alias(
 )
 
 alias(
+    name = "hyper_tls",
+    actual = "//third_party/vendor/hyper-tls-0.3.2:hyper_tls",
+)
+
+alias(
     name = "lazy_static",
     actual = "//third_party/vendor/lazy_static-0.2.11:lazy_static",
+)
+
+alias(
+    name = "tls_api",
+    actual = "@io_bazel_rules_rust//proto/raze:tls_api",
+)
+
+alias(
+    name = "tokio",
+    actual = "//third_party/vendor/tokio-0.1.18:tokio",
 )

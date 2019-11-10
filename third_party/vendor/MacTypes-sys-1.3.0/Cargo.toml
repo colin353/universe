@@ -1,0 +1,19 @@
+[package]
+name = "MacTypes-sys"
+version = "1.3.0"
+authors = ["George Burton <burtonageo@gmail.com>"]
+description = "Bindings for MacTypes.h"
+license = "MIT/APSL-2.0"
+homepage = "https://github.com/burtonageo/MacTypes-sys"
+repository = "https://github.com/burtonageo/MacTypes-sys"
+documentation = "https://docs.rs/MacTypes-sys"
+readme = "Readme.md"
+keywords = ["types", "osx", "system", "bindings"]
+
+[dependencies]
+libc = { version = "0.2", default-features = false }
+
+[features]
+default = ["use_std"]
+use_std = ["libc/use_std"]
+nightly = []
