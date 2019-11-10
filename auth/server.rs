@@ -24,7 +24,13 @@ fn main() {
         String::new(),
         "the publicly accessible hostname"
     );
-    parse_flags!(grpc_port, web_port, hostname, oauth_client_id);
+    parse_flags!(
+        grpc_port,
+        web_port,
+        hostname,
+        oauth_client_id,
+        oauth_client_secret
+    );
 
     let mut server = grpc::ServerBuilder::<tls_api_native_tls::TlsAcceptor>::new();
     server.http.set_port(grpc_port.value());
@@ -42,9 +48,9 @@ fn main() {
     let _server = server.build().expect("server");
     auth_service_impl::AuthWebServer::new(
         tokens,
+        hostname.value(),
         oauth_client_id.value(),
         oauth_client_secret.value(),
-        hostname.value(),
     )
     .serve(web_port.value());
 }

@@ -9,7 +9,9 @@ rust_library(
     srcs = [
         "ws.rs",
     ],
+    edition = "2018",
     deps = [
+        "//third_party:futures",
         "//third_party:hyper",
         "//third_party:rand",
     ],

@@ -1,15 +1,19 @@
+extern crate futures;
 extern crate hyper;
 extern crate rand;
 use rand::Rng;
 
+use futures::future;
 use hyper::header::HeaderValue;
 use hyper::header::{COOKIE, LOCATION, SET_COOKIE};
 use hyper::http::StatusCode;
 use hyper::rt::Future;
+use hyper::service::service_fn;
 pub use hyper::Body;
 
 pub type Request = hyper::Request<Body>;
 pub type Response = hyper::Response<Body>;
+pub type ResponseFuture = Box<dyn Future<Item = Response, Error = std::io::Error> + Send>;
 
 use std::io::Read;
 
@@ -39,7 +43,13 @@ fn random_string() -> String {
 }
 
 pub trait Server: Sync + Send + Clone + 'static {
-    fn respond(&self, path: String, Request, session_key: &str) -> Response;
+    fn respond(&self, path: String, req: Request, session_key: &str) -> Response {
+        panic!("not implemented")
+    }
+
+    fn respond_future(&self, path: String, req: Request, session_key: &str) -> ResponseFuture {
+        Box::new(future::ok(self.respond(path, req, session_key)))
+    }
 
     fn serve_static_files(&self, path: String, prefix: &str, static_directory: &str) -> Response {
         if !path.starts_with(prefix) || path.contains("..") {
@@ -81,29 +91,33 @@ pub trait Server: Sync + Send + Clone + 'static {
     fn serve(self, port: u16) {
         let addr = ([0, 0, 0, 0], port).into();
         let self_clone = self.clone();
-        let server = hyper::Server::bind(&addr)
-            .serve(move || {
-                let s = self_clone.clone();
-                hyper::service::service_fn_ok(move |req: Request| {
-                    let mut maybe_session_key = None;
-                    if let Some(c) = req.headers().get(COOKIE) {
-                        maybe_session_key = extract_key(c, "token");
-                    }
-                    let (has_cookie, session_key) = match maybe_session_key {
-                        Some(k) => (true, k),
-                        None => (false, random_string()),
-                    };
+        let server = hyper::Server::bind(&addr);
 
-                    let mut response = s.respond(req.uri().path().into(), req, &session_key);
+        hyper::rt::run(
+            server
+                .serve(move || {
+                    let s = self_clone.clone();
+                    service_fn(move |req| {
+                        let mut maybe_session_key = None;
+                        if let Some(c) = req.headers().get(COOKIE) {
+                            maybe_session_key = extract_key(c, "token");
+                        }
+                        let (has_cookie, session_key) = match maybe_session_key {
+                            Some(k) => (true, k),
+                            None => (false, random_string()),
+                        };
 
-                    if !has_cookie {
-                        s.set_cookie(&session_key, &mut response);
-                    }
-                    response
+                        let mut response =
+                            s.respond_future(req.uri().path().into(), req, &session_key);
+
+                        /*if !has_cookie {
+                            s.set_cookie(&session_key, &mut response);
+                        }*/
+
+                        response
+                    })
                 })
-            })
-            .map_err(|_| ());;
-
-        hyper::rt::run(server);
+                .map_err(|e| println!("error: {}", e)),
+        );
     }
 }
