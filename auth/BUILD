@@ -26,8 +26,11 @@ rust_library(
     srcs = ["auth_service_impl.rs"],
     deps = [
         ":auth_grpc_rust",
+        "//third_party:futures",
         "//third_party:hyper",
+        "//third_party:hyper_tls",
         "//third_party:rand",
+        "//third_party:tokio",
         "//util/ws",
         "//util/ws:ws_utils",
         "@io_bazel_rules_rust//proto/raze:grpc",
