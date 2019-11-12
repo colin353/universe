@@ -99,3 +99,8 @@ alias(
     name = "tokio",
     actual = "//third_party/vendor/tokio-0.1.18:tokio",
 )
+
+alias(
+    name = "json",
+    actual = "//third_party/vendor/json:json",
+)
