@@ -1,6 +1,7 @@
 extern crate futures;
 extern crate hyper;
 extern crate hyper_tls;
+extern crate json;
 extern crate rand;
 extern crate ws;
 extern crate ws_utils;
@@ -151,7 +152,6 @@ impl Server for AuthWebServer {
         };
 
         let params = ws_utils::parse_params(query);
-
         let redirect_uri = ws_utils::urlencode(&self.hostname);
         let body = format!(
             "code={code}\
@@ -164,8 +164,6 @@ impl Server for AuthWebServer {
             client_secret = self.client_secret,
             redirect_uri = redirect_uri,
         );
-
-        println!("request body: {}", body);
 
         let mut req = hyper::Request::builder();
         req.method("POST")
@@ -180,24 +178,42 @@ impl Server for AuthWebServer {
             );
         }
 
-        println!("Make a request");
-
         let https = HttpsConnector::new(4).unwrap();
         let client = hyper::client::Client::builder().build::<_, hyper::Body>(https);
+        let tokens = self.tokens.clone();
         Box::new(
             client
                 .request(req)
-                .and_then(|res| {
-                    println!("Response: {}", res.status());
-                    res.into_body().concat2()
-                })
+                .and_then(|res| res.into_body().concat2())
                 .and_then(move |response| {
-                    println!(
-                        "Body: {}",
-                        std::str::from_utf8(&response.into_bytes()).unwrap()
-                    );
+                    let response = String::from_utf8(response.into_bytes().to_vec()).unwrap();
+                    let parsed = json::parse(&response).unwrap();
+                    let token = &parsed["access_token"];
 
-                    future::ok(Response::new(Body::from(format!("{:?}", params))))
+                    let mut req = hyper::Request::builder();
+                    req.method("GET")
+                        .uri("https://openidconnect.googleapis.com/v1/userinfo");
+                    let mut req = req.body(hyper::Body::from("")).unwrap();
+
+                    {
+                        let headers = req.headers_mut();
+                        headers.insert(
+                            "Authorization",
+                            HeaderValue::from_str(&format!("Bearer {}", token)).unwrap(),
+                        );
+                    }
+
+                    client.request(req)
+                })
+                .and_then(|res| res.into_body().concat2())
+                .and_then(move |response| {
+                    let response = String::from_utf8(response.into_bytes().to_vec()).unwrap();
+                    let parsed = json::parse(&response).unwrap();
+                    let email = &parsed["email"];
+
+                    tokens.write().unwrap();
+
+                    future::ok(Response::new(Body::from(format!("{}", email))))
                 })
                 .map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "bad fails")),
         )

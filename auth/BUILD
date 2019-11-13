@@ -29,6 +29,7 @@ rust_library(
         "//third_party:futures",
         "//third_party:hyper",
         "//third_party:hyper_tls",
+        "//third_party:json",
         "//third_party:rand",
         "//third_party:tokio",
         "//util/ws",
