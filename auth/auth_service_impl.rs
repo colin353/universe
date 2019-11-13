@@ -10,6 +10,7 @@ use futures::future;
 use hyper::header::HeaderValue;
 use hyper::rt::Future;
 use hyper::rt::Stream;
+use hyper::StatusCode;
 use hyper_tls::HttpsConnector;
 use rand::Rng;
 use std::collections::HashMap;
@@ -75,29 +76,13 @@ impl auth_grpc_rust::AuthenticationService for AuthServiceHandler {
         _m: grpc::RequestOptions,
         mut req: auth_grpc_rust::LoginRequest,
     ) -> grpc::SingleResponse<auth_grpc_rust::LoginChallenge> {
-        let redirect_uri = ws_utils::urlencode(&self.hostname);
-        // Construct the challenge URL
-        let state = random_string();
-        let url = format!(
-            "https://accounts.google.com/o/oauth2/v2/auth?\
-             client_id={client_id}&\
-             response_type=code&\
-             scope=openid%20email&\
-             redirect_uri={redirect_uri}&\
-             state={state}&\
-             nonce={nonce}",
-            client_id = self.oauth_client_id,
-            redirect_uri = redirect_uri,
-            state = state,
-            nonce = random_string(),
-        );
         let mut challenge = auth_grpc_rust::LoginChallenge::new();
         let token = random_string();
+        let url = format!("{}begin?token={}", self.hostname, token);
         challenge.set_url(url);
         challenge.set_token(token.clone());
 
         let mut record = LoginRecord::new();
-        record.state = state;
         record.return_url = req.take_return_url();
         self.tokens.write().unwrap().insert(token, record);
 
@@ -142,17 +127,60 @@ impl AuthWebServer {
             client_secret: client_secret,
         }
     }
-}
 
-impl Server for AuthWebServer {
-    fn respond_future(&self, path: String, req: Request, _: &str) -> ResponseFuture {
+    fn respond_error(&self) -> ResponseFuture {
+        Box::new(future::ok(Response::new(Body::from("invalid"))))
+    }
+
+    fn begin_authentication(&self, path: String, req: Request, key: &str) -> ResponseFuture {
+        let query = match req.uri().query() {
+            Some(q) => q,
+            None => return self.respond_error(),
+        };
+
+        let params = ws_utils::parse_params(query);
+        let token = match params.get("token") {
+            Some(x) => x,
+            None => return self.respond_error(),
+        };
+
+        // Construct the challenge URL
+        let redirect_uri = ws_utils::urlencode(&format!("{}finish", self.hostname));
+        let state = random_string();
+        let url = format!(
+            "https://accounts.google.com/o/oauth2/v2/auth?\
+             client_id={client_id}&\
+             response_type=code&\
+             scope=openid%20email&\
+             redirect_uri={redirect_uri}&\
+             state={state}&\
+             nonce={nonce}",
+            client_id = self.client_id,
+            redirect_uri = redirect_uri,
+            state = state,
+            nonce = random_string(),
+        );
+
+        let mut response = Response::new(Body::from("redirecting..."));
+        *response.status_mut() = StatusCode::TEMPORARY_REDIRECT;
+        {
+            let headers = response.headers_mut();
+            headers.insert("Location", HeaderValue::from_str(&url).unwrap());
+        }
+
+        self.set_cookie(token, &mut response);
+        Box::new(future::ok(response))
+    }
+
+    fn finish_authentication(&self, path: String, req: Request, key: &str) -> ResponseFuture {
+        println!("session key: {}", key);
         let query = match req.uri().query() {
             Some(q) => q,
             None => return Box::new(future::ok(Response::new(Body::from("")))),
         };
 
         let params = ws_utils::parse_params(query);
-        let redirect_uri = ws_utils::urlencode(&self.hostname);
+        let redirect_uri = ws_utils::urlencode(&format!("{}finish", self.hostname));
         let body = format!(
             "code={code}\
              &client_id={client_id}\
@@ -187,6 +215,7 @@ impl Server for AuthWebServer {
                 .and_then(|res| res.into_body().concat2())
                 .and_then(move |response| {
                     let response = String::from_utf8(response.into_bytes().to_vec()).unwrap();
+                    println!("first response: {}", response);
                     let parsed = json::parse(&response).unwrap();
                     let token = &parsed["access_token"];
 
@@ -209,6 +238,7 @@ impl Server for AuthWebServer {
                 .and_then(move |response| {
                     let response = String::from_utf8(response.into_bytes().to_vec()).unwrap();
                     let parsed = json::parse(&response).unwrap();
+                    println!("second response: {}", response);
                     let email = &parsed["email"];
 
                     tokens.write().unwrap();
@@ -217,5 +247,15 @@ impl Server for AuthWebServer {
                 })
                 .map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "bad fails")),
         )
+    }
+}
+
+impl Server for AuthWebServer {
+    fn respond_future(&self, path: String, req: Request, key: &str) -> ResponseFuture {
+        if path.starts_with("/finish") {
+            return self.finish_authentication(path, req, key);
+        }
+
+        return self.begin_authentication(path, req, key);
     }
 }
