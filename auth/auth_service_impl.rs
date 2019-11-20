@@ -172,8 +172,7 @@ impl AuthWebServer {
         Box::new(future::ok(response))
     }
 
-    fn finish_authentication(&self, path: String, req: Request, key: &str) -> ResponseFuture {
-        println!("session key: {}", key);
+    fn finish_authentication(&self, path: String, req: Request, key: String) -> ResponseFuture {
         let query = match req.uri().query() {
             Some(q) => q,
             None => return Box::new(future::ok(Response::new(Body::from("")))),
@@ -215,7 +214,6 @@ impl AuthWebServer {
                 .and_then(|res| res.into_body().concat2())
                 .and_then(move |response| {
                     let response = String::from_utf8(response.into_bytes().to_vec()).unwrap();
-                    println!("first response: {}", response);
                     let parsed = json::parse(&response).unwrap();
                     let token = &parsed["access_token"];
 
@@ -238,12 +236,37 @@ impl AuthWebServer {
                 .and_then(move |response| {
                     let response = String::from_utf8(response.into_bytes().to_vec()).unwrap();
                     let parsed = json::parse(&response).unwrap();
-                    println!("second response: {}", response);
                     let email = &parsed["email"];
 
-                    tokens.write().unwrap();
+                    if email.is_null() {
+                        return future::ok(Response::new(Body::from("invalid")));
+                    }
 
-                    future::ok(Response::new(Body::from(format!("{}", email))))
+                    let mut tokens_write = tokens.write().unwrap();
+                    let login_record = match tokens_write.get_mut(&key) {
+                        Some(x) => x,
+                        None => {
+                            return future::ok(Response::new(Body::from("invalid")));
+                        }
+                    };
+                    if !login_record.username.is_empty()
+                        && login_record.username != email.as_str().unwrap()
+                    {
+                        return future::ok(Response::new(Body::from("invalid")));
+                    }
+                    login_record.valid = true;
+
+                    let mut response = Response::new(Body::from(format!("{}", email)));
+                    *response.status_mut() = StatusCode::TEMPORARY_REDIRECT;
+                    {
+                        let headers = response.headers_mut();
+                        headers.insert(
+                            "Location",
+                            HeaderValue::from_str(&login_record.return_url).unwrap(),
+                        );
+                    }
+
+                    future::ok(response)
                 })
                 .map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "bad fails")),
         )
@@ -253,7 +276,7 @@ impl AuthWebServer {
 impl Server for AuthWebServer {
     fn respond_future(&self, path: String, req: Request, key: &str) -> ResponseFuture {
         if path.starts_with("/finish") {
-            return self.finish_authentication(path, req, key);
+            return self.finish_authentication(path, req, key.to_owned());
         }
 
         return self.begin_authentication(path, req, key);

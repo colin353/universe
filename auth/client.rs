@@ -6,6 +6,7 @@ use std::sync::Arc;
 pub trait AuthServer: Send + Sync + Clone + 'static {
     fn authenticate(&self, token: String) -> AuthenticateResponse;
     fn login(&self) -> LoginChallenge;
+    fn login_then_redirect(&self, return_url: String) -> LoginChallenge;
 }
 
 #[derive(Clone)]
@@ -44,5 +45,11 @@ impl AuthServer for AuthClient {
             .wait()
             .expect("rpc")
             .1
+    }
+
+    fn login_then_redirect(&self, return_url: String) -> LoginChallenge {
+        let mut req = LoginRequest::new();
+        req.set_return_url(return_url);
+        self.client.login(self.opts(), req).wait().expect("rpc").1
     }
 }

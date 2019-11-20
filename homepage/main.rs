@@ -26,10 +26,20 @@ where
             return Response::new(Body::from("you are logged"));
         }
 
-        let result = self.auth.login();
+        let result = self
+            .auth
+            .login_then_redirect(String::from("http://localhost:8080/login-test"));
         let mut response = self.redirect(result.get_url());
         self.set_cookie(result.get_token(), &mut response);
         response
+    }
+
+    fn login_test(&self, token: &str) -> Response {
+        let result = self.auth.authenticate(token.to_owned());
+        if result.get_success() {
+            return Response::new(Body::from("you are logged"));
+        }
+        Response::new(Body::from("you are NOT logged"))
     }
 }
 
@@ -40,6 +50,10 @@ where
     fn respond(&self, path: String, req: Request, token: &str) -> Response {
         if path.starts_with("/static/") {
             return self.serve_static_files(path, "/static/", &self.static_dir);
+        }
+
+        if path == "/login-test" {
+            return self.login_test(token);
         }
 
         if path == "/login" {
