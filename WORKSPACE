@@ -63,6 +63,14 @@ load(
 _rust_image_repos()
 
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+load("@io_bazel_rules_docker//container:pull.bzl", "container_pull")
+
+container_pull(
+    name = "glibc_base",
+    digest = "sha256:32c93ea6e867f4deee92912656c77f78f50e6e3d031dbfd85270dd30d75ed1ff",
+    registry = "gcr.io",
+    repository = "distroless/cc-debian10",
+)
 
 http_archive(
     name = "rules_pkg",

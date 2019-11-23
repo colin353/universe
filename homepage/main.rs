@@ -8,15 +8,17 @@ use ws::{Body, Request, Response, Server};
 pub struct HomepageServer<A> {
     static_dir: String,
     auth: A,
+    base_url: String,
 }
 impl<A> HomepageServer<A>
 where
     A: auth_client::AuthServer,
 {
-    fn new(static_dir: String, auth: A) -> Self {
+    fn new(static_dir: String, base_url: String, auth: A) -> Self {
         Self {
             static_dir: static_dir,
             auth: auth,
+            base_url: base_url,
         }
     }
 
@@ -28,8 +30,9 @@ where
 
         let result = self
             .auth
-            .login_then_redirect(String::from("http://localhost:8080/login-test"));
-        let mut response = self.redirect(result.get_url());
+            .login_then_redirect(format!("{}/login-test", self.base_url));
+        let mut response = Response::new(Body::from("redirecting..."));
+        self.redirect(result.get_url(), &mut response);
         self.set_cookie(result.get_token(), &mut response);
         response
     }
@@ -76,9 +79,14 @@ fn main() {
         String::from("127.0.0.1"),
         "the hostname of the authentication service"
     );
+    let base_url = define_flag!(
+        "base_url",
+        String::from("http://localhost:8080"),
+        "the base url to access this service"
+    );
     let auth_port = define_flag!("auth_port", 8888, "the port of the authentication service");
-    parse_flags!(port, static_files, auth_hostname, auth_port);
+    parse_flags!(port, static_files, auth_hostname, auth_port, base_url);
 
     let auth = auth_client::AuthClient::new(&auth_hostname.value(), auth_port.value());
-    HomepageServer::new(static_files.value(), auth).serve(port.value());
+    HomepageServer::new(static_files.value(), base_url.value(), auth).serve(port.value());
 }
