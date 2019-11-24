@@ -141,6 +141,10 @@ impl ReviewServer {
 
 impl Server for ReviewServer {
     fn respond(&self, path: String, req: Request, token: &str) -> Response {
+        if path.starts_with("/static/") {
+            return self.serve_static_files(path, "/static/", &self.static_dir);
+        }
+
         let result = self.auth.authenticate(token.to_owned());
         if !result.get_success() {
             let challenge = self
@@ -150,10 +154,6 @@ impl Server for ReviewServer {
             self.set_cookie(challenge.get_token(), &mut response);
             self.redirect(challenge.get_url(), &mut response);
             return response;
-        }
-
-        if path.starts_with("/static/") {
-            return self.serve_static_files(path, "/static/", &self.static_dir);
         }
 
         match path.as_str() {
