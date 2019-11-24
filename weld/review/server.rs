@@ -1,9 +1,11 @@
 #[macro_use]
 extern crate tmpl;
+extern crate auth_client;
 extern crate weld;
 extern crate ws;
 use ws::{Body, Request, Response, Server};
 
+use auth_client::AuthServer;
 use weld::WeldServer;
 
 mod render;
@@ -18,13 +20,22 @@ static INDEX: &str = include_str!("homepage.html");
 pub struct ReviewServer {
     client: weld::WeldServerClient,
     static_dir: String,
+    base_url: String,
+    auth: auth_client::AuthClient,
 }
 
 impl ReviewServer {
-    pub fn new(client: weld::WeldServerClient, static_dir: String) -> Self {
+    pub fn new(
+        client: weld::WeldServerClient,
+        static_dir: String,
+        base_url: String,
+        auth: auth_client::AuthClient,
+    ) -> Self {
         Self {
             client: client,
             static_dir: static_dir,
+            base_url: base_url,
+            auth: auth,
         }
     }
 
@@ -129,7 +140,18 @@ impl ReviewServer {
 }
 
 impl Server for ReviewServer {
-    fn respond(&self, path: String, req: Request, _cookie: &str) -> Response {
+    fn respond(&self, path: String, req: Request, token: &str) -> Response {
+        let result = self.auth.authenticate(token.to_owned());
+        if !result.get_success() {
+            let challenge = self
+                .auth
+                .login_then_redirect(format!("{}{}", self.base_url, path));
+            let mut response = Response::new(Body::from("redirect to login"));
+            self.set_cookie(challenge.get_token(), &mut response);
+            self.redirect(challenge.get_url(), &mut response);
+            return response;
+        }
+
         if path.starts_with("/static/") {
             return self.serve_static_files(path, "/static/", &self.static_dir);
         }
