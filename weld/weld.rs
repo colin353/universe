@@ -417,9 +417,32 @@ pub fn render_change_description(description: &str) -> String {
     output
 }
 
+pub fn should_ignore_file(filename: &str) -> bool {
+    if filename.ends_with(".swp") {
+        return true;
+    }
+    if filename.ends_with(".swo") {
+        return true;
+    }
+    if filename.ends_with("~") {
+        return true;
+    }
+
+    false
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_ignore_files() {
+        assert!(should_ignore_file("filename.swp"));
+        assert!(should_ignore_file("filename.swo"));
+        assert!(should_ignore_file("filename~"));
+        assert!(!should_ignore_file("file.txt"));
+        assert!(!should_ignore_file("file.swot"));
+    }
 
     #[test]
     fn test_summarize() {

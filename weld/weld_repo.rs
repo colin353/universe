@@ -507,6 +507,7 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
             index,
         )
         .map(|(_, f)| f)
+        .filter(|f: &File| !weld::should_ignore_file(f.get_filename()))
     }
 
     pub fn list_snapshots(&self, id: u64) -> impl Iterator<Item = weld::SnapshotLogEntry> + '_ {
