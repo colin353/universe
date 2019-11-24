@@ -7,6 +7,7 @@ extern crate auth_grpc_rust;
 extern crate auth_service_impl;
 
 use std::collections::HashMap;
+use std::iter::FromIterator;
 use std::sync::{Arc, RwLock};
 use ws::Server;
 
@@ -24,12 +25,22 @@ fn main() {
         String::new(),
         "the publicly accessible hostname"
     );
+    let allowed_emails = define_flag!(
+        "allowed_emails",
+        String::new(),
+        "a list of allowed emails separated by commas"
+    );
     parse_flags!(
+        allowed_emails,
         grpc_port,
         web_port,
         hostname,
         oauth_client_id,
         oauth_client_secret
+    );
+
+    let email_whitelist = std::collections::HashSet::from_iter(
+        allowed_emails.value().split(",").map(|x| x.to_owned()),
     );
 
     let mut server = grpc::ServerBuilder::<tls_api_native_tls::TlsAcceptor>::new();
@@ -51,6 +62,7 @@ fn main() {
         hostname.value(),
         oauth_client_id.value(),
         oauth_client_secret.value(),
+        Arc::new(email_whitelist),
     )
     .serve(web_port.value());
 }

@@ -13,7 +13,7 @@ use hyper::rt::Stream;
 use hyper::StatusCode;
 use hyper_tls::HttpsConnector;
 use rand::Rng;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 use ws::{Body, Request, Response, ResponseFuture, Server};
 
@@ -111,6 +111,7 @@ pub struct AuthWebServer {
     hostname: String,
     client_id: String,
     client_secret: String,
+    email_whitelist: Arc<HashSet<String>>,
 }
 
 impl AuthWebServer {
@@ -119,12 +120,14 @@ impl AuthWebServer {
         hostname: String,
         client_id: String,
         client_secret: String,
+        email_whitelist: Arc<HashSet<String>>,
     ) -> Self {
         Self {
             tokens: tokens,
             hostname: hostname,
             client_id: client_id,
             client_secret: client_secret,
+            email_whitelist: email_whitelist,
         }
     }
 
@@ -208,6 +211,7 @@ impl AuthWebServer {
         let https = HttpsConnector::new(4).unwrap();
         let client = hyper::client::Client::builder().build::<_, hyper::Body>(https);
         let tokens = self.tokens.clone();
+        let email_whitelist = self.email_whitelist.clone();
         Box::new(
             client
                 .request(req)
@@ -238,7 +242,14 @@ impl AuthWebServer {
                     let parsed = json::parse(&response).unwrap();
                     let email = &parsed["email"];
 
-                    if email.is_null() {
+                    let email_str = match email.as_str() {
+                        Some(e) => e,
+                        None => {
+                            return future::ok(Response::new(Body::from("invalid")));
+                        }
+                    };
+
+                    if !email_whitelist.contains(email_str) {
                         return future::ok(Response::new(Body::from("invalid")));
                     }
 
