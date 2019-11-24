@@ -34,7 +34,7 @@ fn main() {
     let port = define_flag!("port", 8008, "The port to bind to.");
     let weld_hostname = define_flag!(
         "weld_hostname",
-        String::from("localhost:8001"),
+        String::from("localhost"),
         "the hostname for the remote weld service"
     );
     let server_port = define_flag!("server_port", 8001, "the port to connect to");
