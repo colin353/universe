@@ -12,6 +12,7 @@ rust_binary(
     name = "review",
     srcs = ["main.rs"],
     deps = [
+        "//auth:auth_client",
         "//util/flags",
         "//util/tmpl",
         "//util/ws",
@@ -34,6 +35,7 @@ rust_library(
         "template.html",
     ],
     deps = [
+        "//auth:auth_client",
         "//third_party:base64",
         "//util/flags",
         "//util/tmpl",
@@ -61,6 +63,7 @@ rust_image(
     srcs = ["main.rs"],
     base = ":review_base_img",
     deps = [
+        "//auth:auth_client",
         "//util/flags",
         "//util/tmpl",
         "//util/ws",

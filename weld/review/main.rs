@@ -1,5 +1,6 @@
 #[macro_use]
 extern crate flags;
+extern crate auth_client;
 extern crate server;
 extern crate weld;
 extern crate ws;
@@ -29,6 +30,12 @@ fn main() {
         String::from(""),
         "path to a file containing the root CA .der file"
     );
+    let auth_hostname = define_flag!(
+        "auth_hostname",
+        String::from("auth.colinmerkel.xyz"),
+        "the hostname for auth service"
+    );
+    let auth_port = define_flag!("auth_port", 8888, "the port for auth service");
     let cert = define_flag!(
         "cert",
         String::from(""),
@@ -40,16 +47,24 @@ fn main() {
         String::from("/static/"),
         "the directory containing static files"
     );
+    let base_url = define_flag!(
+        "base_url",
+        String::from("http://review.colinmerkel.xyz"),
+        "the base URL of the site"
+    );
 
     parse_flags!(
         server_hostname,
         server_port,
+        auth_hostname,
+        auth_port,
         use_tls,
         tls_hostname,
         root_ca,
         cert,
         port,
-        static_files
+        static_files,
+        base_url
     );
 
     let client = if use_tls.value() {
@@ -79,5 +94,7 @@ fn main() {
         )
     };
 
-    server::ReviewServer::new(client, static_files.value()).serve(port.value());
+    let auth = auth_client::AuthClient::new(&auth_hostname.value(), auth_port.value());
+    server::ReviewServer::new(client, static_files.value(), base_url.value(), auth)
+        .serve(port.value());
 }

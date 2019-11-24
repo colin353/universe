@@ -525,6 +525,40 @@ mod tests {
     }
 
     #[test]
+    fn test_ignore_swap() {
+        let repo = make_remote_connected_test_repo();
+
+        // Make a change and submit it
+        let change = weld::Change::new();
+        let change_id = repo.make_change(change);
+
+        // The change should show up when listing changes.
+        assert_eq!(repo.list_changes().count(), 1);
+
+        let mut test_file = File::new();
+        test_file.set_filename(String::from("/test/config.swp"));
+        test_file.set_contents(String::from("{config: true}").into_bytes());
+        repo.write(change_id, test_file, 0);
+
+        let mut test_file = File::new();
+        test_file.set_filename(String::from("/test/config.swo"));
+        test_file.set_contents(String::from("{config: true}").into_bytes());
+        repo.write(change_id, test_file, 0);
+
+        let mut test_file = File::new();
+        test_file.set_filename(String::from("/test/config~"));
+        test_file.set_contents(String::from("{config: true}").into_bytes());
+        repo.write(change_id, test_file, 0);
+
+        let mut test_file = File::new();
+        test_file.set_filename(String::from("/test/valid_file.txt"));
+        test_file.set_contents(String::from("{config: true}").into_bytes());
+        repo.write(change_id, test_file, 0);
+
+        assert_eq!(repo.list_changed_files(change_id, 0).count(), 1);
+    }
+
+    #[test]
     fn test_list_changes() {
         let repo = make_remote_connected_test_repo();
 
