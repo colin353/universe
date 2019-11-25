@@ -148,8 +148,23 @@ impl<C: LargeTableClient> WeldServiceHandler<C> {
             change.set_id(id);
         }
 
+        let mut unchanged_files = std::collections::HashSet::new();
+        for file in self.repo.list_changed_files(change.get_id(), 0) {
+            unchanged_files.insert(file.get_filename().to_owned());
+        }
+
         for file in change.get_staged_files() {
             self.repo.write(change.get_id(), file.clone(), 0);
+            unchanged_files.remove(file.get_filename());
+        }
+
+        // Any originally existing changed files which are not listed are
+        // to be reverted.
+        for filename in unchanged_files.into_iter() {
+            let mut f = File::new();
+            f.set_filename(filename);
+            f.set_reverted(true);
+            self.repo.write(change.get_id(), f, 0);
         }
 
         // Reload any existing data about this change, in case it already exists.

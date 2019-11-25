@@ -13,7 +13,7 @@ pub fn file(f: &weld::File) -> tmpl::ContentsMap {
     )
 }
 
-pub fn file_history(fh: &weld::FileHistory) -> tmpl::ContentsMap {
+pub fn file_history(fh: &weld::FileHistory, index: u64) -> Option<tmpl::ContentsMap> {
     let mut c = content!(
         "filename" => fh.get_filename();
     );
@@ -26,18 +26,46 @@ pub fn file_history(fh: &weld::FileHistory) -> tmpl::ContentsMap {
 
         c.insert("original", file(f));
         is_new_file = false;
+        break;
     }
 
     c.insert("status", if is_new_file { "new" } else { "modified" });
 
-    let modified = fh.get_snapshots().last();
-    if let Some(f) = modified {
-        c.insert("modified", file(f));
+    let mut has_file = false;
+    if index == 0 {
+        if let Some(f) = fh.get_snapshots().last() {
+            has_file = true;
+            c.insert("modified", file(f));
+        }
+    } else {
+        for f in fh.get_snapshots().iter().rev() {
+            if f.get_snapshot_id() != index {
+                continue;
+            }
+
+            has_file = true;
+            c.insert("modified", file(f));
+        }
     }
-    c
+
+    if has_file {
+        Some(c)
+    } else {
+        None
+    }
 }
 
 pub fn change(c: &weld::Change) -> tmpl::ContentsMap {
+    // Figure out what the latest snapshot is
+    let mut latest_snapshot = 0;
+    for change in c.get_changes() {
+        for snapshot in change.get_snapshots() {
+            if snapshot.get_snapshot_id() > latest_snapshot {
+                latest_snapshot = snapshot.get_snapshot_id();
+            }
+        }
+    }
+
     content!(
         "id" => format!("{}", c.get_id()),
         "based_index" => format!("{}", c.get_based_index()),
@@ -47,6 +75,6 @@ pub fn change(c: &weld::Change) -> tmpl::ContentsMap {
         "last_modified_timestamp" => c.get_last_modified_timestamp(),
         "summary" => weld::summarize_change_description(c.get_description()),
         "description" => weld::render_change_description(c.get_description());
-        "changes" => c.get_changes().iter().map(|f| file_history(f)).collect()
+        "changes" => c.get_changes().iter().filter_map(|f| file_history(f, latest_snapshot)).collect()
     )
 }

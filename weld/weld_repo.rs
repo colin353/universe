@@ -507,6 +507,7 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
             index,
         )
         .map(|(_, f)| f)
+        .filter(|f: &File| !f.get_reverted())
         .filter(|f: &File| !weld::should_ignore_file(f.get_filename()))
     }
 

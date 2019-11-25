@@ -32,6 +32,8 @@ message File {
   uint64 snapshot_id = 17;
 
   uint64 size = 18;
+
+  bool reverted = 19;
 }
 
 message FileHistory {

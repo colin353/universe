@@ -114,8 +114,10 @@ impl ReviewServer {
         for history in change.get_changes() {
             if history.get_filename() == format!("/{}", filename) {
                 found = true;
-                content = render::file_history(history);
-                content.insert("next_file", "");
+                if let Some(f_content) = render::file_history(history, 0) {
+                    content = f_content;
+                    content.insert("next_file", "");
+                }
             } else if found {
                 content.insert("next_file", history.get_filename());
                 break;

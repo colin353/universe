@@ -157,6 +157,13 @@ fn main() {
                 eprintln!("{} @ {}", c.get_friendly_name(), c.get_based_index());
             }
         }
+        "revert" => {
+            let maybe_id = client.lookup_friendly_name(space.value());
+            let f = weld::File::new();
+            f.set_filename(filename.value());
+            f.set_reverted(true);
+            client.write();
+        }
         "snapshot" => {
             let maybe_id = client.lookup_friendly_name(space.value());
             if let Some(id) = maybe_id {

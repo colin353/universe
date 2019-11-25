@@ -86,6 +86,12 @@
                 original: originalModel,
                 modified: modifiedModel
             });
+
+            let navi = monaco.editor.createDiffNavigator(diffEditor, {
+                followsCaret: true,
+                ignoreCharChanges: true
+            });
+            navi.next();
         } else {
             var content = atob(editorElement.getAttribute("data-right"));
             monaco.editor.create(editorElement, {

@@ -977,4 +977,44 @@ mod tests {
 
         assert_ne!(submitted_id, 0);
     }
+
+    #[test]
+    fn test_add_delete() {
+        let repo = make_remote_connected_test_repo();
+
+        // Make a change with a modified file
+        let change = weld::Change::new();
+        let id = repo.make_change(change);
+
+        let mut test_file = File::new();
+        test_file.set_filename(String::from("/config.txt"));
+        test_file.set_contents(String::from("{config: true}").into_bytes());
+        repo.write(id, test_file, 0);
+
+        let mut test_file = File::new();
+        test_file.set_filename(String::from("/user.txt"));
+        test_file.set_contents(String::from("{name: tester}").into_bytes());
+        repo.write(id, test_file, 0);
+
+        // Take snapshot
+        let index = repo.snapshot(&weld::change(id)).get_snapshot_id();
+
+        // Delete
+        let mut test_file = File::new();
+        test_file.set_filename(String::from("/config.txt"));
+        test_file.set_deleted(true);
+        repo.write(id, test_file, 0);
+
+        // Take another snapshot
+        repo.snapshot(&weld::change(id));
+        let index = repo.submit(id).get_id();
+
+        // The file shouldn't exist, since we deleted it before submitting
+        let response = repo.read_remote(0, "/config.txt", index);
+        assert!(response.is_none());
+
+        // The file shouldn't exist, since we deleted it before submitting
+        let response = repo.read_remote(0, "/user.txt", index);
+        assert!(response.is_some());
+    }
 }
