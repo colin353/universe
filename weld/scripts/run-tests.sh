@@ -21,14 +21,14 @@ echo "found files: $FILES"
 TARGETS=$(echo $FILES | xargs -L 1 bash -c 'get_targets "$@"' _)
 echo "found targets: $TARGETS"
 
-echo $TARGETS | xargs bazel build
+echo $TARGETS | xargs bazel build -c fastbuild
 
 if [ $? -ne 0 ]; then
   echo "Build failed" >&2
   exit 1
 fi
 
-bazel test --test_output=errors $(echo $TARGETS | tr '\n' ' ')
+bazel test -c fastbuild --test_output=errors $(echo $TARGETS | tr '\n' ' ')
 EXIT=$?
 if [ $EXIT -ne 0 ] && [ $EXIT -ne 4 ]; then
   echo "Test failed with exit code $EXIT" >&2
@@ -44,7 +44,7 @@ if [ $? -ne 0 ]; then
 fi
 echo "found dependencies: $DEPENDENCIES"
 
-bazel test --test_output=errors $(echo $DEPENDENCIES | tr '\n' ' ')
+bazel test -c fastbuild --test_output=errors $(echo $DEPENDENCIES | tr '\n' ' ')
 EXIT=$?
 if [ $EXIT -ne 0 ] && [ $EXIT -ne 4 ]; then
   echo "Test failed with exit code $EXIT" >&2
