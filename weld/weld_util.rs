@@ -159,10 +159,13 @@ fn main() {
         }
         "revert" => {
             let maybe_id = client.lookup_friendly_name(space.value());
-            let f = weld::File::new();
-            f.set_filename(filename.value());
-            f.set_reverted(true);
-            client.write();
+            if let Some(id) = maybe_id {
+                let mut req = weld::WriteRequest::new();
+                req.set_id(id);
+                req.mut_file().set_filename(file.value());
+                req.mut_file().set_reverted(true);
+                client.write(req);
+            }
         }
         "snapshot" => {
             let maybe_id = client.lookup_friendly_name(space.value());

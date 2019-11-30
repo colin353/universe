@@ -184,7 +184,9 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
                 .read(&rowname_for_files(id), path_to_colname(&filename).as_str())
             {
                 file.set_found(true);
-                return Some(file);
+                if !file.get_reverted() {
+                    return Some(file);
+                }
             }
         } else {
             if let Some(mut file) = self.batching_client.client.read_proto::<File>(
@@ -193,7 +195,9 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
                 index,
             ) {
                 file.set_found(true);
-                return Some(file);
+                if !file.get_reverted() {
+                    return Some(file);
+                }
             }
         }
 
@@ -219,7 +223,9 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
                 .read(&rowname_for_attrs(id), path_to_colname(&filename).as_str())
             {
                 file.set_found(true);
-                return Some(file);
+                if !file.get_reverted() {
+                    return Some(file);
+                }
             }
         } else {
             if let Some(mut file) = self.batching_client.client.read_proto::<File>(
@@ -228,7 +234,9 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
                 index,
             ) {
                 file.set_found(true);
-                return Some(file);
+                if !file.get_reverted() {
+                    return Some(file);
+                }
             }
         }
 

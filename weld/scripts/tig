@@ -29,6 +29,8 @@ elif [ "$1" = "snapshot" ]; then
   $WELD_UTIL snapshot --space=$SPACE
 elif [ "$1" = "submit" ]; then
   $WELD_UTIL submit --space=$SPACE
+elif [ "$1" = "revert" ]; then
+  $WELD_UTIL revert --space=$SPACE --file=$2
 else
   echo "tig: invalid command: '$1'"
   exit 1
