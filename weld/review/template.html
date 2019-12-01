@@ -7,13 +7,13 @@
     <title>{{title}}</title>
 
     <style type="text/css">
-        @import url(https://fonts.googleapis.com/css?family=Merriweather);
+        @import url(https://fonts.googleapis.com/css?family=Roboto+Mono);
 
         body {
             -webkit-font-smoothing: antialiased;
             -moz-osx-font-smoothing: grayscale;
             color: rgba(0, 0, 0, 0.87);
-            font-family: 'Merriweather', serif;
+            font-family: 'Roboto Mono', sans-serif;
         }
 
         .page {
@@ -103,12 +103,31 @@
             margin-left: auto;
             margin-right: auto;
         }
+
+        a.invisible-link {
+            color: black;
+            text-decoration: none;
+        }
+
+        table.change-list {
+            margin-top: 10px;
+            margin-bottom: 10px;
+        }
+
+        table.change-list td.id {
+            width: 50px;
+        }
+
+        table.change-list td.author {
+            width: 100px;
+            color: grey;
+        }
     </style>
 </head>
 
 <body>
     <div class="header">
-        <h4 style="margin-right: 20px; flex: 1"><a href="/">review</a></h4>
+        <h2 style="margin-right: 20px; flex: 1"><a class="invisible-link" href="/">review</a></h2>
         <input class="search-input" type=text placeholder="search" />
     </div>
     {{content}}
