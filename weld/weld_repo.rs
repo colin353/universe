@@ -308,10 +308,7 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
             );
 
             // Need to update the underlying file as well.
-            if let Some(mut file_contents) = self.batching_client.read(
-                &rowname_for_files(id),
-                path_to_colname(file.get_filename()).as_str(),
-            ) {
+            if let Some(mut file_contents) = self.read(id, file.get_filename(), 0) {
                 file.set_contents(file_contents.take_contents());
                 let size = file.get_contents().len();
                 file.set_size(size as u64);
@@ -331,10 +328,7 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
             );
 
             // Need to update the underlying file as well.
-            if let Some(mut file_contents) = self.batching_client.read(
-                &rowname_for_files(id),
-                path_to_colname(file.get_filename()).as_str(),
-            ) {
+            if let Some(mut file_contents) = self.read(id, file.get_filename(), 0) {
                 file.set_contents(file_contents.take_contents());
                 let size = file.get_contents().len();
                 file.set_size(size as u64);

@@ -1072,4 +1072,47 @@ mod tests {
             "original"
         );
     }
+
+    #[test]
+    fn test_writeattrs() {
+        let repo = make_remote_connected_test_repo();
+
+        // make a change with a modified file
+        let change = weld::Change::new();
+        let id = repo.make_change(change);
+
+        let mut test_file = File::new();
+        test_file.set_filename(String::from("/config.txt"));
+        test_file.set_contents(String::from("original").into_bytes());
+        repo.write(id, test_file, 0);
+
+        // submit it
+        repo.snapshot(&weld::change(id));
+        let index = repo.submit(id).get_id();
+
+        // make another change
+        let change = weld::Change::new();
+        let id = repo.make_change(change);
+
+        // the file should exist with old data
+        let response = repo.read(id, "/config.txt", 0);
+        assert_eq!(
+            std::str::from_utf8(response.unwrap().get_contents()).unwrap(),
+            "original"
+        );
+
+        // update the file with new data
+        let mut test_file = File::new();
+        test_file.set_mtime(100);
+        test_file.set_perm(777);
+        test_file.set_filename(String::from("/config.txt"));
+        repo.write_attrs(id, test_file, 0);
+
+        // the file should exist with old data
+        let response = repo.read(id, "/config.txt", 0);
+        assert_eq!(
+            std::str::from_utf8(response.unwrap().get_contents()).unwrap(),
+            "original"
+        );
+    }
 }
