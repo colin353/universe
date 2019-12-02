@@ -45,7 +45,9 @@ impl Server for ExampleServer {
         }
 
         if path.starts_with("/redirect") {
-            return self.redirect("http://google.com");
+            let mut response = Response::new(Body::from(""));
+            self.redirect("http://google.com", &mut response);
+            return response;
         }
 
         match path.as_str() {

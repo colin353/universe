@@ -78,14 +78,12 @@ pub trait Server: Sync + Send + Clone + 'static {
         );
     }
 
-    fn redirect(&self, location: &str) -> Response {
-        let mut response = Response::new(Body::from(""));
+    fn redirect(&self, location: &str, response: &mut Response) {
         *response.status_mut() = StatusCode::TEMPORARY_REDIRECT;
         response.headers_mut().insert(
             LOCATION,
             HeaderValue::from_bytes(location.as_bytes()).unwrap(),
         );
-        response
     }
 
     fn serve(self, port: u16) {
