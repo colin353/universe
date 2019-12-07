@@ -2,7 +2,7 @@
 set -e
 
 WELD_UTIL="$HOME/bin/weld_util"
-BASE_DIR="$HOME/codefs/"
+BASE_DIR="$HOME/codefs/local/"
 BASE_DIR_ESCAPED=$(echo $BASE_DIR | sed 's/\//\\\//g')
 
 # Remove the base dir prefix and path suffix.

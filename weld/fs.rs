@@ -91,12 +91,19 @@ fn make_default_file() -> File {
 #[derive(Clone, Debug, Eq)]
 enum Origin {
     Change(u64),
+    Head(u64),
     Root,
+    Local,
+    Remote,
 }
 
 impl Origin {
     pub fn from_change(id: u64) -> Origin {
         Origin::Change(id)
+    }
+
+    pub fn from_head(id: u64) -> Origin {
+        Origin::Head(id)
     }
 }
 
@@ -112,11 +119,21 @@ impl hash::Hash for Origin {
     fn hash<H: hash::Hasher>(&self, state: &mut H) {
         match &self {
             Origin::Change(id) => {
-                4321.hash(state);
+                1111.hash(state);
+                id.hash(state);
+            }
+            Origin::Head(id) => {
+                2222.hash(state);
                 id.hash(state);
             }
             Origin::Root => {
-                1234.hash(state);
+                3333.hash(state);
+            }
+            Origin::Remote => {
+                4444.hash(state);
+            }
+            Origin::Local => {
+                5555.hash(state);
             }
         }
     }
@@ -126,7 +143,10 @@ impl cmp::PartialEq for Origin {
     fn eq(&self, other: &Origin) -> bool {
         match (&self, other) {
             (Origin::Change(x), Origin::Change(y)) => (x == y),
+            (Origin::Head(x), Origin::Head(y)) => (x == y),
             (Origin::Root, Origin::Root) => true,
+            (Origin::Remote, Origin::Remote) => true,
+            (Origin::Local, Origin::Local) => true,
             _ => false,
         }
     }
@@ -353,7 +373,6 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
     }
 
     fn readdir_space(&self, id: u64, path: &str) -> Vec<DirectoryListingEntry> {
-        //println!("readdir_space");
         let mut entries = Vec::new();
 
         // Read symlinks
@@ -381,8 +400,48 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
         entries
     }
 
+    fn readdir_head(&self, id: u64, path: &str) -> Vec<DirectoryListingEntry> {
+        let mut entries = Vec::new();
+
+        // Read symlinks
+        for symlink in self.list_symlinks(&Origin::from_head(id), &path) {
+            entries.push(DirectoryListingEntry::new(
+                symlink.ino,
+                symlink.name,
+                FileType::Symlink,
+            ));
+        }
+
+        for file in self.repo.list_files_remote(0, &path, id) {
+            let node = self.path_to_node(Origin::from_head(id), file.get_filename());
+            let filename: String;
+            {
+                filename = path_to_filename(file.get_filename()).to_owned()
+            };
+            let filetype = match file.get_directory() {
+                true => FileType::Directory,
+                false => FileType::RegularFile,
+            };
+            entries.push(DirectoryListingEntry::new(node, filename, filetype));
+        }
+
+        entries
+    }
+
     fn readdir_root(&self) -> Vec<DirectoryListingEntry> {
-        ////println!("readdir_root");
+        let remote = self.path_to_node(Origin::Remote, "remote");
+        let local = self.path_to_node(Origin::Local, "local");
+        vec![
+            DirectoryListingEntry::new(remote, String::from("remote"), FileType::Directory),
+            DirectoryListingEntry::new(local, String::from("local"), FileType::Directory),
+        ]
+    }
+
+    fn readdir_remote(&self) -> Vec<DirectoryListingEntry> {
+        Vec::new()
+    }
+
+    fn readdir_local(&self) -> Vec<DirectoryListingEntry> {
         let changes = self.repo.list_changes().collect::<Vec<_>>();
 
         changes
@@ -422,6 +481,14 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
 
         match origin {
             Origin::Root => {
+                let ino = match name.as_str() {
+                    "remote" => self.path_to_node(Origin::Remote, "remote"),
+                    "local" => self.path_to_node(Origin::Local, "local"),
+                    _ => return reply.error(ENOENT),
+                };
+                return reply.entry(&Duration::from_secs(TTL), &make_dir_attr(ino, 0), 0);
+            }
+            Origin::Local => {
                 let id: u64 = match self.repo.lookup_friendly_name(&name) {
                     Some(id) => id,
                     None => return reply.error(ENOENT),
@@ -433,6 +500,40 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
 
                 let ino = self.path_to_node(Origin::from_change(id), "/");
                 return reply.entry(&Duration::from_secs(TTL), &make_dir_attr(ino, 0), 0);
+            }
+            Origin::Remote => {
+                let id = match name.parse() {
+                    Ok(x) => x,
+                    Err(_) => return reply.error(ENOENT),
+                };
+                let ino = self.path_to_node(Origin::from_head(id), "/");
+                return reply.entry(&Duration::from_secs(TTL), &make_dir_attr(ino, 0), 0);
+            }
+            Origin::Head(id) => {
+                let path = format!("{}/{}", parent_path.trim_end_matches('/'), name);
+                let ino = self.path_to_node(Origin::from_head(id), &path);
+
+                let file = match self.repo.read_remote(0, &path, id) {
+                    Some(f) => f,
+                    None => {
+                        return reply.error(ENOENT);
+                    }
+                };
+
+                // If the file was deleted, return ENOENT.
+                if file.get_deleted() {
+                    return reply.error(ENOENT);
+                }
+
+                if file.get_directory() {
+                    reply.entry(&Duration::from_secs(TTL), &make_dir_attr(ino, 0), 0);
+                } else {
+                    reply.entry(
+                        &Duration::from_secs(TTL),
+                        &file_attr_from_file(ino, &file),
+                        0,
+                    );
+                }
             }
             Origin::Change(id) => {
                 let path = format!("{}/{}", parent_path.trim_end_matches('/'), name);
@@ -488,6 +589,33 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
         // All inodes in the root are just client names.
         match origin {
             Origin::Root => return reply.attr(&Duration::from_secs(TTL), &make_dir_attr(ino, 0)),
+            Origin::Remote => return reply.attr(&Duration::from_secs(TTL), &make_dir_attr(ino, 0)),
+            Origin::Local => return reply.attr(&Duration::from_secs(TTL), &make_dir_attr(ino, 0)),
+            Origin::Head(id) => {
+                // The root path isn't written into the database. We have to
+                // handle that case as a special case.
+                if path == "/" {
+                    return reply.attr(&Duration::from_secs(TTL), &make_dir_attr(ino, 0));
+                }
+
+                let file = match self.repo.read_attrs_remote(0, &path, id) {
+                    Some(f) => f,
+                    None => {
+                        return reply.error(ENOENT);
+                    }
+                };
+
+                if file.get_deleted() {
+                    return reply.error(ENOENT);
+                }
+
+                match file.get_directory() {
+                    true => reply.attr(&Duration::from_secs(TTL), &make_dir_attr(ino, 0)),
+                    false => {
+                        reply.attr(&Duration::from_secs(TTL), &file_attr_from_file(ino, &file))
+                    }
+                }
+            }
             Origin::Change(id) => {
                 // The root path isn't written into the database. We have to
                 // handle that case as a special case.
@@ -525,7 +653,22 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
         };
 
         match origin {
-            Origin::Root => return reply.error(ENOENT),
+            Origin::Head(id) => {
+                let file = match self.repo.read_remote(0, &path, id) {
+                    Some(f) => f,
+                    None => {
+                        return reply.error(ENOENT);
+                    }
+                };
+
+                if file.get_deleted() || file.get_directory() {
+                    return reply.error(ENOENT);
+                }
+
+                let start = std::cmp::min(file.get_contents().len(), offset as usize);
+                let end = std::cmp::min(file.get_contents().len(), offset as usize + size as usize);
+                reply.data(&file.get_contents()[start..end]);
+            }
             Origin::Change(id) => {
                 let file = match self.repo.read(id, &path, 0) {
                     Some(f) => f,
@@ -542,6 +685,7 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
                 let end = std::cmp::min(file.get_contents().len(), offset as usize + size as usize);
                 reply.data(&file.get_contents()[start..end]);
             }
+            _ => return reply.error(ENOENT),
         }
     }
 
@@ -554,11 +698,11 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
         };
 
         match origin {
-            Origin::Root => reply.error(ENOSYS),
             Origin::Change(id) => {
                 self.repo.delete(id, &path, timestamp);
                 reply.ok();
             }
+            _ => reply.error(ENOSYS),
         };
     }
 
@@ -588,7 +732,6 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
         };
 
         match origin {
-            Origin::Root => return reply.error(ENOENT),
             Origin::Change(id) => {
                 let mut file = match self.repo.read_attrs(id, &path, 0) {
                     Some(f) => f,
@@ -621,6 +764,7 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
                 reply.attr(&Duration::from_secs(TTL), &file_attr_from_file(ino, &file));
                 self.repo.write_attrs(id, file, timestamp);
             }
+            _ => return reply.error(ENOENT),
         }
     }
 
@@ -639,6 +783,9 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
 
         entries.append(&mut match origin {
             Origin::Root => self.readdir_root(),
+            Origin::Local => self.readdir_local(),
+            Origin::Remote => self.readdir_remote(),
+            Origin::Head(id) => self.readdir_head(id, &path),
             Origin::Change(id) => self.readdir_space(id, &path),
         });
 
@@ -670,7 +817,6 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
         };
 
         match origin {
-            Origin::Root => reply.error(ENOENT),
             Origin::Change(id) => {
                 let mut file = match self.repo.read(id, &path, timestamp) {
                     Some(f) => {
@@ -692,6 +838,7 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
 
                 reply.written(len as u32);
             }
+            _ => reply.error(ENOENT),
         }
     }
 
@@ -709,7 +856,6 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
         };
 
         match origin {
-            Origin::Root => return reply.error(ENOSYS),
             Origin::Change(id) => {
                 let mut dir = File::new();
                 dir.set_directory(true);
@@ -719,6 +865,7 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
                 let ino = self.path_to_node(Origin::from_change(id), &path);
                 reply.entry(&Duration::from_secs(TTL), &make_dir_attr(ino, 0), 0);
             }
+            _ => return reply.error(ENOSYS),
         };
     }
 
@@ -765,7 +912,6 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
     }
 
     pub fn open(&self, ino: u64, flags: u32, reply: fuse::ReplyOpen) {
-        //println!("open: ino={} flags={}", ino, flags);
         let (origin, path) = match self.node_to_path(ino) {
             Some(x) => x,
             None => {
@@ -775,7 +921,6 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
         };
 
         match origin {
-            Origin::Root => return reply.error(ENOENT),
             Origin::Change(id) => {
                 let file = match self.repo.read_attrs(id, &path, 0) {
                     Some(f) => f,
@@ -785,25 +930,32 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
                     return reply.error(ENOENT);
                 }
             }
+            Origin::Head(id) => {
+                let file = match self.repo.read_attrs_remote(0, &path, id) {
+                    Some(f) => f,
+                    None => return reply.error(ENOENT),
+                };
+                if file.get_deleted() {
+                    return reply.error(ENOENT);
+                }
+            }
+            _ => return reply.error(ENOENT),
         };
 
         reply.opened(ino, flags);
     }
 
     pub fn unlink(&self, parent: u64, name: String, timestamp: u64, reply: fuse::ReplyEmpty) {
-        //println!("unlink: {:?} within {}", name, parent);
-
         let (origin, path) = match self.route(parent, &name) {
             Some(x) => x,
             None => return reply.error(ENOENT),
         };
 
         match origin {
-            Origin::Root => return reply.error(ENOSYS),
             Origin::Change(id) => {
-                //println!("deleting: {}", path);
                 self.repo.delete(id, &path, timestamp);
             }
+            _ => return reply.error(ENOSYS),
         }
         reply.ok();
     }
@@ -826,7 +978,6 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
         };
 
         match origin {
-            Origin::Root => return reply.error(ENOSYS),
             Origin::Change(id) => {
                 let mut file = make_default_file();
                 file.set_filename(path.to_owned());
@@ -842,6 +993,7 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
                 );
                 self.repo.write(id, file, timestamp);
             }
+            _ => return reply.error(ENOSYS),
         }
     }
 
