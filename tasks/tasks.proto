@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+message CreateTaskRequest {
+  string task_name = 1;
+  repeated TaskArgument arguments = 2;
+}
+
+message TaskArgument {
+  string name = 1;
+  int64 value_int = 2;
+  float value_float = 3;
+  string value_string = 4;
+  bool value_bool = 5;
+}
+
+message TaskArtifact {
+  string name = 1;
+  int64 value_int = 2;
+  float value_float = 3;
+  string value_string = 4;
+  bool value_bool = 5;
+}
+
+enum Status {
+  CREATED = 0;
+  STARTED = 1;
+  SUCCEESS = 2;
+  FAILURE = 3;
+}
+
+message TaskStatus {
+  uint64 task_id = 1;
+  Status status = 2;
+  repeated TaskArtifact artifacts = 3;
+  repeated TaskStatus subtasks = 4;
+}
