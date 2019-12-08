@@ -6,7 +6,7 @@ load("@io_bazel_rules_docker//docker:docker.bzl", "docker_push")
 rust_image(
     name = "build_img",
     base = "@build_base//image",
-    binary = "//weld:weld_client",
+    binary = "//weld:weld_client_for_build",
 )
 
 docker_push(

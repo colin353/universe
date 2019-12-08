@@ -112,6 +112,33 @@ rust_binary(
     ],
 )
 
+rust_binary(
+    name = "weld_client_for_build",
+    srcs = [
+        "client_service.rs",
+        "fs.rs",
+        "parallel_fs.rs",
+        "weld_client_for_build.rs",
+    ],
+    deps = [
+        ":weld",
+        ":weld_repo",
+        "//largetable:batching_client",
+        "//largetable:largetable_client",
+        "//largetable:largetable_test",
+        "//third_party:fuse",
+        "//third_party:libc",
+        "//third_party:time",
+        "//third_party:tls_api_native_tls",
+        "//util/flags",
+        "//util/pool",
+        "@io_bazel_rules_rust//proto/raze:grpc",
+        "@io_bazel_rules_rust//proto/raze:protobuf",
+        "@io_bazel_rules_rust//proto/raze:tls_api",
+        "@io_bazel_rules_rust//proto/raze:tls_api_stub",
+    ],
+)
+
 rust_library(
     name = "weld_server_lib",
     srcs = [
