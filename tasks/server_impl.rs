@@ -1,12 +1,17 @@
 extern crate grpc;
+extern crate largetable_client;
 extern crate tasks_grpc_rust;
 
-#[derive(Clone)]
-pub struct TaskServiceHandler;
+use largetable_client::LargeTableClient;
 
-impl TaskServiceHandler {
-    pub fn new() -> Self {
-        Self {}
+#[derive(Clone)]
+pub struct TaskServiceHandler<C: LargeTableClient> {
+    database: C,
+}
+
+impl<C: LargeTableClient + Clone> TaskServiceHandler<C> {
+    pub fn new(db: C) -> Self {
+        Self { database: db }
     }
 
     pub fn create_task(
@@ -24,7 +29,7 @@ impl TaskServiceHandler {
     }
 }
 
-impl tasks_grpc_rust::TaskService for TaskServiceHandler {
+impl<C: LargeTableClient + Clone> tasks_grpc_rust::TaskService for TaskServiceHandler<C> {
     fn create_task(
         &self,
         m: grpc::RequestOptions,

@@ -25,6 +25,22 @@ rust_library(
     srcs = ["server_impl.rs"],
     deps = [
         ":tasks_grpc_rust",
+        "//largetable:largetable_client",
+        "//largetable:largetable_test",
+        "@io_bazel_rules_rust//proto/raze:grpc",
+        "@io_bazel_rules_rust//proto/raze:protobuf",
+    ],
+)
+
+rust_binary(
+    name = "tasks",
+    srcs = ["server.rs"],
+    deps = [
+        ":server_impl",
+        ":tasks_grpc_rust",
+        "//largetable:largetable_test",
+        "//third_party:tls_api_native_tls",
+        "//util/flags",
         "@io_bazel_rules_rust//proto/raze:grpc",
         "@io_bazel_rules_rust//proto/raze:protobuf",
     ],
