@@ -19,3 +19,13 @@ rust_grpc_library(
     name = "tasks_grpc_rust",
     deps = ["tasks_proto"],
 )
+
+rust_library(
+    name = "server_impl",
+    srcs = ["server_impl.rs"],
+    deps = [
+        ":tasks_grpc_rust",
+        "@io_bazel_rules_rust//proto/raze:grpc",
+        "@io_bazel_rules_rust//proto/raze:protobuf",
+    ],
+)

@@ -34,3 +34,10 @@ message TaskStatus {
   repeated TaskArtifact artifacts = 3;
   repeated TaskStatus subtasks = 4;
 }
+
+message GetStatusRequest { uint64 task_id = 1; }
+
+service TaskService {
+  rpc CreateTask(CreateTaskRequest) returns (TaskStatus);
+  rpc GetStatus(GetStatusRequest) returns (TaskStatus);
+}
