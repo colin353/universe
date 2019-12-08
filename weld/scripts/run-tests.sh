@@ -4,21 +4,20 @@ get_files () {
 }
 
 get_targets () {
-  bazel query "attr('srcs', $1, ${1//:*/}:*)" 2>/dev/null
+  bazel query "attr('srcs', $1, //...)" 2>/dev/null
 }
 
 get_dependencies () {
-  echo $1
-  bazel query "rdeps(//..., $1)" #2>/dev/null
+  bazel query "rdeps(//..., $1)" 2>/dev/null
 }
 export -f get_dependencies
 export -f get_targets
 export -f get_files
 
-FILES=$(files | xargs -L 1 bash -c 'get_files "$@"' _)
+FILES=$(files | xargs -n 1 bash -c 'get_files "$@"' _)
 echo "found files: $FILES"
 
-TARGETS=$(echo $FILES | xargs -L 1 bash -c 'get_targets "$@"' _)
+TARGETS=$(echo $FILES | xargs -n 1 bash -c 'get_targets "$@"' _)
 echo "found targets: $TARGETS"
 
 echo $TARGETS | xargs bazel build -c fastbuild
@@ -35,8 +34,7 @@ if [ $EXIT -ne 0 ] && [ $EXIT -ne 4 ]; then
   exit 1
 fi
 
-
-DEPENDENCIES=$(echo $TARGETS | xargs -L 1 bash -c 'get_dependencies "$@"' _)
+DEPENDENCIES=$(echo $TARGETS | xargs -n 1 bash -c 'get_dependencies "$@"' _)
 echo $DEPENDENCIES | xargs bazel build
 if [ $? -ne 0 ]; then
   echo "Build failed" >&2
