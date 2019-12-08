@@ -72,6 +72,13 @@ container_pull(
     repository = "distroless/cc-debian10",
 )
 
+container_pull(
+    name = "build_base",
+    digest = "sha256:bf649c36b749ed6a534ad595639e96dec93203d27ef3229bdcced6c0e28e5466",
+    registry = "registry.hub.docker.com",
+    repository = "colinmerkel/build",
+)
+
 http_archive(
     name = "rules_pkg",
     sha256 = "4ba8f4ab0ff85f2484287ab06c0d871dcb31cc54d439457d28fd4ae14b18450a",
