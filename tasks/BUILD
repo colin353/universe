@@ -4,6 +4,7 @@ load("@io_bazel_rules_rust//proto:proto.bzl", "rust_proto_library")
 load("@io_bazel_rules_rust//proto:proto.bzl", "rust_grpc_library")
 load("@io_bazel_rules_rust//rust:rust.bzl", "rust_library")
 load("@io_bazel_rules_rust//rust:rust.bzl", "rust_binary")
+load("@io_bazel_rules_rust//rust:rust.bzl", "rust_test")
 
 proto_library(
     name = "tasks_proto",
@@ -27,6 +28,8 @@ rust_library(
         ":tasks_grpc_rust",
         "//largetable:largetable_client",
         "//largetable:largetable_test",
+        "//third_party:futures",
+        "//third_party:tokio",
         "@io_bazel_rules_rust//proto/raze:grpc",
         "@io_bazel_rules_rust//proto/raze:protobuf",
     ],
@@ -43,5 +46,13 @@ rust_binary(
         "//util/flags",
         "@io_bazel_rules_rust//proto/raze:grpc",
         "@io_bazel_rules_rust//proto/raze:protobuf",
+    ],
+)
+
+rust_test(
+    name = "server_impl_test",
+    crate = ":server_impl",
+    deps = [
+        "//largetable:largetable_test",
     ],
 )
