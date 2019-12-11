@@ -3,15 +3,21 @@ extern crate tokio;
 
 extern crate futures;
 extern crate largetable_client;
+extern crate task_lib;
 extern crate tasks_grpc_rust;
 
 use futures::sync::mpsc::{unbounded, UnboundedSender};
 use futures::Stream;
 use largetable_client::LargeTableClient;
 use std::sync::{Arc, Mutex};
+use task_lib::TaskManager;
+use tasks_grpc_rust::{Status, TaskArgument, TaskStatus};
 use tokio::prelude::{future, Future};
 
 pub type TaskFuture = Box<dyn Future<Item = (), Error = ()> + Send>;
+
+const TASK_IDS: &'static str = "task_ids";
+const TASK_STATUS: &'static str = "task_status";
 
 #[derive(Clone)]
 pub struct TaskServiceHandler<C: LargeTableClient> {
@@ -43,22 +49,52 @@ impl<C: LargeTableClient + Clone + Send + 'static> TaskServiceHandler<C> {
 
     pub fn create_task(
         &self,
-        req: tasks_grpc_rust::CreateTaskRequest,
+        mut req: tasks_grpc_rust::CreateTaskRequest,
     ) -> tasks_grpc_rust::TaskStatus {
-        self.scheduler.unbounded_send(String::from("msg"));
-        tasks_grpc_rust::TaskStatus::new()
+        let mut initial_status = TaskStatus::new();
+        initial_status.set_name(req.take_task_name());
+        initial_status.set_arguments(req.take_arguments());
+        let id = self.database.reserve_id(TASK_IDS, "").to_string();
+        initial_status.set_task_id(id.clone());
+
+        self.database
+            .write_proto(TASK_STATUS, &id, 0, &initial_status);
+
+        self.scheduler.unbounded_send(id);
+        initial_status
     }
 
     pub fn get_status(
         &self,
         req: tasks_grpc_rust::GetStatusRequest,
     ) -> tasks_grpc_rust::TaskStatus {
-        tasks_grpc_rust::TaskStatus::new()
+        match self.database.read_proto(TASK_STATUS, req.get_task_id(), 0) {
+            Some(s) => s,
+            None => {
+                let mut s = TaskStatus::new();
+                s.set_status(Status::DOES_NOT_EXIST);
+                s
+            }
+        }
     }
 
     pub fn begin_task(&self, task_id: String) -> TaskFuture {
-        println!("begin task: {}", task_id);
-        Box::new(future::ok(()))
+        let status: TaskStatus = match self.database.read_proto(TASK_STATUS, &task_id, 0) {
+            Some(s) => s,
+            None => {
+                let mut s = TaskStatus::new();
+                s.set_task_id(task_id.clone());
+                s.set_status(Status::DOES_NOT_EXIST);
+                self.database.write_proto(TASK_STATUS, &task_id, 0, &s);
+                return Box::new(future::ok(()));
+            }
+        };
+
+        let m = Manager::new(task_id.clone(), self.database.clone());
+        let db = self.database.clone();
+        Box::new(m.run(status).map(move |status| {
+            db.write_proto(TASK_STATUS, &task_id, 0, &status);
+        }))
     }
 }
 
@@ -82,6 +118,45 @@ impl<C: LargeTableClient + Clone + Send + 'static> tasks_grpc_rust::TaskService
     }
 }
 
+struct Manager<C: LargeTableClient + 'static> {
+    task_id: String,
+    database: C,
+}
+impl<C: LargeTableClient + 'static> Manager<C> {
+    pub fn new(task_id: String, database: C) -> Self {
+        Self {
+            task_id: task_id,
+            database: database,
+        }
+    }
+}
+
+impl<C: LargeTableClient + 'static> task_lib::TaskManager for Manager<C> {
+    fn get_status(&self) -> TaskStatus {
+        self.database
+            .read_proto(TASK_STATUS, &self.task_id, 0)
+            .unwrap()
+    }
+    fn set_status(&self, status: TaskStatus) {
+        self.database
+            .write_proto(TASK_STATUS, &self.task_id, 0, &status);
+    }
+    fn run(self, mut status: TaskStatus) -> task_lib::TaskResultFuture {
+        let task = match task_lib::TASK_REGISTRY.get(status.get_name()) {
+            Some(t) => t,
+            None => {
+                println!("Task not found");
+                status.set_status(Status::FAILURE);
+                let reason = format!("No registered task called `{}`", status.get_name());
+                status.set_reason(reason);
+                return Box::new(future::ok(status));
+            }
+        };
+
+        task.run(status.get_arguments(), Box::new(self))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -95,8 +170,15 @@ mod tests {
     #[test]
     fn test_task_running() {
         let handler = setup_task_runner();
-        let req = tasks_grpc_rust::CreateTaskRequest::new();
-        handler.create_task(req);
-        std::thread::sleep(std::time::Duration::from_millis(100));
+        let mut req = tasks_grpc_rust::CreateTaskRequest::new();
+        req.set_task_name(String::from("noop"));
+        let status = handler.create_task(req);
+        assert_eq!(status.get_task_id(), "1");
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        let mut req = tasks_grpc_rust::GetStatusRequest::new();
+        req.set_task_id(status.get_task_id().to_owned());
+        let status = handler.get_status(req);
+        assert_eq!(status.get_status(), Status::SUCCESS);
+        assert_eq!(status.get_task_id(), "1");
     }
 }

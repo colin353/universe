@@ -25,6 +25,7 @@ rust_library(
     name = "server_impl",
     srcs = ["server_impl.rs"],
     deps = [
+        ":task_lib",
         ":tasks_grpc_rust",
         "//largetable:largetable_client",
         "//largetable:largetable_test",
@@ -54,5 +55,15 @@ rust_test(
     crate = ":server_impl",
     deps = [
         "//largetable:largetable_test",
+    ],
+)
+
+rust_library(
+    name = "task_lib",
+    srcs = ["task_lib.rs"],
+    deps = [
+        ":tasks_grpc_rust",
+        "//third_party:lazy_static",
+        "//third_party:tokio",
     ],
 )

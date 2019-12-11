@@ -24,19 +24,22 @@ message TaskArtifact {
 enum Status {
   CREATED = 0;
   STARTED = 1;
-  SUCCEESS = 2;
+  SUCCESS = 2;
   FAILURE = 3;
+  DOES_NOT_EXIST = 4;
 }
 
 message TaskStatus {
-  uint64 task_id = 1;
-  Status status = 2;
-  string reason = 3;
-  repeated TaskArtifact artifacts = 4;
-  repeated TaskStatus subtasks = 5;
+  string task_id = 1;
+  string name = 2;
+  Status status = 3;
+  string reason = 4;
+  repeated TaskArgument arguments = 5;
+  repeated TaskArtifact artifacts = 6;
+  repeated TaskStatus subtasks = 7;
 }
 
-message GetStatusRequest { uint64 task_id = 1; }
+message GetStatusRequest { string task_id = 1; }
 
 service TaskService {
   rpc CreateTask(CreateTaskRequest) returns (TaskStatus);
