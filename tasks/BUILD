@@ -42,10 +42,12 @@ rust_binary(
     srcs = ["server.rs"],
     deps = [
         ":server_impl",
+        ":task_webserver",
         ":tasks_grpc_rust",
         "//largetable:largetable_test",
         "//third_party:tls_api_native_tls",
         "//util/flags",
+        "//util/ws",
         "@io_bazel_rules_rust//proto/raze:grpc",
         "@io_bazel_rules_rust//proto/raze:protobuf",
     ],
@@ -75,5 +77,17 @@ rust_library(
     deps = [
         ":tasks_grpc_rust",
         "//largetable:largetable_client",
+    ],
+)
+
+rust_library(
+    name = "task_webserver",
+    srcs = ["webview.rs"],
+    deps = [
+        ":task_db_client",
+        ":tasks_grpc_rust",
+        "//largetable:largetable_client",
+        "//util/tmpl",
+        "//util/ws",
     ],
 )
