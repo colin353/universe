@@ -25,6 +25,7 @@ rust_library(
     name = "server_impl",
     srcs = ["server_impl.rs"],
     deps = [
+        ":task_db_client",
         ":task_lib",
         ":tasks_grpc_rust",
         "//largetable:largetable_client",
@@ -65,5 +66,14 @@ rust_library(
         ":tasks_grpc_rust",
         "//third_party:lazy_static",
         "//third_party:tokio",
+    ],
+)
+
+rust_library(
+    name = "task_db_client",
+    srcs = ["client.rs"],
+    deps = [
+        ":tasks_grpc_rust",
+        "//largetable:largetable_client",
     ],
 )

@@ -18,8 +18,8 @@ lazy_static! {
 
 pub type TaskResultFuture = Box<dyn Future<Item = TaskStatus, Error = ()> + Send>;
 
-pub trait TaskManager {
-    fn set_status(&self, status: TaskStatus);
+pub trait TaskManager: Send {
+    fn set_status(&self, status: &TaskStatus);
     fn get_status(&self) -> TaskStatus;
     fn spawn(&self, task_name: &str, arguments: Vec<TaskArgument>) -> TaskResultFuture;
     fn run(self, mut status: TaskStatus) -> TaskResultFuture;
@@ -28,7 +28,6 @@ pub trait TaskManager {
         status.set_reason(reason.to_owned());
         Box::new(future::ok(status))
     }
-
     fn success(&self, mut status: TaskStatus) -> TaskResultFuture {
         status.set_status(Status::SUCCESS);
         Box::new(future::ok(status))
@@ -109,6 +108,16 @@ impl Task for Spawner {
             return manager.failure(status, "not enough arguments");
         }
 
-        return manager.spawn(args[0].get_value_string(), Vec::new());
+        return Box::new(
+            manager
+                .spawn(args[0].get_value_string(), Vec::new())
+                .and_then(move |s| {
+                    if s.get_status() != Status::SUCCESS {
+                        return manager.failure(status, "subtask did not succeed");
+                    }
+
+                    manager.success(status)
+                }),
+        );
     }
 }

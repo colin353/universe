@@ -4,24 +4,23 @@ extern crate tokio;
 
 extern crate futures;
 extern crate largetable_client;
+extern crate task_db_client;
 extern crate task_lib;
 extern crate tasks_grpc_rust;
 
 use futures::sync::mpsc::{unbounded, UnboundedSender};
 use futures::Stream;
 use largetable_client::LargeTableClient;
+use task_db_client::TaskClient;
 use task_lib::TaskManager;
 use tasks_grpc_rust::{Status, TaskArgument, TaskStatus};
 use tokio::prelude::{future, Future};
 
 pub type TaskFuture = Box<dyn Future<Item = (), Error = ()> + Send>;
 
-const TASK_IDS: &'static str = "task_ids";
-const TASK_STATUS: &'static str = "task_status";
-
 #[derive(Clone)]
-pub struct TaskServiceHandler<C: LargeTableClient> {
-    database: C,
+pub struct TaskServiceHandler<C: LargeTableClient + Clone + 'static> {
+    client: TaskClient<C>,
     scheduler: UnboundedSender<String>,
 }
 
@@ -30,7 +29,7 @@ impl<C: LargeTableClient + Clone + Send + 'static> TaskServiceHandler<C> {
         let (sender, mut receiver) = unbounded();
 
         let handler = Self {
-            database: database,
+            client: TaskClient::new(database),
             scheduler: sender,
         };
 
@@ -54,12 +53,10 @@ impl<C: LargeTableClient + Clone + Send + 'static> TaskServiceHandler<C> {
         let mut initial_status = TaskStatus::new();
         initial_status.set_name(req.take_task_name());
         initial_status.set_arguments(req.take_arguments());
-        let id = self.database.reserve_id(TASK_IDS, "").to_string();
+        let id = self.client.reserve_task_id();
         initial_status.set_task_id(id.clone());
 
-        self.database
-            .write_proto(TASK_STATUS, &id, 0, &initial_status);
-
+        self.client.write(&initial_status);
         self.scheduler.unbounded_send(id);
         initial_status
     }
@@ -68,25 +65,16 @@ impl<C: LargeTableClient + Clone + Send + 'static> TaskServiceHandler<C> {
         &self,
         req: tasks_grpc_rust::GetStatusRequest,
     ) -> tasks_grpc_rust::TaskStatus {
-        let mut status: TaskStatus =
-            match self.database.read_proto(TASK_STATUS, req.get_task_id(), 0) {
-                Some(s) => s,
-                None => {
-                    let mut s = TaskStatus::new();
-                    s.set_status(Status::DOES_NOT_EXIST);
-                    return s;
-                }
-            };
+        let mut status: TaskStatus = match self.client.read(req.get_task_id()) {
+            Some(s) => s,
+            None => {
+                let mut s = TaskStatus::new();
+                s.set_status(Status::DOES_NOT_EXIST);
+                return s;
+            }
+        };
 
-        let iterator = largetable_client::LargeTableScopedIterator::new(
-            &self.database,
-            String::from(TASK_STATUS),
-            format!("s{}/", req.get_task_id()),
-            String::new(),
-            String::new(),
-            0,
-        );
-        for (_, subtask_status) in iterator {
+        for subtask_status in self.client.list_subtasks(req.get_task_id()) {
             status.mut_subtasks().push(subtask_status);
         }
 
@@ -94,22 +82,19 @@ impl<C: LargeTableClient + Clone + Send + 'static> TaskServiceHandler<C> {
     }
 
     pub fn begin_task(&self, task_id: String) -> TaskFuture {
-        let status: TaskStatus = match self.database.read_proto(TASK_STATUS, &task_id, 0) {
+        let status: TaskStatus = match self.client.read(&task_id) {
             Some(s) => s,
             None => {
                 let mut s = TaskStatus::new();
                 s.set_task_id(task_id.clone());
                 s.set_status(Status::DOES_NOT_EXIST);
-                self.database.write_proto(TASK_STATUS, &task_id, 0, &s);
+                self.client.write(&s);
                 return Box::new(future::ok(()));
             }
         };
 
-        let m = Manager::new(task_id.clone(), self.database.clone());
-        let db = self.database.clone();
-        Box::new(m.run(status).map(move |status| {
-            db.write_proto(TASK_STATUS, &task_id, 0, &status);
-        }))
+        let m = Manager::new(task_id.clone(), self.client.clone());
+        Box::new(m.run(status).map(std::mem::drop))
     }
 }
 
@@ -135,47 +120,47 @@ impl<C: LargeTableClient + Clone + Send + 'static> tasks_grpc_rust::TaskService
 
 struct Manager<C: LargeTableClient + Clone + 'static> {
     task_id: String,
-    database: C,
+    client: TaskClient<C>,
 }
 impl<C: LargeTableClient + Clone + 'static> Manager<C> {
-    pub fn new(task_id: String, database: C) -> Self {
+    pub fn new(task_id: String, client: TaskClient<C>) -> Self {
         Self {
             task_id: task_id,
-            database: database,
+            client: client,
         }
     }
 }
 
-impl<C: LargeTableClient + Clone + 'static> task_lib::TaskManager for Manager<C> {
+impl<C: LargeTableClient + Clone + Send + 'static> task_lib::TaskManager for Manager<C> {
     fn get_status(&self) -> TaskStatus {
-        self.database
-            .read_proto(TASK_STATUS, &self.task_id, 0)
-            .unwrap()
+        self.client.read(&self.task_id).unwrap()
     }
-    fn set_status(&self, status: TaskStatus) {
-        self.database
-            .write_proto(TASK_STATUS, &self.task_id, 0, &status);
+
+    fn set_status(&self, status: &TaskStatus) {
+        self.client.write(&status)
     }
+
     fn spawn(&self, task_name: &str, arguments: Vec<TaskArgument>) -> task_lib::TaskResultFuture {
-        let subtask_id = self
-            .database
-            .reserve_id(TASK_IDS, &self.task_id)
-            .to_string();
-        let task_id = format!("s{}/{}", self.task_id, subtask_id);
+        let subtask_id = self.client.reserve_subtask_id(&self.task_id).to_string();
         let mut status = TaskStatus::new();
         status.set_name(task_name.to_owned());
         status.set_arguments(protobuf::RepeatedField::from_vec(arguments));
-        status.set_task_id(task_id.clone());
-        self.database.write_proto(TASK_STATUS, &task_id, 0, &status);
+        status.set_task_id(subtask_id.clone());
+        self.client.write(&status);
 
-        let m = Manager::new(task_id.clone(), self.database.clone());
-        m.run(status)
+        let m = Manager::new(subtask_id.clone(), self.client.clone());
+        let passed_client = self.client.clone();
+        Box::new(m.run(status).and_then(move |s| {
+            passed_client.write(&s);
+            future::ok(s)
+        }))
     }
+
     fn run(self, mut status: TaskStatus) -> task_lib::TaskResultFuture {
         let task = match task_lib::TASK_REGISTRY.get(status.get_name()) {
             Some(t) => t,
             None => {
-                println!("Task not found");
+                eprintln!("Task not found");
                 status.set_status(Status::FAILURE);
                 let reason = format!("No registered task called `{}`", status.get_name());
                 status.set_reason(reason);
@@ -183,7 +168,14 @@ impl<C: LargeTableClient + Clone + 'static> task_lib::TaskManager for Manager<C>
             }
         };
 
-        task.run(status.get_arguments(), Box::new(self))
+        let passed_client = self.client.clone();
+        Box::new(
+            task.run(status.get_arguments(), Box::new(self))
+                .and_then(move |status| {
+                    passed_client.write(&status);
+                    future::ok(status)
+                }),
+        )
     }
 }
 
