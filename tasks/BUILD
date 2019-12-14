@@ -82,7 +82,14 @@ rust_library(
 
 rust_library(
     name = "task_webserver",
-    srcs = ["webview.rs"],
+    srcs = [
+        "render.rs",
+        "task_webserver.rs",
+    ],
+    data = [
+        "index.html",
+        "template.html",
+    ],
     deps = [
         ":task_db_client",
         ":tasks_grpc_rust",

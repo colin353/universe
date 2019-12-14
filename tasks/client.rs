@@ -47,7 +47,7 @@ impl<C: LargeTableClient + Clone + 'static> TaskClient<C> {
         .map(|(_key, val)| val)
     }
 
-    pub fn list_tasks<'a>(&'a self, task_id: &str) -> impl Iterator<Item = TaskStatus> + 'a {
+    pub fn list_tasks<'a>(&'a self) -> impl Iterator<Item = TaskStatus> + 'a {
         largetable_client::LargeTableScopedIterator::<'a, TaskStatus, C>::new(
             &self.database,
             String::from(TASK_STATUS),

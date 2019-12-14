@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" type="text/css" href="/static/style.css">
+    <title>{{title}}</title>
+
+    <style type="text/css">
+        @import url(https://fonts.googleapis.com/css?family=Roboto+Mono);
+
+        body {
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            color: rgba(0, 0, 0, 0.87);
+            font-family: 'Roboto Mono', sans-serif;
+        }
+
+        .page {
+            display: block;
+        }
+
+        .form-field .title {
+            text-transform: uppercase;
+            font-size: 0.6em;
+        }
+
+        .form-field .contents {
+            height: 1.25em;
+        }
+
+        .form-field {
+            padding: 4px;
+            border: 0.5px solid rgba(0, 0, 0, 0.2);
+        }
+
+        .small-heading {
+            text-transform: uppercase;
+            font-size: 0.6em;
+        }
+
+        .header {
+            width: 1024px;
+            display: flex;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .search-input {
+            height: 20px;
+            margin-top: 20px;
+        }
+
+        .content {
+            width: 1024px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        a.invisible-link {
+            color: black;
+            text-decoration: none;
+        }
+
+        table.task-list {
+            margin-top: 10px;
+            margin-bottom: 10px;
+        }
+
+        table.task-list td.id {
+            width: 50px;
+        }
+
+        table.task-list td.name {
+            width: 100px;
+        }
+
+        table.task-list td.status {
+            width: 100px;
+            color: grey;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="header">
+        <h2 style="margin-right: 20px; flex: 1"><a class="invisible-link" href="/">tasks</a></h2>
+        <input class="search-input" type=text placeholder="search" />
+    </div>
+    {{content}}
+</body>
+
+</html>

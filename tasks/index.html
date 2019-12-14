@@ -1,0 +1,36 @@
+<div class="content">
+    <b>in progress</b>
+    {{progress == 0}}
+    <p>No tasks in progress</p>
+    {{/progress}}
+
+    {{progress != 0}}
+    <table class='task-list'>
+        {{progress[]}}
+        <tr onclick="window.location.href='/{{id}}'">
+            <td class='id'><a class='invisible-link' href="/{{id}}">#{{id}}</a></td>
+            <td class='name'>{{name}}</td>
+            <td class='status'>{{status}}</td>
+        </tr>
+        {{/progress}}
+    </table>
+    {{/progress}}
+
+    <b>completed</b>
+
+    {{completed == 0}}
+    <p>No completed tasks</p>
+    {{/completed}}
+
+    {{completed != 0}}
+    <table class='task-list'>
+        {{completed[]}}
+        <tr onclick="window.location.href='/{{id}}'">
+            <td class='id'><a class='invisible-link' href="/{{id}}">#{{id}}</a></td>
+            <td class='name'>{{name}}</td>
+            <td class='status'>{{status}}</td>
+        </tr>
+        {{/completed}}
+    </table>
+    {{/completed}}
+</div>
