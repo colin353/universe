@@ -56,8 +56,9 @@ fn main() {
         String::from(""),
         "A file containing a change description + annotations."
     );
+    let target = define_flag!("target", String::new(), "A bazel target to build");
 
-    let args = parse_flags!(hostname, port, file, space, change_file); //, change_file);
+    let args = parse_flags!(hostname, port, file, space, change_file, target);
     if args.len() != 1 {
         return usage();
     }
@@ -228,6 +229,33 @@ fn main() {
                 eprintln!("No such client '{}`", space.value());
                 std::process::exit(1);
             }
+        }
+        "query" => {
+            let id = match client.lookup_friendly_name(space.value()) {
+                Some(x) => x,
+                None => {
+                    eprintln!("No such client '{}'", space.value());
+                    std::process::exit(1);
+                }
+            };
+            let mut req = weld::RunBuildQueryRequest::new();
+            req.set_change_id(id);
+            let response = client.run_build_query(req);
+            println!("query: {:?}", response);
+        }
+        "build" => {
+            let id = match client.lookup_friendly_name(space.value()) {
+                Some(x) => x,
+                None => {
+                    eprintln!("No such client '{}'", space.value());
+                    std::process::exit(1);
+                }
+            };
+            let mut req = weld::RunBuildRequest::new();
+            req.set_change_id(id);
+            req.set_target(target.value());
+            let response = client.run_build(req);
+            println!("build: {:?}", response);
         }
         "sync" => {
             let id = match client.lookup_friendly_name(space.value()) {

@@ -163,6 +163,25 @@ message GetChangeRequest {
   bool filled = 2;
 }
 
+message RunBuildQueryRequest { uint64 change_id = 1; }
+message RunBuildQueryResponse {
+  bool success = 1;
+  repeated string targets = 2;
+  repeated string dependencies = 3;
+}
+
+message RunBuildRequest {
+  uint64 change_id = 1;
+  string target = 2;
+}
+message RunBuildResponse {
+  bool success = 1;
+  bool build_success = 2;
+  string build_output = 3;
+  bool test_success = 4;
+  string test_output = 5;
+}
+
 service WeldLocalService {
   rpc GetChange(GetChangeRequest) returns (Change);
   rpc MakeChange(Change) returns (Change);
@@ -177,4 +196,6 @@ service WeldLocalService {
       returns (LookupFriendlyNameResponse);
   rpc GetPatch(Change) returns (Patch);
   rpc Sync(SyncRequest) returns (SyncResponse);
+  rpc RunBuild(RunBuildRequest) returns (RunBuildResponse);
+  rpc RunBuildQuery(RunBuildQueryRequest) returns (RunBuildQueryResponse);
 }

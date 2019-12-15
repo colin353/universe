@@ -266,6 +266,22 @@ impl WeldLocalClient {
     pub fn sync(&self, req: weld::SyncRequest) -> weld::SyncResponse {
         self.client.sync(self.opts(), req).wait().expect("rpc").1
     }
+
+    pub fn run_build(&self, req: weld::RunBuildRequest) -> weld::RunBuildResponse {
+        self.client
+            .run_build(self.opts(), req)
+            .wait()
+            .expect("rpc")
+            .1
+    }
+
+    pub fn run_build_query(&self, req: weld::RunBuildQueryRequest) -> weld::RunBuildQueryResponse {
+        self.client
+            .run_build_query(self.opts(), req)
+            .wait()
+            .expect("rpc")
+            .1
+    }
 }
 
 pub fn get_timestamp_usec() -> u64 {
@@ -418,6 +434,12 @@ pub fn render_change_description(description: &str) -> String {
 }
 
 pub fn should_ignore_file(filename: &str) -> bool {
+    if filename.ends_with(".swx") {
+        return true;
+    }
+    if filename.ends_with(".swpx") {
+        return true;
+    }
     if filename.ends_with(".swp") {
         return true;
     }

@@ -1,14 +1,23 @@
 use largetable_client::LargeTableClient;
+use std::collections::HashSet;
 use weld;
 
 #[derive(Clone)]
 pub struct WeldLocalServiceHandler<C: LargeTableClient> {
     repo: weld_repo::Repo<C, weld::WeldServerClient>,
+    mount_dir: String,
 }
 
 impl<C: LargeTableClient> WeldLocalServiceHandler<C> {
     pub fn new(repo: weld_repo::Repo<C, weld::WeldServerClient>) -> Self {
-        Self { repo: repo }
+        Self {
+            repo: repo,
+            mount_dir: String::new(),
+        }
+    }
+
+    pub fn set_mount_dir(&mut self, mount_dir: String) {
+        self.mount_dir = mount_dir;
     }
 
     pub fn get_change(&self, change: weld::GetChangeRequest) -> weld::Change {
@@ -111,6 +120,203 @@ impl<C: LargeTableClient> WeldLocalServiceHandler<C> {
         let mut response = weld::SyncResponse::new();
         response.set_conflicted_files(protobuf::RepeatedField::from_vec(conflicted_files));
         response.set_index(synced_index);
+        response
+    }
+
+    pub fn run_build(&self, req: &weld::RunBuildRequest) -> weld::RunBuildResponse {
+        let mut response = weld::RunBuildResponse::new();
+
+        let friendly_name = match self.repo.get_change(req.get_change_id()) {
+            Some(x) => x.get_friendly_name().to_owned(),
+            None => {
+                println!("no such change: {}", req.get_change_id());
+                response.set_build_output(String::from("could not find change to build"));
+                return response;
+            }
+        };
+
+        let output = match std::process::Command::new("bazel")
+            .arg("build")
+            .arg(req.get_target())
+            .current_dir(format!("{}/local/{}", self.mount_dir, friendly_name))
+            .output()
+        {
+            Ok(o) => o,
+            Err(_) => {
+                response.set_build_output(String::from("could not start build command!"));
+                return response;
+            }
+        };
+
+        let build_stdout = std::str::from_utf8(&output.stdout)
+            .unwrap()
+            .trim()
+            .to_owned();
+        let build_stderr = std::str::from_utf8(&output.stderr)
+            .unwrap()
+            .trim()
+            .to_owned();
+        response.set_build_output(format!("{}\n{}", build_stdout, build_stderr));
+        if output.status.success() {
+            response.set_build_success(true);
+        } else {
+            println!("command failed: {}", response.get_build_output());
+            return response;
+        }
+
+        let output = match std::process::Command::new("bazel")
+            .arg("test")
+            .arg(req.get_target())
+            .current_dir(format!("{}/local/{}", self.mount_dir, friendly_name))
+            .output()
+        {
+            Ok(o) => o,
+            Err(_) => {
+                response.set_build_output(String::from("could not start test command!"));
+                return response;
+            }
+        };
+
+        let test_stdout = std::str::from_utf8(&output.stdout)
+            .unwrap()
+            .trim()
+            .to_owned();
+        let test_stderr = std::str::from_utf8(&output.stderr)
+            .unwrap()
+            .trim()
+            .to_owned();
+        response.set_test_output(format!("{}\n{}", test_stdout, test_stderr));
+
+        // Status code 4 means that there were no errors, but no test targets
+        if output.status.success() || output.status.code() == Some(4) {
+            response.set_build_success(true);
+        } else {
+            println!("command failed: {}", response.get_test_output());
+            return response;
+        }
+
+        response.set_success(true);
+        response
+    }
+
+    pub fn run_build_query(&self, req: &weld::RunBuildQueryRequest) -> weld::RunBuildQueryResponse {
+        let friendly_name = match self.repo.get_change(req.get_change_id()) {
+            Some(x) => x.get_friendly_name().to_owned(),
+            None => {
+                println!("no such change: {}", req.get_change_id());
+                return weld::RunBuildQueryResponse::new();
+            }
+        };
+
+        let changes = self
+            .repo
+            .list_changed_files(req.get_change_id(), 0)
+            .filter(|f| !f.get_directory())
+            .map(|f| f.get_filename()[1..].to_owned())
+            .collect::<Vec<_>>();
+
+        let mut files = HashSet::new();
+        for changed_file in &changes {
+            let output = match std::process::Command::new("bazel")
+                .arg("query")
+                .arg(changed_file)
+                .current_dir(format!("{}/local/{}", self.mount_dir, friendly_name))
+                .output()
+            {
+                Ok(o) => o,
+                Err(_) => {
+                    println!("command failed to start");
+                    return weld::RunBuildQueryResponse::new();
+                }
+            };
+
+            let file = std::str::from_utf8(&output.stdout)
+                .unwrap()
+                .trim()
+                .to_owned();
+            if output.status.success() && !file.is_empty() {
+                files.insert(file);
+            } else {
+                let errors = std::str::from_utf8(&output.stderr)
+                    .unwrap()
+                    .trim()
+                    .to_owned();
+                println!("file query failed: {}", errors);
+            }
+        }
+
+        println!("files: {:?}", files);
+
+        let mut targets = HashSet::new();
+        for file in &files {
+            let output = match std::process::Command::new("bazel")
+                .arg("query")
+                .arg(format!("attr('srcs', {}, //...)", file))
+                .current_dir(format!("{}/local/{}", self.mount_dir, friendly_name))
+                .output()
+            {
+                Ok(o) => o,
+                Err(_) => {
+                    println!("command failed to start");
+                    return weld::RunBuildQueryResponse::new();
+                }
+            };
+
+            let target = std::str::from_utf8(&output.stdout)
+                .unwrap()
+                .trim()
+                .to_owned();
+            if output.status.success() && !target.is_empty() {
+                targets.insert(target);
+            } else {
+                let errors = std::str::from_utf8(&output.stderr)
+                    .unwrap()
+                    .trim()
+                    .to_owned();
+                println!("target query failed: {}", errors);
+            }
+        }
+
+        let mut dependencies = HashSet::new();
+        for target in &targets {
+            let output = match std::process::Command::new("bazel")
+                .arg("query")
+                .arg(format!("rdeps(//..., {})", target))
+                .current_dir(format!("{}/local/{}", self.mount_dir, friendly_name))
+                .output()
+            {
+                Ok(o) => o,
+                Err(_) => {
+                    println!("command failed to start");
+                    return weld::RunBuildQueryResponse::new();
+                }
+            };
+
+            let dependency = std::str::from_utf8(&output.stdout)
+                .unwrap()
+                .trim()
+                .to_owned();
+            if output.status.success() && !dependency.is_empty() {
+                dependencies.insert(target);
+            } else {
+                let errors = std::str::from_utf8(&output.stderr)
+                    .unwrap()
+                    .trim()
+                    .to_owned();
+                println!("dependency query failed: {}", errors);
+            }
+        }
+
+        let mut response = weld::RunBuildQueryResponse::new();
+        response.set_success(true);
+        for target in &targets {
+            response.mut_targets().push(target.to_owned());
+        }
+        for dependency in dependencies {
+            if !targets.contains(dependency.as_str()) {
+                response.mut_dependencies().push(dependency.to_owned());
+            }
+        }
         response
     }
 }
@@ -217,5 +423,21 @@ impl<C: LargeTableClient> weld::WeldLocalService for WeldLocalServiceHandler<C> 
         req: weld::SyncRequest,
     ) -> grpc::SingleResponse<weld::SyncResponse> {
         grpc::SingleResponse::completed(self.sync(&req))
+    }
+
+    fn run_build(
+        &self,
+        _m: grpc::RequestOptions,
+        req: weld::RunBuildRequest,
+    ) -> grpc::SingleResponse<weld::RunBuildResponse> {
+        grpc::SingleResponse::completed(self.run_build(&req))
+    }
+
+    fn run_build_query(
+        &self,
+        _m: grpc::RequestOptions,
+        req: weld::RunBuildQueryRequest,
+    ) -> grpc::SingleResponse<weld::RunBuildQueryResponse> {
+        grpc::SingleResponse::completed(self.run_build_query(&req))
     }
 }
