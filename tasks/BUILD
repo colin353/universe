@@ -77,6 +77,8 @@ rust_library(
     deps = [
         ":tasks_grpc_rust",
         "//largetable:largetable_client",
+        "@io_bazel_rules_rust//proto/raze:grpc",
+        "@io_bazel_rules_rust//proto/raze:protobuf",
     ],
 )
 

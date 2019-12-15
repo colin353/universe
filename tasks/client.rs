@@ -1,8 +1,11 @@
+extern crate grpc;
 extern crate largetable_client;
+extern crate protobuf;
 extern crate tasks_grpc_rust;
 
 use largetable_client::LargeTableClient;
-use tasks_grpc_rust::{Status, TaskArgument, TaskStatus};
+use tasks_grpc_rust::TaskService;
+use tasks_grpc_rust::{CreateTaskRequest, GetStatusRequest, Status, TaskArgument, TaskStatus};
 
 const TASK_IDS: &'static str = "task_ids";
 const TASK_STATUS: &'static str = "task_status";
@@ -57,5 +60,94 @@ impl<C: LargeTableClient + Clone + 'static> TaskClient<C> {
             0,
         )
         .map(|(_key, val)| val)
+    }
+}
+
+pub struct TaskRemoteClient {
+    client: tasks_grpc_rust::TaskServiceClient,
+}
+
+impl TaskRemoteClient {
+    fn opts(&self) -> grpc::RequestOptions {
+        grpc::RequestOptions::new()
+    }
+
+    pub fn new(hostname: String, port: u16) -> Self {
+        Self {
+            client: tasks_grpc_rust::TaskServiceClient::new_plain(
+                &hostname,
+                port,
+                std::default::Default::default(),
+            )
+            .unwrap(),
+        }
+    }
+
+    pub fn create_task(&self, task_name: String, args: Vec<TaskArgument>) {
+        let mut req = CreateTaskRequest::new();
+        req.set_task_name(task_name);
+        req.set_arguments(protobuf::RepeatedField::from_vec(args));
+        self.client
+            .create_task(self.opts(), req)
+            .wait()
+            .expect("rpc");
+    }
+
+    pub fn get_status(&self, task_id: String) -> Option<TaskStatus> {
+        let mut req = GetStatusRequest::new();
+        req.set_task_id(task_id);
+        let response = self
+            .client
+            .get_status(self.opts(), req)
+            .wait()
+            .expect("rpc")
+            .1;
+        if response.get_status() == Status::DOES_NOT_EXIST {
+            return None;
+        }
+
+        Some(response)
+    }
+}
+
+pub struct ArgumentsBuilder {
+    args: Vec<TaskArgument>,
+}
+
+impl ArgumentsBuilder {
+    pub fn new() -> Self {
+        Self { args: Vec::new() }
+    }
+
+    pub fn add_string(&mut self, name: &str, value: String) {
+        let mut a = TaskArgument::new();
+        a.set_name(name.to_owned());
+        a.set_value_string(value);
+        self.args.push(a)
+    }
+
+    pub fn add_int(&mut self, name: &str, value: i64) {
+        let mut a = TaskArgument::new();
+        a.set_name(name.to_owned());
+        a.set_value_int(value);
+        self.args.push(a)
+    }
+
+    pub fn add_float(&mut self, name: &str, value: f32) {
+        let mut a = TaskArgument::new();
+        a.set_name(name.to_owned());
+        a.set_value_float(value);
+        self.args.push(a)
+    }
+
+    pub fn add_bool(&mut self, name: &str, value: bool) {
+        let mut a = TaskArgument::new();
+        a.set_name(name.to_owned());
+        a.set_value_bool(value);
+        self.args.push(a)
+    }
+
+    pub fn build(self) -> Vec<TaskArgument> {
+        self.args
     }
 }

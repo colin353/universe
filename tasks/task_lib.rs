@@ -38,48 +38,6 @@ pub trait Task: Sync + 'static {
     fn run(&self, args: &[TaskArgument], manager: Box<dyn TaskManager>) -> TaskResultFuture;
 }
 
-pub struct ArgumentsBuilder {
-    args: Vec<TaskArgument>,
-}
-
-impl ArgumentsBuilder {
-    pub fn new() -> Self {
-        Self { args: Vec::new() }
-    }
-
-    pub fn add_string(&mut self, name: &str, value: String) {
-        let mut a = TaskArgument::new();
-        a.set_name(name.to_owned());
-        a.set_value_string(value);
-        self.args.push(a)
-    }
-
-    pub fn add_int(&mut self, name: &str, value: i64) {
-        let mut a = TaskArgument::new();
-        a.set_name(name.to_owned());
-        a.set_value_int(value);
-        self.args.push(a)
-    }
-
-    pub fn add_float(&mut self, name: &str, value: f32) {
-        let mut a = TaskArgument::new();
-        a.set_name(name.to_owned());
-        a.set_value_float(value);
-        self.args.push(a)
-    }
-
-    pub fn add_bool(&mut self, name: &str, value: bool) {
-        let mut a = TaskArgument::new();
-        a.set_name(name.to_owned());
-        a.set_value_bool(value);
-        self.args.push(a)
-    }
-
-    pub fn build(self) -> Vec<TaskArgument> {
-        self.args
-    }
-}
-
 pub struct Noop {}
 impl Noop {
     fn new() -> Self {

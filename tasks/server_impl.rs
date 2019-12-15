@@ -229,7 +229,7 @@ mod tests {
         let handler = setup_task_runner();
         let mut req = tasks_grpc_rust::CreateTaskRequest::new();
         req.set_task_name(String::from("spawner"));
-        let mut args = task_lib::ArgumentsBuilder::new();
+        let mut args = task_db_client::ArgumentsBuilder::new();
         args.add_string("subtask", String::from("noop"));
         *req.mut_arguments() = protobuf::RepeatedField::from_vec(args.build());
 
