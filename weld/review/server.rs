@@ -1,6 +1,7 @@
 #[macro_use]
 extern crate tmpl;
 extern crate auth_client;
+extern crate task_client;
 extern crate weld;
 extern crate ws;
 use ws::{Body, Request, Response, Server};
@@ -22,6 +23,7 @@ pub struct ReviewServer {
     static_dir: String,
     base_url: String,
     auth: auth_client::AuthClient,
+    task_client: task_client::TaskRemoteClient,
 }
 
 impl ReviewServer {
@@ -30,12 +32,14 @@ impl ReviewServer {
         static_dir: String,
         base_url: String,
         auth: auth_client::AuthClient,
+        task_client: task_client::TaskRemoteClient,
     ) -> Self {
         Self {
             client: client,
             static_dir: static_dir,
             base_url: base_url,
             auth: auth,
+            task_client: task_client,
         }
     }
 
@@ -139,6 +143,12 @@ impl ReviewServer {
     fn not_found(&self, path: String, _req: Request) -> Response {
         Response::new(Body::from(format!("404 not found: path {}", path)))
     }
+
+    fn start_task(&self, path: String, req: Request) -> Response {
+        self.task_client
+            .create_task(String::from("noop"), Vec::new());
+        Response::new(Body::from("OK"))
+    }
 }
 
 impl Server for ReviewServer {
@@ -156,6 +166,10 @@ impl Server for ReviewServer {
             self.set_cookie(challenge.get_token(), &mut response);
             self.redirect(challenge.get_url(), &mut response);
             return response;
+        }
+
+        if path.starts_with("/api/task") {
+            return self.start_task(path, req);
         }
 
         match path.as_str() {

@@ -4,6 +4,7 @@ extern crate protobuf;
 extern crate tasks_grpc_rust;
 
 use largetable_client::LargeTableClient;
+use std::sync::Arc;
 use tasks_grpc_rust::TaskService;
 use tasks_grpc_rust::{CreateTaskRequest, GetStatusRequest, Status, TaskArgument, TaskStatus};
 
@@ -63,24 +64,27 @@ impl<C: LargeTableClient + Clone + 'static> TaskClient<C> {
     }
 }
 
+#[derive(Clone)]
 pub struct TaskRemoteClient {
-    client: tasks_grpc_rust::TaskServiceClient,
+    client: Arc<tasks_grpc_rust::TaskServiceClient>,
 }
 
 impl TaskRemoteClient {
-    fn opts(&self) -> grpc::RequestOptions {
-        grpc::RequestOptions::new()
-    }
-
     pub fn new(hostname: String, port: u16) -> Self {
         Self {
-            client: tasks_grpc_rust::TaskServiceClient::new_plain(
-                &hostname,
-                port,
-                std::default::Default::default(),
-            )
-            .unwrap(),
+            client: Arc::new(
+                tasks_grpc_rust::TaskServiceClient::new_plain(
+                    &hostname,
+                    port,
+                    std::default::Default::default(),
+                )
+                .unwrap(),
+            ),
         }
+    }
+
+    fn opts(&self) -> grpc::RequestOptions {
+        grpc::RequestOptions::new()
     }
 
     pub fn create_task(&self, task_name: String, args: Vec<TaskArgument>) {

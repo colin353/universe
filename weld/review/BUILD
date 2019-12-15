@@ -13,6 +13,7 @@ rust_binary(
     srcs = ["main.rs"],
     deps = [
         "//auth:auth_client",
+        "//tasks:task_client",
         "//util/flags",
         "//util/tmpl",
         "//util/ws",
@@ -36,6 +37,7 @@ rust_library(
     ],
     deps = [
         "//auth:auth_client",
+        "//tasks:task_client",
         "//third_party:base64",
         "//util/flags",
         "//util/tmpl",
@@ -64,6 +66,7 @@ rust_image(
     base = ":review_base_img",
     deps = [
         "//auth:auth_client",
+        "//tasks:task_client",
         "//util/flags",
         "//util/tmpl",
         "//util/ws",
