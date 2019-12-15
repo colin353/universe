@@ -1,7 +1,7 @@
 #[macro_use]
 extern crate tmpl;
 extern crate largetable_client;
-extern crate task_db_client;
+extern crate task_client;
 extern crate tasks_grpc_rust;
 extern crate ws;
 
@@ -16,13 +16,13 @@ static INDEX: &str = include_str!("index.html");
 
 #[derive(Clone)]
 pub struct TaskWebServer<C: LargeTableClient + Send + Sync + Clone + 'static> {
-    client: task_db_client::TaskClient<C>,
+    client: task_client::TaskClient<C>,
 }
 
 impl<C: LargeTableClient + Clone + Send + Sync + 'static> TaskWebServer<C> {
     pub fn new(database: C) -> Self {
         Self {
-            client: task_db_client::TaskClient::new(database),
+            client: task_client::TaskClient::new(database),
         }
     }
 

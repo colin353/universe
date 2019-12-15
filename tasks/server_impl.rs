@@ -4,14 +4,14 @@ extern crate tokio;
 
 extern crate futures;
 extern crate largetable_client;
-extern crate task_db_client;
+extern crate task_client;
 extern crate task_lib;
 extern crate tasks_grpc_rust;
 
 use futures::sync::mpsc::{unbounded, UnboundedSender};
 use futures::Stream;
 use largetable_client::LargeTableClient;
-use task_db_client::TaskClient;
+use task_client::TaskClient;
 use task_lib::TaskManager;
 use tasks_grpc_rust::{Status, TaskArgument, TaskStatus};
 use tokio::prelude::{future, Future};
@@ -229,7 +229,7 @@ mod tests {
         let handler = setup_task_runner();
         let mut req = tasks_grpc_rust::CreateTaskRequest::new();
         req.set_task_name(String::from("spawner"));
-        let mut args = task_db_client::ArgumentsBuilder::new();
+        let mut args = task_client::ArgumentsBuilder::new();
         args.add_string("subtask", String::from("noop"));
         *req.mut_arguments() = protobuf::RepeatedField::from_vec(args.build());
 

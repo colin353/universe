@@ -25,7 +25,7 @@ rust_library(
     name = "server_impl",
     srcs = ["server_impl.rs"],
     deps = [
-        ":task_db_client",
+        ":task_client",
         ":task_lib",
         ":tasks_grpc_rust",
         "//largetable:largetable_client",
@@ -72,7 +72,7 @@ rust_library(
 )
 
 rust_library(
-    name = "task_db_client",
+    name = "task_client",
     srcs = ["client.rs"],
     deps = [
         ":tasks_grpc_rust",
@@ -93,7 +93,7 @@ rust_library(
         "template.html",
     ],
     deps = [
-        ":task_db_client",
+        ":task_client",
         ":tasks_grpc_rust",
         "//largetable:largetable_client",
         "//util/tmpl",
