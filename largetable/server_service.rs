@@ -15,13 +15,14 @@ use sstable;
 use time;
 
 use std::fs;
-use std::io::Write;
+use std::io::{BufReader, Write};
 use std::path;
 use std::sync::{Arc, Mutex, RwLock};
 
 const DTABLE_EXT: &'static str = "sstable";
 const JOURNAL_EXT: &'static str = "recordio";
 const COMPACTION_POLICIES: &'static str = "__META__POLICIES__";
+const BUFFER_SIZE: usize = 64000;
 
 #[derive(Clone)]
 pub struct LargeTableServiceHandler {
@@ -57,7 +58,7 @@ impl LargeTableServiceHandler {
                         .lock()
                         .unwrap()
                         .push(path.to_str().unwrap().to_owned());
-                    let f = fs::File::open(path).unwrap();
+                    let f = BufReader::with_capacity(BUFFER_SIZE, fs::File::open(path).unwrap());
                     lt.add_dtable(Box::new(f));
                 }
                 Err(e) => panic!("{:?}", e),
@@ -77,7 +78,7 @@ impl LargeTableServiceHandler {
                         .lock()
                         .unwrap()
                         .push(path.to_str().unwrap().to_owned());
-                    let f = fs::File::open(path).unwrap();
+                    let f = BufReader::with_capacity(BUFFER_SIZE, fs::File::open(path).unwrap());
                     lt.load_from_journal(Box::new(f));
                 }
                 Err(e) => panic!("{:?}", e),
@@ -155,7 +156,10 @@ impl LargeTableServiceHandler {
             // simultaneously drop the mtable.
             {
                 let filename = self.get_current_filename(DTABLE_EXT);
-                let f = fs::File::open(filename.clone()).unwrap();
+                let f = BufReader::with_capacity(
+                    BUFFER_SIZE,
+                    fs::File::open(filename.clone()).unwrap(),
+                );
                 self.dtables.lock().unwrap().push(filename);
                 let mut lt = self.largetable.write().unwrap();
                 lt.add_dtable(Box::new(f));
@@ -190,7 +194,7 @@ impl LargeTableServiceHandler {
         let tables = tables_to_replace
             .iter()
             .map(|filename| {
-                let f = fs::File::open(filename).unwrap();
+                let f = BufReader::with_capacity(BUFFER_SIZE, fs::File::open(filename).unwrap());
                 sstable::SSTableReader::new(Box::new(f)).unwrap()
             })
             .collect();
@@ -209,7 +213,7 @@ impl LargeTableServiceHandler {
         {
             // Replace the old dtables with the new compacted one
             *self.dtables.lock().unwrap() = vec![filename.clone()];
-            let reader = fs::File::open(filename).unwrap();
+            let reader = BufReader::new(fs::File::open(filename).unwrap());
             let mut lt = self.largetable.write().unwrap();
             lt.clear_dtables();
             lt.add_dtable(Box::new(reader));
