@@ -238,8 +238,12 @@ fn main() {
                     std::process::exit(1);
                 }
             };
+            let mut req = weld::GetChangeRequest::new();
+            req.mut_change().set_id(id);
+            let c = client.get_change(req);
+
             let mut req = weld::RunBuildQueryRequest::new();
-            req.set_change_id(id);
+            req.set_change_id(c.get_remote_id());
             let response = client.run_build_query(req);
             println!("query: {:?}", response);
         }
@@ -251,8 +255,12 @@ fn main() {
                     std::process::exit(1);
                 }
             };
+            let mut req = weld::GetChangeRequest::new();
+            req.mut_change().set_id(id);
+            let c = client.get_change(req);
+
             let mut req = weld::RunBuildRequest::new();
-            req.set_change_id(id);
+            req.set_change_id(c.get_remote_id());
             req.set_target(target.value());
             let response = client.run_build(req);
             println!("build: {:?}", response);

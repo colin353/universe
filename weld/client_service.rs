@@ -1,6 +1,7 @@
 use largetable_client::LargeTableClient;
 use std::collections::HashSet;
 use weld;
+use weld::WeldServer;
 
 #[derive(Clone)]
 pub struct WeldLocalServiceHandler<C: LargeTableClient> {
@@ -126,19 +127,14 @@ impl<C: LargeTableClient> WeldLocalServiceHandler<C> {
     pub fn run_build(&self, req: &weld::RunBuildRequest) -> weld::RunBuildResponse {
         let mut response = weld::RunBuildResponse::new();
 
-        let friendly_name = match self.repo.get_change(req.get_change_id()) {
-            Some(x) => x.get_friendly_name().to_owned(),
-            None => {
-                println!("no such change: {}", req.get_change_id());
-                response.set_build_output(String::from("could not find change to build"));
-                return response;
-            }
-        };
-
         let output = match std::process::Command::new("bazel")
             .arg("build")
             .arg(req.get_target())
-            .current_dir(format!("{}/local/{}", self.mount_dir, friendly_name))
+            .current_dir(format!(
+                "{}/unsubmitted/{}",
+                self.mount_dir,
+                req.get_change_id()
+            ))
             .output()
         {
             Ok(o) => o,
@@ -167,7 +163,11 @@ impl<C: LargeTableClient> WeldLocalServiceHandler<C> {
         let output = match std::process::Command::new("bazel")
             .arg("test")
             .arg(req.get_target())
-            .current_dir(format!("{}/local/{}", self.mount_dir, friendly_name))
+            .current_dir(format!(
+                "{}/unsubmitted/{}",
+                self.mount_dir,
+                req.get_change_id()
+            ))
             .output()
         {
             Ok(o) => o,
@@ -200,27 +200,43 @@ impl<C: LargeTableClient> WeldLocalServiceHandler<C> {
     }
 
     pub fn run_build_query(&self, req: &weld::RunBuildQueryRequest) -> weld::RunBuildQueryResponse {
-        let friendly_name = match self.repo.get_change(req.get_change_id()) {
-            Some(x) => x.get_friendly_name().to_owned(),
+        let remote_server = match self.repo.remote_server {
+            Some(ref r) => r,
             None => {
-                println!("no such change: {}", req.get_change_id());
+                println!("no remote server to connect to");
                 return weld::RunBuildQueryResponse::new();
             }
         };
 
-        let changes = self
-            .repo
-            .list_changed_files(req.get_change_id(), 0)
+        let mut c = weld::Change::new();
+        c.set_id(req.get_change_id());
+        let change = remote_server.get_change(c);
+
+        if !change.get_found() {
+            println!("change not found");
+            return weld::RunBuildQueryResponse::new();
+        }
+
+        let changes = change
+            .get_changes()
+            .iter()
+            .filter_map(|h| h.get_snapshots().last())
             .filter(|f| !f.get_directory())
             .map(|f| f.get_filename()[1..].to_owned())
             .collect::<Vec<_>>();
+
+        println!("found changed files: {:?}", changes);
 
         let mut files = HashSet::new();
         for changed_file in &changes {
             let output = match std::process::Command::new("bazel")
                 .arg("query")
                 .arg(changed_file)
-                .current_dir(format!("{}/local/{}", self.mount_dir, friendly_name))
+                .current_dir(format!(
+                    "{}/unsubmitted/{}",
+                    self.mount_dir,
+                    req.get_change_id()
+                ))
                 .output()
             {
                 Ok(o) => o,
@@ -252,7 +268,11 @@ impl<C: LargeTableClient> WeldLocalServiceHandler<C> {
             let output = match std::process::Command::new("bazel")
                 .arg("query")
                 .arg(format!("attr('srcs', {}, //...)", file))
-                .current_dir(format!("{}/local/{}", self.mount_dir, friendly_name))
+                .current_dir(format!(
+                    "{}/unsubmitted/{}",
+                    self.mount_dir,
+                    req.get_change_id()
+                ))
                 .output()
             {
                 Ok(o) => o,
@@ -282,7 +302,11 @@ impl<C: LargeTableClient> WeldLocalServiceHandler<C> {
             let output = match std::process::Command::new("bazel")
                 .arg("query")
                 .arg(format!("rdeps(//..., {})", target))
-                .current_dir(format!("{}/local/{}", self.mount_dir, friendly_name))
+                .current_dir(format!(
+                    "{}/unsubmitted/{}",
+                    self.mount_dir,
+                    req.get_change_id()
+                ))
                 .output()
             {
                 Ok(o) => o,
