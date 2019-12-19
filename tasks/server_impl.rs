@@ -4,6 +4,7 @@ extern crate tokio;
 
 extern crate futures;
 extern crate largetable_client;
+extern crate registered_tasks;
 extern crate task_client;
 extern crate task_lib;
 extern crate tasks_grpc_rust;
@@ -157,7 +158,7 @@ impl<C: LargeTableClient + Clone + Send + 'static> task_lib::TaskManager for Man
     }
 
     fn run(self, mut status: TaskStatus) -> task_lib::TaskResultFuture {
-        let task = match task_lib::TASK_REGISTRY.get(status.get_name()) {
+        let task = match registered_tasks::TASK_REGISTRY.get(status.get_name()) {
             Some(t) => t,
             None => {
                 eprintln!("Task not found");

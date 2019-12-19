@@ -25,6 +25,7 @@ rust_library(
     name = "server_impl",
     srcs = ["server_impl.rs"],
     deps = [
+        ":registered_tasks",
         ":task_client",
         ":task_lib",
         ":tasks_grpc_rust",
@@ -66,7 +67,6 @@ rust_library(
     srcs = ["task_lib.rs"],
     deps = [
         ":tasks_grpc_rust",
-        "//third_party:lazy_static",
         "//third_party:tokio",
     ],
 )
@@ -98,5 +98,17 @@ rust_library(
         "//largetable:largetable_client",
         "//util/tmpl",
         "//util/ws",
+    ],
+)
+
+rust_library(
+    name = "registered_tasks",
+    srcs = [
+        "registered_tasks.rs",
+    ],
+    deps = [
+        ":task_lib",
+        "//tasks/implementations:task_examples",
+        "//third_party:lazy_static",
     ],
 )
