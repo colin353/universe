@@ -37,8 +37,7 @@ impl<C: LargeTableClient + Clone + Send + 'static> TaskServiceHandler<C> {
         let h = handler.clone();
         std::thread::spawn(move || {
             let task_runner = receiver
-                .map(move |m| tokio::spawn(h.begin_task(m)))
-                .into_future()
+                .for_each(move |m| tokio::spawn(h.begin_task(m)))
                 .map(|_| ())
                 .map_err(|_| ());
             tokio::run(task_runner);
@@ -203,6 +202,18 @@ mod tests {
         let status = handler.get_status(req);
         assert_eq!(status.get_status(), Status::SUCCESS);
         assert_eq!(status.get_task_id(), "1");
+
+        // Schedule a second one
+        let mut req = tasks_grpc_rust::CreateTaskRequest::new();
+        req.set_task_name(String::from("noop"));
+        let status = handler.create_task(req);
+        assert_eq!(status.get_task_id(), "2");
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        let mut req = tasks_grpc_rust::GetStatusRequest::new();
+        req.set_task_id(status.get_task_id().to_owned());
+        let status = handler.get_status(req);
+        assert_eq!(status.get_status(), Status::SUCCESS);
+        assert_eq!(status.get_task_id(), "2");
     }
 
     #[test]
