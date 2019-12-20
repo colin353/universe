@@ -145,8 +145,10 @@ impl ReviewServer {
     }
 
     fn start_task(&self, path: String, req: Request) -> Response {
-        self.task_client
-            .create_task(String::from("noop"), Vec::new());
+        if path.starts_with("/api/tasks/build/") {
+            self.task_client
+                .create_task(String::from("noop"), Vec::new());
+        }
         Response::new(Body::from("OK"))
     }
 }
@@ -168,7 +170,7 @@ impl Server for ReviewServer {
             return response;
         }
 
-        if path.starts_with("/api/task") {
+        if path.starts_with("/api/tasks/") {
             return self.start_task(path, req);
         }
 

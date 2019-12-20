@@ -35,7 +35,13 @@
     </div>
 
     <div class="actions">
-        <button type="button">Submit</button>
+        <script>
+            async function submit() {
+              response = await fetch('/api/tasks/build/{{id}}', { method: 'POST' })
+              window.location.reload()
+            }
+      </script>
+        <button onclick="submit()" type="button">Submit</button>
     </div>
 
     {{body}}
