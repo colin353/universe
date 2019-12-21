@@ -5,6 +5,8 @@ load("@io_bazel_rules_rust//proto:proto.bzl", "rust_grpc_library")
 load("@io_bazel_rules_rust//rust:rust.bzl", "rust_library")
 load("@io_bazel_rules_rust//rust:rust.bzl", "rust_binary")
 load("@io_bazel_rules_rust//rust:rust.bzl", "rust_test")
+load("@io_bazel_rules_docker//rust:image.bzl", "rust_image")
+load("@io_bazel_rules_docker//docker:docker.bzl", "docker_push")
 
 proto_library(
     name = "tasks_proto",
@@ -114,4 +116,17 @@ rust_library(
         "//tasks/implementations:task_examples",
         "//third_party:lazy_static",
     ],
+)
+
+rust_image(
+    name = "task_img",
+    binary = ":tasks",
+)
+
+docker_push(
+    name = "task_img_push",
+    image = ":task_img",
+    registry = "us.gcr.io",
+    repository = "mushu-194218/tasks",
+    tag = "dev",
 )

@@ -23,7 +23,7 @@ fn main() {
         String::from("localhost"),
         "The weld service hostname"
     );
-    let weld_port = define_flag!("weld_port", 7777, "The weld service hostname");
+    let weld_port = define_flag!("weld_port", 8001, "The weld service hostname");
     parse_flags!(grpc_port, web_port, weld_hostname, weld_port);
 
     let mut server = grpc::ServerBuilder::<tls_api_native_tls::TlsAcceptor>::new();
