@@ -13,7 +13,7 @@ use futures::sync::mpsc::{unbounded, UnboundedSender};
 use futures::Stream;
 use largetable_client::LargeTableClient;
 use task_client::TaskClient;
-use task_lib::TaskManager;
+use task_lib::{TaskManager, TaskServerConfiguration};
 use tasks_grpc_rust::{Status, TaskArgument, TaskStatus};
 use tokio::prelude::{future, Future};
 
@@ -23,15 +23,17 @@ pub type TaskFuture = Box<dyn Future<Item = (), Error = ()> + Send>;
 pub struct TaskServiceHandler<C: LargeTableClient + Clone + 'static> {
     client: TaskClient<C>,
     scheduler: UnboundedSender<String>,
+    config: TaskServerConfiguration,
 }
 
 impl<C: LargeTableClient + Clone + Send + 'static> TaskServiceHandler<C> {
-    pub fn new(database: C) -> Self {
+    pub fn new(config: TaskServerConfiguration, database: C) -> Self {
         let (sender, mut receiver) = unbounded();
 
         let handler = Self {
             client: TaskClient::new(database),
             scheduler: sender,
+            config: config,
         };
 
         let h = handler.clone();
@@ -93,7 +95,7 @@ impl<C: LargeTableClient + Clone + Send + 'static> TaskServiceHandler<C> {
             }
         };
 
-        let m = Manager::new(task_id.clone(), self.client.clone());
+        let m = Manager::new(task_id.clone(), self.client.clone(), self.config.clone());
         Box::new(m.run(status).map(std::mem::drop))
     }
 }
@@ -121,12 +123,14 @@ impl<C: LargeTableClient + Clone + Send + 'static> tasks_grpc_rust::TaskService
 struct Manager<C: LargeTableClient + Clone + 'static> {
     task_id: String,
     client: TaskClient<C>,
+    config: TaskServerConfiguration,
 }
 impl<C: LargeTableClient + Clone + 'static> Manager<C> {
-    pub fn new(task_id: String, client: TaskClient<C>) -> Self {
+    pub fn new(task_id: String, client: TaskClient<C>, config: TaskServerConfiguration) -> Self {
         Self {
             task_id: task_id,
             client: client,
+            config: config,
         }
     }
 }
@@ -148,7 +152,7 @@ impl<C: LargeTableClient + Clone + Send + 'static> task_lib::TaskManager for Man
         status.set_task_id(subtask_id.clone());
         self.client.write(&status);
 
-        let m = Manager::new(subtask_id.clone(), self.client.clone());
+        let m = Manager::new(subtask_id.clone(), self.client.clone(), self.config.clone());
         let passed_client = self.client.clone();
         Box::new(m.run(status).and_then(move |s| {
             passed_client.write(&s);
@@ -177,6 +181,10 @@ impl<C: LargeTableClient + Clone + Send + 'static> task_lib::TaskManager for Man
                 }),
         )
     }
+
+    fn get_configuration(&self) -> &TaskServerConfiguration {
+        &self.config
+    }
 }
 
 #[cfg(test)]
@@ -186,7 +194,8 @@ mod tests {
 
     fn setup_task_runner() -> TaskServiceHandler<largetable_test::LargeTableMockClient> {
         let database = largetable_test::LargeTableMockClient::new();
-        TaskServiceHandler::new(database)
+        let config = TaskServerConfiguration::new();
+        TaskServiceHandler::new(config, database)
     }
 
     #[test]

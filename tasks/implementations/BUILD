@@ -15,3 +15,14 @@ rust_library(
         "//third_party:tokio",
     ],
 )
+
+rust_library(
+    name = "task_build",
+    srcs = ["task_build.rs"],
+    deps = [
+        "//tasks:task_lib",
+        "//tasks:tasks_grpc_rust",
+        "//third_party:tokio",
+        "//weld",
+    ],
+)

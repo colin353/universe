@@ -2,7 +2,7 @@ extern crate tasks_grpc_rust;
 extern crate tokio;
 
 use std::collections::HashMap;
-use tasks_grpc_rust::{Status, TaskArgument, TaskStatus};
+use tasks_grpc_rust::{Status, TaskArgument, TaskArtifact, TaskStatus};
 use tokio::prelude::{future, Future};
 
 pub type TaskResultFuture = Box<dyn Future<Item = TaskStatus, Error = ()> + Send>;
@@ -21,8 +21,48 @@ pub trait TaskManager: Send {
         status.set_status(Status::SUCCESS);
         Box::new(future::ok(status))
     }
+    fn get_configuration(&self) -> &TaskServerConfiguration;
 }
 
 pub trait Task: Sync + 'static {
     fn run(&self, args: &[TaskArgument], manager: Box<dyn TaskManager>) -> TaskResultFuture;
+}
+
+#[derive(Clone)]
+pub struct TaskServerConfiguration {
+    pub weld_hostname: String,
+    pub weld_port: u16,
+}
+
+impl TaskServerConfiguration {
+    pub fn new() -> Self {
+        Self {
+            weld_hostname: String::new(),
+            weld_port: 0,
+        }
+    }
+}
+
+pub struct ArtifactBuilder;
+impl ArtifactBuilder {
+    pub fn from_string(name: &str, value: String) -> TaskArtifact {
+        let mut a = TaskArtifact::new();
+        a.set_name(name.to_owned());
+        a.set_value_string(value);
+        a
+    }
+
+    pub fn from_int(name: &str, value: i64) -> TaskArtifact {
+        let mut a = TaskArtifact::new();
+        a.set_name(name.to_owned());
+        a.set_value_int(value);
+        a
+    }
+
+    pub fn from_bool(name: &str, value: bool) -> TaskArtifact {
+        let mut a = TaskArtifact::new();
+        a.set_name(name.to_owned());
+        a.set_value_bool(value);
+        a
+    }
 }

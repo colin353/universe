@@ -146,8 +146,16 @@ impl ReviewServer {
 
     fn start_task(&self, path: String, req: Request) -> Response {
         if path.starts_with("/api/tasks/build/") {
+            let change_id: i64 = match path.rsplit("/").next() {
+                Some(c) => c.parse().unwrap_or(0),
+                None => return Response::new(Body::from("no such change")),
+            };
+
+            let mut args = task_client::ArgumentsBuilder::new();
+            args.add_int("change_id", change_id);
+
             self.task_client
-                .create_task(String::from("noop"), Vec::new());
+                .create_task(String::from("build"), args.build());
         }
         Response::new(Body::from("OK"))
     }

@@ -43,6 +43,7 @@ rust_binary(
     srcs = ["server.rs"],
     deps = [
         ":server_impl",
+        ":task_lib",
         ":task_webserver",
         ":tasks_grpc_rust",
         "//largetable:largetable_test",
@@ -109,6 +110,7 @@ rust_library(
     ],
     deps = [
         ":task_lib",
+        "//tasks/implementations:task_build",
         "//tasks/implementations:task_examples",
         "//third_party:lazy_static",
     ],
