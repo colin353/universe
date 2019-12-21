@@ -89,6 +89,7 @@ rust_library(
         "task_webserver.rs",
     ],
     data = [
+        "detail.html",
         "index.html",
         "template.html",
     ],

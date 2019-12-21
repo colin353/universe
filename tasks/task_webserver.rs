@@ -8,11 +8,12 @@ extern crate ws;
 mod render;
 
 use largetable_client::LargeTableClient;
-use tasks_grpc_rust::{Status, TaskStatus};
+use tasks_grpc_rust::{Status, TaskArgument, TaskArtifact, TaskStatus};
 use ws::{Body, Request, Response, Server};
 
 static TEMPLATE: &str = include_str!("template.html");
 static INDEX: &str = include_str!("index.html");
+static DETAIL: &str = include_str!("detail.html");
 
 #[derive(Clone)]
 pub struct TaskWebServer<C: LargeTableClient + Send + Sync + Clone + 'static> {
@@ -58,10 +59,28 @@ impl<C: LargeTableClient + Clone + Send + Sync + 'static> TaskWebServer<C> {
 
         Response::new(Body::from(self.wrap_template(page)))
     }
+
+    fn task_detail(&self, path: String, _req: Request) -> Response {
+        let task = match self.client.read(&path[1..]) {
+            Some(t) => t,
+            None => return self.not_found(),
+        };
+
+        let page = tmpl::apply(DETAIL, &render::status(&task));
+        Response::new(Body::from(self.wrap_template(page)))
+    }
+
+    fn not_found(&self) -> Response {
+        Response::new(Body::from("not found"))
+    }
 }
 
 impl<C: LargeTableClient + Send + Sync + Clone + 'static> Server for TaskWebServer<C> {
     fn respond(&self, path: String, req: Request, token: &str) -> Response {
-        self.index(path, req)
+        if path == "/" {
+            return self.index(path, req);
+        }
+
+        self.task_detail(path, req)
     }
 }

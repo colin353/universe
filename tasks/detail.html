@@ -1,0 +1,30 @@
+<div class="content">
+    <h3>{{name}}</h3>
+
+    <p>status: {{status}}</p>
+    <p>reason: {{reason}}</p>
+
+    {{arguments != 0}}
+    <b>arguments</b>
+    <table class='task-list'>
+        {{arguments[]}}
+        <tr>
+            <td>{{name}}</td>
+            <td>{{value}}</td>
+        </tr>
+        {{/arguments}}
+    </table>
+    {{/arguments}}
+
+    {{artifacts != 0}}
+    <b>artifacts</b>
+    <table class='task-list'>
+        {{artifacts[]}}
+        <tr>
+            <td>{{name}}</td>
+            <td>{{value}}</td>
+        </tr>
+        {{/artifacts}}
+    </table>
+    {{/artifacts}}
+</div>
