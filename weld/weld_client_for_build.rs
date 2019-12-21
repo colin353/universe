@@ -57,7 +57,8 @@ fn main() {
     repo.add_remote_server(client);
 
     // Start gRPC service.
-    let handler = client_service::WeldLocalServiceHandler::new(repo.clone());
+    let mut handler = client_service::WeldLocalServiceHandler::new(repo.clone());
+    handler.set_mount_dir(mount_point.value());
 
     let mut server = grpc::ServerBuilder::<tls_api_native_tls::TlsAcceptor>::new();
     server.http.set_port(port.value());

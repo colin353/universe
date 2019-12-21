@@ -139,6 +139,20 @@ rust_binary(
     ],
 )
 
+rust_image(
+    name = "build_server_img",
+    base = "@build_base//image",
+    binary = ":weld_client_for_build",
+)
+
+docker_push(
+    name = "build_server_img_push",
+    image = ":build_server_img",
+    registry = "us.gcr.io",
+    repository = "mushu-194218/build",
+    tag = "dev",
+)
+
 rust_library(
     name = "weld_server_lib",
     srcs = [

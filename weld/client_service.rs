@@ -138,8 +138,8 @@ impl<C: LargeTableClient> WeldLocalServiceHandler<C> {
             .output()
         {
             Ok(o) => o,
-            Err(_) => {
-                response.set_build_output(String::from("could not start build command!"));
+            Err(e) => {
+                println!("build command failed to start: {:?}", e);
                 return response;
             }
         };
@@ -240,8 +240,8 @@ impl<C: LargeTableClient> WeldLocalServiceHandler<C> {
                 .output()
             {
                 Ok(o) => o,
-                Err(_) => {
-                    println!("command failed to start");
+                Err(e) => {
+                    println!("command failed to start: {:?}", e);
                     return weld::RunBuildQueryResponse::new();
                 }
             };
@@ -276,8 +276,8 @@ impl<C: LargeTableClient> WeldLocalServiceHandler<C> {
                 .output()
             {
                 Ok(o) => o,
-                Err(_) => {
-                    println!("command failed to start");
+                Err(e) => {
+                    println!("command failed to start: {:?}", e);
                     return weld::RunBuildQueryResponse::new();
                 }
             };
@@ -310,8 +310,8 @@ impl<C: LargeTableClient> WeldLocalServiceHandler<C> {
                 .output()
             {
                 Ok(o) => o,
-                Err(_) => {
-                    println!("command failed to start");
+                Err(e) => {
+                    println!("command failed to start: {:?}", e);
                     return weld::RunBuildQueryResponse::new();
                 }
             };
