@@ -22,27 +22,43 @@ pub fn get_timestamp_usec() -> u64 {
     (since_epoch.as_secs() as u64) * 1_000_000 + (since_epoch.subsec_nanos() / 1000) as u64
 }
 
+fn task_id_to_rowname(task_id: &str) -> String {
+    let task_number: u64 = match task_id.parse() {
+        Ok(x) => x,
+        Err(_) => return task_id.to_owned(),
+    };
+    format!("{:016x}", std::u64::MAX - task_number)
+}
+
 impl<C: LargeTableClient + Clone + 'static> TaskClient<C> {
     pub fn new(db: C) -> Self {
         Self { database: db }
     }
 
     pub fn write(&self, status: &TaskStatus) {
-        self.database
-            .write_proto(TASK_STATUS, status.get_task_id(), 0, status);
+        self.database.write_proto(
+            TASK_STATUS,
+            &task_id_to_rowname(status.get_task_id()),
+            0,
+            status,
+        );
     }
 
     pub fn read(&self, task_id: &str) -> Option<TaskStatus> {
-        let mut status: TaskStatus = match self.database.read_proto(TASK_STATUS, task_id, 0) {
-            Some(s) => s,
-            None => return None,
-        };
+        let mut status: TaskStatus =
+            match self
+                .database
+                .read_proto(TASK_STATUS, &task_id_to_rowname(task_id), 0)
+            {
+                Some(s) => s,
+                None => return None,
+            };
 
         if status.get_end_time() > 0 {
             let elapsed = status.get_end_time() - status.get_start_time();
             status.set_elapsed_time(elapsed);
         } else {
-            let elapsed = get_timestamp_usec() - status.get_end_time();
+            let elapsed = get_timestamp_usec() - status.get_start_time();
             status.set_elapsed_time(elapsed);
         }
 
@@ -80,7 +96,7 @@ impl<C: LargeTableClient + Clone + 'static> TaskClient<C> {
             String::from(TASK_STATUS),
             String::new(),
             String::new(),
-            String::new(),
+            String::from("s"),
             0,
         )
         .map(|(_key, val)| val)

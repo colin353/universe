@@ -10,7 +10,9 @@
         <tr onclick="window.location.href='/{{id}}'">
             <td class='id'><a class='invisible-link' href="/{{id}}">#{{id}}</a></td>
             <td class='name'>{{name}}</td>
-            <td class='status'>{{status}}</td>
+            <td class='status'>
+                <div class='status-badge {{status}}'>{{status}}</div>
+            </td>
         </tr>
         {{/progress}}
     </table>
@@ -28,7 +30,9 @@
         <tr onclick="window.location.href='/{{id}}'">
             <td class='id'><a class='invisible-link' href="/{{id}}">#{{id}}</a></td>
             <td class='name'>{{name}}</td>
-            <td class='status'>{{status}}</td>
+            <td class='status'>
+                <div class='status-badge {{status}}'>{{status}}</div>
+            </td>
         </tr>
         {{/completed}}
     </table>

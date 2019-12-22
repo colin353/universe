@@ -31,6 +31,10 @@ pub fn artifact(a: &tasks_grpc_rust::TaskArtifact) -> tmpl::ContentsMap {
     )
 }
 
+fn is_big_artifact(a: &tasks_grpc_rust::TaskArtifact) -> bool {
+    a.get_value_string().len() > 144
+}
+
 pub fn status(s: &tasks_grpc_rust::TaskStatus) -> tmpl::ContentsMap {
     content!(
         "id" => s.get_task_id(),
@@ -41,6 +45,8 @@ pub fn status(s: &tasks_grpc_rust::TaskStatus) -> tmpl::ContentsMap {
         "elapsed_time" => s.get_elapsed_time(),
         "reason" => s.get_reason();
         "arguments" => s.get_arguments().iter().map(|a| argument(a)).collect()
-        "artifacts" => s.get_artifacts().iter().map(|a| artifact(a)).collect()
+        "artifacts" => s.get_artifacts().iter().filter(|a| !is_big_artifact(&a)).map(|a| artifact(a)).collect()
+        "big_artifacts" => s.get_artifacts().iter().filter(|a| is_big_artifact(&a)).map(|a| artifact(a)).collect()
+        "subtasks" => s.get_subtasks().iter().map(|s| status(s)).collect()
     )
 }

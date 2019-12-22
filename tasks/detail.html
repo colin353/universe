@@ -1,7 +1,8 @@
 <div class="content">
-    <h3>{{name}}</h3>
+    <h3>{{name}}
+        <div class='status-badge {{status}}'>{{status}}</div>
+    </h3>
 
-    <p>status: {{status}}</p>
     {{reason != ""}}
     <p>reason: {{reason}}</p>
     {{/reason}}
@@ -21,17 +22,39 @@
     <table class='task-list'>
         {{arguments[]}}
         <tr>
-            <td>{{name}}</td>
+            <td style="width: 200px;">{{name}}</td>
             <td>{{value}}</td>
         </tr> {{/arguments}}
-    </table> {{/arguments}} {{artifacts != 0}} <b>artifacts</b>
+    </table> {{/arguments}}
+
+    {{subtasks != 0}}
+    <b>subtasks</b>
+    <table class='task-list'>
+        {{subtasks[]}}
+        <tr onclick=" window.location.href='/{{id}}'">
+            <td class='id'><a class='invisible-link' href="/ {{id}}">#{{id}}</a></td>
+            <td class='name'>{{name}}</td>
+            <td class='status'>
+                <div class='status-badge {{status}}'>{{status}}</div>
+            </td>
+        </tr>
+        {{/subtasks}}
+    </table>
+    {{/subtasks}}
+
+    {{artifacts != 0}} <b>artifacts</b>
     <table class='task-list'>
         {{artifacts[]}}
         <tr>
-            <td>{{name}}</td>
+            <td style="width: 200px;">{{name}}</td>
             <td>{{value}}</td>
         </tr>
         {{/artifacts}}
     </table>
     {{/artifacts}}
+
+    {{big_artifacts[]}}
+    <b>{{name}}</b>
+    <pre class="log-block">{{value}}</pre>
+    {{/big_artifacts}}
 </div>
