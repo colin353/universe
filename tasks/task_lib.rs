@@ -7,11 +7,11 @@ use tokio::prelude::{future, Future};
 
 pub type TaskResultFuture = Box<dyn Future<Item = TaskStatus, Error = ()> + Send>;
 
-pub trait TaskManager: Send {
+pub trait TaskManager: Send + Sync {
     fn set_status(&self, status: &TaskStatus);
     fn get_status(&self) -> TaskStatus;
     fn spawn(&self, task_name: &str, arguments: Vec<TaskArgument>) -> TaskResultFuture;
-    fn run(self, mut status: TaskStatus) -> TaskResultFuture;
+    fn run(self, status: TaskStatus) -> TaskResultFuture;
     fn failure(&self, mut status: TaskStatus, reason: &str) -> TaskResultFuture {
         status.set_status(Status::FAILURE);
         status.set_reason(reason.to_owned());

@@ -20,13 +20,13 @@ use tokio::prelude::{future, Future};
 pub type TaskFuture = Box<dyn Future<Item = (), Error = ()> + Send>;
 
 #[derive(Clone)]
-pub struct TaskServiceHandler<C: LargeTableClient + Clone + 'static> {
+pub struct TaskServiceHandler<C: LargeTableClient + Clone + Sync + 'static> {
     client: TaskClient<C>,
     scheduler: UnboundedSender<String>,
     config: TaskServerConfiguration,
 }
 
-impl<C: LargeTableClient + Clone + Send + 'static> TaskServiceHandler<C> {
+impl<C: LargeTableClient + Clone + Send + Sync + 'static> TaskServiceHandler<C> {
     pub fn new(config: TaskServerConfiguration, database: C) -> Self {
         let (sender, mut receiver) = unbounded();
 
@@ -94,7 +94,7 @@ impl<C: LargeTableClient + Clone + Send + 'static> TaskServiceHandler<C> {
     }
 }
 
-impl<C: LargeTableClient + Clone + Send + 'static> tasks_grpc_rust::TaskService
+impl<C: LargeTableClient + Clone + Send + Sync + 'static> tasks_grpc_rust::TaskService
     for TaskServiceHandler<C>
 {
     fn create_task(
@@ -114,12 +114,12 @@ impl<C: LargeTableClient + Clone + Send + 'static> tasks_grpc_rust::TaskService
     }
 }
 
-struct Manager<C: LargeTableClient + Clone + 'static> {
+struct Manager<C: LargeTableClient + Clone + Sync + 'static> {
     task_id: String,
     client: TaskClient<C>,
     config: TaskServerConfiguration,
 }
-impl<C: LargeTableClient + Clone + 'static> Manager<C> {
+impl<C: LargeTableClient + Clone + Sync + 'static> Manager<C> {
     pub fn new(task_id: String, client: TaskClient<C>, config: TaskServerConfiguration) -> Self {
         Self {
             task_id: task_id,
@@ -129,7 +129,7 @@ impl<C: LargeTableClient + Clone + 'static> Manager<C> {
     }
 }
 
-impl<C: LargeTableClient + Clone + Send + 'static> task_lib::TaskManager for Manager<C> {
+impl<C: LargeTableClient + Clone + Send + Sync + 'static> task_lib::TaskManager for Manager<C> {
     fn get_status(&self) -> TaskStatus {
         self.client.read(&self.task_id).unwrap()
     }

@@ -162,6 +162,7 @@ impl<C: LargeTableClient> WeldLocalServiceHandler<C> {
 
         let output = match std::process::Command::new("bazel")
             .arg("test")
+            .arg("--test_output=errors")
             .arg(req.get_target())
             .current_dir(format!(
                 "{}/unsubmitted/{}",
@@ -189,7 +190,7 @@ impl<C: LargeTableClient> WeldLocalServiceHandler<C> {
 
         // Status code 4 means that there were no errors, but no test targets
         if output.status.success() || output.status.code() == Some(4) {
-            response.set_build_success(true);
+            response.set_test_success(true);
         } else {
             println!("command failed: {}", response.get_test_output());
             return response;

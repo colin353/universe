@@ -13,7 +13,18 @@ lazy_static! {
         let mut m: HashMap<&'static str, Box<dyn Task>> = HashMap::new();
         m.insert("noop", Box::new(task_examples::Noop::new()));
         m.insert("spawner", Box::new(task_examples::Spawner::new()));
-        m.insert("build", Box::new(task_build::WeldBuildTask::new()));
+        m.insert(
+            task_build::PRESUBMIT_TASK,
+            Box::new(task_build::WeldPresubmitTask::new()),
+        );
+        m.insert(
+            task_build::BUILD_TASK,
+            Box::new(task_build::WeldBuildTask::new()),
+        );
+        m.insert(
+            task_build::QUERY_TASK,
+            Box::new(task_build::WeldQueryTask::new()),
+        );
         m
     };
 }

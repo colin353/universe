@@ -155,7 +155,7 @@ impl ReviewServer {
             args.add_int("change_id", change_id);
 
             self.task_client
-                .create_task(String::from("build"), args.build());
+                .create_task(String::from("presubmit"), args.build());
         }
         Response::new(Body::from("OK"))
     }
