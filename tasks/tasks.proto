@@ -37,6 +37,9 @@ message TaskStatus {
   repeated TaskArgument arguments = 5;
   repeated TaskArtifact artifacts = 6;
   repeated TaskStatus subtasks = 7;
+  uint64 start_time = 8;
+  uint64 end_time = 9;
+  uint64 elapsed_time = 10;
 }
 
 message GetStatusRequest { string task_id = 1; }

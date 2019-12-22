@@ -2,7 +2,19 @@
     <h3>{{name}}</h3>
 
     <p>status: {{status}}</p>
+    {{reason != ""}}
     <p>reason: {{reason}}</p>
+    {{/reason}}
+
+    <p>
+        {{end_time == 0}}started
+        <span class='time-interval' time-interval="{{elapsed_time}}"></span>
+        ago
+        {{/end_time}}
+        {{end_time != 0}}took
+        <span class='time-interval' time-interval="{{elapsed_time}}"></span>
+        {{/end_time}}
+    </p>
 
     {{arguments != 0}}
     <b>arguments</b>
@@ -11,13 +23,8 @@
         <tr>
             <td>{{name}}</td>
             <td>{{value}}</td>
-        </tr>
-        {{/arguments}}
-    </table>
-    {{/arguments}}
-
-    {{artifacts != 0}}
-    <b>artifacts</b>
+        </tr> {{/arguments}}
+    </table> {{/arguments}} {{artifacts != 0}} <b>artifacts</b>
     <table class='task-list'>
         {{artifacts[]}}
         <tr>

@@ -90,4 +90,46 @@
     {{content}}
 </body>
 
+<script>
+    let elements = document.getElementsByClassName("timestamp");
+    for (var i = 0; i < elements.length; i++) {
+        const el = elements[i];
+        const t = el.getAttribute("data-timestamp");
+        const options = {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+        }
+        el.innerHTML = (new Date(parseInt(t) / 1000)).toLocaleDateString("en-US", options);
+    };
+
+    function humanTime(t) {
+        if (t < 1) {
+            return "less than a second"
+        } else if (t < 60) {
+            return t + " seconds"
+        } else if (t < 60 * 60) {
+            return Math.round(t / 60) + " minutes"
+        } else if (t < 60 * 60 * 24) {
+            return Math.round(t / (60 * 60)) + " hours"
+        } else if (t < 60 * 60 * 24 * 7) {
+            return Math.round(t / (60 * 60 * 24)) + " days"
+        } else if (t < 60 * 60 * 24 * 7 * 4) {
+            return Math.round(t / (60 * 60 * 24 * 7)) + " weeks"
+        } else if (t < 60 * 60 * 24 * 365) {
+            return Math.round(t / (60 * 60 * 24 * 7 * 4)) + " months"
+        } else {
+            return Math.round(t / (60 * 60 * 24 * 365)) + " years"
+        }
+    }
+
+    elements = document.getElementsByClassName("time-interval");
+    for (var i = 0; i < elements.length; i++) {
+        const el = elements[i];
+        const t = parseInt(el.getAttribute("time-interval")) / 1000000;
+        el.innerHTML = humanTime(t);
+    };
+</script>
+
+
 </html>

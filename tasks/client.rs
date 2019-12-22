@@ -16,6 +16,12 @@ pub struct TaskClient<C: LargeTableClient + Clone + 'static> {
     database: C,
 }
 
+pub fn get_timestamp_usec() -> u64 {
+    let now = std::time::SystemTime::now();
+    let since_epoch = now.duration_since(std::time::UNIX_EPOCH).unwrap();
+    (since_epoch.as_secs() as u64) * 1_000_000 + (since_epoch.subsec_nanos() / 1000) as u64
+}
+
 impl<C: LargeTableClient + Clone + 'static> TaskClient<C> {
     pub fn new(db: C) -> Self {
         Self { database: db }
@@ -27,7 +33,24 @@ impl<C: LargeTableClient + Clone + 'static> TaskClient<C> {
     }
 
     pub fn read(&self, task_id: &str) -> Option<TaskStatus> {
-        self.database.read_proto(TASK_STATUS, task_id, 0)
+        let mut status: TaskStatus = match self.database.read_proto(TASK_STATUS, task_id, 0) {
+            Some(s) => s,
+            None => return None,
+        };
+
+        if status.get_end_time() > 0 {
+            let elapsed = status.get_end_time() - status.get_start_time();
+            status.set_elapsed_time(elapsed);
+        } else {
+            let elapsed = get_timestamp_usec() - status.get_end_time();
+            status.set_elapsed_time(elapsed);
+        }
+
+        for subtask_status in self.list_subtasks(task_id) {
+            status.mut_subtasks().push(subtask_status);
+        }
+
+        Some(status)
     }
 
     pub fn reserve_task_id(&self) -> String {

@@ -36,6 +36,9 @@ pub fn status(s: &tasks_grpc_rust::TaskStatus) -> tmpl::ContentsMap {
         "id" => s.get_task_id(),
         "status" => format!("{:?}", s.get_status()),
         "name" => s.get_name(),
+        "start_time" => s.get_start_time(),
+        "end_time" => s.get_end_time(),
+        "elapsed_time" => s.get_elapsed_time(),
         "reason" => s.get_reason();
         "arguments" => s.get_arguments().iter().map(|a| argument(a)).collect()
         "artifacts" => s.get_artifacts().iter().map(|a| artifact(a)).collect()

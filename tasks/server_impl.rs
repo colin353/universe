@@ -12,7 +12,7 @@ extern crate tasks_grpc_rust;
 use futures::sync::mpsc::{unbounded, UnboundedSender};
 use futures::Stream;
 use largetable_client::LargeTableClient;
-use task_client::TaskClient;
+use task_client::{get_timestamp_usec, TaskClient};
 use task_lib::{TaskManager, TaskServerConfiguration};
 use tasks_grpc_rust::{Status, TaskArgument, TaskStatus};
 use tokio::prelude::{future, Future};
@@ -67,20 +67,14 @@ impl<C: LargeTableClient + Clone + Send + 'static> TaskServiceHandler<C> {
         &self,
         req: tasks_grpc_rust::GetStatusRequest,
     ) -> tasks_grpc_rust::TaskStatus {
-        let mut status: TaskStatus = match self.client.read(req.get_task_id()) {
+        match self.client.read(req.get_task_id()) {
             Some(s) => s,
             None => {
                 let mut s = TaskStatus::new();
                 s.set_status(Status::DOES_NOT_EXIST);
                 return s;
             }
-        };
-
-        for subtask_status in self.client.list_subtasks(req.get_task_id()) {
-            status.mut_subtasks().push(subtask_status);
         }
-
-        status
     }
 
     pub fn begin_task(&self, task_id: String) -> TaskFuture {
@@ -172,10 +166,15 @@ impl<C: LargeTableClient + Clone + Send + 'static> task_lib::TaskManager for Man
             }
         };
 
+        status.set_status(Status::STARTED);
+        status.set_start_time(get_timestamp_usec());
+        self.set_status(&status);
+
         let passed_client = self.client.clone();
         Box::new(
             task.run(status.get_arguments(), Box::new(self))
-                .and_then(move |status| {
+                .and_then(move |mut status| {
+                    status.set_end_time(get_timestamp_usec());
                     passed_client.write(&status);
                     future::ok(status)
                 }),
