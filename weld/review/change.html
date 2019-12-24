@@ -42,6 +42,12 @@
             }
       </script>
         <button onclick="submit()" type="button">Submit</button>
+
+        {{tasks != 0}}
+        {{tasks[]}}
+        <div class='pill {{status}}'>{{name}}</div>
+        {{/tasks}}
+        {{/tasks}}
     </div>
 
     {{body}}

@@ -1,3 +1,4 @@
+use task_client;
 use tmpl;
 use weld;
 
@@ -77,4 +78,19 @@ pub fn change(c: &weld::Change) -> tmpl::ContentsMap {
         "description" => weld::render_change_description(c.get_description());
         "changes" => c.get_changes().iter().filter_map(|f| file_history(f, latest_snapshot)).collect()
     )
+}
+
+pub fn get_task_pills(c: &task_client::TaskStatus) -> Vec<tmpl::ContentsMap> {
+    if c.get_subtasks().len() == 0 {
+        return vec![content!(
+            "name" => c.get_name(),
+            "status" => format!("{:?}", c.get_status())
+        )];
+    }
+
+    c.get_subtasks()
+        .iter()
+        .map(|x| get_task_pills(x))
+        .flatten()
+        .collect()
 }

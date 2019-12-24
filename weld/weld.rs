@@ -39,6 +39,7 @@ pub trait WeldServer {
     fn get_latest_change(&self) -> weld::Change;
     fn list_files(&self, req: weld::FileIdentifier) -> Vec<File>;
     fn get_submitted_changes(&self, req: weld::GetSubmittedChangesRequest) -> Vec<Change>;
+    fn register_task_for_change(&self, req: weld::Change);
 }
 
 impl WeldServerClient {
@@ -155,6 +156,13 @@ impl WeldServer for WeldServerClient {
             .1
             .take_changes()
             .into_vec()
+    }
+
+    fn register_task_for_change(&self, req: weld::Change) {
+        self.client
+            .register_task_for_change(self.opts(), req)
+            .wait()
+            .expect("rpc");
     }
 }
 

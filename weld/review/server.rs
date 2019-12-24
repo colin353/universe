@@ -105,6 +105,16 @@ impl ReviewServer {
         }
 
         let mut content = render::change(&change);
+
+        if !change.get_task_id().is_empty() {
+            if let Some(response) = self.task_client.get_status(change.get_task_id().to_owned()) {
+                content.insert(
+                    "tasks",
+                    tmpl::ContentsMultiMap::from(render::get_task_pills(&response)),
+                )
+            }
+        }
+
         let body = tmpl::apply(MODIFIED_FILES, &content);
         content.insert("body", body);
 
@@ -154,8 +164,14 @@ impl ReviewServer {
             let mut args = task_client::ArgumentsBuilder::new();
             args.add_int("change_id", change_id);
 
-            self.task_client
+            let mut response = self
+                .task_client
                 .create_task(String::from("presubmit"), args.build());
+
+            let mut c = weld::Change::new();
+            c.set_id(change_id as u64);
+            c.set_task_id(response.take_task_id());
+            self.client.register_task_for_change(c);
         }
         Response::new(Body::from("OK"))
     }

@@ -6,7 +6,7 @@ extern crate tasks_grpc_rust;
 use largetable_client::LargeTableClient;
 use std::sync::Arc;
 use tasks_grpc_rust::TaskService;
-use tasks_grpc_rust::{CreateTaskRequest, GetStatusRequest, Status, TaskArgument, TaskStatus};
+pub use tasks_grpc_rust::{CreateTaskRequest, GetStatusRequest, Status, TaskArgument, TaskStatus};
 
 const TASK_IDS: &'static str = "task_ids";
 const TASK_STATUS: &'static str = "task_status";
@@ -126,14 +126,15 @@ impl TaskRemoteClient {
         grpc::RequestOptions::new()
     }
 
-    pub fn create_task(&self, task_name: String, args: Vec<TaskArgument>) {
+    pub fn create_task(&self, task_name: String, args: Vec<TaskArgument>) -> TaskStatus {
         let mut req = CreateTaskRequest::new();
         req.set_task_name(task_name);
         req.set_arguments(protobuf::RepeatedField::from_vec(args));
         self.client
             .create_task(self.opts(), req)
             .wait()
-            .expect("rpc");
+            .expect("rpc")
+            .1
     }
 
     pub fn get_status(&self, task_id: String) -> Option<TaskStatus> {

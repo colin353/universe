@@ -281,6 +281,17 @@ impl<C: LargeTableClient> WeldServiceHandler<C> {
         }
         output
     }
+
+    pub fn register_task_for_change(&self, mut req: weld::Change) -> weld::Change {
+        let mut ch = match self.repo.get_change(req.get_id()) {
+            Some(c) => c,
+            None => return weld::Change::new(),
+        };
+
+        ch.set_task_id(req.take_task_id());
+        self.repo.update_change(&ch);
+        ch
+    }
 }
 
 fn index_to_rowname(index: u64) -> String {
@@ -383,6 +394,17 @@ impl<C: LargeTableClient> weld::WeldService for WeldServiceHandler<C> {
     ) -> grpc::SingleResponse<weld::GetSubmittedChangesResponse> {
         match self.authenticate(&m) {
             Some(_) => grpc::SingleResponse::completed(self.get_submitted_changes(&req)),
+            None => grpc::SingleResponse::err(grpc::Error::Other("unauthenticated")),
+        }
+    }
+
+    fn register_task_for_change(
+        &self,
+        m: grpc::RequestOptions,
+        req: weld::Change,
+    ) -> grpc::SingleResponse<weld::Change> {
+        match self.authenticate(&m) {
+            Some(_) => grpc::SingleResponse::completed(self.register_task_for_change(req)),
             None => grpc::SingleResponse::err(grpc::Error::Other("unauthenticated")),
         }
     }
