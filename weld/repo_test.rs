@@ -1115,4 +1115,67 @@ mod tests {
             "original"
         );
     }
+
+    #[test]
+    fn test_read_remote_with_revert() {
+        let repo = make_remote_connected_test_repo();
+
+        // make a change with a modified file
+        let change = weld::Change::new();
+        let id = repo.make_change(change);
+
+        let mut test_file = File::new();
+        test_file.set_filename(String::from("/config.txt"));
+        test_file.set_contents(String::from("original").into_bytes());
+        repo.write(id, test_file, 0);
+
+        // submit it
+        repo.snapshot(&weld::change(id));
+        let index = repo.submit(id).get_id();
+
+        // make another change
+        let change = weld::Change::new();
+        let id = repo.make_change(change);
+
+        // add some modification
+        let mut test_file = File::new();
+        test_file.set_filename(String::from("/config.txt"));
+        test_file.set_contents(String::from("modification").into_bytes());
+        repo.write(id, test_file, 10);
+
+        let response = repo.snapshot(&weld::change(id));
+        let change_id = response.get_change_id();
+        println!("change_id: {}", change_id);
+
+        // the file should exist with new data
+        let response = repo.read_remote(change_id, "/config.txt", 5577226053621084);
+        assert_eq!(
+            std::str::from_utf8(response.unwrap().get_contents()).unwrap(),
+            "modification"
+        );
+
+        // revert the modification
+        let mut test_file = File::new();
+        test_file.set_filename(String::from("/config.txt"));
+        test_file.set_reverted(true);
+        repo.write(id, test_file, 100);
+
+        // Take a snapshot
+        let response = repo.snapshot(&weld::change(id));
+        let change_id = response.get_change_id();
+
+        // the file should exist with old data
+        let response = repo.read_remote(change_id, "/config.txt", 5577226053621085);
+        assert_eq!(
+            std::str::from_utf8(response.unwrap().get_contents()).unwrap(),
+            "original"
+        );
+
+        // second time comes from cache, same story
+        let response = repo.read_remote(change_id, "/config.txt", 5577226053621085);
+        assert_eq!(
+            std::str::from_utf8(response.unwrap().get_contents()).unwrap(),
+            "original"
+        );
+    }
 }

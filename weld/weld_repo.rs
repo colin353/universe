@@ -143,7 +143,13 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
         let query = ReadQuery::Read(id, path.to_owned(), index);
 
         match self.cache.get(&query) {
-            Some(ReadResponse::Read(f)) => return if f.get_found() { Some(f) } else { None },
+            Some(ReadResponse::Read(f)) => {
+                return if f.get_found() && !f.get_reverted() {
+                    Some(f)
+                } else {
+                    None
+                };
+            }
             _ => (),
         };
 
