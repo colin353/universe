@@ -228,6 +228,7 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
                 .batching_client
                 .read(&rowname_for_attrs(id), path_to_colname(&filename).as_str())
             {
+                file.clear_contents();
                 file.set_found(true);
                 if !file.get_reverted() {
                     return Some(file);
@@ -239,6 +240,7 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
                 path_to_colname(&filename).as_str(),
                 index,
             ) {
+                file.clear_contents();
                 file.set_found(true);
                 if !file.get_reverted() {
                     return Some(file);
