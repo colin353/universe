@@ -38,7 +38,7 @@ impl Task for WeldPresubmitTask {
                         .get_artifacts()
                         .iter()
                         .filter_map(|t| {
-                            if t.get_name() == "target" {
+                            if t.get_name() == "target" || t.get_name() == "dependency" {
                                 Some(t.get_value_string().to_owned())
                             } else {
                                 None

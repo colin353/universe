@@ -218,11 +218,30 @@ impl<C: LargeTableClient> WeldLocalServiceHandler<C> {
             return weld::RunBuildQueryResponse::new();
         }
 
+        let maybe_last_snapshot = change
+            .get_changes()
+            .iter()
+            .filter_map(|c| c.get_snapshots().iter().map(|x| x.get_snapshot_id()).max())
+            .max();
+
+        let last_snapshot_id = match maybe_last_snapshot {
+            Some(x) => x,
+            None => {
+                println!("change contains no changes");
+                return weld::RunBuildQueryResponse::new();
+            }
+        };
+
         let changes = change
             .get_changes()
             .iter()
-            .filter_map(|h| h.get_snapshots().last())
-            .filter(|f| !f.get_directory())
+            .filter_map(|h| {
+                h.get_snapshots()
+                    .iter()
+                    .filter(|x| x.get_snapshot_id() != last_snapshot_id)
+                    .next()
+            })
+            .filter(|f| !f.get_directory() || f.get_reverted())
             .map(|f| f.get_filename()[1..].to_owned())
             .collect::<Vec<_>>();
 
@@ -283,12 +302,14 @@ impl<C: LargeTableClient> WeldLocalServiceHandler<C> {
                 }
             };
 
-            let target = std::str::from_utf8(&output.stdout)
+            let targets_output = std::str::from_utf8(&output.stdout)
                 .unwrap()
                 .trim()
                 .to_owned();
-            if output.status.success() && !target.is_empty() {
-                targets.insert(target);
+            if output.status.success() && !targets_output.is_empty() {
+                for target in targets_output.lines() {
+                    targets.insert(target.trim().to_owned());
+                }
             } else {
                 let errors = std::str::from_utf8(&output.stderr)
                     .unwrap()
@@ -317,12 +338,14 @@ impl<C: LargeTableClient> WeldLocalServiceHandler<C> {
                 }
             };
 
-            let dependency = std::str::from_utf8(&output.stdout)
+            let dependencies_output = std::str::from_utf8(&output.stdout)
                 .unwrap()
                 .trim()
                 .to_owned();
-            if output.status.success() && !dependency.is_empty() {
-                dependencies.insert(target);
+            if output.status.success() && !dependencies_output.is_empty() {
+                for dependency in dependencies_output.lines() {
+                    dependencies.insert(dependency.trim().to_owned());
+                }
             } else {
                 let errors = std::str::from_utf8(&output.stderr)
                     .unwrap()
