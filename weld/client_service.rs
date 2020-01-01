@@ -1,5 +1,6 @@
 use largetable_client::LargeTableClient;
 use std::collections::HashSet;
+use std::io::Write;
 use weld;
 use weld::WeldServer;
 
@@ -367,6 +368,206 @@ impl<C: LargeTableClient> WeldLocalServiceHandler<C> {
         }
         response
     }
+
+    pub fn apply_patch(&self, req: weld::ApplyPatchRequest) -> weld::ApplyPatchResponse {
+        let mut response = weld::ApplyPatchResponse::new();
+
+        let remote_server = match self.repo.remote_server {
+            Some(ref r) => r,
+            None => {
+                println!("no remote server to connect to");
+                response.set_reason(String::from("no remote server to connect to"));
+                return response;
+            }
+        };
+
+        let mut c = weld::Change::new();
+        c.set_id(req.get_change_id());
+        let change = remote_server.get_change(c);
+
+        if !change.get_found() {
+            println!("change not found");
+            response.set_reason(String::from("change not found"));
+            return response;
+        }
+
+        let mut c = weld::Change::new();
+        c.set_id(req.get_change_id());
+        let patch = remote_server.get_patch(c);
+        let mut f = match std::fs::File::create("/tmp/patch.txt") {
+            Ok(f) => f,
+            Err(e) => {
+                println!("could not create /tmp/patch.txt: {:?}", e);
+                response.set_reason(String::from("could not create /tmp/patch.txt"));
+                return response;
+            }
+        };
+        match f.write_all(patch.as_bytes()) {
+            Ok(_) => (),
+            Err(e) => {
+                println!("failed to write patch file: {:?}", e);
+                response.set_reason(String::from("failed to write patch file"));
+                return response;
+            }
+        };
+
+        // If the /tmp/github directory doesn't exist, and the repository isn't
+        // checked out yet, create the directory and check out the repo
+        if !std::path::Path::new("/tmp/github").exists() {
+            match std::fs::create_dir("/tmp/github") {
+                Ok(_) => (),
+                Err(e) => {
+                    println!("failed to create /tmp/github directory: {:?}", e);
+                    response.set_reason(String::from("failed to create /tmp/github directory"));
+                    return response;
+                }
+            };
+            let output = match std::process::Command::new("git")
+                .arg("clone")
+                .arg("git@github.com:colin353/universe.git")
+                .current_dir("/tmp/github")
+                .output()
+            {
+                Ok(o) => o,
+                Err(e) => {
+                    println!("clone command failed to start: {:?}", e);
+                    response.set_reason(String::from("clone command failed to start"));
+                    return response;
+                }
+            };
+            if !output.status.success() {
+                println!("failed to clone repo");
+                let err_msg = std::str::from_utf8(&output.stderr)
+                    .unwrap()
+                    .trim()
+                    .to_owned();
+                response.set_reason(format!("failed to clone repo: {:?}", err_msg));
+                return response;
+            }
+        }
+
+        // Pull the branch to make sure it's up to date
+        let output = match std::process::Command::new("git")
+            .arg("pull")
+            .current_dir("/tmp/github/universe")
+            .output()
+        {
+            Ok(o) => o,
+            Err(e) => {
+                println!("pull command failed to start: {:?}", e);
+                response.set_reason(String::from("pull command failed to start"));
+                return response;
+            }
+        };
+        if !output.status.success() {
+            println!("failed to pull repo");
+            let err_msg = std::str::from_utf8(&output.stderr)
+                .unwrap()
+                .trim()
+                .to_owned();
+            response.set_reason(format!("failed to pull repo: {:?}", err_msg));
+            return response;
+        }
+
+        // Apply the patch
+        let output = match std::process::Command::new("git")
+            .arg("apply")
+            .arg("/tmp/patch.txt")
+            .current_dir("/tmp/github/universe")
+            .output()
+        {
+            Ok(o) => o,
+            Err(e) => {
+                println!("patch command failed to start: {:?}", e);
+                response.set_reason(String::from("patch command failed to start"));
+                return response;
+            }
+        };
+        if !output.status.success() {
+            println!("failed to patch repo");
+            let err_msg = std::str::from_utf8(&output.stderr)
+                .unwrap()
+                .trim()
+                .to_owned();
+            response.set_reason(format!("failed to patch repo: {:?}", err_msg));
+            return response;
+        }
+
+        // Stage the patch changes
+        let output = match std::process::Command::new("git")
+            .arg("add")
+            .arg(".")
+            .current_dir("/tmp/github/universe")
+            .output()
+        {
+            Ok(o) => o,
+            Err(e) => {
+                println!("staging command failed to start: {:?}", e);
+                response.set_reason(String::from("staging command failed to start"));
+                return response;
+            }
+        };
+        if !output.status.success() {
+            println!("failed to stage change");
+            let err_msg = std::str::from_utf8(&output.stderr)
+                .unwrap()
+                .trim()
+                .to_owned();
+            response.set_reason(format!("failed to stage change: {:?}", err_msg));
+            return response;
+        }
+
+        // Commit the patch changes
+        let output = match std::process::Command::new("git")
+            .arg("commit")
+            .arg("-m")
+            .arg(change.get_friendly_name())
+            .current_dir("/tmp/github/universe")
+            .output()
+        {
+            Ok(o) => o,
+            Err(e) => {
+                println!("commit command failed to start: {:?}", e);
+                response.set_reason(format!("failed to commit change: {:?}", e));
+                return response;
+            }
+        };
+        if !output.status.success() {
+            println!("failed to commit change");
+            let err_msg = std::str::from_utf8(&output.stderr)
+                .unwrap()
+                .trim()
+                .to_owned();
+            response.set_reason(format!("failed to commit change: {:?}", err_msg));
+            return response;
+        }
+
+        // Push the committed changes
+        let output = match std::process::Command::new("git")
+            .arg("push")
+            .current_dir("/tmp/github/universe")
+            .output()
+        {
+            Ok(o) => o,
+            Err(e) => {
+                println!("push command failed to start: {:?}", e);
+                response.set_reason(format!("push command failed to start: {:?}", e));
+                return response;
+            }
+        };
+        if !output.status.success() {
+            println!("failed to push change");
+            let err_msg = std::str::from_utf8(&output.stderr)
+                .unwrap()
+                .trim()
+                .to_owned();
+            response.set_reason(format!("failed to push change: {:?}", err_msg));
+            return response;
+        }
+
+        response.set_success(true);
+        response
+    }
 }
 
 impl<C: LargeTableClient> weld::WeldLocalService for WeldLocalServiceHandler<C> {
@@ -487,5 +688,13 @@ impl<C: LargeTableClient> weld::WeldLocalService for WeldLocalServiceHandler<C> 
         req: weld::RunBuildQueryRequest,
     ) -> grpc::SingleResponse<weld::RunBuildQueryResponse> {
         grpc::SingleResponse::completed(self.run_build_query(&req))
+    }
+
+    fn apply_patch(
+        &self,
+        _m: grpc::RequestOptions,
+        req: weld::ApplyPatchRequest,
+    ) -> grpc::SingleResponse<weld::ApplyPatchResponse> {
+        grpc::SingleResponse::completed(self.apply_patch(req))
     }
 }

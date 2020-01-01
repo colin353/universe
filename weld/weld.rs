@@ -300,6 +300,14 @@ impl WeldLocalClient {
             .expect("rpc")
             .1
     }
+
+    pub fn apply_patch(&self, req: weld::ApplyPatchRequest) -> weld::ApplyPatchResponse {
+        self.client
+            .apply_patch(self.opts(), req)
+            .wait()
+            .expect("rpc")
+            .1
+    }
 }
 
 pub fn get_timestamp_usec() -> u64 {

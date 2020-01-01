@@ -186,6 +186,12 @@ message RunBuildResponse {
   string test_output = 5;
 }
 
+message ApplyPatchRequest { uint64 change_id = 1; }
+message ApplyPatchResponse {
+  bool success = 1;
+  string reason = 2;
+}
+
 service WeldLocalService {
   rpc GetChange(GetChangeRequest) returns (Change);
   rpc MakeChange(Change) returns (Change);
@@ -202,4 +208,5 @@ service WeldLocalService {
   rpc Sync(SyncRequest) returns (SyncResponse);
   rpc RunBuild(RunBuildRequest) returns (RunBuildResponse);
   rpc RunBuildQuery(RunBuildQueryRequest) returns (RunBuildQueryResponse);
+  rpc ApplyPatch(ApplyPatchRequest) returns (ApplyPatchResponse);
 }
