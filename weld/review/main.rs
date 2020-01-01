@@ -2,6 +2,7 @@
 extern crate flags;
 extern crate auth_client;
 extern crate server;
+extern crate task_client;
 extern crate weld;
 extern crate ws;
 
@@ -52,6 +53,12 @@ fn main() {
         String::from("http://review.colinmerkel.xyz"),
         "the base URL of the site"
     );
+    let task_hostname = define_flag!(
+        "task_hostname",
+        String::from("localhost"),
+        "the hostname of the task service"
+    );
+    let task_port = define_flag!("task_port", 7777, "the port of the task service");
 
     parse_flags!(
         server_hostname,
@@ -64,7 +71,9 @@ fn main() {
         cert,
         port,
         static_files,
-        base_url
+        base_url,
+        task_hostname,
+        task_port
     );
 
     let client = if use_tls.value() {
@@ -94,7 +103,8 @@ fn main() {
         )
     };
 
+    let task = task_client::TaskRemoteClient::new(task_hostname.value(), task_port.value());
     let auth = auth_client::AuthClient::new(&auth_hostname.value(), auth_port.value());
-    server::ReviewServer::new(client, static_files.value(), base_url.value(), auth)
+    server::ReviewServer::new(client, static_files.value(), base_url.value(), auth, task)
         .serve(port.value());
 }

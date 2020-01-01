@@ -163,7 +163,11 @@ impl LargeTableBatchWriter {
     }
 
     pub fn finish<C: LargeTableClient>(self, client: &C) -> largetable_grpc_rust::WriteResponse {
-        client.batch_write(self.req)
+        if self.req.get_writes().len() > 0 || self.req.get_deletes().len() > 0 {
+            client.batch_write(self.req)
+        } else {
+            largetable_grpc_rust::WriteResponse::new()
+        }
     }
 }
 

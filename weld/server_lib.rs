@@ -148,8 +148,23 @@ impl<C: LargeTableClient> WeldServiceHandler<C> {
             change.set_id(id);
         }
 
+        let mut unchanged_files = std::collections::HashSet::new();
+        for file in self.repo.list_changed_files(change.get_id(), 0) {
+            unchanged_files.insert(file.get_filename().to_owned());
+        }
+
         for file in change.get_staged_files() {
             self.repo.write(change.get_id(), file.clone(), 0);
+            unchanged_files.remove(file.get_filename());
+        }
+
+        // Any originally existing changed files which are not listed are
+        // to be reverted.
+        for filename in unchanged_files.into_iter() {
+            let mut f = File::new();
+            f.set_filename(filename);
+            f.set_reverted(true);
+            self.repo.write(change.get_id(), f, 0);
         }
 
         // Reload any existing data about this change, in case it already exists.
@@ -266,6 +281,31 @@ impl<C: LargeTableClient> WeldServiceHandler<C> {
         }
         output
     }
+
+    pub fn register_task_for_change(&self, mut req: weld::Change) -> weld::Change {
+        let mut ch = match self.repo.get_change(req.get_id()) {
+            Some(c) => c,
+            None => return weld::Change::new(),
+        };
+
+        ch.set_task_id(req.take_task_id());
+        self.repo.update_change(&ch);
+        ch
+    }
+
+    pub fn get_patch(&self, mut req: weld::Change) -> weld::Patch {
+        let ch = match self.repo.get_change(req.get_id()) {
+            Some(mut c) => {
+                self.repo.fill_change(&mut c);
+                c
+            }
+            None => return weld::Patch::new(),
+        };
+
+        let mut patch = weld::Patch::new();
+        patch.set_patch(self.repo.patch(&ch));
+        patch
+    }
 }
 
 fn index_to_rowname(index: u64) -> String {
@@ -368,6 +408,28 @@ impl<C: LargeTableClient> weld::WeldService for WeldServiceHandler<C> {
     ) -> grpc::SingleResponse<weld::GetSubmittedChangesResponse> {
         match self.authenticate(&m) {
             Some(_) => grpc::SingleResponse::completed(self.get_submitted_changes(&req)),
+            None => grpc::SingleResponse::err(grpc::Error::Other("unauthenticated")),
+        }
+    }
+
+    fn register_task_for_change(
+        &self,
+        m: grpc::RequestOptions,
+        req: weld::Change,
+    ) -> grpc::SingleResponse<weld::Change> {
+        match self.authenticate(&m) {
+            Some(_) => grpc::SingleResponse::completed(self.register_task_for_change(req)),
+            None => grpc::SingleResponse::err(grpc::Error::Other("unauthenticated")),
+        }
+    }
+
+    fn get_patch(
+        &self,
+        m: grpc::RequestOptions,
+        req: weld::Change,
+    ) -> grpc::SingleResponse<weld::Patch> {
+        match self.authenticate(&m) {
+            Some(_) => grpc::SingleResponse::completed(self.get_patch(req)),
             None => grpc::SingleResponse::err(grpc::Error::Other("unauthenticated")),
         }
     }

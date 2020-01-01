@@ -56,8 +56,9 @@ fn main() {
         String::from(""),
         "A file containing a change description + annotations."
     );
+    let target = define_flag!("target", String::new(), "A bazel target to build");
 
-    let args = parse_flags!(hostname, port, file, space, change_file); //, change_file);
+    let args = parse_flags!(hostname, port, file, space, change_file, target);
     if args.len() != 1 {
         return usage();
     }
@@ -157,6 +158,16 @@ fn main() {
                 eprintln!("{} @ {}", c.get_friendly_name(), c.get_based_index());
             }
         }
+        "revert" => {
+            let maybe_id = client.lookup_friendly_name(space.value());
+            if let Some(id) = maybe_id {
+                let mut req = weld::WriteRequest::new();
+                req.set_id(id);
+                req.mut_file().set_filename(file.value());
+                req.mut_file().set_reverted(true);
+                client.write(req);
+            }
+        }
         "snapshot" => {
             let maybe_id = client.lookup_friendly_name(space.value());
             if let Some(id) = maybe_id {
@@ -218,6 +229,41 @@ fn main() {
                 eprintln!("No such client '{}`", space.value());
                 std::process::exit(1);
             }
+        }
+        "query" => {
+            let id = match client.lookup_friendly_name(space.value()) {
+                Some(x) => x,
+                None => {
+                    eprintln!("No such client '{}'", space.value());
+                    std::process::exit(1);
+                }
+            };
+            let mut req = weld::GetChangeRequest::new();
+            req.mut_change().set_id(id);
+            let c = client.get_change(req);
+
+            let mut req = weld::RunBuildQueryRequest::new();
+            req.set_change_id(c.get_remote_id());
+            let response = client.run_build_query(req);
+            println!("query: {:?}", response);
+        }
+        "build" => {
+            let id = match client.lookup_friendly_name(space.value()) {
+                Some(x) => x,
+                None => {
+                    eprintln!("No such client '{}'", space.value());
+                    std::process::exit(1);
+                }
+            };
+            let mut req = weld::GetChangeRequest::new();
+            req.mut_change().set_id(id);
+            let c = client.get_change(req);
+
+            let mut req = weld::RunBuildRequest::new();
+            req.set_change_id(c.get_remote_id());
+            req.set_target(target.value());
+            let response = client.run_build(req);
+            println!("build: {:?}", response);
         }
         "sync" => {
             let id = match client.lookup_friendly_name(space.value()) {

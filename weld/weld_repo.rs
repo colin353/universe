@@ -143,7 +143,13 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
         let query = ReadQuery::Read(id, path.to_owned(), index);
 
         match self.cache.get(&query) {
-            Some(ReadResponse::Read(f)) => return if f.get_found() { Some(f) } else { None },
+            Some(ReadResponse::Read(f)) => {
+                return if f.get_found() && !f.get_reverted() {
+                    Some(f)
+                } else {
+                    None
+                };
+            }
             _ => (),
         };
 
@@ -184,7 +190,9 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
                 .read(&rowname_for_files(id), path_to_colname(&filename).as_str())
             {
                 file.set_found(true);
-                return Some(file);
+                if !file.get_reverted() {
+                    return Some(file);
+                }
             }
         } else {
             if let Some(mut file) = self.batching_client.client.read_proto::<File>(
@@ -193,7 +201,9 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
                 index,
             ) {
                 file.set_found(true);
-                return Some(file);
+                if !file.get_reverted() {
+                    return Some(file);
+                }
             }
         }
 
@@ -218,8 +228,11 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
                 .batching_client
                 .read(&rowname_for_attrs(id), path_to_colname(&filename).as_str())
             {
+                file.clear_contents();
                 file.set_found(true);
-                return Some(file);
+                if !file.get_reverted() {
+                    return Some(file);
+                }
             }
         } else {
             if let Some(mut file) = self.batching_client.client.read_proto::<File>(
@@ -227,8 +240,11 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
                 path_to_colname(&filename).as_str(),
                 index,
             ) {
+                file.clear_contents();
                 file.set_found(true);
-                return Some(file);
+                if !file.get_reverted() {
+                    return Some(file);
+                }
             }
         }
 
@@ -300,10 +316,7 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
             );
 
             // Need to update the underlying file as well.
-            if let Some(mut file_contents) = self.batching_client.read(
-                &rowname_for_files(id),
-                path_to_colname(file.get_filename()).as_str(),
-            ) {
+            if let Some(mut file_contents) = self.read(id, file.get_filename(), 0) {
                 file.set_contents(file_contents.take_contents());
                 let size = file.get_contents().len();
                 file.set_size(size as u64);
@@ -323,10 +336,7 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
             );
 
             // Need to update the underlying file as well.
-            if let Some(mut file_contents) = self.batching_client.read(
-                &rowname_for_files(id),
-                path_to_colname(file.get_filename()).as_str(),
-            ) {
+            if let Some(mut file_contents) = self.read(id, file.get_filename(), 0) {
                 file.set_contents(file_contents.take_contents());
                 let size = file.get_contents().len();
                 file.set_size(size as u64);
@@ -507,6 +517,7 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
             index,
         )
         .map(|(_, f)| f)
+        .filter(|f: &File| !f.get_reverted())
         .filter(|f: &File| !weld::should_ignore_file(f.get_filename()))
     }
 

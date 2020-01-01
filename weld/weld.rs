@@ -39,6 +39,8 @@ pub trait WeldServer {
     fn get_latest_change(&self) -> weld::Change;
     fn list_files(&self, req: weld::FileIdentifier) -> Vec<File>;
     fn get_submitted_changes(&self, req: weld::GetSubmittedChangesRequest) -> Vec<Change>;
+    fn register_task_for_change(&self, req: weld::Change);
+    fn get_patch(&self, req: weld::Change) -> String;
 }
 
 impl WeldServerClient {
@@ -156,6 +158,22 @@ impl WeldServer for WeldServerClient {
             .take_changes()
             .into_vec()
     }
+
+    fn register_task_for_change(&self, req: weld::Change) {
+        self.client
+            .register_task_for_change(self.opts(), req)
+            .wait()
+            .expect("rpc");
+    }
+
+    fn get_patch(&self, req: weld::Change) -> String {
+        self.client
+            .get_patch(self.opts(), req)
+            .wait()
+            .expect("rpc")
+            .1
+            .take_patch()
+    }
 }
 
 impl WeldLocalClient {
@@ -265,6 +283,22 @@ impl WeldLocalClient {
 
     pub fn sync(&self, req: weld::SyncRequest) -> weld::SyncResponse {
         self.client.sync(self.opts(), req).wait().expect("rpc").1
+    }
+
+    pub fn run_build(&self, req: weld::RunBuildRequest) -> weld::RunBuildResponse {
+        self.client
+            .run_build(self.opts(), req)
+            .wait()
+            .expect("rpc")
+            .1
+    }
+
+    pub fn run_build_query(&self, req: weld::RunBuildQueryRequest) -> weld::RunBuildQueryResponse {
+        self.client
+            .run_build_query(self.opts(), req)
+            .wait()
+            .expect("rpc")
+            .1
     }
 }
 
@@ -418,6 +452,12 @@ pub fn render_change_description(description: &str) -> String {
 }
 
 pub fn should_ignore_file(filename: &str) -> bool {
+    if filename.ends_with(".swx") {
+        return true;
+    }
+    if filename.ends_with(".swpx") {
+        return true;
+    }
     if filename.ends_with(".swp") {
         return true;
     }

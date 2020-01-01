@@ -977,4 +977,242 @@ mod tests {
 
         assert_ne!(submitted_id, 0);
     }
+
+    #[test]
+    fn test_add_delete() {
+        let repo = make_remote_connected_test_repo();
+
+        // Make a change with a modified file
+        let change = weld::Change::new();
+        let id = repo.make_change(change);
+
+        let mut test_file = File::new();
+        test_file.set_filename(String::from("/config.txt"));
+        test_file.set_contents(String::from("{config: true}").into_bytes());
+        repo.write(id, test_file, 0);
+
+        let mut test_file = File::new();
+        test_file.set_filename(String::from("/user.txt"));
+        test_file.set_contents(String::from("{name: tester}").into_bytes());
+        repo.write(id, test_file, 0);
+
+        // Take snapshot
+        let index = repo.snapshot(&weld::change(id)).get_snapshot_id();
+
+        // Delete
+        let mut test_file = File::new();
+        test_file.set_filename(String::from("/config.txt"));
+        test_file.set_deleted(true);
+        repo.write(id, test_file, 0);
+
+        // Take another snapshot
+        repo.snapshot(&weld::change(id));
+        let index = repo.submit(id).get_id();
+
+        // The file shouldn't exist, since we deleted it before submitting
+        let response = repo.read_remote(0, "/config.txt", index);
+        assert!(response.is_none());
+
+        // The file shouldn't exist, since we deleted it before submitting
+        let response = repo.read_remote(0, "/user.txt", index);
+        assert!(response.is_some());
+    }
+
+    #[test]
+    fn test_revert() {
+        let repo = make_remote_connected_test_repo();
+
+        // make a change with a modified file
+        let change = weld::Change::new();
+        let id = repo.make_change(change);
+
+        let mut test_file = File::new();
+        test_file.set_filename(String::from("/config.txt"));
+        test_file.set_contents(String::from("original").into_bytes());
+        repo.write(id, test_file, 0);
+
+        // submit it
+        repo.snapshot(&weld::change(id));
+        let index = repo.submit(id).get_id();
+
+        // make another change
+        let change = weld::Change::new();
+        let id = repo.make_change(change);
+
+        // the file should exist with old data
+        let response = repo.read(id, "/config.txt", 0);
+        assert_eq!(
+            std::str::from_utf8(response.unwrap().get_contents()).unwrap(),
+            "original"
+        );
+
+        // update the file with new data
+        let mut test_file = File::new();
+        test_file.set_filename(String::from("/config.txt"));
+        test_file.set_contents(String::from("modified").into_bytes());
+        repo.write(id, test_file, 0);
+
+        // the file should exist with new data
+        let response = repo.read(id, "/config.txt", 0);
+        assert_eq!(
+            std::str::from_utf8(response.unwrap().get_contents()).unwrap(),
+            "modified"
+        );
+
+        // revert the file
+        let mut test_file = File::new();
+        test_file.set_filename(String::from("/config.txt"));
+        test_file.set_reverted(true);
+        repo.write(id, test_file, 0);
+
+        // the file should go back to the old data
+        let response = repo.read(id, "/config.txt", 0);
+        assert_eq!(
+            std::str::from_utf8(response.unwrap().get_contents()).unwrap(),
+            "original"
+        );
+    }
+
+    #[test]
+    fn test_writeattrs() {
+        let repo = make_remote_connected_test_repo();
+
+        // make a change with a modified file
+        let change = weld::Change::new();
+        let id = repo.make_change(change);
+
+        let mut test_file = File::new();
+        test_file.set_filename(String::from("/config.txt"));
+        test_file.set_contents(String::from("original").into_bytes());
+        repo.write(id, test_file, 0);
+
+        // submit it
+        repo.snapshot(&weld::change(id));
+        let index = repo.submit(id).get_id();
+
+        // make another change
+        let change = weld::Change::new();
+        let id = repo.make_change(change);
+
+        // the file should exist with old data
+        let response = repo.read(id, "/config.txt", 0);
+        assert_eq!(
+            std::str::from_utf8(response.unwrap().get_contents()).unwrap(),
+            "original"
+        );
+
+        // update the file with new data
+        let mut test_file = File::new();
+        test_file.set_mtime(100);
+        test_file.set_perm(777);
+        test_file.set_filename(String::from("/config.txt"));
+        repo.write_attrs(id, test_file, 0);
+
+        // the file should exist with old data
+        let response = repo.read(id, "/config.txt", 0);
+        assert_eq!(
+            std::str::from_utf8(response.unwrap().get_contents()).unwrap(),
+            "original"
+        );
+    }
+
+    #[test]
+    fn test_read_remote_with_revert() {
+        let repo = make_remote_connected_test_repo();
+
+        // make a change with a modified file
+        let change = weld::Change::new();
+        let id = repo.make_change(change);
+
+        let mut test_file = File::new();
+        test_file.set_filename(String::from("/config.txt"));
+        test_file.set_contents(String::from("original").into_bytes());
+        repo.write(id, test_file, 0);
+
+        // submit it
+        repo.snapshot(&weld::change(id));
+        let index = repo.submit(id).get_id();
+
+        // make another change
+        let change = weld::Change::new();
+        let id = repo.make_change(change);
+
+        // add some modification
+        let mut test_file = File::new();
+        test_file.set_filename(String::from("/config.txt"));
+        test_file.set_contents(String::from("modification").into_bytes());
+        repo.write(id, test_file, 10);
+
+        let response = repo.snapshot(&weld::change(id));
+        let change_id = response.get_change_id();
+        println!("change_id: {}", change_id);
+
+        // the file should exist with new data
+        let response = repo.read_remote(change_id, "/config.txt", 5577226053621084);
+        assert_eq!(
+            std::str::from_utf8(response.unwrap().get_contents()).unwrap(),
+            "modification"
+        );
+
+        // revert the modification
+        let mut test_file = File::new();
+        test_file.set_filename(String::from("/config.txt"));
+        test_file.set_reverted(true);
+        repo.write(id, test_file, 100);
+
+        // Take a snapshot
+        let response = repo.snapshot(&weld::change(id));
+        let change_id = response.get_change_id();
+
+        // the file should exist with old data
+        let response = repo.read_remote(change_id, "/config.txt", 5577226053621085);
+        assert_eq!(
+            std::str::from_utf8(response.unwrap().get_contents()).unwrap(),
+            "original"
+        );
+
+        // second time comes from cache, same story
+        let response = repo.read_remote(change_id, "/config.txt", 5577226053621085);
+        assert_eq!(
+            std::str::from_utf8(response.unwrap().get_contents()).unwrap(),
+            "original"
+        );
+    }
+
+    #[test]
+    fn test_patching() {
+        let repo = make_remote_connected_test_repo();
+
+        // make a change with a modified file
+        let change = weld::Change::new();
+        let id = repo.make_change(change);
+
+        let mut test_file = File::new();
+        test_file.set_filename(String::from("/config.txt"));
+        test_file.set_contents(String::from("original").into_bytes());
+        repo.write(id, test_file, 0);
+
+        // submit it
+        repo.snapshot(&weld::change(id));
+        let index = repo.submit(id).get_id();
+
+        // make another change
+        let change = weld::Change::new();
+        let id = repo.make_change(change);
+
+        // add some modification
+        let mut test_file = File::new();
+        test_file.set_filename(String::from("/config.txt"));
+        test_file.set_contents(String::from("modification").into_bytes());
+        repo.write(id, test_file, 10);
+
+        let response = repo.snapshot(&weld::change(id));
+        let change_id = response.get_change_id();
+        println!("change_id: {}", change_id);
+
+        let mut c = weld::Change::new();
+        c.set_id(change_id);
+        let patch = repo.remote_server.unwrap().get_patch(c);
+        assert_eq!(patch, "From: Weld <weld@weld.io>\nSubject: [PATCH 1/1] \n\n--- b/config.txt\n+++ a/config.txt\n@@ -1 +1 @@\n-original\n\\ No newline at end of file\n+modification\n\\ No newline at end of file\n\n--\n2.17.1\n");
+    }
 }

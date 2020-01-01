@@ -1,6 +1,7 @@
 #[macro_use]
 extern crate tmpl;
 extern crate auth_client;
+extern crate task_client;
 extern crate weld;
 extern crate ws;
 use ws::{Body, Request, Response, Server};
@@ -22,6 +23,7 @@ pub struct ReviewServer {
     static_dir: String,
     base_url: String,
     auth: auth_client::AuthClient,
+    task_client: task_client::TaskRemoteClient,
 }
 
 impl ReviewServer {
@@ -30,12 +32,14 @@ impl ReviewServer {
         static_dir: String,
         base_url: String,
         auth: auth_client::AuthClient,
+        task_client: task_client::TaskRemoteClient,
     ) -> Self {
         Self {
             client: client,
             static_dir: static_dir,
             base_url: base_url,
             auth: auth,
+            task_client: task_client,
         }
     }
 
@@ -57,7 +61,7 @@ impl ReviewServer {
             .collect::<Vec<_>>();
 
         let mut req = weld::GetSubmittedChangesRequest::new();
-        req.set_limit(3);
+        req.set_limit(15);
         let submitted_changes = self
             .client
             .get_submitted_changes(req)
@@ -101,6 +105,16 @@ impl ReviewServer {
         }
 
         let mut content = render::change(&change);
+
+        if !change.get_task_id().is_empty() {
+            if let Some(response) = self.task_client.get_status(change.get_task_id().to_owned()) {
+                content.insert(
+                    "tasks",
+                    tmpl::ContentsMultiMap::from(render::get_task_pills(&response)),
+                )
+            }
+        }
+
         let body = tmpl::apply(MODIFIED_FILES, &content);
         content.insert("body", body);
 
@@ -114,8 +128,10 @@ impl ReviewServer {
         for history in change.get_changes() {
             if history.get_filename() == format!("/{}", filename) {
                 found = true;
-                content = render::file_history(history);
-                content.insert("next_file", "");
+                if let Some(f_content) = render::file_history(history, 0) {
+                    content = f_content;
+                    content.insert("next_file", "");
+                }
             } else if found {
                 content.insert("next_file", history.get_filename());
                 break;
@@ -137,6 +153,28 @@ impl ReviewServer {
     fn not_found(&self, path: String, _req: Request) -> Response {
         Response::new(Body::from(format!("404 not found: path {}", path)))
     }
+
+    fn start_task(&self, path: String, req: Request) -> Response {
+        if path.starts_with("/api/tasks/build/") {
+            let change_id: i64 = match path.rsplit("/").next() {
+                Some(c) => c.parse().unwrap_or(0),
+                None => return Response::new(Body::from("no such change")),
+            };
+
+            let mut args = task_client::ArgumentsBuilder::new();
+            args.add_int("change_id", change_id);
+
+            let mut response = self
+                .task_client
+                .create_task(String::from("presubmit"), args.build());
+
+            let mut c = weld::Change::new();
+            c.set_id(change_id as u64);
+            c.set_task_id(response.take_task_id());
+            self.client.register_task_for_change(c);
+        }
+        Response::new(Body::from("OK"))
+    }
 }
 
 impl Server for ReviewServer {
@@ -154,6 +192,10 @@ impl Server for ReviewServer {
             self.set_cookie(challenge.get_token(), &mut response);
             self.redirect(challenge.get_url(), &mut response);
             return response;
+        }
+
+        if path.starts_with("/api/tasks/") {
+            return self.start_task(path, req);
         }
 
         match path.as_str() {

@@ -16,14 +16,12 @@ mod client_service;
 mod fs;
 mod parallel_fs;
 
-use std::fs::File;
-use std::io::Read;
 use std::sync::Arc;
 
 fn main() {
     let mount_point = define_flag!(
         "mount_point",
-        String::from("/tmp/code"),
+        String::from("/mnt"),
         "The path to mount the virtual filesystem to"
     );
     let mount = define_flag!(
@@ -38,48 +36,9 @@ fn main() {
         "the hostname for the remote weld service"
     );
     let server_port = define_flag!("server_port", 8001, "the port to connect to");
-    let username = define_flag!("username", String::from(""), "The username to use.");
-    let largetable_hostname = define_flag!(
-        "largetable_hostname",
-        String::from("127.0.0.1"),
-        "the hostname of the largetable service"
-    );
-    let largetable_port = define_flag!("largetable_port", 50051, "the on the largetable service");
-    let use_tls = define_flag!("use_tls", true, "Whether or not to use TLS encryption");
-    let tls_hostname = define_flag!(
-        "tls_hostname",
-        String::from("server.weld.io"),
-        "the hostname to require the server to authenticate itself as"
-    );
-    let root_ca = define_flag!(
-        "root_ca",
-        String::from(""),
-        "path to a file containing the root CA .der file"
-    );
-    let cert = define_flag!(
-        "cert",
-        String::from(""),
-        "path to a file containing the client cert .der file"
-    );
-    parse_flags!(
-        mount_point,
-        mount,
-        weld_hostname,
-        port,
-        server_port,
-        username,
-        largetable_hostname,
-        largetable_port,
-        use_tls,
-        tls_hostname,
-        root_ca,
-        cert
-    );
+    parse_flags!(mount_point, mount, weld_hostname, port, server_port);
 
-    let db = largetable_client::LargeTableRemoteClient::new(
-        &largetable_hostname.value(),
-        largetable_port.value(),
-    );
+    let db = largetable_test::LargeTableMockClient::new();
     let batching_client = Arc::new(batching_client::LargeTableBatchingClient::new_with_cache(
         db,
     ));
@@ -93,34 +52,9 @@ fn main() {
         }
     });
 
-    if use_tls.value() {
-        let mut root_ca_contents = Vec::new();
-        File::open(root_ca.value())
-            .unwrap()
-            .read_to_end(&mut root_ca_contents)
-            .unwrap();
-        let mut cert_contents = Vec::new();
-        File::open(cert.value())
-            .unwrap()
-            .read_to_end(&mut cert_contents)
-            .unwrap();
-        let client = weld::WeldServerClient::new_tls(
-            &weld_hostname.value(),
-            &tls_hostname.value(),
-            username.value(),
-            server_port.value(),
-            root_ca_contents,
-            cert_contents,
-        );
-        repo.add_remote_server(client);
-    } else {
-        let client = weld::WeldServerClient::new(
-            &weld_hostname.value(),
-            username.value(),
-            server_port.value(),
-        );
-        repo.add_remote_server(client);
-    }
+    let client =
+        weld::WeldServerClient::new(&weld_hostname.value(), String::new(), server_port.value());
+    repo.add_remote_server(client);
 
     // Start gRPC service.
     let mut handler = client_service::WeldLocalServiceHandler::new(repo.clone());

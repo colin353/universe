@@ -12,8 +12,8 @@ use std::sync::{Arc, RwLock};
 use ws::Server;
 
 fn main() {
-    let grpc_port = define_flag!("port", 8888, "The gRPC port to bind to.");
-    let web_port = define_flag!("port", 8899, "The web port to bind to.");
+    let grpc_port = define_flag!("grpc_port", 8888, "The gRPC port to bind to.");
+    let web_port = define_flag!("web_port", 8899, "The web port to bind to.");
     let oauth_client_id = define_flag!("oauth_client_id", String::new(), "The oauth client ID");
     let oauth_client_secret = define_flag!(
         "oauth_client_secret",
