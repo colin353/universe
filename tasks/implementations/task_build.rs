@@ -47,9 +47,9 @@ impl Task for WeldPresubmitTask {
                         .filter(|t| {
                             // We don't want to build/test docker images since those are
                             // time consuming, huge, and extremely unlikely to fail
-                            t.ends_with("_img")
-                                || t.ends_with("_img_push")
-                                || t.ends_with("_img_binary")
+                            !t.ends_with("_img")
+                                && !t.ends_with("_img_push")
+                                && !t.ends_with("_img_binary")
                         })
                         .collect();
 

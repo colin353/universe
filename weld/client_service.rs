@@ -238,10 +238,10 @@ impl<C: LargeTableClient> WeldLocalServiceHandler<C> {
             .filter_map(|h| {
                 h.get_snapshots()
                     .iter()
-                    .filter(|x| x.get_snapshot_id() != last_snapshot_id)
+                    .filter(|x| x.get_snapshot_id() == last_snapshot_id)
                     .next()
             })
-            .filter(|f| !f.get_directory() || f.get_reverted())
+            .filter(|f| !f.get_directory() && !f.get_reverted())
             .map(|f| f.get_filename()[1..].to_owned())
             .collect::<Vec<_>>();
 
