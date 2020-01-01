@@ -84,7 +84,8 @@ pub fn get_task_pills(c: &task_client::TaskStatus) -> Vec<tmpl::ContentsMap> {
     if c.get_subtasks().len() == 0 {
         return vec![content!(
             "name" => c.get_name(),
-            "status" => format!("{:?}", c.get_status())
+            "status" => format!("{:?}", c.get_status()),
+            "info_url" => c.get_info_url()
         )];
     }
 

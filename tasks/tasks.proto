@@ -40,6 +40,7 @@ message TaskStatus {
   uint64 start_time = 8;
   uint64 end_time = 9;
   uint64 elapsed_time = 10;
+  string info_url = 11;
 }
 
 message GetStatusRequest { string task_id = 1; }

@@ -58,6 +58,9 @@ impl<C: LargeTableClient + Clone + Send + Sync + 'static> TaskServiceHandler<C> 
         let id = self.client.reserve_task_id();
         initial_status.set_task_id(id.clone());
 
+        let info_url = format!("{}/{}", self.config.base_url, id);
+        initial_status.set_info_url(info_url);
+
         self.client.write(&initial_status);
         self.scheduler.unbounded_send(id);
         initial_status
@@ -144,6 +147,10 @@ impl<C: LargeTableClient + Clone + Send + Sync + 'static> task_lib::TaskManager 
         status.set_name(task_name.to_owned());
         status.set_arguments(protobuf::RepeatedField::from_vec(arguments));
         status.set_task_id(subtask_id.clone());
+
+        let info_url = format!("{}/{}", self.config.base_url, subtask_id);
+        status.set_info_url(info_url);
+
         self.client.write(&status);
 
         let m = Manager::new(subtask_id.clone(), self.client.clone(), self.config.clone());
@@ -264,6 +271,6 @@ mod tests {
 
         assert_eq!(status.get_status(), Status::SUCCESS);
         assert_eq!(status.get_subtasks().len(), 1);
-        assert_eq!(status.get_subtasks()[0].get_task_id(), "s1/1");
+        assert_eq!(status.get_subtasks()[0].get_task_id(), "s1/01");
     }
 }

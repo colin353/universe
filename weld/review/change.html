@@ -45,7 +45,9 @@
 
         {{tasks != 0}}
         {{tasks[]}}
-        <div class='pill {{status}}'>{{name}}</div>
+        <a class='invisible-link' href='{{info_url}}'>
+            <div class='pill {{status}}'>{{name}}</div>
+        </a>
         {{/tasks}}
         {{/tasks}}
     </div>

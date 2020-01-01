@@ -24,7 +24,12 @@ fn main() {
         "The weld service hostname"
     );
     let weld_port = define_flag!("weld_port", 8001, "The weld service hostname");
-    parse_flags!(grpc_port, web_port, weld_hostname, weld_port);
+    let base_url = define_flag!(
+        "base_url",
+        String::from("http://tasks.colinmerkel.xyz"),
+        "the base URL of the tasks webservice"
+    );
+    parse_flags!(grpc_port, web_port, weld_hostname, weld_port, base_url);
 
     let mut server = grpc::ServerBuilder::<tls_api_native_tls::TlsAcceptor>::new();
     server.http.set_port(grpc_port.value());
@@ -33,6 +38,7 @@ fn main() {
     let mut config = TaskServerConfiguration::new();
     config.weld_hostname = weld_hostname.value();
     config.weld_port = weld_port.value();
+    config.base_url = base_url.value();
 
     let database = largetable_test::LargeTableMockClient::new();
     let handler = server_impl::TaskServiceHandler::new(config, database.clone());

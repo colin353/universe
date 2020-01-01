@@ -32,6 +32,7 @@ pub trait Task: Sync + 'static {
 pub struct TaskServerConfiguration {
     pub weld_hostname: String,
     pub weld_port: u16,
+    pub base_url: String,
 }
 
 impl TaskServerConfiguration {
@@ -39,6 +40,7 @@ impl TaskServerConfiguration {
         Self {
             weld_hostname: String::new(),
             weld_port: 0,
+            base_url: String::new(),
         }
     }
 }

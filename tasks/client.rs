@@ -75,7 +75,7 @@ impl<C: LargeTableClient + Clone + 'static> TaskClient<C> {
 
     pub fn reserve_subtask_id(&self, task_id: &str) -> String {
         let id = self.database.reserve_id(TASK_IDS, task_id);
-        format!("s{}/{}", task_id, id)
+        format!("s{}/{:02}", task_id, id)
     }
 
     pub fn list_subtasks<'a>(&'a self, task_id: &str) -> impl Iterator<Item = TaskStatus> + 'a {
