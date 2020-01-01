@@ -61,7 +61,7 @@ impl ReviewServer {
             .collect::<Vec<_>>();
 
         let mut req = weld::GetSubmittedChangesRequest::new();
-        req.set_limit(3);
+        req.set_limit(15);
         let submitted_changes = self
             .client
             .get_submitted_changes(req)
