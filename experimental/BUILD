@@ -12,3 +12,16 @@ rust_binary(
         "//util/recordio",
     ],
 )
+
+rust_binary(
+    name = "read_sstable",
+    srcs = [
+        "read_sstable.rs",
+    ],
+    deps = [
+        "//largetable:largetable_proto_rust",
+        "//third_party:rand",
+        "//util/flags",
+        "//util/sstable",
+    ],
+)
