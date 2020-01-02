@@ -27,3 +27,15 @@ rust_library(
         "//weld",
     ],
 )
+
+rust_library(
+    name = "task_submit",
+    srcs = ["task_submit.rs"],
+    deps = [
+        "//tasks:task_client",
+        "//tasks:task_lib",
+        "//tasks:tasks_grpc_rust",
+        "//third_party:tokio",
+        "//weld",
+    ],
+)

@@ -114,6 +114,7 @@ rust_library(
         ":task_lib",
         "//tasks/implementations:task_build",
         "//tasks/implementations:task_examples",
+        "//tasks/implementations:task_submit",
         "//third_party:lazy_static",
     ],
 )

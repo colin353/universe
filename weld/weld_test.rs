@@ -57,8 +57,4 @@ impl weld::WeldServer for WeldServerTestClient {
     fn register_task_for_change(&self, req: weld::Change) {
         self.client.register_task_for_change(req);
     }
-
-    fn get_patch(&self, req: weld::Change) -> String {
-        self.client.get_patch(req).take_patch()
-    }
 }

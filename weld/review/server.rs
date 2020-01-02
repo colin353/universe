@@ -166,7 +166,7 @@ impl ReviewServer {
 
             let mut response = self
                 .task_client
-                .create_task(String::from("presubmit"), args.build());
+                .create_task(String::from("submit"), args.build());
 
             let mut c = weld::Change::new();
             c.set_id(change_id as u64);

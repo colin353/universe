@@ -8,6 +8,7 @@ extern crate time;
 extern crate flags;
 extern crate largetable_client;
 extern crate largetable_test;
+extern crate protobuf;
 extern crate tls_api_native_tls;
 extern crate weld;
 extern crate weld_repo;

@@ -40,7 +40,6 @@ pub trait WeldServer {
     fn list_files(&self, req: weld::FileIdentifier) -> Vec<File>;
     fn get_submitted_changes(&self, req: weld::GetSubmittedChangesRequest) -> Vec<Change>;
     fn register_task_for_change(&self, req: weld::Change);
-    fn get_patch(&self, req: weld::Change) -> String;
 }
 
 impl WeldServerClient {
@@ -165,15 +164,6 @@ impl WeldServer for WeldServerClient {
             .wait()
             .expect("rpc");
     }
-
-    fn get_patch(&self, req: weld::Change) -> String {
-        self.client
-            .get_patch(self.opts(), req)
-            .wait()
-            .expect("rpc")
-            .1
-            .take_patch()
-    }
 }
 
 impl WeldLocalClient {
@@ -296,6 +286,14 @@ impl WeldLocalClient {
     pub fn run_build_query(&self, req: weld::RunBuildQueryRequest) -> weld::RunBuildQueryResponse {
         self.client
             .run_build_query(self.opts(), req)
+            .wait()
+            .expect("rpc")
+            .1
+    }
+
+    pub fn apply_patch(&self, req: weld::ApplyPatchRequest) -> weld::ApplyPatchResponse {
+        self.client
+            .apply_patch(self.opts(), req)
             .wait()
             .expect("rpc")
             .1

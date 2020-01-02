@@ -265,6 +265,23 @@ fn main() {
             let response = client.run_build(req);
             println!("build: {:?}", response);
         }
+        "apply-patch" => {
+            let id = match client.lookup_friendly_name(space.value()) {
+                Some(x) => x,
+                None => {
+                    eprintln!("No such client '{}'", space.value());
+                    std::process::exit(1);
+                }
+            };
+            let mut req = weld::GetChangeRequest::new();
+            req.mut_change().set_id(id);
+            let c = client.get_change(req);
+
+            let mut req = weld::ApplyPatchRequest::new();
+            req.set_change_id(c.get_remote_id());
+            let response = client.apply_patch(req);
+            println!("apply patch: {:?}", response);
+        }
         "sync" => {
             let id = match client.lookup_friendly_name(space.value()) {
                 Some(x) => x,
