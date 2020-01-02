@@ -1,4 +1,5 @@
 use largetable_client::LargeTableClient;
+use protobuf;
 use std::collections::HashSet;
 use std::io::Write;
 use weld;
@@ -383,7 +384,7 @@ impl<C: LargeTableClient> WeldLocalServiceHandler<C> {
 
         let mut c = weld::Change::new();
         c.set_id(req.get_change_id());
-        let change = remote_server.get_change(c);
+        let mut change = remote_server.get_change(c);
 
         if !change.get_found() {
             println!("change not found");
@@ -391,9 +392,36 @@ impl<C: LargeTableClient> WeldLocalServiceHandler<C> {
             return response;
         }
 
-        let mut c = weld::Change::new();
-        c.set_id(req.get_change_id());
-        let patch = remote_server.get_patch(c);
+        let maybe_last_snapshot = change
+            .get_changes()
+            .iter()
+            .filter_map(|c| c.get_snapshots().iter().map(|x| x.get_snapshot_id()).max())
+            .max();
+
+        let last_snapshot_id = match maybe_last_snapshot {
+            Some(x) => x,
+            None => {
+                println!("change contains no changes");
+                return weld::ApplyPatchResponse::new();
+            }
+        };
+
+        let changes = change
+            .get_changes()
+            .iter()
+            .filter_map(|h| {
+                h.get_snapshots()
+                    .iter()
+                    .filter(|x| x.get_snapshot_id() == last_snapshot_id)
+                    .next()
+            })
+            .filter(|f| !f.get_directory() && !f.get_reverted())
+            .map(|f| f.to_owned())
+            .collect::<Vec<_>>();
+
+        change.set_staged_files(protobuf::RepeatedField::from_vec(changes));
+        change.set_is_based_locally(false);
+        let patch = self.repo.patch(&change);
         let mut f = match std::fs::File::create("/tmp/patch.txt") {
             Ok(f) => f,
             Err(e) => {

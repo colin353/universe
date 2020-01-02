@@ -134,7 +134,6 @@ service WeldService {
   rpc GetSubmittedChanges(GetSubmittedChangesRequest)
       returns (GetSubmittedChangesResponse);
   rpc RegisterTaskForChange(Change) returns (Change);
-  rpc GetPatch(Change) returns (Patch);
 }
 
 // weld local client

@@ -40,7 +40,6 @@ pub trait WeldServer {
     fn list_files(&self, req: weld::FileIdentifier) -> Vec<File>;
     fn get_submitted_changes(&self, req: weld::GetSubmittedChangesRequest) -> Vec<Change>;
     fn register_task_for_change(&self, req: weld::Change);
-    fn get_patch(&self, req: weld::Change) -> String;
 }
 
 impl WeldServerClient {
@@ -164,15 +163,6 @@ impl WeldServer for WeldServerClient {
             .register_task_for_change(self.opts(), req)
             .wait()
             .expect("rpc");
-    }
-
-    fn get_patch(&self, req: weld::Change) -> String {
-        self.client
-            .get_patch(self.opts(), req)
-            .wait()
-            .expect("rpc")
-            .1
-            .take_patch()
     }
 }
 
