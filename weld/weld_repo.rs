@@ -721,8 +721,8 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
                 continue;
             }
 
-            // If the two protos are identical, then there's no change here, so ignore it.
-            if file == based_file {
+            // If the two files don't contain significant changes, ignore it.
+            if weld::files_are_functionally_the_same(&file, &based_file) {
                 continue;
             }
 

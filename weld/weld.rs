@@ -469,6 +469,30 @@ pub fn should_ignore_file(filename: &str) -> bool {
     false
 }
 
+pub fn files_are_functionally_the_same(f1: &weld::File, f2: &weld::File) -> bool {
+    if f1.get_filename() != f2.get_filename() {
+        return false;
+    }
+
+    if f1.get_directory() != f2.get_directory() {
+        return false;
+    }
+
+    if f1.get_contents() != f2.get_contents() {
+        return false;
+    }
+
+    if f1.get_deleted() != f2.get_deleted() {
+        return false;
+    }
+
+    if f1.get_found() != f2.get_found() {
+        return false;
+    }
+
+    true
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
