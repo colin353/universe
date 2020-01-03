@@ -107,7 +107,8 @@ impl Task for WeldQueryTask {
 
         // Construct weld client
         let config = manager.get_configuration();
-        let client = weld::WeldLocalClient::new(&config.weld_hostname, config.weld_port);
+        let client =
+            weld::WeldLocalClient::new(&config.weld_client_hostname, config.weld_client_port);
 
         let mut req = weld::RunBuildQueryRequest::new();
         req.set_change_id(id as u64);
@@ -162,7 +163,8 @@ impl Task for WeldBuildTask {
 
         // Construct weld client
         let config = manager.get_configuration();
-        let client = weld::WeldLocalClient::new(&config.weld_hostname, config.weld_port);
+        let client =
+            weld::WeldLocalClient::new(&config.weld_client_hostname, config.weld_client_port);
 
         let mut req = weld::RunBuildRequest::new();
         req.set_change_id(id as u64);

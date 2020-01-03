@@ -16,7 +16,11 @@ lazy_static! {
         m.insert("spawner", Box::new(task_examples::Spawner::new()));
         m.insert(
             task_submit::SUBMIT_TASK,
-            Box::new(task_submit::WeldSubmitTask::new()),
+            Box::new(task_submit::SubmitTask::new()),
+        );
+        m.insert(
+            task_submit::TRY_SUBMIT_TASK,
+            Box::new(task_submit::WeldTrySubmitTask::new()),
         );
         m.insert(
             task_submit::APPLY_PATCH_TASK,
