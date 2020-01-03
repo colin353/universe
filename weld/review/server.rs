@@ -125,7 +125,25 @@ impl ReviewServer {
     fn change_detail(&self, filename: &str, change: weld::Change, req: Request) -> Response {
         let mut found = false;
         let mut content = content!();
-        for history in change.get_changes() {
+
+        let maybe_last_snapshot = change
+            .get_changes()
+            .iter()
+            .filter_map(|c| c.get_snapshots().iter().map(|x| x.get_snapshot_id()).max())
+            .max();
+
+        let last_snapshot_id = match maybe_last_snapshot {
+            Some(x) => x,
+            None => return self.not_found(filename.to_owned(), req),
+        };
+
+        for history in change.get_changes().iter().filter(|h| {
+            h.get_snapshots()
+                .iter()
+                .filter(|x| x.get_snapshot_id() == last_snapshot_id)
+                .next()
+                .is_some()
+        }) {
             if history.get_filename() == format!("/{}", filename) {
                 found = true;
                 if let Some(f_content) = render::file_history(history, 0) {
