@@ -73,6 +73,7 @@ pub fn change(c: &weld::Change) -> tmpl::ContentsMap {
         "friendly_name" => c.get_friendly_name(),
         "submitted_id" => format!("{}", c.get_submitted_id()),
         "author" => c.get_author(),
+        "status" => format!("{:?}", c.get_status()),
         "last_modified_timestamp" => c.get_last_modified_timestamp(),
         "summary" => weld::summarize_change_description(c.get_description()),
         "description" => weld::render_change_description(c.get_description());

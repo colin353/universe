@@ -106,6 +106,7 @@ impl<C: LargeTableClient> WeldServiceHandler<C> {
         change.set_found(true);
         change.set_id(id);
         change.set_submitted_id(id);
+        change.set_status(weld::ChangeStatus::SUBMITTED);
 
         // Write all file changes to HEAD.
         let mut num_changed_files = 0;
@@ -135,6 +136,10 @@ impl<C: LargeTableClient> WeldServiceHandler<C> {
         change.set_is_based_locally(true);
         change.set_author(username.to_owned());
         change.set_last_modified_timestamp(weld::get_timestamp_usec());
+
+        if change.get_status() == weld::ChangeStatus::UNKNOWN {
+            change.set_status(weld::ChangeStatus::PENDING);
+        }
 
         assert!(
             self.repo.get_change(change.get_based_id()).is_some(),

@@ -174,24 +174,42 @@ impl ReviewServer {
     }
 
     fn start_task(&self, path: String, req: Request) -> Response {
-        if path.starts_with("/api/tasks/build/") {
-            let change_id: i64 = match path.rsplit("/").next() {
+        if path.starts_with("/api/tasks/build/") || path.starts_with("/api/tasks/submit/") {
+            let mut path_iter = path.rsplit("/");
+            let change_id: i64 = match path_iter.next() {
                 Some(c) => c.parse().unwrap_or(0),
                 None => return Response::new(Body::from("no such change")),
+            };
+            let method = if path.starts_with("/api/tasks/build/") {
+                String::from("presubmit")
+            } else {
+                String::from("try_submit")
             };
 
             let mut args = task_client::ArgumentsBuilder::new();
             args.add_int("change_id", change_id);
 
-            let mut response = self
-                .task_client
-                .create_task(String::from("try_submit"), args.build());
+            let mut response = self.task_client.create_task(method, args.build());
 
             let mut c = weld::Change::new();
             c.set_id(change_id as u64);
             c.set_task_id(response.take_task_id());
             self.client.update_change_metadata(c);
         }
+
+        if path.starts_with("/api/tasks/archive/") {
+            let mut path_iter = path.rsplit("/");
+            let change_id: i64 = match path_iter.next() {
+                Some(c) => c.parse().unwrap_or(0),
+                None => return Response::new(Body::from("no such change")),
+            };
+
+            let mut c = weld::Change::new();
+            c.set_id(change_id as u64);
+            c.set_status(weld::ChangeStatus::ARCHIVED);
+            self.client.update_change_metadata(c);
+        }
+
         Response::new(Body::from("OK"))
     }
 }
