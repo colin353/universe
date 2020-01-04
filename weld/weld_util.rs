@@ -57,8 +57,21 @@ fn main() {
         "A file containing a change description + annotations."
     );
     let target = define_flag!("target", String::new(), "A bazel target to build");
+    let update_description = define_flag!(
+        "update_description",
+        false,
+        "whether to update the change description when snapshotting"
+    );
 
-    let args = parse_flags!(hostname, port, file, space, change_file, target);
+    let args = parse_flags!(
+        hostname,
+        port,
+        file,
+        space,
+        change_file,
+        target,
+        update_description
+    );
     if args.len() != 1 {
         return usage();
     }
@@ -183,7 +196,7 @@ fn main() {
                     }
                 };
 
-                let mut c = if change.get_description().is_empty() {
+                let mut c = if change.get_description().is_empty() || update_description.value() {
                     // Edit the description (if it isn't already set)
                     let filename = format!("/tmp/change-{}", id);
                     {

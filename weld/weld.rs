@@ -338,6 +338,14 @@ pub fn deserialize_change(input: &str, change: &mut weld::Change) -> Result<(), 
             continue;
         }
 
+        if trimmed.starts_with("ARCHIVE=true") {
+            change.set_status(weld::ChangeStatus::ARCHIVED);
+        }
+
+        if trimmed.starts_with("ARCHIVE=false") {
+            change.set_status(weld::ChangeStatus::PENDING);
+        }
+
         // If the line is too full of spaces, strip them.
         if line.starts_with("   ") {
             description.push(trimmed);
