@@ -209,4 +209,5 @@ service WeldLocalService {
   rpc RunBuild(RunBuildRequest) returns (RunBuildResponse);
   rpc RunBuildQuery(RunBuildQueryRequest) returns (RunBuildQueryResponse);
   rpc ApplyPatch(ApplyPatchRequest) returns (ApplyPatchResponse);
+  rpc DeleteChange(Change) returns (DeleteResponse);
 }

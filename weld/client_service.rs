@@ -596,6 +596,11 @@ impl<C: LargeTableClient> WeldLocalServiceHandler<C> {
         response.set_success(true);
         response
     }
+
+    fn delete_change(&self, change: &weld::Change) -> weld::DeleteResponse {
+        self.repo.delete_change(change.get_id());
+        weld::DeleteResponse::new()
+    }
 }
 
 impl<C: LargeTableClient> weld::WeldLocalService for WeldLocalServiceHandler<C> {
@@ -724,5 +729,13 @@ impl<C: LargeTableClient> weld::WeldLocalService for WeldLocalServiceHandler<C> 
         req: weld::ApplyPatchRequest,
     ) -> grpc::SingleResponse<weld::ApplyPatchResponse> {
         grpc::SingleResponse::completed(self.apply_patch(req))
+    }
+
+    fn delete_change(
+        &self,
+        _m: grpc::RequestOptions,
+        req: weld::Change,
+    ) -> grpc::SingleResponse<weld::DeleteResponse> {
+        grpc::SingleResponse::completed(self.delete_change(&req))
     }
 }

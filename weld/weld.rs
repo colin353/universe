@@ -298,6 +298,14 @@ impl WeldLocalClient {
             .expect("rpc")
             .1
     }
+
+    pub fn delete_change(&self, req: weld::Change) -> weld::DeleteResponse {
+        self.client
+            .delete_change(self.opts(), req)
+            .wait()
+            .expect("rpc")
+            .1
+    }
 }
 
 pub fn get_timestamp_usec() -> u64 {

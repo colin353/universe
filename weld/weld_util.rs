@@ -295,6 +295,32 @@ fn main() {
             let response = client.apply_patch(req);
             println!("apply patch: {:?}", response);
         }
+        "delete" => {
+            let id = match client.lookup_friendly_name(space.value()) {
+                Some(x) => x,
+                None => {
+                    eprintln!("No such client '{}'", space.value());
+                    std::process::exit(1);
+                }
+            };
+
+            println!(
+                "Are you sure you want to delete? If so, type the repo name ({}):",
+                space.value()
+            );
+            let mut input = String::new();
+            std::io::stdin().read_line(&mut input).unwrap();
+
+            if input.trim() != space.value() {
+                println!("That's not right, aborting.");
+                std::process::exit(1);
+            }
+
+            let mut req = weld::Change::new();
+            req.set_id(id);
+            client.delete_change(req);
+            println!("change deleted");
+        }
         "sync" => {
             let id = match client.lookup_friendly_name(space.value()) {
                 Some(x) => x,
