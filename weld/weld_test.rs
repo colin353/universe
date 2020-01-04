@@ -54,7 +54,7 @@ impl weld::WeldServer for WeldServerTestClient {
             .take_changes()
             .into_vec()
     }
-    fn register_task_for_change(&self, req: weld::Change) {
-        self.client.register_task_for_change(req);
+    fn update_change_metadata(&self, req: weld::Change) {
+        self.client.update_change_metadata(req);
     }
 }

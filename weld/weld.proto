@@ -45,6 +45,7 @@ enum ChangeStatus {
   UNKNOWN = 0;
   PENDING = 1;
   SUBMITTED = 2;
+  ARCHIVED = 3;
 }
 
 message Change {
@@ -133,7 +134,7 @@ service WeldService {
   rpc GetLatestChange(GetLatestChangeRequest) returns (Change);
   rpc GetSubmittedChanges(GetSubmittedChangesRequest)
       returns (GetSubmittedChangesResponse);
-  rpc RegisterTaskForChange(Change) returns (Change);
+  rpc UpdateChangeMetadata(Change) returns (Change);
 }
 
 // weld local client

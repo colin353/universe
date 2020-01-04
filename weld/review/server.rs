@@ -189,7 +189,7 @@ impl ReviewServer {
             let mut c = weld::Change::new();
             c.set_id(change_id as u64);
             c.set_task_id(response.take_task_id());
-            self.client.register_task_for_change(c);
+            self.client.update_change_metadata(c);
         }
         Response::new(Body::from("OK"))
     }

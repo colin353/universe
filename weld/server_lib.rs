@@ -282,13 +282,24 @@ impl<C: LargeTableClient> WeldServiceHandler<C> {
         output
     }
 
-    pub fn register_task_for_change(&self, mut req: weld::Change) -> weld::Change {
+    pub fn update_change_metadata(&self, mut req: weld::Change) -> weld::Change {
         let mut ch = match self.repo.get_change(req.get_id()) {
             Some(c) => c,
             None => return weld::Change::new(),
         };
 
-        ch.set_task_id(req.take_task_id());
+        if !req.get_task_id().is_empty() {
+            ch.set_task_id(req.take_task_id());
+        }
+        if req.get_status() != weld::ChangeStatus::UNKNOWN
+            && req.get_status() != weld::ChangeStatus::SUBMITTED
+        {
+            ch.set_status(req.get_status());
+        }
+        if req.get_reviewers().len() > 0 {
+            ch.set_reviewers(req.take_reviewers());
+        }
+
         self.repo.update_change(&ch);
         ch
     }
@@ -398,13 +409,13 @@ impl<C: LargeTableClient> weld::WeldService for WeldServiceHandler<C> {
         }
     }
 
-    fn register_task_for_change(
+    fn update_change_metadata(
         &self,
         m: grpc::RequestOptions,
         req: weld::Change,
     ) -> grpc::SingleResponse<weld::Change> {
         match self.authenticate(&m) {
-            Some(_) => grpc::SingleResponse::completed(self.register_task_for_change(req)),
+            Some(_) => grpc::SingleResponse::completed(self.update_change_metadata(req)),
             None => grpc::SingleResponse::err(grpc::Error::Other("unauthenticated")),
         }
     }
