@@ -24,6 +24,39 @@ impl WeldTrySubmitTask {
 impl Task for WeldTrySubmitTask {
     fn run(&self, args: &[TaskArgument], manager: Box<dyn TaskManager>) -> TaskResultFuture {
         let status = manager.get_status();
+
+        // Before starting the submit, let's check whether our change is up to date
+        let client = {
+            let config = manager.get_configuration();
+            weld::WeldServerClient::new(
+                &config.weld_server_hostname,
+                String::new(),
+                config.weld_server_port,
+            )
+        };
+
+        let mut id = 0;
+        for arg in args {
+            if arg.get_name() == "change_id" {
+                id = arg.get_value_int()
+            }
+        }
+        if id == 0 {
+            return manager.failure(status, "no change_id provided");
+        }
+
+        let mut c = weld::Change::new();
+        c.set_id(id as u64);
+        let change = client.get_change(c);
+        if !change.get_found() {
+            return manager.failure(status, "could not find change");
+        }
+
+        let most_recent_change = client.get_latest_change();
+        if change.get_based_index() != most_recent_change.get_submitted_id() {
+            return manager.failure(status, "change out of date, requires sync");
+        }
+
         let passed_args = args.to_owned();
         let passed_args_2 = args.to_owned();
         let passed_status = status.clone();
@@ -83,9 +116,10 @@ impl Task for ApplyPatchTask {
         }
 
         // Construct weld client
-        let config = manager.get_configuration();
-        let client =
-            weld::WeldLocalClient::new(&config.weld_client_hostname, config.weld_client_port);
+        let client = {
+            let config = manager.get_configuration();
+            weld::WeldLocalClient::new(&config.weld_client_hostname, config.weld_client_port)
+        };
 
         let mut req = weld::ApplyPatchRequest::new();
         req.set_change_id(id as u64);
