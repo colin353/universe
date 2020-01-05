@@ -34,3 +34,12 @@ rust_test(
         "//largetable:largetable_test",
     ],
 )
+
+rust_binary(
+    name = "x20",
+    srcs = [
+        "util.rs",
+        "x20.rs",
+    ],
+    deps = ["//util/flags"],
+)
