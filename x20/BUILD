@@ -52,13 +52,24 @@ rust_binary(
     ],
 )
 
+rust_library(
+    name = "x20_client",
+    srcs = ["client.rs"],
+    deps = [":x20_grpc_rust"],
+)
+
 rust_binary(
     name = "x20",
     srcs = [
         "util.rs",
         "x20.rs",
     ],
-    deps = ["//util/flags"],
+    deps = [
+        ":x20_client",
+        ":x20_grpc_rust",
+        "//third_party:rand",
+        "//util/flags",
+    ],
 )
 
 rust_image(

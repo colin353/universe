@@ -34,6 +34,8 @@ impl<C: LargeTableClient + Clone> X20ServiceHandler<C> {
     }
 
     fn publish_binary(&self, mut req: x20::PublishBinaryRequest) -> x20::PublishBinaryResponse {
+        let name = req.get_binary().get_name().to_owned();
+
         if req.get_binary().get_name().is_empty() {
             eprintln!("cannot publish empty binary name");
             return x20::PublishBinaryResponse::new();
@@ -45,8 +47,7 @@ impl<C: LargeTableClient + Clone> X20ServiceHandler<C> {
         let mut binary = req.take_binary();
         binary.set_version(version);
 
-        self.database
-            .write_proto(BINARIES, req.get_binary().get_name(), 0, &binary);
+        self.database.write_proto(BINARIES, &name, 0, &binary);
 
         x20::PublishBinaryResponse::new()
     }
