@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+message Binary {
+  string name = 1;
+  uint64 version = 2;
+  string target = 3;
+  string url = 4;
+}
+
+message Configuration {
+  string name = 1;
+  string configuration = 2;
+  uint64 version = 3;
+  string environment = 4;
+}
+
+message GetBinariesRequest {}
+message GetBinariesResponse { repeated Binary binaries = 1; }
+
+message PublishBinaryRequest { Binary binary = 1; }
+message PublishBinaryResponse {}
+
+service X20Service {
+  rpc GetBinaries(GetBinariesRequest) returns (GetBinariesResponse);
+  rpc PublishBinary(PublishBinaryRequest) returns (PublishBinaryResponse);
+}
