@@ -86,7 +86,7 @@ impl X20Manager {
 
         // Set the downloadable URL
         binary.set_url(format!(
-            "https://storage.cloud.google.com/x20-binaries/{}",
+            "https://storage.googleapis.com/x20-binaries/{}",
             name
         ));
 

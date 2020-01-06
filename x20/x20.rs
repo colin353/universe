@@ -47,6 +47,9 @@ fn main() {
         "publish" => {
             manager.publish(name.value(), path.value(), target.value(), create.value());
         }
-        x => println!("Unknown command: {}", x),
+        x => {
+            println!("Unknown command: {}", x);
+            std::process::exit(1);
+        }
     }
 }

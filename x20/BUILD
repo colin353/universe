@@ -84,3 +84,17 @@ docker_push(
     repository = "mushu-194218/x20",
     tag = "dev",
 )
+
+rust_binary(
+    name = "x20_webserver",
+    srcs = ["webserver.rs"],
+    data = [
+        "index.html",
+        "x20.sh",
+    ],
+    deps = [
+        ":x20_client",
+        "//util/flags",
+        "//util/ws",
+    ],
+)
