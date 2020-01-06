@@ -98,3 +98,16 @@ rust_binary(
         "//util/ws",
     ],
 )
+
+rust_image(
+    name = "x20_webserver_img",
+    binary = ":x20_webserver",
+)
+
+docker_push(
+    name = "x20_webserver_img_push",
+    image = ":x20_webserver_img",
+    registry = "us.gcr.io",
+    repository = "mushu-194218/x20_web",
+    tag = "dev",
+)
