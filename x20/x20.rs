@@ -2,6 +2,7 @@ extern crate rand;
 
 #[macro_use]
 extern crate flags;
+extern crate recordio;
 extern crate x20_client;
 extern crate x20_grpc_rust as x20;
 
@@ -38,7 +39,8 @@ fn main() {
     }
 
     let client = x20_client::X20Client::new(&x20_hostname.value(), x20_port.value());
-    let manager = util::X20Manager::new(client);
+    let base_dir = format!("{}/.x20", std::env::home_dir().unwrap().to_str().unwrap());
+    let manager = util::X20Manager::new(client, base_dir);
 
     match args[0].as_ref() {
         "list" => {
@@ -46,6 +48,9 @@ fn main() {
         }
         "publish" => {
             manager.publish(name.value(), path.value(), target.value(), create.value());
+        }
+        "update" => {
+            manager.update();
         }
         x => {
             println!("Unknown command: {}", x);
