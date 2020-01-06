@@ -4,7 +4,6 @@ use x20_client;
 
 use std::collections::HashMap;
 use std::fs::File;
-use std::os::unix::fs::PermissionsExt;
 
 pub struct X20Manager {
     client: x20_client::X20Client,
@@ -71,11 +70,14 @@ impl X20Manager {
                 }
             }
 
+            let temporary_location = format!("/tmp/x20_{}", binary.get_name());
+            let location = format!("{}/bin/{}", self.base_dir, binary.get_name());
+
             // Download the binary from the provided URL
             let output = match std::process::Command::new("curl")
                 .arg("-sSfL")
                 .arg("--output")
-                .arg(format!("{}/bin/{}", self.base_dir, binary.get_name()))
+                .arg(&temporary_location)
                 .arg(binary.get_url())
                 .output()
             {
@@ -101,19 +103,34 @@ impl X20Manager {
                 break;
             }
 
-            // Mark the file as exeuctable
-            let f = match File::open(&format!("{}/bin/{}", self.base_dir, binary.get_name())) {
-                Ok(f) => f,
-                Err(_) => {
-                    eprintln!(
-                        "❌failed to set permissions for binary `{}`",
-                        binary.get_name()
-                    );
+            let output = match std::process::Command::new("chmod")
+                .arg("+x")
+                .arg(&temporary_location)
+                .output()
+            {
+                Ok(o) => o,
+                Err(e) => {
+                    println!("failed to chmod downloaded binary: {:?}", e);
                     had_failure = true;
                     break;
                 }
             };
-            f.metadata().unwrap().permissions().set_mode(0o775);
+
+            let output_stderr = std::str::from_utf8(&output.stderr)
+                .unwrap()
+                .trim()
+                .to_owned();
+            if !output.status.success() {
+                eprintln!("Failed to chmod binary:\n\n {}", output_stderr);
+                had_failure = true;
+                break;
+            }
+
+            // In case we are updating our own binary, we need to delete our bin file
+            // and move the temporary binary overtop, or else we'll get some kind of error
+            std::fs::remove_file(&location);
+            std::fs::copy(&temporary_location, &location).unwrap();
+            std::fs::remove_file(&temporary_location);
 
             println!("✔️ Updated {}", binary.get_name());
             updated_binaries.push(binary);
