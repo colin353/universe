@@ -37,4 +37,24 @@ impl X20Client {
             .expect("rpc")
             .1
     }
+
+    pub fn get_configs(&self, env: String) -> Vec<x20::Configuration> {
+        let mut req = x20::GetConfigsRequest::new();
+        req.set_environment(env);
+        self.client
+            .get_configs(std::default::Default::default(), req)
+            .wait()
+            .expect("rpc")
+            .1
+            .take_configs()
+            .into_vec()
+    }
+
+    pub fn publish_config(&self, req: x20::PublishConfigRequest) -> x20::PublishConfigResponse {
+        self.client
+            .publish_config(std::default::Default::default(), req)
+            .wait()
+            .expect("rpc")
+            .1
+    }
 }

@@ -1,3 +1,4 @@
+extern crate json;
 extern crate rand;
 
 #[macro_use]
@@ -6,7 +7,10 @@ extern crate recordio;
 extern crate x20_client;
 extern crate x20_grpc_rust as x20;
 
+mod config;
 mod util;
+
+use std::io::Read;
 
 fn usage() {
     println!("USAGE: x20 <command>");
@@ -32,8 +36,9 @@ fn main() {
         "The hostname of the x20 service"
     );
     let x20_port = define_flag!("x20_port", 8009, "The port of the x20 service");
+    let env = define_flag!("env", String::new(), "The environment to use");
 
-    let args = parse_flags!(name, path, target, create, x20_hostname, x20_port);
+    let args = parse_flags!(name, path, target, create, x20_hostname, x20_port, env);
     if args.len() != 1 {
         return usage();
     }
@@ -51,6 +56,16 @@ fn main() {
         }
         "update" => {
             manager.update();
+        }
+        "env" => {
+            manager.write_saved_environment(env.value());
+            println!("✔️ Updated environment to `{}`", env.value());
+            manager.update();
+        }
+        "setconfig" => {
+            let mut buffer = String::new();
+            std::io::stdin().read_to_string(&mut buffer).unwrap();
+            manager.setconfig(buffer);
         }
         x => {
             println!("Unknown command: {}", x);

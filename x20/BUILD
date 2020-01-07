@@ -61,16 +61,23 @@ rust_library(
 rust_binary(
     name = "x20",
     srcs = [
+        "config.rs",
         "util.rs",
         "x20.rs",
     ],
     deps = [
         ":x20_client",
         ":x20_grpc_rust",
+        "//third_party:json",
         "//third_party:rand",
         "//util/flags",
         "//util/recordio",
     ],
+)
+
+rust_test(
+    name = "x20_util_test",
+    crate = ":x20",
 )
 
 rust_image(

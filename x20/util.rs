@@ -1,3 +1,4 @@
+use config;
 use rand;
 use recordio::{RecordIOReader, RecordIOWriter};
 use x20_client;
@@ -20,17 +21,36 @@ impl X20Manager {
 
     pub fn list(&self) {
         let binaries = self.client.get_binaries();
+        println!("binaries: ");
         if binaries.len() == 0 {
             eprintln!("There are no binaries");
         }
         for bin in binaries {
             println!(
-                "{} (v{}) @ {}",
+                " - {} (v{}) @ {}",
                 bin.get_name(),
                 bin.get_version(),
                 bin.get_url()
             );
         }
+
+        let env = self.read_saved_environment();
+        let configs = self.client.get_configs(env);
+        println!("\nconfigs: ");
+        for config in configs {
+            println!(" - {} (v{})", config.get_name(), config.get_version(),);
+        }
+    }
+
+    pub fn read_saved_environment(&self) -> String {
+        match std::fs::read_to_string(&format!("{}/config/env", self.base_dir)) {
+            Ok(s) => s,
+            Err(_) => String::new(),
+        }
+    }
+
+    pub fn write_saved_environment(&self, env: String) {
+        std::fs::write(&format!("{}/config/env", self.base_dir), env).unwrap()
     }
 
     pub fn write_saved_binaries(&self, bins: &[x20::Binary]) {
@@ -218,6 +238,22 @@ impl X20Manager {
         req.set_binary(binary);
         self.client.publish_binary(req);
 
-        println!("published");
+        println!("✔️ published");
+    }
+
+    pub fn setconfig(&self, input_configuration: String) {
+        let config = match config::generate_config(&input_configuration) {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("❌invalid config: {:?}", e);
+                std::process::exit(1);
+            }
+        };
+
+        let mut req = x20::PublishConfigRequest::new();
+        req.set_config(config);
+        self.client.publish_config(req);
+
+        println!("✔️ published");
     }
 }
