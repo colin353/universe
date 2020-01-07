@@ -6,10 +6,16 @@ use largetable_client::LargeTableClient;
 
 const BINARY_VERSIONS: &'static str = "x20::binary_versions";
 const BINARIES: &'static str = "x20::binaries";
+const CONFIG_VERSIONS: &'static str = "x20::config_versions";
+const CONFIGS: &'static str = "x20::configs";
 
 #[derive(Clone)]
 pub struct X20ServiceHandler<C: LargeTableClient> {
     database: C,
+}
+
+fn config_rowname(env: &str) -> String {
+    format!("{}/{}", CONFIGS, env)
 }
 
 impl<C: LargeTableClient + Clone> X20ServiceHandler<C> {
@@ -51,6 +57,40 @@ impl<C: LargeTableClient + Clone> X20ServiceHandler<C> {
 
         x20::PublishBinaryResponse::new()
     }
+
+    fn get_configs(&self, req: x20::GetConfigsRequest) -> x20::GetConfigsResponse {
+        let configs_iter = largetable_client::LargeTableScopedIterator::new(
+            &self.database,
+            config_rowname(req.get_environment()),
+            String::from(""),
+            String::from(""),
+            String::from(""),
+            0,
+        );
+        let mut response = x20::GetConfigsResponse::new();
+        for (_, config) in configs_iter {
+            response.mut_configs().push(config);
+        }
+        response
+    }
+
+    fn publish_config(&self, mut req: x20::PublishConfigRequest) -> x20::PublishConfigResponse {
+        let name = req.get_config().get_name().to_owned();
+
+        if name.is_empty() {
+            eprintln!("cannot publish empty config name");
+            return x20::PublishConfigResponse::new();
+        }
+        let version = self.database.reserve_id(CONFIG_VERSIONS, &name);
+
+        let mut config = req.take_config();
+        config.set_version(version);
+
+        self.database
+            .write_proto(&config_rowname(config.get_environment()), &name, 0, &config);
+
+        x20::PublishConfigResponse::new()
+    }
 }
 
 impl<C: LargeTableClient + Clone> x20::X20Service for X20ServiceHandler<C> {
@@ -68,6 +108,22 @@ impl<C: LargeTableClient + Clone> x20::X20Service for X20ServiceHandler<C> {
         req: x20::PublishBinaryRequest,
     ) -> grpc::SingleResponse<x20::PublishBinaryResponse> {
         grpc::SingleResponse::completed(self.publish_binary(req))
+    }
+
+    fn get_configs(
+        &self,
+        _: grpc::RequestOptions,
+        req: x20::GetConfigsRequest,
+    ) -> grpc::SingleResponse<x20::GetConfigsResponse> {
+        grpc::SingleResponse::completed(self.get_configs(req))
+    }
+
+    fn publish_config(
+        &self,
+        _: grpc::RequestOptions,
+        req: x20::PublishConfigRequest,
+    ) -> grpc::SingleResponse<x20::PublishConfigResponse> {
+        grpc::SingleResponse::completed(self.publish_config(req))
     }
 }
 
@@ -95,5 +151,22 @@ mod tests {
         let response = handler.get_binaries();
         assert_eq!(response.get_binaries().len(), 1);
         assert_eq!(response.get_binaries()[0].get_name(), "vim");
+    }
+
+    #[test]
+    fn test_publish_config() {
+        let handler = create_test_handler();
+        let mut req = x20::PublishConfigRequest::new();
+        req.mut_config().set_name(String::from("vim"));
+        req.mut_config().set_environment(String::from("desktop"));
+
+        handler.publish_config(req);
+
+        // Should be able to read that back
+        let mut req = x20::GetConfigsRequest::new();
+        req.set_environment(String::from("desktop"));
+        let response = handler.get_configs(req);
+        assert_eq!(response.get_configs().len(), 1);
+        assert_eq!(response.get_configs()[0].get_name(), "vim");
     }
 }

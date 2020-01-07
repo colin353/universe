@@ -9,9 +9,20 @@ message Binary {
 
 message Configuration {
   string name = 1;
-  string configuration = 2;
-  uint64 version = 3;
-  string environment = 4;
+
+  string binary_name = 2;
+  uint64 priority = 3;
+  bool long_running = 4;
+
+  repeated Argument arguments = 5;
+
+  uint64 version = 6;
+  string environment = 7;
+}
+
+message Argument {
+  string name = 1;
+  string value = 2;
 }
 
 message GetBinariesRequest {}
@@ -20,7 +31,15 @@ message GetBinariesResponse { repeated Binary binaries = 1; }
 message PublishBinaryRequest { Binary binary = 1; }
 message PublishBinaryResponse {}
 
+message GetConfigsRequest { string environment = 1; }
+message GetConfigsResponse { repeated Configuration configs = 1; }
+
+message PublishConfigRequest { Configuration config = 1; }
+message PublishConfigResponse {}
+
 service X20Service {
   rpc GetBinaries(GetBinariesRequest) returns (GetBinariesResponse);
   rpc PublishBinary(PublishBinaryRequest) returns (PublishBinaryResponse);
+  rpc GetConfigs(GetConfigsRequest) returns (GetConfigsResponse);
+  rpc PublishConfig(PublishConfigRequest) returns (PublishConfigResponse);
 }
