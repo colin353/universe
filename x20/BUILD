@@ -62,6 +62,7 @@ rust_binary(
     name = "x20",
     srcs = [
         "config.rs",
+        "subprocess.rs",
         "util.rs",
         "x20.rs",
     ],

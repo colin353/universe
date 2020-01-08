@@ -8,6 +8,7 @@ extern crate x20_client;
 extern crate x20_grpc_rust as x20;
 
 mod config;
+mod subprocess;
 mod util;
 
 use std::io::Read;
@@ -67,6 +68,7 @@ fn main() {
             std::io::stdin().read_to_string(&mut buffer).unwrap();
             manager.setconfig(buffer);
         }
+        "start" => manager.start(),
         x => {
             println!("Unknown command: {}", x);
             std::process::exit(1);

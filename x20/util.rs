@@ -1,6 +1,7 @@
 use config;
 use rand;
 use recordio::{RecordIOReader, RecordIOWriter};
+use subprocess;
 use x20_client;
 
 use std::collections::HashMap;
@@ -255,5 +256,26 @@ impl X20Manager {
         self.client.publish_config(req);
 
         println!("✔️ published");
+    }
+
+    // Start up all the configs associated with the configs
+    pub fn start(&self) {
+        let env = self.read_saved_environment();
+        let mut configs = self.client.get_configs(env);
+        configs.sort_by(|a, b| a.get_priority().cmp(&b.get_priority()));
+        let mut children = Vec::new();
+        for config in configs {
+            let mut child = subprocess::ChildProcess::new(self.base_dir.clone(), config);
+            child.start();
+            children.push(child);
+        }
+
+        loop {
+            for child in &mut children {
+                child.tail_logs();
+                child.check_alive();
+                std::thread::sleep(std::time::Duration::from_secs(1));
+            }
+        }
     }
 }
