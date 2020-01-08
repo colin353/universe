@@ -1,0 +1,13 @@
+{
+    "name": "weld_client",
+    "binary_name": "weld_client",
+    "priority": 1000,
+    "target": "//weld:weld_client",
+    "environment": "desktop",
+    "long_running": true,
+    "arguments": {
+        "use_tls": false,
+        "mount_point": "/home/colin/codefs",
+        "weld_hostname": "code.colinmerkel.xyz"
+    }
+}

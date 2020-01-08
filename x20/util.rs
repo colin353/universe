@@ -268,13 +268,23 @@ impl X20Manager {
             let mut child = subprocess::ChildProcess::new(self.base_dir.clone(), config);
             child.start();
             children.push(child);
+            std::thread::sleep(std::time::Duration::from_secs(1));
         }
 
         loop {
+            let mut failed = false;
             for child in &mut children {
                 child.tail_logs();
                 child.check_alive();
                 std::thread::sleep(std::time::Duration::from_secs(1));
+            }
+
+            if failed {
+                for child in &mut children {
+                    child.kill();
+                }
+
+                std::process::exit(1);
             }
         }
     }

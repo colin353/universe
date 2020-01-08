@@ -31,7 +31,7 @@ impl ChildProcess {
         c.stdout(f);
         c.stderr(f2);
         for arg in self.config.get_arguments() {
-            c.arg(format!("{}={}", arg.get_name(), arg.get_value()));
+            c.arg(format!("--{}={}", arg.get_name(), arg.get_value()));
         }
         self.child = Some(c.spawn().unwrap());
         println!("✔️ started `{}`", self.config.get_name());
@@ -52,7 +52,7 @@ impl ChildProcess {
         }
     }
 
-    pub fn check_alive(&mut self) {
+    pub fn check_alive(&mut self) -> bool {
         if let Some(child) = self.child.as_mut() {
             if let Some(exit_status) = child.try_wait().unwrap() {
                 println!(
@@ -61,8 +61,15 @@ impl ChildProcess {
                     exit_status
                 );
                 println!("❌shutting everything down",);
-                std::process::exit(1);
+                return false;
             }
+        }
+        true
+    }
+
+    pub fn kill(&mut self) {
+        if let Some(child) = self.child.as_mut() {
+            child.kill();
         }
     }
 }

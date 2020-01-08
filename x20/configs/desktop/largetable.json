@@ -1,0 +1,11 @@
+{
+    "name": "largetable",
+    "binary_name": "largetable",
+    "priority": 100,
+    "target": "//largetable:largetable_server",
+    "environment": "desktop",
+    "long_running": true,
+    "arguments": {
+        "data_directory": "/usr/local/largetable"
+    }
+}
