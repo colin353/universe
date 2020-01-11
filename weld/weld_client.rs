@@ -125,7 +125,7 @@ fn main() {
 
     // Start gRPC service.
     let mut handler = client_service::WeldLocalServiceHandler::new(repo.clone());
-    handler.set_mount_dir(mount_point.value());
+    handler.set_mount_dir(mount_point.path());
 
     let mut server = grpc::ServerBuilder::<tls_api_native_tls::TlsAcceptor>::new();
     server.http.set_port(port.value());
@@ -150,7 +150,7 @@ fn main() {
         .iter()
         .map(|o| o.as_ref())
         .collect::<Vec<&std::ffi::OsStr>>();
-        ::fuse::mount(filesystem, &mount_point.value(), &options).unwrap();
+        ::fuse::mount(filesystem, &mount_point.path(), &options).unwrap();
     }
 
     std::thread::park();

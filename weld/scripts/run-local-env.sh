@@ -47,6 +47,6 @@ RUST_BACKTRACE=1 bazel run -c opt //weld:weld_client -- \
   --use_tls=false \
   --weld_hostname=127.0.0.1 \
   --server_port=60063 \
-  --mount_point=/home/colin/codefs-local
+  --mount_point=~/codefs-local
 
 jobs -p | xargs -I{} kill -- {}

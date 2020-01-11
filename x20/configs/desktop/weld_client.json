@@ -7,7 +7,7 @@
     "long_running": true,
     "arguments": {
         "use_tls": false,
-        "mount_point": "/home/colin/codefs",
+        "mount_point": "~/codefs",
         "weld_hostname": "code.colinmerkel.xyz"
     }
 }

@@ -106,6 +106,19 @@ impl<T: std::clone::Clone + std::str::FromStr> Flag<T> {
     }
 }
 
+impl Flag<String> {
+    pub fn path(&self) -> String {
+        let value = self.value();
+        if value.starts_with("~/") {
+            match env::var("HOME") {
+                Ok(h) => return format!("{}{}", h, &value[1..]),
+                Err(_) => ()
+            };
+        }
+        value
+    }
+}
+
 #[macro_export]
 macro_rules! define_flag {
     ($flag_name:expr, $default:expr, $usage:expr) => {
