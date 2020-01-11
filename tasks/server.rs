@@ -2,6 +2,7 @@ extern crate grpc;
 
 #[macro_use]
 extern crate flags;
+extern crate auth_client;
 extern crate largetable_test;
 extern crate server_impl;
 extern crate task_lib;
@@ -36,6 +37,12 @@ fn main() {
         String::from("http://tasks.colinmerkel.xyz"),
         "the base URL of the tasks webservice"
     );
+    let auth_hostname = define_flag!(
+        "auth_hostname",
+        String::new(),
+        "the hostname of the auth service"
+    );
+    let auth_port = define_flag!("auth_port", 8888, "the port of the auth service");
     parse_flags!(
         grpc_port,
         web_port,
@@ -43,8 +50,12 @@ fn main() {
         weld_client_port,
         weld_server_hostname,
         weld_server_port,
-        base_url
+        base_url,
+        auth_hostname,
+        auth_port
     );
+
+    let auth = auth_client::AuthClient::new(&auth_hostname.value(), auth_port.value());
 
     let mut server = grpc::ServerBuilder::<tls_api_native_tls::TlsAcceptor>::new();
     server.http.set_port(grpc_port.value());
@@ -62,5 +73,5 @@ fn main() {
     server.add_service(tasks_grpc_rust::TaskServiceServer::new_service_def(handler));
 
     let _server = server.build().expect("server");
-    task_webserver::TaskWebServer::new(database).serve(web_port.value());
+    task_webserver::TaskWebServer::new(database, auth, base_url.value()).serve(web_port.value());
 }

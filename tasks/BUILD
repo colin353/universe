@@ -48,6 +48,7 @@ rust_binary(
         ":task_lib",
         ":task_webserver",
         ":tasks_grpc_rust",
+        "//auth:auth_client",
         "//largetable:largetable_test",
         "//third_party:tls_api_native_tls",
         "//util/flags",
@@ -99,6 +100,7 @@ rust_library(
     deps = [
         ":task_client",
         ":tasks_grpc_rust",
+        "//auth:auth_client",
         "//largetable:largetable_client",
         "//util/tmpl",
         "//util/ws",

@@ -1,5 +1,6 @@
 #[macro_use]
 extern crate tmpl;
+extern crate auth_client;
 extern crate largetable_client;
 extern crate task_client;
 extern crate tasks_grpc_rust;
@@ -7,6 +8,7 @@ extern crate ws;
 
 mod render;
 
+use auth_client::AuthServer;
 use largetable_client::LargeTableClient;
 use tasks_grpc_rust::{Status, TaskArgument, TaskArtifact, TaskStatus};
 use ws::{Body, Request, Response, Server};
@@ -18,12 +20,16 @@ static DETAIL: &str = include_str!("detail.html");
 #[derive(Clone)]
 pub struct TaskWebServer<C: LargeTableClient + Send + Sync + Clone + 'static> {
     client: task_client::TaskClient<C>,
+    auth: auth_client::AuthClient,
+    base_url: String,
 }
 
 impl<C: LargeTableClient + Clone + Send + Sync + 'static> TaskWebServer<C> {
-    pub fn new(database: C) -> Self {
+    pub fn new(database: C, auth: auth_client::AuthClient, base_url: String) -> Self {
         Self {
             client: task_client::TaskClient::new(database),
+            auth: auth,
+            base_url: base_url,
         }
     }
 
@@ -77,6 +83,17 @@ impl<C: LargeTableClient + Clone + Send + Sync + 'static> TaskWebServer<C> {
 
 impl<C: LargeTableClient + Send + Sync + Clone + 'static> Server for TaskWebServer<C> {
     fn respond(&self, path: String, req: Request, token: &str) -> Response {
+        let result = self.auth.authenticate(token.to_owned());
+        if !result.get_success() {
+            let challenge = self
+                .auth
+                .login_then_redirect(format!("{}{}", self.base_url, path));
+            let mut response = Response::new(Body::from("redirect to login"));
+            self.set_cookie(challenge.get_token(), &mut response);
+            self.redirect(challenge.get_url(), &mut response);
+            return response;
+        }
+
         if path == "/" {
             return self.index(path, req);
         }
