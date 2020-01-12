@@ -35,7 +35,7 @@ fn main() {
     parse_flags!(port, data_directory, memory_limit);
 
     let mut handler =
-        server_service::LargeTableServiceHandler::new(memory_limit.value(), data_directory.value());
+        server_service::LargeTableServiceHandler::new(memory_limit.value(), data_directory.path());
 
     // Read any existing dtables from disk.
     handler.load_existing_dtables();
