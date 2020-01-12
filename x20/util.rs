@@ -261,7 +261,16 @@ impl X20Manager {
     // Start up all the configs associated with the configs
     pub fn start(&self) {
         let env = self.read_saved_environment();
-        let mut configs = self.client.get_configs(env);
+        let mut configs = self.client.get_configs(env.clone());
+
+        if configs.len() == 0 {
+            eprintln!("❌You have no configs, so nothing will be started");
+            eprintln!("❌FYI, your current environment is set to `{}`", env);
+            eprintln!("❌If you'd like to change your environment, run:");
+            eprintln!("  x20 env --env=desktop");
+            std::process::exit(1);
+        }
+
         configs.sort_by(|a, b| a.get_priority().cmp(&b.get_priority()));
         let mut children = Vec::new();
         let mut failed = false;
