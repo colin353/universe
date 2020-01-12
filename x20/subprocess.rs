@@ -2,7 +2,7 @@ use std::io::BufRead;
 use std::io::Seek;
 
 pub struct ChildProcess {
-    config: x20::Configuration,
+    pub config: x20::Configuration,
     offset: u64,
     log_file: String,
     binary_file: String,
@@ -35,6 +35,35 @@ impl ChildProcess {
         }
         self.child = Some(c.spawn().unwrap());
         println!("✔️ started `{}`", self.config.get_name());
+    }
+
+    pub fn run_to_completion(&mut self) -> bool {
+        let output = match std::process::Command::new(&self.binary_file).output() {
+            Ok(o) => o,
+            Err(e) => {
+                eprintln!(
+                    "❌failed to start `{}`:\n\n {:?}",
+                    self.config.get_binary_name(),
+                    e
+                );
+                return false;
+            }
+        };
+
+        let output_stderr = std::str::from_utf8(&output.stderr)
+            .unwrap()
+            .trim()
+            .to_owned();
+        if !output.status.success() {
+            eprintln!(
+                "❌process `{}` failed:\n\n {}",
+                self.config.get_binary_name(),
+                output_stderr
+            );
+            return false;
+        }
+
+        true
     }
 
     pub fn tail_logs(&mut self) {

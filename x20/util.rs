@@ -264,15 +264,23 @@ impl X20Manager {
         let mut configs = self.client.get_configs(env);
         configs.sort_by(|a, b| a.get_priority().cmp(&b.get_priority()));
         let mut children = Vec::new();
+        let mut failed = false;
         for config in configs {
             let mut child = subprocess::ChildProcess::new(self.base_dir.clone(), config);
-            child.start();
-            children.push(child);
-            std::thread::sleep(std::time::Duration::from_secs(1));
+            if child.config.get_long_running() {
+                child.start();
+                children.push(child);
+                std::thread::sleep(std::time::Duration::from_secs(1));
+            } else {
+                let success = child.run_to_completion();
+                if !success {
+                    failed = true;
+                    break;
+                }
+            }
         }
 
         loop {
-            let mut failed = false;
             for child in &mut children {
                 child.tail_logs();
                 child.check_alive();
@@ -285,6 +293,7 @@ impl X20Manager {
                 }
 
                 std::process::exit(1);
+                break;
             }
         }
     }
