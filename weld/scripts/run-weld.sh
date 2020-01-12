@@ -4,7 +4,7 @@ IP_ADDR=$1
 
 bazel build //largetable:largetable_server
 RUST_LOG=debug RUST_BACKTRACE=1 bazel run //largetable:largetable_server -- \
-  --data_directory="/usr/local/largetable/" &
+  --data_directory="~/x20/data/largetable/" &
 
 sudo umount -l $HOME/codefs
 

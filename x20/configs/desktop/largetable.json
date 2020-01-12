@@ -6,6 +6,6 @@
     "environment": "desktop",
     "long_running": true,
     "arguments": {
-        "data_directory": "/usr/local/largetable"
+        "data_directory": "~/.x20/data/largetable"
     }
 }

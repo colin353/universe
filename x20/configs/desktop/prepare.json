@@ -1,0 +1,8 @@
+{
+    "name": "weld_prepare",
+    "binary_name": "weld_prepare",
+    "priority": 10,
+    "target": "weld/scripts/prepare.sh",
+    "environment": "desktop",
+    "long_running": false
+}
