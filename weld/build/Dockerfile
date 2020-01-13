@@ -16,3 +16,9 @@ RUN git config --global user.email "weld@colinmerkel.xyz"
 RUN git config --global user.name "weld-bot"
 RUN mkdir /data
 RUN bazel
+# Install google cloud sdk
+RUN curl https://dl.google.com/dl/cloudsdk/release/google-cloud-sdk.tar.gz > /tmp/google-cloud-sdk.tar.gz
+RUN mkdir -p /usr/local/gcloud \
+  && tar -C /usr/local/gcloud -xvf /tmp/google-cloud-sdk.tar.gz \
+  && /usr/local/gcloud/google-cloud-sdk/install.sh
+ENV PATH $PATH:/usr/local/gcloud/google-cloud-sdk/bin
