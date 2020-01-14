@@ -12,8 +12,6 @@ pub use largetable_grpc_rust::{
 
 use largetable_grpc_rust::LargeTableService;
 
-use std::sync::Arc;
-
 pub trait LargeTableClient {
     fn write(
         &self,
