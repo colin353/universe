@@ -6,9 +6,7 @@ extern crate largetable_client;
 extern crate largetable_grpc_rust;
 
 use largetable::Record;
-use largetable_client::LargeTableBatchWriter;
 use largetable_client::LargeTableClient;
-use largetable_grpc_rust::CompactionPolicy;
 
 use protobuf::Message;
 use std::sync::Arc;
@@ -93,7 +91,7 @@ impl LargeTableClient for LargeTableMockClient {
 
     fn batch_read(
         &self,
-        req: largetable_client::BatchReadRequest,
+        _req: largetable_client::BatchReadRequest,
     ) -> largetable_client::BatchReadResponse {
         largetable_client::BatchReadResponse::new()
     }
@@ -211,7 +209,7 @@ impl LargeTableClient for LargeTableMockClient {
 
     fn set_compaction_policy(&self, policy: largetable_grpc_rust::CompactionPolicy) {
         let mut d = Vec::new();
-        policy.write_to_vec(&mut d);
+        policy.write_to_vec(&mut d).unwrap();
 
         self.write(
             COMPACTION_POLICIES,
@@ -230,6 +228,7 @@ fn get_timestamp_usec() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use largetable_client::LargeTableBatchWriter;
     #[test]
     fn test_write() {
         let client = LargeTableMockClient::new();
