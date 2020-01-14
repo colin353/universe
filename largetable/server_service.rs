@@ -369,7 +369,7 @@ impl largetable_grpc_rust::LargeTableService for LargeTableServiceHandler {
     fn batch_read(
         &self,
         _m: grpc::RequestOptions,
-        req: largetable_grpc_rust::BatchReadRequest,
+        _req: largetable_grpc_rust::BatchReadRequest,
     ) -> grpc::SingleResponse<largetable_grpc_rust::BatchReadResponse> {
         grpc::SingleResponse::completed(largetable_grpc_rust::BatchReadResponse::new())
     }
@@ -432,7 +432,7 @@ impl largetable_grpc_rust::LargeTableService for LargeTableServiceHandler {
         req: largetable_grpc_rust::CompactionPolicy,
     ) -> grpc::SingleResponse<largetable_grpc_rust::SetCompactionPolicyResponse> {
         let mut rec = largetable_proto_rust::Record::new();
-        req.write_to_vec(&mut rec.mut_data());
+        req.write_to_vec(&mut rec.mut_data()).unwrap();
         self.largetable.read().unwrap().write(
             COMPACTION_POLICIES,
             &format!("{}_{}", req.get_row(), req.get_scope()),
