@@ -42,21 +42,6 @@ impl<T> Trie<T> {
         self.children.push(n);
     }
 
-    pub fn render(&self) -> String {
-        if self.children.is_empty() {
-            return format!("`{}`", self.prefix);
-        }
-        return format!(
-            "`{}` => ( {} )",
-            self.prefix,
-            self.children
-                .iter()
-                .map(|c| c.render())
-                .collect::<Vec<_>>()
-                .join(", ")
-        );
-    }
-
     pub fn lookup(&self, value: &str) -> Option<&T> {
         match self
             .children
@@ -103,7 +88,7 @@ fn apply_policy(
         .collect::<Vec<_>>();
 
     for (key, value) in to_write.into_iter().rev() {
-        builder.write_ordered(&key, value);
+        builder.write_ordered(&key, value).unwrap();
     }
 }
 
@@ -159,7 +144,7 @@ pub fn compact(
         std::mem::replace(&mut buffer, Vec::new()),
     );
 
-    builder.finish();
+    builder.finish().unwrap();
 }
 
 #[cfg(test)]
