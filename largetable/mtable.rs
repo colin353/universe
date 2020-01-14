@@ -11,7 +11,6 @@ use largetable_proto_rust::Record;
 
 use sstable;
 
-use std;
 use std::collections::BTreeMap;
 use std::collections::Bound;
 use std::io;
