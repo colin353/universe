@@ -63,7 +63,7 @@ impl X20Manager {
     }
 
     pub fn read_saved_binaries(&self) -> HashMap<String, x20::Binary> {
-        let mut f = match File::open(&format!("{}/config/binaries.recordio", self.base_dir)) {
+        let f = match File::open(&format!("{}/config/binaries.recordio", self.base_dir)) {
             Ok(f) => f,
             Err(_) => return HashMap::new(),
         };
