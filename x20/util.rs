@@ -28,9 +28,14 @@ impl X20Manager {
         }
         for bin in binaries {
             println!(
-                " - {} (v{}) @ {}",
+                " - {} (v{}{}) @ {}",
                 bin.get_name(),
                 bin.get_version(),
+                if bin.get_target().is_empty() {
+                    String::new()
+                } else {
+                    format!(" from {}", bin.get_target())
+                },
                 bin.get_url()
             );
         }
@@ -183,7 +188,13 @@ impl X20Manager {
             .into_iter()
             .find(|b| b.get_name() == name)
         {
-            Some(b) => b,
+            Some(mut binary) => {
+                if !target.is_empty() {
+                    binary.set_target(target);
+                }
+
+                binary
+            }
             None => {
                 if !create {
                     eprintln!(
