@@ -74,7 +74,7 @@ container_pull(
 
 container_pull(
     name = "build_base",
-    digest = "sha256:e28ccbcf34471896b37321e360e3c4d6ef459ef105d98c7ae77336239c2279c1",
+    digest = "sha256:119d9303a167d776b2d4c000adf81b6670ad84ad7ed503a0e104c085ef5afe88",
     registry = "registry.hub.docker.com",
     repository = "colinmerkel/build",
 )
