@@ -24,8 +24,8 @@ impl ChildProcess {
     }
 
     pub fn start(&mut self) {
-        let mut f = std::fs::File::create(&self.log_file).unwrap();
-        let mut f2 = std::fs::File::create(&self.log_file).unwrap();
+        let f = std::fs::File::create(&self.log_file).unwrap();
+        let f2 = std::fs::File::create(&self.log_file).unwrap();
         println!("start bin file: {}", self.binary_file);
         let mut c = std::process::Command::new(&self.binary_file);
         c.stdout(f);

@@ -55,7 +55,7 @@ impl X20Manager {
     }
 
     pub fn write_saved_binaries(&self, bins: &[x20::Binary]) {
-        let mut f = File::create(&format!("{}/config/binaries.recordio", self.base_dir)).unwrap();
+        let f = File::create(&format!("{}/config/binaries.recordio", self.base_dir)).unwrap();
         let mut w = RecordIOWriter::new(f);
         for bin in bins {
             w.write(bin);
@@ -67,7 +67,7 @@ impl X20Manager {
             Ok(f) => f,
             Err(_) => return HashMap::new(),
         };
-        let mut buf = std::io::BufReader::new(f);
+        let buf = std::io::BufReader::new(f);
         let reader = RecordIOReader::<x20::Binary, _>::new(buf);
 
         let mut output = HashMap::new();
@@ -149,9 +149,9 @@ impl X20Manager {
 
             // In case we are updating our own binary, we need to delete our bin file
             // and move the temporary binary overtop, or else we'll get some kind of error
-            std::fs::remove_file(&location);
+            std::fs::remove_file(&location).unwrap();
             std::fs::copy(&temporary_location, &location).unwrap();
-            std::fs::remove_file(&temporary_location);
+            std::fs::remove_file(&temporary_location).unwrap();
 
             println!("✔️ Updated {}", binary.get_name());
             updated_binaries.push(binary);
@@ -302,7 +302,6 @@ impl X20Manager {
                 }
 
                 std::process::exit(1);
-                break;
             }
         }
     }
