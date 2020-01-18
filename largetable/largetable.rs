@@ -1,9 +1,3 @@
-/*
- * largetable.rs
- *
- * This package defines the LargeTable struct.
- */
-
 use dtable;
 use keyserializer;
 use largetable_proto_rust::Record;
