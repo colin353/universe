@@ -2,6 +2,7 @@ extern crate fuse;
 extern crate grpc;
 extern crate libc;
 extern crate pool;
+extern crate rand;
 extern crate time;
 
 #[macro_use]

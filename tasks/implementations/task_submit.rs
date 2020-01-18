@@ -23,7 +23,7 @@ impl WeldTrySubmitTask {
 }
 impl Task for WeldTrySubmitTask {
     fn run(&self, args: &[TaskArgument], manager: Box<dyn TaskManager>) -> TaskResultFuture {
-        let status = manager.get_status();
+        let mut status = manager.get_status();
 
         // Before starting the submit, let's check whether our change is up to date
         let client = {
@@ -68,27 +68,43 @@ impl Task for WeldTrySubmitTask {
         Box::new(
             passed_manager
                 .spawn(PRESUBMIT_TASK, args.to_owned())
-                .and_then(move |s| {
+                .and_then(move |mut s| {
                     if s.get_status() != Status::SUCCESS {
                         return passed_manager_2.failure(status, "query subtask failed");
                     }
+
+                    status.set_artifacts(s.take_artifacts());
+                    passed_manager_2.set_status(&status);
 
                     passed_manager_2.spawn(APPLY_PATCH_TASK, passed_args.to_owned())
                 })
                 .and_then(move |s| {
                     if s.get_status() != Status::SUCCESS {
-                        return passed_manager_3.failure(passed_status, "patch subtask failed");
+                        let status = passed_manager_3.get_status();
+                        return passed_manager_3.failure(status, "patch subtask failed");
                     }
-
                     passed_manager_3.spawn(SUBMIT_TASK, passed_args_2.to_owned())
                 })
                 .and_then(move |s| {
+                    let status = passed_manager_4.get_status();
                     if s.get_status() != Status::SUCCESS {
-                        return passed_manager_4
-                            .failure(passed_status_2, "apply patch subtask failed");
+                        return passed_manager_4.failure(status, "apply patch subtask failed");
                     }
 
-                    passed_manager_4.success(passed_status_2)
+                    // Submit has been a success. Now let's start an x20 publish task
+                    // to see if there are any binaries to be rebuilt
+                    let mut args = task_client::ArgumentsBuilder::new();
+                    for artifact in status
+                        .get_artifacts()
+                        .iter()
+                        .filter(|a| a.get_name() == "dependency" || a.get_name() == "target")
+                    {
+                        args.add_string("target", artifact.get_value_string().to_owned());
+                    }
+                    args.add_int("change_id", id);
+                    passed_manager_4.start_new_task("x20_query", args.build());
+
+                    passed_manager_4.success(status)
                 }),
         )
     }

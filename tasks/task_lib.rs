@@ -10,6 +10,7 @@ pub type TaskResultFuture = Box<dyn Future<Item = TaskStatus, Error = ()> + Send
 pub trait TaskManager: Send + Sync {
     fn set_status(&self, status: &TaskStatus);
     fn get_status(&self) -> TaskStatus;
+    fn start_new_task(&self, task_name: &str, arguments: Vec<TaskArgument>);
     fn spawn(&self, task_name: &str, arguments: Vec<TaskArgument>) -> TaskResultFuture;
     fn run(self, status: TaskStatus) -> TaskResultFuture;
     fn failure(&self, mut status: TaskStatus, reason: &str) -> TaskResultFuture {
@@ -35,6 +36,8 @@ pub struct TaskServerConfiguration {
     pub weld_server_hostname: String,
     pub weld_server_port: u16,
     pub base_url: String,
+    pub x20_hostname: String,
+    pub x20_port: u16,
 }
 
 impl TaskServerConfiguration {
@@ -45,6 +48,8 @@ impl TaskServerConfiguration {
             base_url: String::new(),
             weld_server_hostname: String::new(),
             weld_server_port: 0,
+            x20_hostname: String::new(),
+            x20_port: 0,
         }
     }
 }

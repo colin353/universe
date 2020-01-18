@@ -39,3 +39,17 @@ rust_library(
         "//weld",
     ],
 )
+
+rust_library(
+    name = "task_deploy",
+    srcs = ["task_deploy.rs"],
+    deps = [
+        "//weld",
+        "//tasks:task_client",
+        "//tasks:task_lib",
+        "//tasks:tasks_grpc_rust",
+        "//third_party:tokio",
+        "//x20:x20_client",
+        "//x20:x20_grpc_rust",
+    ],
+)

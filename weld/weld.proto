@@ -177,6 +177,8 @@ message RunBuildQueryResponse {
 message RunBuildRequest {
   uint64 change_id = 1;
   string target = 2;
+  bool optimized = 3;
+  bool upload = 4;
 }
 message RunBuildResponse {
   bool success = 1;
@@ -184,6 +186,9 @@ message RunBuildResponse {
   string build_output = 3;
   bool test_success = 4;
   string test_output = 5;
+  string upload_output = 6;
+  bool upload_success = 7;
+  string artifact_url = 8;
 }
 
 message ApplyPatchRequest { uint64 change_id = 1; }

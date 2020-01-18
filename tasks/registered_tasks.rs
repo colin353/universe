@@ -3,6 +3,7 @@ extern crate lazy_static;
 extern crate task_lib;
 
 extern crate task_build;
+extern crate task_deploy;
 extern crate task_examples;
 extern crate task_submit;
 
@@ -38,6 +39,15 @@ lazy_static! {
             task_build::QUERY_TASK,
             Box::new(task_build::WeldQueryTask::new()),
         );
+        m.insert(
+            task_deploy::QUERY_TASK,
+            Box::new(task_deploy::X20QueryTask::new()),
+        );
+        m.insert(
+            task_deploy::PUBLISH_TASK,
+            Box::new(task_deploy::X20PublishTask::new()),
+        );
+
         m
     };
 }

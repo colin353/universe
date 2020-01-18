@@ -1,5 +1,6 @@
 use largetable_client::LargeTableClient;
 use protobuf;
+use rand;
 use std::collections::HashSet;
 use std::io::Write;
 use weld;
@@ -129,8 +130,14 @@ impl<C: LargeTableClient> WeldLocalServiceHandler<C> {
     pub fn run_build(&self, req: &weld::RunBuildRequest) -> weld::RunBuildResponse {
         let mut response = weld::RunBuildResponse::new();
 
-        let output = match std::process::Command::new("bazel")
-            .arg("build")
+        let mut cmd = std::process::Command::new("bazel");
+        cmd.arg("build");
+
+        if req.get_optimized() {
+            cmd.arg("-c").arg("opt");
+        }
+
+        let output = match cmd
             .arg(req.get_target())
             .current_dir(format!(
                 "{}/unsubmitted/{}",
@@ -196,6 +203,114 @@ impl<C: LargeTableClient> WeldLocalServiceHandler<C> {
         } else {
             println!("command failed: {}", response.get_test_output());
             return response;
+        }
+
+        // If desired, upload the result
+        if req.get_upload() {
+            // Trick - to get the output binary, run "bazel run" with --run_under="echo ". Stdout
+            // will contain the full path to the binary
+            let mut cmd = std::process::Command::new("bazel");
+            cmd.arg("run");
+
+            if req.get_optimized() {
+                cmd.arg("-c").arg("opt");
+            }
+            cmd.arg("--run_under").arg("echo ");
+
+            let output = match cmd
+                .arg(req.get_target())
+                .current_dir(format!(
+                    "{}/unsubmitted/{}",
+                    self.mount_dir,
+                    req.get_change_id()
+                ))
+                .output()
+            {
+                Ok(o) => o,
+                Err(e) => {
+                    println!("run-under command failed to start: {:?}", e);
+                    return response;
+                }
+            };
+
+            let run_stdout = std::str::from_utf8(&output.stdout)
+                .unwrap()
+                .trim()
+                .to_owned();
+            let run_stderr = std::str::from_utf8(&output.stderr)
+                .unwrap()
+                .trim()
+                .to_owned();
+            response.set_upload_output(format!("{}\n{}", run_stdout, run_stderr));
+
+            if !output.status.success() {
+                println!("failed to bazel run-under!");
+                return response;
+            }
+
+            let binary_location = run_stdout;
+
+            // Activate the service account (in case it wasn't already activated)
+            let output = match std::process::Command::new("gcloud")
+                .arg("auth")
+                .arg("activate-service-account")
+                .arg("--key-file=/data/bazel-access.json")
+                .output()
+            {
+                Ok(o) => o,
+                Err(e) => {
+                    println!("failed to activate service account: {:?}", e);
+                    response.set_upload_output(String::from("failed to activate service account"));
+                    return response;
+                }
+            };
+
+            let run_stdout = std::str::from_utf8(&output.stdout)
+                .unwrap()
+                .trim()
+                .to_owned();
+            let run_stderr = std::str::from_utf8(&output.stderr)
+                .unwrap()
+                .trim()
+                .to_owned();
+            response.set_upload_output(format!("{}\n{}", run_stdout, run_stderr));
+            if !output.status.success() {
+                return response;
+            }
+
+            let name = format!("{:x}{:x}", rand::random::<u64>(), rand::random::<u64>());
+            let output = match std::process::Command::new("gsutil")
+                .arg("cp")
+                .arg(binary_location)
+                .arg(format!("gs://x20-binaries/{}", name))
+                .output()
+            {
+                Ok(o) => o,
+                Err(e) => {
+                    println!("failed to upload artifact: {:?}", e);
+                    return response;
+                }
+            };
+
+            let run_stdout = std::str::from_utf8(&output.stdout)
+                .unwrap()
+                .trim()
+                .to_owned();
+            let run_stderr = std::str::from_utf8(&output.stderr)
+                .unwrap()
+                .trim()
+                .to_owned();
+            response.set_upload_output(format!("{}\n{}", run_stdout, run_stderr));
+            if output.status.success() {
+                response.set_upload_success(true);
+            } else {
+                return response;
+            }
+
+            response.set_artifact_url(format!(
+                "https://storage.googleapis.com/x20-binaries/{}",
+                name
+            ));
         }
 
         response.set_success(true);

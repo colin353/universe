@@ -134,11 +134,29 @@ impl<C: LargeTableClient + Clone + Sync + 'static> Manager<C> {
 
 impl<C: LargeTableClient + Clone + Send + Sync + 'static> task_lib::TaskManager for Manager<C> {
     fn get_status(&self) -> TaskStatus {
+        println!("get status: {}", self.task_id);
         self.client.read(&self.task_id).unwrap()
     }
 
     fn set_status(&self, status: &TaskStatus) {
         self.client.write(&status)
+    }
+
+    fn start_new_task(&self, task_name: &str, arguments: Vec<TaskArgument>) {
+        // TODO: this is kinda a mess, it's a copy of code in create_task.  Should rearchitect this
+        // somehow to be less copypaste
+        let mut initial_status = TaskStatus::new();
+        initial_status.set_name(task_name.to_owned());
+        initial_status.set_arguments(protobuf::RepeatedField::from_vec(arguments));
+        let id = self.client.reserve_task_id();
+        initial_status.set_task_id(id.clone());
+
+        let info_url = format!("{}/{}", self.config.base_url, id);
+        initial_status.set_info_url(info_url);
+        self.client.write(&initial_status);
+
+        let m = Manager::new(id, self.client.clone(), self.config.clone());
+        tokio::spawn(future::ok(()).and_then(move |()| m.run(initial_status).map(std::mem::drop)));
     }
 
     fn spawn(&self, task_name: &str, arguments: Vec<TaskArgument>) -> task_lib::TaskResultFuture {
@@ -175,6 +193,7 @@ impl<C: LargeTableClient + Clone + Send + Sync + 'static> task_lib::TaskManager 
 
         status.set_status(Status::STARTED);
         status.set_start_time(get_timestamp_usec());
+
         self.set_status(&status);
 
         let passed_client = self.client.clone();
