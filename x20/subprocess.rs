@@ -98,7 +98,10 @@ impl ChildProcess {
 
     pub fn kill(&mut self) {
         if let Some(child) = self.child.as_mut() {
-            child.kill().unwrap();
+            match child.kill() {
+                Ok(_) => (),
+                Err(e) => eprintln!("failed to kill child: {:?}", e),
+            }
         }
     }
 }
