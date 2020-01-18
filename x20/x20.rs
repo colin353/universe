@@ -49,10 +49,7 @@ fn main() {
     let manager = util::X20Manager::new(client, base_dir);
 
     match args[0].as_ref() {
-        "list" => {
-            manager.list();
-        }
-        "ls" => {
+        "list" | "ls" => {
             manager.list();
         }
         "publish" => {
@@ -61,7 +58,7 @@ fn main() {
         "update" => {
             manager.update();
         }
-        "env" => {
+        "setenv" | "env" => {
             manager.write_saved_environment(env.value());
             println!("✔️ Updated environment to `{}`", env.value());
             manager.update();
