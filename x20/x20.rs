@@ -52,6 +52,9 @@ fn main() {
         "list" => {
             manager.list();
         }
+        "ls" => {
+            manager.list();
+        }
         "publish" => {
             manager.publish(name.value(), path.value(), target.value(), create.value());
         }
