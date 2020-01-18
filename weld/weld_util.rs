@@ -131,7 +131,7 @@ fn main() {
         "cat" => {
             let maybe_id = client.lookup_friendly_name(space.value());
             if let Some(id) = maybe_id {
-                let f = client.read(weld::file_id(id, file.value(), 0));
+                let f = client.read(weld::file_id(id, file.path(), 0));
                 match f.get_found() {
                     true => println!("{}", String::from_utf8_lossy(f.get_contents())),
                     false => println!("No such file."),
@@ -144,7 +144,7 @@ fn main() {
         "ls" => {
             let maybe_id = client.lookup_friendly_name(space.value());
             if let Some(id) = maybe_id {
-                let files = client.list_files(weld::file_id(id, file.value(), 0));
+                let files = client.list_files(weld::file_id(id, file.path(), 0));
                 for f in files {
                     println!("{}", f.get_filename());
                 }
@@ -156,7 +156,7 @@ fn main() {
         "rm" => {
             let maybe_id = client.lookup_friendly_name(space.value());
             if let Some(id) = maybe_id {
-                client.delete(weld::file_id(id, file.value(), 0));
+                client.delete(weld::file_id(id, file.path(), 0));
             } else {
                 println!("No such client '{}`", space.value());
                 std::process::exit(1);
@@ -176,7 +176,7 @@ fn main() {
             if let Some(id) = maybe_id {
                 let mut req = weld::WriteRequest::new();
                 req.set_id(id);
-                req.mut_file().set_filename(file.value());
+                req.mut_file().set_filename(file.path());
                 req.mut_file().set_reverted(true);
                 client.write(req);
             }

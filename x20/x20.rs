@@ -53,7 +53,7 @@ fn main() {
             manager.list();
         }
         "publish" => {
-            manager.publish(name.value(), path.value(), target.value(), create.value());
+            manager.publish(name.value(), path.path(), target.value(), create.value());
         }
         "update" => {
             manager.update();
