@@ -57,6 +57,7 @@ impl ReviewServer {
             .client
             .list_changes()
             .iter()
+            .rev()
             .filter(|c| c.get_status() != weld::ChangeStatus::ARCHIVED)
             .map(|c| render::change(c))
             .collect::<Vec<_>>();

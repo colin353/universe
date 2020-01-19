@@ -896,6 +896,10 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
             .write()
             .unwrap()
             .remove(change.get_friendly_name());
+
+        // Invalidate the local cache
+        self.cache
+            .insert(ReadQuery::GetChange(id), ReadResponse::GetChange(None));
     }
 
     pub fn sync(&self, id: u64, manually_merged_files: &[File]) -> (Vec<File>, u64) {

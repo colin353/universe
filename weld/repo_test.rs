@@ -357,7 +357,7 @@ mod tests {
         );
 
         // Not only try reading the file, but also listing the directory.
-        let listing = repo.list_files(2, "/test", 0);
+        let listing = repo.list_files(new_id, "/test", 0);
         assert_eq!(listing.len(), 1, "Should list one file");
         assert_eq!(listing[0].get_filename(), "/test/config.txt");
 

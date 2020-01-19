@@ -120,8 +120,14 @@ impl<C: LargeTableClient> WeldServiceHandler<C> {
             id, num_changed_files
         );
 
+        // Write the change to a list of submitted changes
         self.database
             .write_proto(SUBMITTED, &index_to_rowname(id), 0, &change);
+
+        // Also write the change under its pending ID
+        change.set_id(pending_id);
+        self.database
+            .write_proto(SUBMITTED, &index_to_rowname(pending_id), 0, &change);
 
         self.repo.delete_change(pending_id);
 
@@ -267,7 +273,7 @@ impl<C: LargeTableClient> WeldServiceHandler<C> {
             String::new()
         };
 
-        let changes = largetable_client::LargeTableScopedIterator::new(
+        let changes = largetable_client::LargeTableScopedIterator::<weld::Change, _>::new(
             &self.database,
             String::from(SUBMITTED),
             String::from(""),
@@ -281,8 +287,12 @@ impl<C: LargeTableClient> WeldServiceHandler<C> {
             if req.get_limit() > 0 && count == req.get_limit() {
                 break;
             }
-            count += 1;
+            if change.get_id() != change.get_submitted_id() {
+                continue;
+            }
+
             output.mut_changes().push(change);
+            count += 1;
         }
         output
     }
