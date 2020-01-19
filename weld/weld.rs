@@ -306,6 +306,14 @@ impl WeldLocalClient {
             .expect("rpc")
             .1
     }
+
+    pub fn clean_submitted_changes(&self) -> weld::CleanSubmittedChangesResponse {
+        self.client
+            .clean_submitted_changes(self.opts(), weld::CleanSubmittedChangesRequest::new())
+            .wait()
+            .expect("rpc")
+            .1
+    }
 }
 
 pub fn get_timestamp_usec() -> u64 {

@@ -562,6 +562,26 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
         }
     }
 
+    pub fn clean_submitted_changes(&self) -> Vec<String> {
+        let client = match self.remote_server {
+            Some(ref client) => client,
+            None => return Vec::new(),
+        };
+
+        let mut output = Vec::new();
+        for change in self.list_changes() {
+            let mut req = weld::Change::new();
+            req.set_id(change.get_remote_id());
+            let c = client.get_change(req);
+            if c.get_status() == weld::ChangeStatus::SUBMITTED && c.get_submitted_id() > 0 {
+                // The change was submitted, so we can delete it.
+                self.delete_change(change.get_id());
+                output.push(change.get_friendly_name().to_owned());
+            }
+        }
+        output
+    }
+
     pub fn list_files(&self, id: u64, directory: &str, index: u64) -> Vec<File> {
         // Need to make sure the last char in the string is a slash. Append one
         // if neccessary.

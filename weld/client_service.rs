@@ -716,6 +716,14 @@ impl<C: LargeTableClient> WeldLocalServiceHandler<C> {
         self.repo.delete_change(change.get_id());
         weld::DeleteResponse::new()
     }
+
+    fn clean_submitted_changes(&self) -> weld::CleanSubmittedChangesResponse {
+        let mut response = weld::CleanSubmittedChangesResponse::new();
+        for name in self.repo.clean_submitted_changes() {
+            response.mut_deleted_friendly_names().push(name);
+        }
+        response
+    }
 }
 
 impl<C: LargeTableClient> weld::WeldLocalService for WeldLocalServiceHandler<C> {
@@ -852,5 +860,13 @@ impl<C: LargeTableClient> weld::WeldLocalService for WeldLocalServiceHandler<C> 
         req: weld::Change,
     ) -> grpc::SingleResponse<weld::DeleteResponse> {
         grpc::SingleResponse::completed(self.delete_change(&req))
+    }
+
+    fn clean_submitted_changes(
+        &self,
+        _m: grpc::RequestOptions,
+        req: weld::CleanSubmittedChangesRequest,
+    ) -> grpc::SingleResponse<weld::CleanSubmittedChangesResponse> {
+        grpc::SingleResponse::completed(self.clean_submitted_changes())
     }
 }

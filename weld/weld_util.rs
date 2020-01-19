@@ -171,6 +171,20 @@ fn main() {
                 eprintln!("{} @ {}", c.get_friendly_name(), c.get_based_index());
             }
         }
+        "clean" => {
+            let mut deleted = false;
+            for change in client
+                .clean_submitted_changes()
+                .get_deleted_friendly_names()
+            {
+                deleted = true;
+                println!("deleted: {}", change);
+            }
+
+            if !deleted {
+                println!("no changes to delete");
+            }
+        }
         "revert" => {
             let maybe_id = client.lookup_friendly_name(space.value());
             if let Some(id) = maybe_id {

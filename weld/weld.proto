@@ -197,6 +197,11 @@ message ApplyPatchResponse {
   string reason = 2;
 }
 
+message CleanSubmittedChangesRequest {}
+message CleanSubmittedChangesResponse {
+  repeated string deleted_friendly_names = 1;
+}
+
 service WeldLocalService {
   rpc GetChange(GetChangeRequest) returns (Change);
   rpc MakeChange(Change) returns (Change);
@@ -215,4 +220,6 @@ service WeldLocalService {
   rpc RunBuildQuery(RunBuildQueryRequest) returns (RunBuildQueryResponse);
   rpc ApplyPatch(ApplyPatchRequest) returns (ApplyPatchResponse);
   rpc DeleteChange(Change) returns (DeleteResponse);
+  rpc CleanSubmittedChanges(CleanSubmittedChangesRequest)
+      returns (CleanSubmittedChangesResponse);
 }
