@@ -52,3 +52,9 @@ rust_binary(
         "@io_bazel_rules_rust//proto/raze:tls_api_stub",
     ],
 )
+
+rust_library(
+    name = "bug_client",
+    srcs = ["client.rs"],
+    deps = [":bugs_grpc_rust"],
+)
