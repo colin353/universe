@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+enum BugStatus {
+  WAITING = 0;
+  IN_PROGRESS = 1;
+  CLOSED = 2;
+}
+
+message Bug {
+  uint64 id = 1;
+  string title = 2;
+  string description = 3;
+  BugStatus status = 4;
+
+  repeated string tags = 5;
+}
+
+message GetBugsRequest { BugStatus status = 1; }
+message GetBugsResponse { repeated Bug bugs = 1; }
+
+service BugService {
+  rpc GetBugs(GetBugsRequest) returns (GetBugsResponse);
+  rpc GetBug(Bug) returns (Bug);
+  rpc CreateBug(Bug) returns (Bug);
+  rpc UpdateBug(Bug) returns (Bug);
+}
