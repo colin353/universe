@@ -23,6 +23,7 @@ rust_library(
     srcs = ["server_lib.rs"],
     deps = [
         ":bugs_grpc_rust",
+        "//auth:auth_client",
         "//largetable:largetable_client",
         "@io_bazel_rules_rust//proto/raze:grpc",
         "@io_bazel_rules_rust//proto/raze:protobuf",

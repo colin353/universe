@@ -1,7 +1,9 @@
+extern crate auth_client;
 extern crate bugs_grpc_rust as bugs;
 extern crate grpc;
 extern crate largetable_client;
 
+use auth_client::AuthServer;
 use largetable_client::LargeTableClient;
 
 const BUG_IDS: &'static str = "bug_ids";
@@ -10,6 +12,7 @@ const ALL_BUGS: &'static str = "all_bugs";
 #[derive(Clone)]
 pub struct BugServiceHandler<C: LargeTableClient> {
     database: C,
+    auth: Option<auth_client::AuthClient>,
 }
 
 fn bug_rowname(s: bugs::BugStatus) -> String {
@@ -21,8 +24,11 @@ fn bug_colname(id: u64) -> String {
 }
 
 impl<C: LargeTableClient + Clone> BugServiceHandler<C> {
-    pub fn new(db: C) -> Self {
-        Self { database: db }
+    pub fn new(db: C, auth: auth_client::AuthClient) -> Self {
+        Self {
+            database: db,
+            auth: Some(auth),
+        }
     }
 
     pub fn get_bugs(&self, req: &bugs::GetBugsRequest) -> bugs::GetBugsResponse {
@@ -80,6 +86,14 @@ impl<C: LargeTableClient + Clone> BugServiceHandler<C> {
 
         req
     }
+
+    fn authenticate(&self, token: &str) -> bool {
+        self.auth
+            .as_ref()
+            .unwrap()
+            .authenticate(token.to_owned())
+            .get_success()
+    }
 }
 
 #[cfg(test)]
@@ -89,7 +103,10 @@ mod tests {
 
     fn create_test_handler() -> BugServiceHandler<largetable_test::LargeTableMockClient> {
         let db = largetable_test::LargeTableMockClient::new();
-        BugServiceHandler::new(db)
+        BugServiceHandler {
+            database: db,
+            auth: None,
+        }
     }
 
     #[test]
@@ -132,5 +149,71 @@ mod tests {
         req.set_status(bugs::BugStatus::IN_PROGRESS);
         let response = handler.get_bugs(&req);
         assert_eq!(response.get_bugs().len(), 1);
+    }
+}
+
+impl<C: LargeTableClient + Clone> bugs::BugService for BugServiceHandler<C> {
+    fn get_bugs(
+        &self,
+        _: grpc::RequestOptions,
+        req: bugs::GetBugsRequest,
+    ) -> grpc::SingleResponse<bugs::GetBugsResponse> {
+        if !self.authenticate(req.get_token()) {
+            let mut response = bugs::GetBugsResponse::new();
+            response.set_error(bugs::Error::AUTHENTICATION);
+            return grpc::SingleResponse::completed(response);
+        }
+
+        grpc::SingleResponse::completed(self.get_bugs(&req))
+    }
+
+    fn get_bug(
+        &self,
+        _: grpc::RequestOptions,
+        req: bugs::GetBugRequest,
+    ) -> grpc::SingleResponse<bugs::GetBugResponse> {
+        if !self.authenticate(req.get_token()) {
+            let mut response = bugs::GetBugResponse::new();
+            response.set_error(bugs::Error::AUTHENTICATION);
+            return grpc::SingleResponse::completed(response);
+        }
+
+        let mut response = bugs::GetBugResponse::new();
+        *response.mut_bug() = self.get_bug(req.get_bug());
+        if response.get_bug().get_id() > 0 {
+            response.set_found(true);
+        }
+        grpc::SingleResponse::completed(response)
+    }
+
+    fn create_bug(
+        &self,
+        _: grpc::RequestOptions,
+        mut req: bugs::CreateBugRequest,
+    ) -> grpc::SingleResponse<bugs::CreateBugResponse> {
+        if !self.authenticate(req.get_token()) {
+            let mut response = bugs::CreateBugResponse::new();
+            response.set_error(bugs::Error::AUTHENTICATION);
+            return grpc::SingleResponse::completed(response);
+        }
+
+        let mut response = bugs::CreateBugResponse::new();
+        *response.mut_bug() = self.create_bug(req.take_bug());
+        grpc::SingleResponse::completed(response)
+    }
+
+    fn update_bug(
+        &self,
+        _: grpc::RequestOptions,
+        mut req: bugs::UpdateBugRequest,
+    ) -> grpc::SingleResponse<bugs::UpdateBugResponse> {
+        if !self.authenticate(req.get_token()) {
+            let mut response = bugs::UpdateBugResponse::new();
+            response.set_error(bugs::Error::AUTHENTICATION);
+            return grpc::SingleResponse::completed(response);
+        }
+
+        self.create_bug(req.take_bug());
+        grpc::SingleResponse::completed(bugs::UpdateBugResponse::new())
     }
 }

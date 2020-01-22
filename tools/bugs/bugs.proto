@@ -6,6 +6,11 @@ enum BugStatus {
   CLOSED = 2;
 }
 
+enum Error {
+  NONE = 0;
+  AUTHENTICATION = 1;
+}
+
 message Bug {
   uint64 id = 1;
   string title = 2;
@@ -15,12 +20,43 @@ message Bug {
   repeated string tags = 5;
 }
 
-message GetBugsRequest { BugStatus status = 1; }
-message GetBugsResponse { repeated Bug bugs = 1; }
+message GetBugsRequest {
+  string token = 1;
+  BugStatus status = 2;
+}
+message GetBugsResponse {
+  Error error = 1;
+  repeated Bug bugs = 2;
+}
+
+message GetBugRequest {
+  string token = 1;
+  Bug bug = 2;
+}
+message GetBugResponse {
+  Error error = 1;
+  bool found = 2;
+  Bug bug = 3;
+}
+
+message UpdateBugRequest {
+  string token = 1;
+  Bug bug = 2;
+}
+message UpdateBugResponse { Error error = 1; }
+
+message CreateBugRequest {
+  string token = 1;
+  Bug bug = 2;
+}
+message CreateBugResponse {
+  Error error = 1;
+  Bug bug = 2;
+}
 
 service BugService {
   rpc GetBugs(GetBugsRequest) returns (GetBugsResponse);
-  rpc GetBug(Bug) returns (Bug);
-  rpc CreateBug(Bug) returns (Bug);
-  rpc UpdateBug(Bug) returns (Bug);
+  rpc GetBug(GetBugRequest) returns (GetBugResponse);
+  rpc CreateBug(CreateBugRequest) returns (CreateBugResponse);
+  rpc UpdateBug(UpdateBugRequest) returns (UpdateBugResponse);
 }
