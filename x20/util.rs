@@ -154,7 +154,7 @@ impl X20Manager {
 
             // In case we are updating our own binary, we need to delete our bin file
             // and move the temporary binary overtop, or else we'll get some kind of error
-            std::fs::remove_file(&location).unwrap();
+            std::fs::remove_file(&location); // No need to unwrap - if it doesn't exist it's ok
             std::fs::copy(&temporary_location, &location).unwrap();
             std::fs::remove_file(&temporary_location).unwrap();
 
