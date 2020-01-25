@@ -58,3 +58,16 @@ rust_library(
     srcs = ["client.rs"],
     deps = [":bugs_grpc_rust"],
 )
+
+rust_binary(
+    name = "bug_util",
+    srcs = ["util.rs"],
+    edition = "2018",
+    deps = [
+        ":bug_client",
+        ":bugs_grpc_rust",
+        "//auth:auth_client",
+        "//util/cli",
+        "//util/flags",
+    ],
+)

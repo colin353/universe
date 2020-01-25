@@ -213,7 +213,7 @@ impl<C: LargeTableClient + Clone> bugs::BugService for BugServiceHandler<C> {
             return grpc::SingleResponse::completed(response);
         }
 
-        self.create_bug(req.take_bug());
+        self.update_bug(req.take_bug());
         grpc::SingleResponse::completed(bugs::UpdateBugResponse::new())
     }
 }
