@@ -71,3 +71,16 @@ rust_binary(
         "//util/flags",
     ],
 )
+
+rust_image(
+    name = "bug_server_img",
+    binary = ":bug_server",
+)
+
+docker_push(
+    name = "bug_server_img_push",
+    image = ":bug_server_img",
+    registry = "us.gcr.io",
+    repository = "mushu-194218/bugs",
+    tag = "dev",
+)
