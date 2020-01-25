@@ -62,6 +62,9 @@ rust_library(
 rust_binary(
     name = "bug_util",
     srcs = ["util.rs"],
+    data = [
+        "template.txt",
+    ],
     edition = "2018",
     deps = [
         ":bug_client",
@@ -71,7 +74,6 @@ rust_binary(
         "//util/flags",
     ],
 )
-
 rust_image(
     name = "bug_server_img",
     binary = ":bug_server",
@@ -84,3 +86,4 @@ docker_push(
     repository = "mushu-194218/bugs",
     tag = "dev",
 )
+

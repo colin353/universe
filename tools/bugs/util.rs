@@ -2,6 +2,8 @@
 extern crate flags;
 extern crate bugs_grpc_rust as bugs;
 
+static TEMPLATE: &str = include_str!("template.txt");
+
 fn usage() {
     println!("USAGE: b <command>");
     println!("use b --help for details.");
@@ -80,30 +82,28 @@ fn main() {
 
     if args.len() == 0 {
         // By default, just list the bugs
+        let mut has_in_progress = false;
         for bug in client.get_bugs(bugs::BugStatus::IN_PROGRESS).unwrap() {
-            println!(
-                "b/{} {} [{:?}]",
-                bug.get_id(),
-                bug.get_title(),
-                bug.get_status()
-            );
+            if !has_in_progress {
+                println!("[IN PROGRESS]");
+            }
+            has_in_progress = true;
+            println!("b/{} {}", bug.get_id(), bug.get_title());
+        }
+        if has_in_progress {
+            println!("");
         }
 
-        println!("");
+        println!("[WAITING]");
         for bug in client.get_bugs(bugs::BugStatus::WAITING).unwrap() {
-            println!(
-                "b/{} {} [{:?}]",
-                bug.get_id(),
-                bug.get_title(),
-                bug.get_status()
-            );
+            println!("b/{} {}", bug.get_id(), bug.get_title());
         }
         return;
     }
 
     match args[0].as_ref() {
         "new" => {
-            let mut serialized_bug = String::from("\n\n# Edit this file");
+            let mut serialized_bug = TEMPLATE.to_string();
             let mut bug = bugs::Bug::new();
 
             loop {

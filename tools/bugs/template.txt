@@ -1,0 +1,9 @@
+
+
+# Write bug description above. Lines starting with # will be ignored.
+# Add annotations, e.g. 
+#
+# STATUS=in_progress
+# TAGS=weld,largetable
+#
+# to set special fields.
