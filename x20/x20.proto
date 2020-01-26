@@ -5,6 +5,8 @@ message Binary {
   uint64 version = 2;
   string target = 3;
   string url = 4;
+  string docker_img = 5;
+  string docker_img_tag = 6;
 }
 
 message Configuration {

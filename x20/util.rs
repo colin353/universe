@@ -36,7 +36,11 @@ impl X20Manager {
                 } else {
                     format!(" from {}", bin.get_target())
                 },
-                bin.get_url()
+                if !bin.get_docker_img().is_empty() {
+                    format!("{}@{}", bin.get_docker_img(), bin.get_docker_img_tag())
+                } else {
+                    bin.get_url().to_string()
+                }
             );
         }
 
@@ -94,6 +98,12 @@ impl X20Manager {
                     updated_binaries.push(binary);
                     continue;
                 }
+            }
+
+            // If this is a docker image, there's no need to download anything.
+            if !binary.get_docker_img().is_empty() {
+                updated_binaries.push(binary);
+                continue;
             }
 
             let temporary_location = format!("/tmp/x20_{}", binary.get_name());
@@ -175,7 +185,15 @@ impl X20Manager {
         println!("✔️ Everything is up to date");
     }
 
-    pub fn publish(&self, name: String, path: String, target: String, create: bool) {
+    pub fn publish(
+        &self,
+        name: String,
+        path: String,
+        target: String,
+        docker_img: String,
+        docker_img_tag: String,
+        create: bool,
+    ) {
         if name.is_empty() && target.is_empty() {
             eprintln!("You must specify either a name (--name) or a target (--target) to publish");
             std::process::exit(1);
@@ -214,37 +232,47 @@ impl X20Manager {
         // Come up with a random name for the binary
         let name = format!("{:x}{:x}", rand::random::<u64>(), rand::random::<u64>());
 
-        // Upload the binary to the cloud bucket
-        let output = match std::process::Command::new("gsutil")
-            .arg("cp")
-            .arg(path)
-            .arg(format!("gs://x20-binaries/{}", name))
-            .output()
-        {
-            Ok(o) => o,
-            Err(e) => {
-                println!(
-                    "failed to start gsutil copy. do you have gsutil installed? {:?}",
-                    e
-                );
+        if !docker_img.is_empty() {
+            if docker_img_tag.is_empty() {
+                eprintln!("❌you must provide --docker_img_tag for docker images!");
+                std::process::exit(1);
+            }
+
+            binary.set_docker_img(docker_img);
+            binary.set_docker_img_tag(docker_img_tag);
+        } else {
+            // Upload the binary to the cloud bucket
+            let output = match std::process::Command::new("gsutil")
+                .arg("cp")
+                .arg(path)
+                .arg(format!("gs://x20-binaries/{}", name))
+                .output()
+            {
+                Ok(o) => o,
+                Err(e) => {
+                    println!(
+                        "failed to start gsutil copy. do you have gsutil installed? {:?}",
+                        e
+                    );
+                    return;
+                }
+            };
+
+            let output_stderr = std::str::from_utf8(&output.stderr)
+                .unwrap()
+                .trim()
+                .to_owned();
+            if !output.status.success() {
+                eprintln!("Failed to upload binary:\n\n {}", output_stderr);
                 return;
             }
-        };
 
-        let output_stderr = std::str::from_utf8(&output.stderr)
-            .unwrap()
-            .trim()
-            .to_owned();
-        if !output.status.success() {
-            eprintln!("Failed to upload binary:\n\n {}", output_stderr);
-            return;
+            // Set the downloadable URL
+            binary.set_url(format!(
+                "https://storage.googleapis.com/x20-binaries/{}",
+                name
+            ));
         }
-
-        // Set the downloadable URL
-        binary.set_url(format!(
-            "https://storage.googleapis.com/x20-binaries/{}",
-            name
-        ));
 
         let mut req = x20::PublishBinaryRequest::new();
         req.set_binary(binary);

@@ -30,6 +30,16 @@ fn main() {
         "The path to the binary you are publishing"
     );
     let target = define_flag!("target", String::from(""), "The target you are publishing");
+    let docker_img = define_flag!(
+        "docker_img",
+        String::from(""),
+        "The name of the docker image you are publishing"
+    );
+    let docker_img_tag = define_flag!(
+        "docker_img_tag",
+        String::from(""),
+        "The tag of the docker image you are publishing"
+    );
     let create = define_flag!("create", false, "Whether or not to create a new binary");
     let x20_hostname = define_flag!(
         "x20_hostname",
@@ -39,7 +49,17 @@ fn main() {
     let x20_port = define_flag!("x20_port", 8009, "The port of the x20 service");
     let env = define_flag!("env", String::new(), "The environment to use");
 
-    let args = parse_flags!(name, path, target, create, x20_hostname, x20_port, env);
+    let args = parse_flags!(
+        name,
+        path,
+        target,
+        create,
+        x20_hostname,
+        x20_port,
+        env,
+        docker_img,
+        docker_img_tag
+    );
     if args.len() != 1 {
         return usage();
     }
@@ -53,7 +73,14 @@ fn main() {
             manager.list();
         }
         "publish" => {
-            manager.publish(name.value(), path.path(), target.value(), create.value());
+            manager.publish(
+                name.value(),
+                path.path(),
+                target.value(),
+                docker_img.value(),
+                docker_img_tag.value(),
+                create.value(),
+            );
         }
         "update" => {
             manager.update();
