@@ -207,6 +207,61 @@ impl<C: LargeTableClient> WeldLocalServiceHandler<C> {
 
         // If desired, upload the result
         if req.get_upload() {
+            // Activate the service account (in case it wasn't already activated)
+            let output = match std::process::Command::new("gcloud")
+                .arg("auth")
+                .arg("activate-service-account")
+                .arg("--key-file=/data/bazel-access.json")
+                .output()
+            {
+                Ok(o) => o,
+                Err(e) => {
+                    println!("failed to activate service account: {:?}", e);
+                    response.set_upload_output(String::from("failed to activate service account"));
+                    return response;
+                }
+            };
+
+            let run_stdout = std::str::from_utf8(&output.stdout)
+                .unwrap()
+                .trim()
+                .to_owned();
+            let run_stderr = std::str::from_utf8(&output.stderr)
+                .unwrap()
+                .trim()
+                .to_owned();
+            response.set_upload_output(format!("{}\n{}", run_stdout, run_stderr));
+            if !output.status.success() {
+                return response;
+            }
+
+            // Configure docker authorization
+            let output = match std::process::Command::new("gcloud")
+                .arg("auth")
+                .arg("configure-docker")
+                .arg("--quiet")
+                .output()
+            {
+                Ok(o) => o,
+                Err(e) => {
+                    response.set_upload_output(format!("failed to configure docker auth: {:?}", e));
+                    return response;
+                }
+            };
+
+            let run_stdout = std::str::from_utf8(&output.stdout)
+                .unwrap()
+                .trim()
+                .to_owned();
+            let run_stderr = std::str::from_utf8(&output.stderr)
+                .unwrap()
+                .trim()
+                .to_owned();
+            response.set_upload_output(format!("{}\n{}", run_stdout, run_stderr));
+            if !output.status.success() {
+                return response;
+            }
+
             // Trick - to get the output binary, run "bazel run" with --run_under="echo ". Stdout
             // will contain the full path to the binary
             let mut cmd = std::process::Command::new("bazel");
@@ -251,58 +306,30 @@ impl<C: LargeTableClient> WeldLocalServiceHandler<C> {
                 return response;
             }
 
+            let binary_output = run_stdout;
+
             if req.get_is_docker_img_push() {
                 // If this is a docker image push, there's no need to upload. That
                 // will already have been done by the run command. Just need to collect
                 // the output, which is the tag of the uploaded image.
                 //
-                let tag = match run_stdout.trim().split(" ").last() {
+                let tag = match binary_output.trim().split(" ").last() {
                     Some(t) => t,
                     None => {
                         response.set_upload_output(format!(
                             "Unable to extract docker tag from upload output: `{}`",
-                            run_stdout
+                            binary_output
                         ));
                         return response;
                     }
                 };
                 response.set_docker_img_tag(tag.to_owned());
+                response.set_upload_success(true);
             } else {
-                let binary_location = run_stdout;
-
-                // Activate the service account (in case it wasn't already activated)
-                let output = match std::process::Command::new("gcloud")
-                    .arg("auth")
-                    .arg("activate-service-account")
-                    .arg("--key-file=/data/bazel-access.json")
-                    .output()
-                {
-                    Ok(o) => o,
-                    Err(e) => {
-                        println!("failed to activate service account: {:?}", e);
-                        response
-                            .set_upload_output(String::from("failed to activate service account"));
-                        return response;
-                    }
-                };
-
-                let run_stdout = std::str::from_utf8(&output.stdout)
-                    .unwrap()
-                    .trim()
-                    .to_owned();
-                let run_stderr = std::str::from_utf8(&output.stderr)
-                    .unwrap()
-                    .trim()
-                    .to_owned();
-                response.set_upload_output(format!("{}\n{}", run_stdout, run_stderr));
-                if !output.status.success() {
-                    return response;
-                }
-
                 let name = format!("{:x}{:x}", rand::random::<u64>(), rand::random::<u64>());
                 let output = match std::process::Command::new("gsutil")
                     .arg("cp")
-                    .arg(binary_location)
+                    .arg(binary_output)
                     .arg(format!("gs://x20-binaries/{}", name))
                     .output()
                 {
