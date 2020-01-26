@@ -215,7 +215,10 @@ impl<C: LargeTableClient> WeldLocalServiceHandler<C> {
             if req.get_optimized() {
                 cmd.arg("-c").arg("opt");
             }
-            cmd.arg("--run_under").arg("echo ");
+
+            if !req.get_is_docker_img_push() {
+                cmd.arg("--run_under").arg("echo ");
+            }
 
             let output = match cmd
                 .arg(req.get_target())
@@ -248,69 +251,88 @@ impl<C: LargeTableClient> WeldLocalServiceHandler<C> {
                 return response;
             }
 
-            let binary_location = run_stdout;
-
-            // Activate the service account (in case it wasn't already activated)
-            let output = match std::process::Command::new("gcloud")
-                .arg("auth")
-                .arg("activate-service-account")
-                .arg("--key-file=/data/bazel-access.json")
-                .output()
-            {
-                Ok(o) => o,
-                Err(e) => {
-                    println!("failed to activate service account: {:?}", e);
-                    response.set_upload_output(String::from("failed to activate service account"));
-                    return response;
-                }
-            };
-
-            let run_stdout = std::str::from_utf8(&output.stdout)
-                .unwrap()
-                .trim()
-                .to_owned();
-            let run_stderr = std::str::from_utf8(&output.stderr)
-                .unwrap()
-                .trim()
-                .to_owned();
-            response.set_upload_output(format!("{}\n{}", run_stdout, run_stderr));
-            if !output.status.success() {
-                return response;
-            }
-
-            let name = format!("{:x}{:x}", rand::random::<u64>(), rand::random::<u64>());
-            let output = match std::process::Command::new("gsutil")
-                .arg("cp")
-                .arg(binary_location)
-                .arg(format!("gs://x20-binaries/{}", name))
-                .output()
-            {
-                Ok(o) => o,
-                Err(e) => {
-                    println!("failed to upload artifact: {:?}", e);
-                    return response;
-                }
-            };
-
-            let run_stdout = std::str::from_utf8(&output.stdout)
-                .unwrap()
-                .trim()
-                .to_owned();
-            let run_stderr = std::str::from_utf8(&output.stderr)
-                .unwrap()
-                .trim()
-                .to_owned();
-            response.set_upload_output(format!("{}\n{}", run_stdout, run_stderr));
-            if output.status.success() {
-                response.set_upload_success(true);
+            if req.get_is_docker_img_push() {
+                // If this is a docker image push, there's no need to upload. That
+                // will already have been done by the run command. Just need to collect
+                // the output, which is the tag of the uploaded image.
+                //
+                let tag = match run_stdout.trim().split(" ").last() {
+                    Some(t) => t,
+                    None => {
+                        response.set_upload_output(format!(
+                            "Unable to extract docker tag from upload output: `{}`",
+                            run_stdout
+                        ));
+                        return response;
+                    }
+                };
+                response.set_docker_img_tag(tag.to_owned());
             } else {
-                return response;
-            }
+                let binary_location = run_stdout;
 
-            response.set_artifact_url(format!(
-                "https://storage.googleapis.com/x20-binaries/{}",
-                name
-            ));
+                // Activate the service account (in case it wasn't already activated)
+                let output = match std::process::Command::new("gcloud")
+                    .arg("auth")
+                    .arg("activate-service-account")
+                    .arg("--key-file=/data/bazel-access.json")
+                    .output()
+                {
+                    Ok(o) => o,
+                    Err(e) => {
+                        println!("failed to activate service account: {:?}", e);
+                        response
+                            .set_upload_output(String::from("failed to activate service account"));
+                        return response;
+                    }
+                };
+
+                let run_stdout = std::str::from_utf8(&output.stdout)
+                    .unwrap()
+                    .trim()
+                    .to_owned();
+                let run_stderr = std::str::from_utf8(&output.stderr)
+                    .unwrap()
+                    .trim()
+                    .to_owned();
+                response.set_upload_output(format!("{}\n{}", run_stdout, run_stderr));
+                if !output.status.success() {
+                    return response;
+                }
+
+                let name = format!("{:x}{:x}", rand::random::<u64>(), rand::random::<u64>());
+                let output = match std::process::Command::new("gsutil")
+                    .arg("cp")
+                    .arg(binary_location)
+                    .arg(format!("gs://x20-binaries/{}", name))
+                    .output()
+                {
+                    Ok(o) => o,
+                    Err(e) => {
+                        println!("failed to upload artifact: {:?}", e);
+                        return response;
+                    }
+                };
+
+                let run_stdout = std::str::from_utf8(&output.stdout)
+                    .unwrap()
+                    .trim()
+                    .to_owned();
+                let run_stderr = std::str::from_utf8(&output.stderr)
+                    .unwrap()
+                    .trim()
+                    .to_owned();
+                response.set_upload_output(format!("{}\n{}", run_stdout, run_stderr));
+                if output.status.success() {
+                    response.set_upload_success(true);
+                } else {
+                    return response;
+                }
+
+                response.set_artifact_url(format!(
+                    "https://storage.googleapis.com/x20-binaries/{}",
+                    name
+                ));
+            }
         }
 
         response.set_success(true);

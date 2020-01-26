@@ -179,6 +179,7 @@ message RunBuildRequest {
   string target = 2;
   bool optimized = 3;
   bool upload = 4;
+  bool is_docker_img_push = 5;
 }
 message RunBuildResponse {
   bool success = 1;
@@ -189,6 +190,7 @@ message RunBuildResponse {
   string upload_output = 6;
   bool upload_success = 7;
   string artifact_url = 8;
+  string docker_img_tag = 9;
 }
 
 message ApplyPatchRequest { uint64 change_id = 1; }

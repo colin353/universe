@@ -128,6 +128,11 @@ impl Task for X20PublishTask {
         req.set_target(binary.get_target().to_owned());
         req.set_optimized(true);
         req.set_upload(true);
+
+        if !binary.get_docker_img().is_empty() {
+            req.set_is_docker_img_push(true);
+        }
+
         let mut response = client.run_build(req);
 
         status.mut_artifacts().push(ArtifactBuilder::from_bool(
@@ -154,10 +159,22 @@ impl Task for X20PublishTask {
             "upload_output",
             response.take_upload_output(),
         ));
-        status.mut_artifacts().push(ArtifactBuilder::from_string(
-            "artifact_url",
-            response.get_artifact_url().to_owned(),
-        ));
+
+        if !binary.get_docker_img().is_empty() {
+            status.mut_artifacts().push(ArtifactBuilder::from_string(
+                "docker_img",
+                binary.get_docker_img().to_owned(),
+            ));
+            status.mut_artifacts().push(ArtifactBuilder::from_string(
+                "docker_img_tag",
+                response.get_docker_img_tag().to_owned(),
+            ));
+        } else {
+            status.mut_artifacts().push(ArtifactBuilder::from_string(
+                "artifact_url",
+                response.get_artifact_url().to_owned(),
+            ));
+        }
 
         if !response.get_build_success() {
             return manager.failure(status, "build failed");
@@ -174,6 +191,8 @@ impl Task for X20PublishTask {
         *req.mut_binary() = binary;
         req.mut_binary()
             .set_url(response.get_artifact_url().to_owned());
+        req.mut_binary()
+            .set_docker_img_tag(response.get_docker_img_tag().to_owned());
         x20_client.publish_binary(req);
 
         manager.success(status)
