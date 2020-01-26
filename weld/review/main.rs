@@ -12,8 +12,6 @@ use std::io::Read;
 use ws::Server;
 
 fn main() {
-    println!("Starting server...");
-
     let server_hostname = define_flag!(
         "server_hostname",
         String::from("localhost:8001"),
