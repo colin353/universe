@@ -143,6 +143,7 @@ impl ReviewServer {
             h.get_snapshots()
                 .iter()
                 .filter(|x| x.get_snapshot_id() == last_snapshot_id)
+                .filter(|x| !x.get_directory())
                 .next()
                 .is_some()
         }) {

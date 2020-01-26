@@ -33,10 +33,12 @@ pub fn file_history(fh: &weld::FileHistory, index: u64) -> Option<tmpl::Contents
     c.insert("status", if is_new_file { "new" } else { "modified" });
 
     let mut has_file = false;
+    let mut is_directory = false;
     if index == 0 {
         if let Some(f) = fh.get_snapshots().last() {
             has_file = true;
             c.insert("modified", file(f));
+            is_directory = f.get_directory();
         }
     } else {
         for f in fh.get_snapshots().iter().rev() {
@@ -46,8 +48,11 @@ pub fn file_history(fh: &weld::FileHistory, index: u64) -> Option<tmpl::Contents
 
             has_file = true;
             c.insert("modified", file(f));
+            is_directory = f.get_directory();
         }
     }
+
+    c.insert("directory", is_directory);
 
     if has_file {
         Some(c)

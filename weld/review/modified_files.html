@@ -12,9 +12,14 @@
         <tr>
             <td style="width: 100px">{{status}}</td>
             <td>
+              {{directory == false}}
                 <a href="/{{id}}{{filename}}">
                     {{filename}}
                 </a>
+              {{/directory}}
+              {{directory == true}}
+                  {{filename}} (directory)
+              {{/directory}}
             </td>
         </tr>
         {{/changes}}
