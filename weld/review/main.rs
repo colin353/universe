@@ -74,32 +74,11 @@ fn main() {
         task_port
     );
 
-    let client = if use_tls.value() {
-        let mut root_ca_contents = Vec::new();
-        File::open(root_ca.value())
-            .unwrap()
-            .read_to_end(&mut root_ca_contents)
-            .unwrap();
-        let mut cert_contents = Vec::new();
-        File::open(cert.value())
-            .unwrap()
-            .read_to_end(&mut cert_contents)
-            .unwrap();
-        weld::WeldServerClient::new_tls(
-            &server_hostname.value(),
-            &tls_hostname.value(),
-            String::from(""),
-            server_port.value(),
-            root_ca_contents,
-            cert_contents,
-        )
-    } else {
-        weld::WeldServerClient::new(
-            &server_hostname.value(),
-            String::from(""),
-            server_port.value(),
-        )
-    };
+    let client = weld::WeldServerClient::new(
+        &server_hostname.value(),
+        String::from(""),
+        server_port.value(),
+    );
 
     let task = task_client::TaskRemoteClient::new(task_hostname.value(), task_port.value());
     let auth = auth_client::AuthClient::new(&auth_hostname.value(), auth_port.value());
