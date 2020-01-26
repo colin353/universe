@@ -134,6 +134,15 @@ impl ReviewServer {
             .filter_map(|c| c.get_snapshots().iter().map(|x| x.get_snapshot_id()).max())
             .max();
 
+        if !change.get_task_id().is_empty() {
+            if let Some(response) = self.task_client.get_status(change.get_task_id().to_owned()) {
+                content.insert(
+                    "tasks",
+                    tmpl::ContentsMultiMap::from(render::get_task_pills(&response)),
+                )
+            }
+        }
+
         let last_snapshot_id = match maybe_last_snapshot {
             Some(x) => x,
             None => return self.not_found(filename.to_owned(), req),
