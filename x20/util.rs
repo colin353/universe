@@ -301,6 +301,7 @@ impl X20Manager {
     pub fn start(&self) {
         let env = self.read_saved_environment();
         let mut configs = self.client.get_configs(env.clone());
+        let binaries = self.read_saved_binaries();
 
         if configs.len() == 0 {
             eprintln!("❌You have no configs, so nothing will be started");
@@ -314,7 +315,19 @@ impl X20Manager {
         let mut children = Vec::new();
         let mut failed = false;
         for config in configs {
-            let mut child = subprocess::ChildProcess::new(self.base_dir.clone(), config);
+            let binary = match binaries.get(config.get_binary_name()) {
+                Some(b) => b,
+                None => {
+                    eprintln!(
+                        "❌Config referenced unknown binary `{}`!",
+                        config.get_binary_name()
+                    );
+                    failed = true;
+                    break;
+                }
+            };
+            let mut child =
+                subprocess::ChildProcess::new(self.base_dir.clone(), config, binary.to_owned());
             if child.config.get_long_running() {
                 child.start();
                 children.push(child);

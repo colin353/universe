@@ -1,0 +1,10 @@
+{
+    "name": "review",
+    "binary_name": "review",
+    "priority": 100,
+    "environment": "server",
+    "long_running": true,
+    "arguments": {
+        "use_tls": "false"
+    }
+}

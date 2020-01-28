@@ -35,6 +35,12 @@ pub fn generate_config(text: &str) -> Result<x20::Configuration, String> {
         }
     }
 
+    if !parsed["docker_arguments"].is_null() {
+        for arg in parsed["docker_arguments"].members() {
+            config.mut_docker_arguments().push(arg.to_string());
+        }
+    }
+
     if !parsed["long_running"].is_null() && parsed["long_running"] == true {
         config.set_long_running(true);
     }
@@ -56,7 +62,8 @@ mod tests {
                 "priority": 250,
                 "arguments": {
                     "port": 523
-                }
+                },
+                "docker_arguments": [ "a", "b", "c" ]
             }
         "#;
 
@@ -65,6 +72,9 @@ mod tests {
         expected.set_binary_name(String::from("asdf"));
         expected.set_environment(String::from("australia"));
         expected.set_priority(250);
+        expected.mut_docker_arguments().push(String::from("a"));
+        expected.mut_docker_arguments().push(String::from("b"));
+        expected.mut_docker_arguments().push(String::from("c"));
 
         let mut arg = x20::Argument::new();
         arg.set_name(String::from("port"));

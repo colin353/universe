@@ -3,6 +3,7 @@ use std::io::Seek;
 
 pub struct ChildProcess {
     pub config: x20::Configuration,
+    pub binary: x20::Binary,
     offset: u64,
     log_file: String,
     binary_file: String,
@@ -10,12 +11,13 @@ pub struct ChildProcess {
 }
 
 impl ChildProcess {
-    pub fn new(base_dir: String, config: x20::Configuration) -> Self {
+    pub fn new(base_dir: String, config: x20::Configuration, binary: x20::Binary) -> Self {
         let log_file = format!("{}/logs/{}", base_dir, config.get_binary_name());
         let binary_file = format!("{}/bin/{}", base_dir, config.get_binary_name());
 
         ChildProcess {
             config: config,
+            binary: binary,
             offset: 0,
             log_file: log_file,
             binary_file: binary_file,
@@ -24,6 +26,49 @@ impl ChildProcess {
     }
 
     pub fn start(&mut self) {
+        if !self.binary.get_docker_img().is_empty() {
+            return self.start_docker();
+        }
+
+        self.start_executable();
+    }
+
+    pub fn start_docker(&mut self) {
+        // First, stop any existing containers
+        let mut c = std::process::Command::new("docker");
+        c.arg("stop");
+        c.arg(self.config.get_name());
+        c.output().unwrap();
+
+        // Delete the container
+        let mut c = std::process::Command::new("docker");
+        c.arg("rm");
+        c.arg(self.config.get_name());
+        c.output().unwrap();
+
+        // Start a new one
+        let mut c = std::process::Command::new("docker");
+        let f = std::fs::File::create(&self.log_file).unwrap();
+        let f2 = std::fs::File::create(&self.log_file).unwrap();
+        c.stdout(f);
+        c.stderr(f2);
+        c.arg("run");
+        c.arg(format!("--name={}", self.config.get_name()));
+        c.arg(format!("--net=host"));
+        c.arg(format!(
+            "{}@{}",
+            self.binary.get_docker_img(),
+            self.binary.get_docker_img_tag()
+        ));
+        for arg in self.config.get_docker_arguments() {
+            c.arg(arg);
+        }
+        println!("start docker image: {}", self.binary.get_docker_img());
+        self.child = Some(c.spawn().unwrap());
+        println!("✔️ started `{}`", self.config.get_name());
+    }
+
+    pub fn start_executable(&mut self) {
         let f = std::fs::File::create(&self.log_file).unwrap();
         let f2 = std::fs::File::create(&self.log_file).unwrap();
         println!("start bin file: {}", self.binary_file);
