@@ -54,7 +54,7 @@ impl ChildProcess {
         c.stderr(f2);
         c.arg("run");
         c.arg(format!("--name={}", self.config.get_name()));
-        c.arg(format!("--net=host"));
+        c.arg(format!("--net={}", self.config.get_environment()));
         c.arg(format!(
             "{}@{}",
             self.binary.get_docker_img(),

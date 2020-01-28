@@ -1,0 +1,7 @@
+{
+    "name": "server-prepare",
+    "binary_name": "server-prepare",
+    "priority": 10,
+    "environment": "server",
+    "long_running": false
+}
