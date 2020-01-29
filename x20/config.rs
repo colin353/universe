@@ -1,3 +1,5 @@
+const SECRET_PREFIX: &'static str = "SECRETS::";
+
 pub fn generate_config(text: &str) -> Result<x20::Configuration, String> {
     let parsed = match json::parse(text) {
         Ok(j) => j,
@@ -30,7 +32,13 @@ pub fn generate_config(text: &str) -> Result<x20::Configuration, String> {
         for (k, v) in parsed["arguments"].entries() {
             let mut arg = x20::Argument::new();
             arg.set_name(k.to_string());
-            arg.set_value(v.to_string());
+
+            let value = v.to_string();
+            if value.starts_with(SECRET_PREFIX) {
+                arg.set_secret_name(value[SECRET_PREFIX.len()..].to_string());
+            } else {
+                arg.set_value(value);
+            }
             config.mut_arguments().push(arg);
         }
     }

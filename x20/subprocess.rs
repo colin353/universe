@@ -5,6 +5,7 @@ pub struct ChildProcess {
     pub config: x20::Configuration,
     pub binary: x20::Binary,
     offset: u64,
+    secrets_dir: String,
     log_file: String,
     binary_file: String,
     child: Option<std::process::Child>,
@@ -19,21 +20,28 @@ impl ChildProcess {
             config: config,
             binary: binary,
             offset: 0,
+            secrets_dir: format!("{}/secrets", base_dir),
             log_file: log_file,
             binary_file: binary_file,
             child: None,
         }
     }
 
-    pub fn start(&mut self) {
+    pub fn start(&mut self) -> bool {
         if !self.binary.get_docker_img().is_empty() {
             return self.start_docker();
         }
 
-        self.start_executable();
+        self.start_executable()
     }
 
-    pub fn start_docker(&mut self) {
+    pub fn get_secret_value(&self, secret_name: &str) -> Result<String, String> {
+        std::fs::read(format!("{}/{}", self.secrets_dir, secret_name))
+            .map(|b| String::from_utf8(b).unwrap())
+            .map_err(|_| format!("❌unable to find secret `{}`", secret_name))
+    }
+
+    pub fn start_docker(&mut self) -> bool {
         // First, stop any existing containers
         let mut c = std::process::Command::new("docker");
         c.arg("stop");
@@ -55,20 +63,36 @@ impl ChildProcess {
         c.arg("run");
         c.arg(format!("--name={}", self.config.get_name()));
         c.arg(format!("--net={}", self.config.get_environment()));
+        for arg in self.config.get_docker_arguments() {
+            c.arg(arg);
+        }
         c.arg(format!(
             "{}@{}",
             self.binary.get_docker_img(),
             self.binary.get_docker_img_tag()
         ));
-        for arg in self.config.get_docker_arguments() {
-            c.arg(arg);
+        for arg in self.config.get_arguments() {
+            let value = if !arg.get_secret_name().is_empty() {
+                match self.get_secret_value(arg.get_secret_name()) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        eprintln!("{}", e);
+                        return false;
+                    }
+                }
+            } else {
+                arg.get_value().to_string()
+            };
+
+            c.arg(format!("--{}={}", arg.get_name(), arg.get_value()));
         }
         println!("start docker image: {}", self.binary.get_docker_img());
         self.child = Some(c.spawn().unwrap());
         println!("✔️ started `{}`", self.config.get_name());
+        true
     }
 
-    pub fn start_executable(&mut self) {
+    pub fn start_executable(&mut self) -> bool {
         let f = std::fs::File::create(&self.log_file).unwrap();
         let f2 = std::fs::File::create(&self.log_file).unwrap();
         println!("start bin file: {}", self.binary_file);
@@ -80,6 +104,8 @@ impl ChildProcess {
         }
         self.child = Some(c.spawn().unwrap());
         println!("✔️ started `{}`", self.config.get_name());
+
+        true
     }
 
     pub fn run_to_completion(&mut self) -> bool {

@@ -26,6 +26,7 @@ message Configuration {
 message Argument {
   string name = 1;
   string value = 2;
+  string secret_name = 3;
 }
 
 message GetBinariesRequest {}

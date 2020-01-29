@@ -2,6 +2,7 @@
 mkdir -p ~/.x20/bin
 mkdir -p ~/.x20/config
 mkdir -p ~/.x20/logs
+mkdir -p ~/.x20/secrets
 echo ✔️ Created ~/.x20 directories
 
 curl -LsSf http://x20.colinmerkel.xyz/x20 --output ~/.x20/bin/x20

@@ -81,6 +81,7 @@ impl X20Manager {
 
         let mut output = HashMap::new();
         for bin in reader {
+            println!("loading saved binary: {}", bin.get_name());
             output.insert(bin.get_name().to_owned(), bin);
         }
         output
@@ -102,7 +103,9 @@ impl X20Manager {
 
             // If this is a docker image, there's no need to download anything.
             if !binary.get_docker_img().is_empty() {
+                println!("✔️ Updated {}", binary.get_name());
                 updated_binaries.push(binary);
+                had_success = true;
                 continue;
             }
 
@@ -344,7 +347,10 @@ impl X20Manager {
         loop {
             for child in &mut children {
                 child.tail_logs();
-                child.check_alive();
+                if !child.check_alive() {
+                    failed = true;
+                    break;
+                }
                 std::thread::sleep(std::time::Duration::from_secs(1));
             }
 
