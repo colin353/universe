@@ -49,6 +49,13 @@ impl Task for X20QueryTask {
         }
         manager.set_status(&status);
 
+        let mut id = 0;
+        for arg in args {
+            if arg.get_name() == "change_id" {
+                id = arg.get_value_int();
+            }
+        }
+
         let passed_manager = Arc::new(manager);
         let passed_manager_2 = passed_manager.clone();
         let passed_manager_3 = passed_manager.clone();
@@ -60,15 +67,14 @@ impl Task for X20QueryTask {
                 .for_each(move |binary| {
                     let mut b = task_client::ArgumentsBuilder::new();
                     b.add_string("binary", binary);
-                    build_args.append(&mut b.build());
-                    passed_manager
-                        .spawn(PUBLISH_TASK, build_args.clone())
-                        .and_then(|s| {
-                            if s.get_status() != Status::SUCCESS {
-                                return future::err(());
-                            }
-                            future::ok(())
-                        })
+                    b.add_int("change_id", id);
+
+                    passed_manager.spawn(PUBLISH_TASK, b.build()).and_then(|s| {
+                        if s.get_status() != Status::SUCCESS {
+                            return future::err(());
+                        }
+                        future::ok(())
+                    })
                 })
                 .and_then(move |()| passed_manager_2.success(passed_status))
                 .or_else(move |()| {
