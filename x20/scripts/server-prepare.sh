@@ -1,4 +1,6 @@
 #!/bin/bash
 
 docker system prune --all --force
-docker network create server
+
+# Need to ignore the status here, since it may exist
+docker network create server || true
