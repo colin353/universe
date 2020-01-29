@@ -63,6 +63,29 @@ impl X20Manager {
         std::fs::write(&format!("{}/config/env", self.base_dir), env).unwrap()
     }
 
+    pub fn write_saved_configs(&self, configs: &[x20::Configuration]) {
+        let f = File::create(&format!("{}/config/configs.recordio", self.base_dir)).unwrap();
+        let mut w = RecordIOWriter::new(f);
+        for bin in configs {
+            w.write(bin);
+        }
+    }
+
+    pub fn read_saved_configs(&self) -> Vec<x20::Configuration> {
+        let f = match File::open(&format!("{}/config/configs.recordio", self.base_dir)) {
+            Ok(f) => f,
+            Err(_) => return Vec::new(),
+        };
+        let buf = std::io::BufReader::new(f);
+        let reader = RecordIOReader::<x20::Configuration, _>::new(buf);
+
+        let mut output = Vec::new();
+        for cfg in reader {
+            output.push(cfg);
+        }
+        output
+    }
+
     pub fn write_saved_binaries(&self, bins: &[x20::Binary]) {
         let f = File::create(&format!("{}/config/binaries.recordio", self.base_dir)).unwrap();
         let mut w = RecordIOWriter::new(f);
@@ -81,7 +104,6 @@ impl X20Manager {
 
         let mut output = HashMap::new();
         for bin in reader {
-            println!("loading saved binary: {}", bin.get_name());
             output.insert(bin.get_name().to_owned(), bin);
         }
         output
@@ -184,6 +206,11 @@ impl X20Manager {
         if had_failure {
             std::process::exit(1);
         }
+
+        let env = self.read_saved_environment();
+        let cfgs = self.client.get_configs(env);
+        self.write_saved_configs(&cfgs);
+        println!("✔️ Saved metadata for {} configs", cfgs.len());
 
         println!("✔️ Everything is up to date");
     }
@@ -303,7 +330,7 @@ impl X20Manager {
     // Start up all the configs associated with the configs
     pub fn start(&self) {
         let env = self.read_saved_environment();
-        let mut configs = self.client.get_configs(env.clone());
+        let mut configs = self.read_saved_configs();
         let binaries = self.read_saved_binaries();
 
         if configs.len() == 0 {
