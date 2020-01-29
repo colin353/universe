@@ -1,0 +1,13 @@
+{
+    "name": "largetable",
+    "binary_name": "largetable_server",
+    "priority": 50,
+    "environment": "server",
+    "long_running": true,
+    "arguments": {
+        "data_directory": "/data"
+    },
+    "docker_arguments": [
+      "--mount", "type=bind,source=/mnt/stateful_partition/data,target=/data"
+    ]
+}

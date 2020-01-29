@@ -1,0 +1,11 @@
+{
+    "name": "weld",
+    "binary_name": "weld_server",
+    "priority": 75,
+    "environment": "server",
+    "long_running": true,
+    "arguments": {
+        "use_tls": "false",
+        "largetable_hostname": "largetable"
+    }
+}
