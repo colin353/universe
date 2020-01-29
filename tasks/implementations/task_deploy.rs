@@ -22,7 +22,7 @@ impl X20QueryTask {
 }
 impl Task for X20QueryTask {
     fn run(&self, args: &[TaskArgument], manager: Box<dyn TaskManager>) -> TaskResultFuture {
-        let status = manager.get_status();
+        let mut status = manager.get_status();
         let targets: std::collections::HashSet<_> = args
             .iter()
             .filter(|arg| arg.get_name() == "target")
@@ -40,6 +40,14 @@ impl Task for X20QueryTask {
             .filter(|bin| !bin.get_target().is_empty() && targets.contains(bin.get_target()))
             .map(|mut bin| bin.take_name())
             .collect();
+
+        // Write artifacts for each thing we intend to publish
+        for bin in &binaries_to_rebuild {
+            status
+                .mut_artifacts()
+                .push(ArtifactBuilder::from_string("binary", bin.to_string()));
+        }
+        manager.set_status(&status);
 
         let passed_manager = Arc::new(manager);
         let passed_manager_2 = passed_manager.clone();
