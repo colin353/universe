@@ -1,0 +1,11 @@
+{
+    "name": "homepage",
+    "binary_name": "homepage",
+    "priority": 100,
+    "environment": "server",
+    "long_running": true,
+    "arguments": {
+        "auth_hostname": "auth",
+        "base_url": "http://colinmerkel.xyz"
+    }
+}

@@ -1,0 +1,12 @@
+{
+    "name": "x20",
+    "binary_name": "x20_server",
+    "priority": 100,
+    "environment": "server",
+    "long_running": true,
+    "arguments": {
+        "port": 8009,
+        "largetable_hostname":"largetable",
+        "largetable_port":50051
+    }
+}

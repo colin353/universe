@@ -1,0 +1,10 @@
+{
+    "name": "x20_web",
+    "binary_name": "x20_webserver",
+    "priority": 100,
+    "environment": "server",
+    "long_running": true,
+    "arguments": {
+        "port": "50000"
+    }
+}
