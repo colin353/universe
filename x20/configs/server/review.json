@@ -1,10 +1,17 @@
 {
     "name": "review",
     "binary_name": "review",
-    "priority": 100,
+    "priority": 125,
     "environment": "server",
     "long_running": true,
     "arguments": {
-        "use_tls": "false"
-    }
+        "use_tls": "false",
+        "auth_hostname": "auth",
+        "task_hostname": "tasks",
+        "task_port": "7777",
+        "server_hostname": "weld"
+    },
+    "docker_arguments": [
+      "-e", "RUST_BACKTRACE=1"
+    ]
 }

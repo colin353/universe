@@ -1,0 +1,15 @@
+{
+    "name": "nginx",
+    "binary_name": "nginx",
+    "priority": 150,
+    "environment": "server",
+    "long_running": true,
+    "docker_arguments": [
+      "-p", "9999:9999", 
+      "-p", "8888:8888", 
+      "-p", "8009:8009", 
+      "-p", "80:80", 
+      "-p", "8001:8001",
+      "-v", "/home/colin/nginx.conf:/etc/nginx/nginx.conf:ro"
+    ]
+}

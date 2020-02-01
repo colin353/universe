@@ -1,0 +1,17 @@
+{
+    "name": "tasks",
+    "binary_name": "task_server",
+    "priority": 100,
+    "environment": "server",
+    "long_running": true,
+    "arguments": {
+      "weld_client_hostname": "build",
+      "weld_client_port": "8008",
+      "weld_server_hostname": "weld",
+      "weld_server_port": "8001",
+      "auth_hostname": "auth",
+      "auth_port":"8888",
+      "x20_hostname": "x20",
+      "x20_port": "8009"
+    }
+}
