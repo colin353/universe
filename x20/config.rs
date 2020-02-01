@@ -69,7 +69,8 @@ mod tests {
                 "environment": "australia",
                 "priority": 250,
                 "arguments": {
-                    "port": 523
+                    "port": 523,
+                    "secret": "SECRETS::asdf"
                 },
                 "docker_arguments": [ "a", "b", "c" ]
             }
@@ -87,6 +88,11 @@ mod tests {
         let mut arg = x20::Argument::new();
         arg.set_name(String::from("port"));
         arg.set_value(String::from("523"));
+        expected.mut_arguments().push(arg);
+
+        let mut arg = x20::Argument::new();
+        arg.set_name(String::from("secret"));
+        arg.set_secret_name(String::from("asdf"));
         expected.mut_arguments().push(arg);
 
         assert_eq!(generate_config(config), Ok(expected));

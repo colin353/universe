@@ -84,7 +84,7 @@ impl ChildProcess {
                 arg.get_value().to_string()
             };
 
-            c.arg(format!("--{}={}", arg.get_name(), arg.get_value()));
+            c.arg(format!("--{}={}", arg.get_name(), value));
         }
         println!("start docker image: {}", self.binary.get_docker_img());
         self.child = Some(c.spawn().unwrap());
@@ -100,7 +100,19 @@ impl ChildProcess {
         c.stdout(f);
         c.stderr(f2);
         for arg in self.config.get_arguments() {
-            c.arg(format!("--{}={}", arg.get_name(), arg.get_value()));
+            let value = if !arg.get_secret_name().is_empty() {
+                match self.get_secret_value(arg.get_secret_name()) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        eprintln!("{}", e);
+                        return false;
+                    }
+                }
+            } else {
+                arg.get_value().to_string()
+            };
+
+            c.arg(format!("--{}={}", arg.get_name(), value));
         }
         self.child = Some(c.spawn().unwrap());
         println!("✔️ started `{}`", self.config.get_name());
