@@ -361,7 +361,7 @@ impl X20Manager {
             if child.config.get_long_running() {
                 child.start();
                 children.push(child);
-                std::thread::sleep(std::time::Duration::from_secs(1));
+                std::thread::sleep(std::time::Duration::from_millis(500));
             } else {
                 let success = child.run_to_completion();
                 if !success {

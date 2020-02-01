@@ -37,7 +37,7 @@ impl ChildProcess {
 
     pub fn get_secret_value(&self, secret_name: &str) -> Result<String, String> {
         std::fs::read(format!("{}/{}", self.secrets_dir, secret_name))
-            .map(|b| String::from_utf8(b).unwrap())
+            .map(|b| String::from_utf8(b).unwrap().trim().to_string())
             .map_err(|_| format!("❌unable to find secret `{}`", secret_name))
     }
 
