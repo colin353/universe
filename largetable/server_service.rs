@@ -32,6 +32,13 @@ pub struct LargeTableServiceHandler {
     next_file_number: Arc<Mutex<u64>>,
     journals: Arc<Mutex<Vec<String>>>,
     dtables: Arc<Mutex<Vec<String>>>,
+
+    // The server may have some startup business to complete before
+    // it can respond to requests. However, it should still accept the
+    // requests, and just have a delay before responding.
+    // Requests should double check that we are in the ready state before
+    // responding.
+    ready: Arc<RwLock<bool>>,
 }
 
 impl LargeTableServiceHandler {
@@ -43,7 +50,12 @@ impl LargeTableServiceHandler {
             next_file_number: Arc::new(Mutex::new(0)),
             journals: Arc::new(Mutex::new(Vec::new())),
             dtables: Arc::new(Mutex::new(Vec::new())),
+            ready: Arc::new(RwLock::new(false)),
         }
+    }
+
+    pub fn ready(&self) {
+        *self.ready.write().unwrap() = true;
     }
 
     pub fn load_existing_dtables(&mut self) {
@@ -226,6 +238,12 @@ impl LargeTableServiceHandler {
 
         println!("compaction complete");
     }
+
+    fn wait_until_ready(&self) {
+        while !*self.ready.read().unwrap() {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+    }
 }
 
 fn get_timestamp_usec() -> u64 {
@@ -239,6 +257,8 @@ impl largetable_grpc_rust::LargeTableService for LargeTableServiceHandler {
         _m: grpc::RequestOptions,
         req: largetable_grpc_rust::ReadRequest,
     ) -> grpc::SingleResponse<largetable_grpc_rust::ReadResponse> {
+        self.wait_until_ready();
+
         let timestamp = match req.get_timestamp() {
             0 => get_timestamp_usec(),
             x => x,
@@ -275,6 +295,8 @@ impl largetable_grpc_rust::LargeTableService for LargeTableServiceHandler {
         _m: grpc::RequestOptions,
         req: largetable_grpc_rust::ReadRangeRequest,
     ) -> grpc::SingleResponse<largetable_grpc_rust::ReadRangeResponse> {
+        self.wait_until_ready();
+
         let time_usec = if req.get_timestamp() > 0 {
             req.get_timestamp()
         } else {
@@ -311,6 +333,8 @@ impl largetable_grpc_rust::LargeTableService for LargeTableServiceHandler {
         _m: grpc::RequestOptions,
         req: largetable_grpc_rust::ReserveIDRequest,
     ) -> grpc::SingleResponse<largetable_grpc_rust::ReserveIDResponse> {
+        self.wait_until_ready();
+
         let reserved_id = self
             .largetable
             .read()
@@ -328,6 +352,8 @@ impl largetable_grpc_rust::LargeTableService for LargeTableServiceHandler {
         _m: grpc::RequestOptions,
         req: largetable_grpc_rust::WriteRequest,
     ) -> grpc::SingleResponse<largetable_grpc_rust::WriteResponse> {
+        self.wait_until_ready();
+
         let time_usec = match req.get_timestamp() {
             0 => get_timestamp_usec(),
             x => x,
@@ -352,6 +378,8 @@ impl largetable_grpc_rust::LargeTableService for LargeTableServiceHandler {
         _m: grpc::RequestOptions,
         req: largetable_grpc_rust::DeleteRequest,
     ) -> grpc::SingleResponse<largetable_grpc_rust::DeleteResponse> {
+        self.wait_until_ready();
+
         let time_usec = get_timestamp_usec();
         let mut rec = largetable::Record::new();
         rec.set_timestamp(time_usec);
@@ -371,6 +399,8 @@ impl largetable_grpc_rust::LargeTableService for LargeTableServiceHandler {
         _m: grpc::RequestOptions,
         _req: largetable_grpc_rust::BatchReadRequest,
     ) -> grpc::SingleResponse<largetable_grpc_rust::BatchReadResponse> {
+        self.wait_until_ready();
+
         grpc::SingleResponse::completed(largetable_grpc_rust::BatchReadResponse::new())
     }
 
@@ -379,6 +409,8 @@ impl largetable_grpc_rust::LargeTableService for LargeTableServiceHandler {
         _m: grpc::RequestOptions,
         req: largetable_grpc_rust::BatchWriteRequest,
     ) -> grpc::SingleResponse<largetable_grpc_rust::WriteResponse> {
+        self.wait_until_ready();
+
         let request_time = get_timestamp_usec();
         {
             let table = self.largetable.read().unwrap();
@@ -414,6 +446,8 @@ impl largetable_grpc_rust::LargeTableService for LargeTableServiceHandler {
         _m: grpc::RequestOptions,
         req: largetable_grpc_rust::ShardHintRequest,
     ) -> grpc::SingleResponse<largetable_grpc_rust::ShardHintResponse> {
+        self.wait_until_ready();
+
         let shards = self.largetable.read().unwrap().get_shard_hint(
             req.get_row(),
             req.get_column_spec(),
@@ -431,6 +465,8 @@ impl largetable_grpc_rust::LargeTableService for LargeTableServiceHandler {
         _m: grpc::RequestOptions,
         req: largetable_grpc_rust::CompactionPolicy,
     ) -> grpc::SingleResponse<largetable_grpc_rust::SetCompactionPolicyResponse> {
+        self.wait_until_ready();
+
         let mut rec = largetable_proto_rust::Record::new();
         req.write_to_vec(&mut rec.mut_data()).unwrap();
         self.largetable.read().unwrap().write(

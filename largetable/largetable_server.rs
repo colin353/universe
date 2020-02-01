@@ -37,6 +37,15 @@ fn main() {
     let mut handler =
         server_service::LargeTableServiceHandler::new(memory_limit.value(), data_directory.path());
 
+    let mut server = grpc::ServerBuilder::<tls_api_stub::TlsAcceptor>::new();
+    server.http.set_port(port.value());
+    server.add_service(
+        largetable_grpc_rust::LargeTableServiceServer::new_service_def(handler.clone()),
+    );
+    server.http.set_cpu_pool_threads(32);
+
+    let _server = server.build().expect("server");
+
     // Read any existing dtables from disk.
     handler.load_existing_dtables();
 
@@ -46,14 +55,8 @@ fn main() {
     // Create a new journal for this session.
     handler.add_journal();
 
-    let mut server = grpc::ServerBuilder::<tls_api_stub::TlsAcceptor>::new();
-    server.http.set_port(port.value());
-    server.add_service(
-        largetable_grpc_rust::LargeTableServiceServer::new_service_def(handler.clone()),
-    );
-    server.http.set_cpu_pool_threads(32);
-
-    let _server = server.build().expect("server");
+    // Indicate that requests can now be processed
+    handler.ready();
 
     loop {
         thread::sleep(std::time::Duration::from_secs(60));
