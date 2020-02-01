@@ -109,8 +109,9 @@ impl X20Manager {
         output
     }
 
-    pub fn update(&self) {
+    pub fn update(&self) -> (Vec<x20::Binary>, Vec<x20::Configuration>) {
         let existing_binaries = self.read_saved_binaries();
+        let mut new_binaries = Vec::new();
         let mut updated_binaries = Vec::new();
         let mut had_failure = false;
         let mut had_success = false;
@@ -122,6 +123,8 @@ impl X20Manager {
                     continue;
                 }
             }
+
+            new_binaries.push(binary.clone());
 
             // If this is a docker image, there's no need to download anything.
             if !binary.get_docker_img().is_empty() {
@@ -187,7 +190,7 @@ impl X20Manager {
                 break;
             }
 
-            // In case we are updating our own binary, we need to delete our bin file
+            // In case we are updating a running binary, we need to delete our bin file
             // and move the temporary binary overtop, or else we'll get some kind of error
             std::fs::remove_file(&location); // No need to unwrap - if it doesn't exist it's ok
             std::fs::copy(&temporary_location, &location).unwrap();
@@ -207,12 +210,32 @@ impl X20Manager {
             std::process::exit(1);
         }
 
-        let env = self.read_saved_environment();
-        let cfgs = self.client.get_configs(env);
-        self.write_saved_configs(&cfgs);
-        println!("✔️ Saved metadata for {} configs", cfgs.len());
+        let cfgs: HashMap<String, x20::Configuration> = self
+            .read_saved_configs()
+            .into_iter()
+            .map(|cfg| (cfg.get_name().to_string(), cfg))
+            .collect();
 
+        let env = self.read_saved_environment();
+        let new_cfgs = self.client.get_configs(env);
+        let mut new_configs = Vec::new();
+
+        for config in &new_cfgs {
+            if let Some(c) = cfgs.get(config.get_name()) {
+                if c.get_version() == config.get_version() {
+                    continue;
+                }
+            }
+            new_configs.push(config.clone());
+        }
+
+        self.write_saved_configs(&new_cfgs);
+        if new_configs.len() > 0 {
+            println!("✔️ Updated {} configs", new_configs.len());
+        }
         println!("✔️ Everything is up to date");
+
+        (new_binaries, new_configs)
     }
 
     pub fn publish(
@@ -371,14 +394,47 @@ impl X20Manager {
             }
         }
 
+        let mut last_update_check = 0;
+        let mut updated_binaries = HashMap::new();
+        let mut updated_configs = HashMap::new();
         loop {
+            if last_update_check > 60 {
+                last_update_check = 0;
+                let (bins, cfgs) = self.update();
+                updated_binaries = bins
+                    .into_iter()
+                    .map(|b| (b.get_name().to_string(), b))
+                    .collect();
+                updated_configs = cfgs
+                    .into_iter()
+                    .map(|c| (c.get_name().to_string(), c))
+                    .collect();
+            }
+
             for child in &mut children {
                 child.tail_logs();
                 if !child.check_alive() {
                     failed = true;
                     break;
                 }
-                std::thread::sleep(std::time::Duration::from_secs(1));
+
+                // Check if there are any updates that apply to this child
+                let mut should_reload = false;
+                if let Some(c) = updated_configs.get(child.config.get_name()) {
+                    child.config = c.clone();
+                    should_reload = true;
+                }
+
+                if let Some(b) = updated_binaries.get(child.binary.get_name()) {
+                    child.binary = b.clone();
+                    should_reload = true;
+                }
+
+                if should_reload {
+                    if !child.reload() {
+                        failed = true
+                    }
+                }
             }
 
             if failed {
@@ -388,6 +444,11 @@ impl X20Manager {
 
                 std::process::exit(1);
             }
+
+            updated_configs.clear();
+            updated_binaries.clear();
+            std::thread::sleep(std::time::Duration::from_secs(1));
+            last_update_check += 1;
         }
     }
 }

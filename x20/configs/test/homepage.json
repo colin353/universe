@@ -1,0 +1,12 @@
+{
+    "name": "test_homepage",
+    "binary_name": "homepage",
+    "priority": 100,
+    "environment": "test",
+    "long_running": true,
+    "arguments": {
+        "auth_hostname": "auth.colinmerkel.xyz",
+        "base_url": "http://local.colinmerkel.xyz"
+    },
+    "docker_arguments": [ "--init" ]
+}

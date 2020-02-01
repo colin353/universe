@@ -187,4 +187,9 @@ impl ChildProcess {
             }
         }
     }
+
+    pub fn reload(&mut self) -> bool {
+        self.kill();
+        self.start()
+    }
 }
