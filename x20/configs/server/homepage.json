@@ -7,5 +7,6 @@
     "arguments": {
         "auth_hostname": "auth",
         "base_url": "http://colinmerkel.xyz"
-    }
+    },
+    "docker_arguments": [ "--init" ]
 }

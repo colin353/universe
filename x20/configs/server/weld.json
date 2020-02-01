@@ -7,5 +7,6 @@
     "arguments": {
         "use_tls": "false",
         "largetable_hostname": "largetable"
-    }
+    },
+    "docker_arguments": ["--init"]
 }

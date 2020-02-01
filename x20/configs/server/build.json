@@ -9,6 +9,7 @@
         "port": 8008
     },
     "docker_arguments": [
+      "--init",
       "--privileged",
       "-v", "/home/colin/bazel-access.json:/data/bazel-access.json:ro",
       "-v", "/home/colin/id_rsa:/root/.ssh/id_rsa:ro",

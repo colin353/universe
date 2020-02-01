@@ -12,6 +12,6 @@
         "server_hostname": "weld"
     },
     "docker_arguments": [
-      "-e", "RUST_BACKTRACE=1"
+      "--init", "-e", "RUST_BACKTRACE=1"
     ]
 }

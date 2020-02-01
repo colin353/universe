@@ -6,5 +6,6 @@
     "long_running": true,
     "arguments": {
         "port": "50000"
-    }
+    },
+    "docker_arguments": [ "--init" ]
 }

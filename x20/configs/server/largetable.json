@@ -8,6 +8,7 @@
         "data_directory": "/data"
     },
     "docker_arguments": [
-      "--mount", "type=bind,source=/mnt/stateful_partition/data,target=/data"
+      "--mount", "type=bind,source=/mnt/stateful_partition/data,target=/data",
+      "--init"
     ]
 }

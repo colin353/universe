@@ -13,5 +13,6 @@
       "auth_port":"8888",
       "x20_hostname": "x20",
       "x20_port": "8009"
-    }
+    },
+    "docker_arguments": ["--init"]
 }

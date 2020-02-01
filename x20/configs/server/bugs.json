@@ -9,5 +9,6 @@
         "largetable_hostname": "largetable",
         "largetable_port": 50051,
         "auth_port": 8888
-    }
+    },
+    "docker_arguments": [ "--init" ]
 }
