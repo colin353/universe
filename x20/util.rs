@@ -243,6 +243,7 @@ impl X20Manager {
         name: String,
         path: String,
         target: String,
+        source: String,
         docker_img: String,
         docker_img_tag: String,
         create: bool,
@@ -264,6 +265,10 @@ impl X20Manager {
                     binary.set_target(target);
                 }
 
+                if !source.is_empty() {
+                    binary.set_source(source);
+                }
+
                 binary
             }
             None => {
@@ -278,6 +283,7 @@ impl X20Manager {
                 let mut b = x20::Binary::new();
                 b.set_name(name);
                 b.set_target(target);
+                b.set_source(source);
                 b
             }
         };

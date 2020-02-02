@@ -30,6 +30,11 @@ fn main() {
         "The path to the binary you are publishing"
     );
     let target = define_flag!("target", String::from(""), "The target you are publishing");
+    let source = define_flag!(
+        "source",
+        String::from(""),
+        "The source path (i.e. WRT the root of the repo) of the file you are publishing"
+    );
     let docker_img = define_flag!(
         "docker_img",
         String::from(""),
@@ -54,6 +59,7 @@ fn main() {
         path,
         target,
         create,
+        source,
         x20_hostname,
         x20_port,
         env,
@@ -77,6 +83,7 @@ fn main() {
                 name.value(),
                 path.path(),
                 target.value(),
+                source.value(),
                 docker_img.value(),
                 docker_img_tag.value(),
                 create.value(),

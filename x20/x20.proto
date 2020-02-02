@@ -7,6 +7,7 @@ message Binary {
   string url = 4;
   string docker_img = 5;
   string docker_img_tag = 6;
+  string source = 7;
 }
 
 message Configuration {
