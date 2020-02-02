@@ -534,6 +534,79 @@ impl<C: LargeTableClient> WeldLocalServiceHandler<C> {
         response
     }
 
+    pub fn publish_file(&self, req: weld::PublishFileRequest) -> weld::PublishFileResponse {
+        let mut response = weld::PublishFileResponse::new();
+
+        // Activate the service account (in case it wasn't already activated)
+        let output = match std::process::Command::new("gcloud")
+            .arg("auth")
+            .arg("activate-service-account")
+            .arg("--key-file=/data/bazel-access.json")
+            .output()
+        {
+            Ok(o) => o,
+            Err(e) => {
+                println!("failed to activate service account: {:?}", e);
+                response.set_upload_output(String::from("failed to activate service account"));
+                return response;
+            }
+        };
+
+        let run_stdout = std::str::from_utf8(&output.stdout)
+            .unwrap()
+            .trim()
+            .to_owned();
+        let run_stderr = std::str::from_utf8(&output.stderr)
+            .unwrap()
+            .trim()
+            .to_owned();
+        response.set_upload_output(format!("{}\n{}", run_stdout, run_stderr));
+        if !output.status.success() {
+            return response;
+        }
+
+        let name = format!("{:x}{:x}", rand::random::<u64>(), rand::random::<u64>());
+        let tmp_filename = format!("/tmp/{}", name);
+        if let Err(_) = std::fs::write(&tmp_filename, req.get_contents()) {
+            response.set_upload_output(String::from("Failed to write temp file!"));
+            return response;
+        }
+        let output = match std::process::Command::new("gsutil")
+            .arg("cp")
+            .arg(tmp_filename)
+            .arg(format!("gs://x20-binaries/{}", name))
+            .output()
+        {
+            Ok(o) => o,
+            Err(e) => {
+                println!("failed to upload artifact: {:?}", e);
+                return response;
+            }
+        };
+
+        let run_stdout = std::str::from_utf8(&output.stdout)
+            .unwrap()
+            .trim()
+            .to_owned();
+        let run_stderr = std::str::from_utf8(&output.stderr)
+            .unwrap()
+            .trim()
+            .to_owned();
+        response.set_upload_output(format!("{}\n{}", run_stdout, run_stderr));
+        if output.status.success() {
+            response.set_success(true);
+        } else {
+            return response;
+        }
+
+        response.set_url(format!(
+            "https://storage.googleapis.com/x20-binaries/{}",
+            name
+        ));
+
+        response
+    }
+
     pub fn apply_patch(&self, req: weld::ApplyPatchRequest) -> weld::ApplyPatchResponse {
         let mut response = weld::ApplyPatchResponse::new();
 
@@ -893,6 +966,14 @@ impl<C: LargeTableClient> weld::WeldLocalService for WeldLocalServiceHandler<C> 
         req: weld::RunBuildQueryRequest,
     ) -> grpc::SingleResponse<weld::RunBuildQueryResponse> {
         grpc::SingleResponse::completed(self.run_build_query(&req))
+    }
+
+    fn publish_file(
+        &self,
+        _m: grpc::RequestOptions,
+        req: weld::PublishFileRequest,
+    ) -> grpc::SingleResponse<weld::PublishFileResponse> {
+        grpc::SingleResponse::completed(self.publish_file(req))
     }
 
     fn apply_patch(

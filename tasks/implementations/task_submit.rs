@@ -57,10 +57,18 @@ impl Task for WeldTrySubmitTask {
             return manager.failure(status, "change out of date, requires sync");
         }
 
+        let changed_files: Vec<_> = weld::get_changed_files(&change)
+            .iter()
+            .map(|f| f.get_filename().to_string())
+            .collect();
+        for file in &changed_files {
+            status
+                .mut_artifacts()
+                .push(ArtifactBuilder::from_string("file", file.to_string()));
+        }
+
         let passed_args = args.to_owned();
         let passed_args_2 = args.to_owned();
-        let passed_status = status.clone();
-        let passed_status_2 = status.clone();
         let passed_manager = Arc::new(manager);
         let passed_manager_2 = passed_manager.clone();
         let passed_manager_3 = passed_manager.clone();
@@ -102,6 +110,9 @@ impl Task for WeldTrySubmitTask {
                         args.add_string("target", artifact.get_value_string().to_owned());
                     }
                     args.add_int("change_id", id);
+                    for file in changed_files {
+                        args.add_string("file", file);
+                    }
                     passed_manager_4.start_new_task("x20_query", args.build());
 
                     passed_manager_4.success(status)

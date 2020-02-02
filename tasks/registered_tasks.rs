@@ -47,6 +47,10 @@ lazy_static! {
             task_deploy::PUBLISH_TASK,
             Box::new(task_deploy::X20PublishTask::new()),
         );
+        m.insert(
+            task_deploy::PUBLISH_SCRIPT_TASK,
+            Box::new(task_deploy::X20PublishScriptTask::new()),
+        );
 
         m
     };

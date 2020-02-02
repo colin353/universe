@@ -291,6 +291,14 @@ impl WeldLocalClient {
             .1
     }
 
+    pub fn publish_file(&self, req: weld::PublishFileRequest) -> weld::PublishFileResponse {
+        self.client
+            .publish_file(self.opts(), req)
+            .wait()
+            .expect("rpc")
+            .1
+    }
+
     pub fn apply_patch(&self, req: weld::ApplyPatchRequest) -> weld::ApplyPatchResponse {
         self.client
             .apply_patch(self.opts(), req)
@@ -515,6 +523,38 @@ pub fn files_are_functionally_the_same(f1: &weld::File, f2: &weld::File) -> bool
     }
 
     true
+}
+
+pub fn get_changed_files(change: &weld::Change) -> Vec<&weld::File> {
+    // Figure out which files were changed and save them as artifacts
+    let maybe_last_snapshot = change
+        .get_changes()
+        .iter()
+        .filter_map(|c| c.get_snapshots().iter().map(|x| x.get_snapshot_id()).max())
+        .max();
+
+    let last_snapshot_id = match maybe_last_snapshot {
+        Some(x) => x,
+        None => return Vec::new(),
+    };
+
+    change
+        .get_changes()
+        .iter()
+        .filter_map(|h| {
+            h.get_snapshots()
+                .iter()
+                .filter(|x| x.get_snapshot_id() == last_snapshot_id)
+                .next()
+        })
+        .filter(|f| !f.get_reverted())
+        .collect()
+}
+
+pub fn get_changed_file<'a>(filename: &str, change: &'a weld::Change) -> Option<&'a weld::File> {
+    get_changed_files(change)
+        .into_iter()
+        .find(|f| f.get_filename() == filename)
 }
 
 #[cfg(test)]

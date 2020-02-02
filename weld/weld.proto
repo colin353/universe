@@ -193,6 +193,13 @@ message RunBuildResponse {
   string docker_img_tag = 9;
 }
 
+message PublishFileRequest { bytes contents = 1; }
+message PublishFileResponse {
+  string url = 1;
+  bool success = 2;
+  string upload_output = 3;
+}
+
 message ApplyPatchRequest { uint64 change_id = 1; }
 message ApplyPatchResponse {
   bool success = 1;
@@ -220,6 +227,7 @@ service WeldLocalService {
   rpc Sync(SyncRequest) returns (SyncResponse);
   rpc RunBuild(RunBuildRequest) returns (RunBuildResponse);
   rpc RunBuildQuery(RunBuildQueryRequest) returns (RunBuildQueryResponse);
+  rpc PublishFile(PublishFileRequest) returns (PublishFileResponse);
   rpc ApplyPatch(ApplyPatchRequest) returns (ApplyPatchResponse);
   rpc DeleteChange(Change) returns (DeleteResponse);
   rpc CleanSubmittedChanges(CleanSubmittedChangesRequest)
