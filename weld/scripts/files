@@ -1,4 +1,5 @@
 #!/bin/bash
+
 TIG_ROOT=/home/colin/codefs
 if [ "${PWD:0:${#TIG_ROOT}}" = $TIG_ROOT ]; then
   tig files | cut -c 2-
