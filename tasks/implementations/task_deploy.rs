@@ -31,6 +31,13 @@ impl Task for X20QueryTask {
             .map(|arg| arg.get_value_string().to_owned())
             .collect();
 
+        let mut id = 0;
+        for arg in args {
+            if arg.get_name() == "change_id" {
+                id = arg.get_value_int();
+            }
+        }
+
         let client = {
             let config = manager.get_configuration();
             x20_client::X20Client::new(&config.x20_hostname, config.x20_port)
@@ -43,14 +50,22 @@ impl Task for X20QueryTask {
             .map(|mut bin| bin.take_name())
             .collect();
 
-        let modified_files: std::collections::HashSet<_> = args
+        let weld_client = {
+            let config = manager.get_configuration();
+            weld::WeldServerClient::new(
+                &config.weld_server_hostname,
+                String::new(),
+                config.weld_server_port,
+            )
+        };
+        let mut c = weld::Change::new();
+        c.set_id(id as u64);
+        let change = weld_client.get_change(c);
+
+        let modified_files: std::collections::HashSet<_> = weld::get_changed_files(&change)
             .iter()
-            .filter(|arg| arg.get_name() == "file")
-            .map(|arg| arg.get_value_string().to_owned())
-            // The filenames are prefixed with /, but by convention
-            // the source field in x20 is not prefixed, so let's drop
-            // the prefix.
-            .filter(|f| !f.is_empty())
+            .filter(|f| !f.get_directory())
+            .map(|f| f.get_filename().to_owned())
             .map(|f| f[1..].to_string())
             .collect();
 
@@ -67,14 +82,17 @@ impl Task for X20QueryTask {
                 .mut_artifacts()
                 .push(ArtifactBuilder::from_string("binary", bin.to_string()));
         }
-        manager.set_status(&status);
-
-        let mut id = 0;
-        for arg in args {
-            if arg.get_name() == "change_id" {
-                id = arg.get_value_int();
-            }
+        for f in &modified_files {
+            status
+                .mut_artifacts()
+                .push(ArtifactBuilder::from_string("file", f.to_string()));
         }
+        for bin in &scripts_to_publish {
+            status
+                .mut_artifacts()
+                .push(ArtifactBuilder::from_string("script", bin.to_string()));
+        }
+        manager.set_status(&status);
 
         let passed_manager = Arc::new(manager);
         let passed_manager_2 = passed_manager.clone();
