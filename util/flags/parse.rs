@@ -12,7 +12,7 @@ use std::io::{Error, ErrorKind};
 use ParseableFlag;
 
 // split takes an opt string and returns the name of the flag to
-// be set, and the value assigned (or an empty string, if nothing.)
+// be set, and the value assigned (or true, if nothing.)
 fn split(opt: &str) -> Result<Option<(&str, &str)>, Error> {
     if !opt.starts_with("-") {
         return Ok(None);
@@ -25,7 +25,7 @@ fn split(opt: &str) -> Result<Option<(&str, &str)>, Error> {
 
     // The flag name is the first value of the flag.
     let flag_name = flag[0];
-    let flag_value = if flag.len() == 2 { flag[1] } else { "" };
+    let flag_value = if flag.len() == 2 { flag[1] } else { "true" };
 
     // The flag name must contain only valid characters, which means lowercase
     // letters and underscores.
@@ -106,12 +106,10 @@ pub fn parse_flags_from_string(
         }
 
         match m.get(name) {
-            Some(f) => {
-                match f.validate(value) {
-                    Ok(_) => continue,
-                    Err(e) => return Err(e),
-                }
-            }
+            Some(f) => match f.validate(value) {
+                Ok(_) => continue,
+                Err(e) => return Err(e),
+            },
             None => {
                 return Err(Error::new(
                     ErrorKind::NotFound,
@@ -129,12 +127,10 @@ pub fn parse_flags_from_string(
             None => continue,
         };
         match m.get(argname.as_str()) {
-            Some(f) => {
-                match f.validate(value) {
-                    Ok(_) => continue,
-                    Err(e) => return Err(e),
-                }
-            }
+            Some(f) => match f.validate(value) {
+                Ok(_) => continue,
+                Err(e) => return Err(e),
+            },
             // If no match is found, it's probably just a spurious variable
             // which can be ignored without errors.
             None => continue,
@@ -229,6 +225,16 @@ mod test {
     }
 
     #[test]
+    fn test_get_boolean_flag() {
+        // If a flag is present but has no value, it will be implicitly a boolean flag with value
+        // set to "true"
+        assert_eq!(
+            get_flag_value("my_flag", &["--my_flag"], &[]).unwrap(),
+            "true"
+        );
+    }
+
+    #[test]
     fn test_get_flag_value() {
         // Environment flags should override command line flags.
         assert_eq!(
@@ -248,7 +254,8 @@ mod test {
                 "my_flag",
                 &["--my_flag=true"],
                 &[("ARGS_MY_OTHEr_FLAG", "env")],
-            ).unwrap(),
+            )
+            .unwrap(),
             "true"
         );
     }
@@ -264,13 +271,15 @@ mod test {
             &[&boolFlag],
             &["--my_flag=true"],
             &[("ARGS_MY_FLAG", "false")],
-        ).unwrap();
+        )
+        .unwrap();
 
         parse_flags_from_string(
             &[&boolFlag],
             &["--my_flag=true"],
             &[("ARGS_MY_FLAG", "fail")],
-        ).unwrap_err();
+        )
+        .unwrap_err();
     }
 
     #[test]
@@ -291,12 +300,12 @@ mod test {
 
         assert_eq!(split("-hello=world").unwrap().unwrap(), ("hello", "world"));
 
-        assert_eq!(split("-hello").unwrap().unwrap(), ("hello", ""));
+        assert_eq!(split("-hello").unwrap().unwrap(), ("hello", "true"));
 
-        assert_eq!(split("--settings=--flag=false").unwrap().unwrap(), (
-            "settings",
-            "--flag=false",
-        ));
+        assert_eq!(
+            split("--settings=--flag=false").unwrap().unwrap(),
+            ("settings", "--flag=false",)
+        );
     }
 
     #[test]
