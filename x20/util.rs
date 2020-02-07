@@ -292,13 +292,17 @@ impl X20Manager {
         let name = format!("{:x}{:x}", rand::random::<u64>(), rand::random::<u64>());
 
         if !docker_img.is_empty() {
-            if docker_img_tag.is_empty() {
+            binary.set_docker_img(docker_img);
+        }
+        if !docker_img_tag.is_empty() {
+            binary.set_docker_img_tag(docker_img_tag);
+        }
+
+        if !binary.get_docker_img().is_empty() {
+            if binary.get_docker_img_tag().is_empty() {
                 eprintln!("❌you must provide --docker_img_tag for docker images!");
                 std::process::exit(1);
             }
-
-            binary.set_docker_img(docker_img);
-            binary.set_docker_img_tag(docker_img_tag);
         } else {
             // Upload the binary to the cloud bucket
             let output = match std::process::Command::new("gsutil")
