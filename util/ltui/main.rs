@@ -5,18 +5,27 @@ extern crate flags;
 extern crate largetable_client;
 use largetable_client::LargeTableClient;
 
+fn usage() {
+    println!("USAGE: ltui <command>");
+    println!("use ltui --help for details.");
+}
+
 fn main() {
     let host = define_flag!(
         "host",
         String::from("localhost"),
         "The hostname:port of the largetable service"
     );
-    let port = define_flag!("host", 50051, "The port of the largetable service");
+    let port = define_flag!("port", 50051, "The port of the largetable service");
     let limit = define_flag!("limit", 100, "The max records to return.");
 
     // The remaining string arguments are the query.
-    let query = parse_flags!(host, limit);
+    let query = parse_flags!(host, port, limit);
     let c = largetable_client::LargeTableRemoteClient::new(&host.value(), port.value());
+
+    if query.len() == 0 {
+        return usage();
+    }
 
     let verb = query[0].as_str();
     match verb.as_ref() {
@@ -39,6 +48,11 @@ fn main() {
             } else {
                 eprintln!("no data");
             }
+        }
+        "delete" => {
+            assert_eq!(query.len(), 3, "`delete` expects 2 arguments");
+            let res = c.delete(&query[1], &query[2]);
+            eprintln!("ok");
         }
         "read_scope" => {
             assert!(
