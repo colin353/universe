@@ -954,35 +954,34 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
             manually_merged_filenames.insert(file.get_filename().to_owned());
         }
 
-        let mut files_requiring_merge = HashSet::new();
-        let mut req = weld::GetSubmittedChangesRequest::new();
-        let mut synced_index = change.get_based_index();
-        req.set_starting_id(change.get_based_index() + 1);
-        for change in remote_server.get_submitted_changes(req) {
-            synced_index = change.get_id();
-            for file_history in change.get_changes() {
-                if changed_files.contains(file_history.get_filename()) {
-                    // If the file has been manually merged, it doesn't require auto merge
-                    if !manually_merged_filenames.contains(file_history.get_filename()) {
-                        files_requiring_merge.insert(file_history.get_filename().to_owned());
-                    }
-                }
-            }
-        }
+        let latest_change = remote_server.get_latest_change();
+        let synced_index = latest_change.get_id();
 
         let mut merged_files = Vec::new();
         let mut conflicted_files = Vec::new();
-        for filename in files_requiring_merge {
+        for filename in changed_files {
+            // If the file has been manually merged, it doesn't require auto merge
+            if manually_merged_filenames.contains(&filename) {
+                continue;
+            }
+
+            // Check whether the file has changed since we last synced
+            let mut original = match self.read_remote(0, &filename, change.get_based_index()) {
+                Some(f) => f,
+                None => weld::File::new(),
+            };
+            let mut modified_remote = match self.read_remote(0, &filename, synced_index) {
+                Some(f) => f,
+                None => weld::File::new(),
+            };
+
+            // If the file has not changed, we're fine, nothing to merge
+            if weld::files_are_functionally_the_same(&original, &modified_remote) {
+                continue;
+            }
+
             println!("trying to merge: {}", filename);
 
-            let original = match self.read_remote(0, &filename, change.get_based_index()) {
-                Some(mut f) => String::from_utf8(f.take_contents()).unwrap(),
-                None => String::new(),
-            };
-            let modified_remote = match self.read_remote(0, &filename, synced_index) {
-                Some(mut f) => String::from_utf8(f.take_contents()).unwrap(),
-                None => String::new(),
-            };
             let mut modified_local_file = match self.read(change.get_id(), &filename, 0) {
                 Some(mut f) => f,
                 None => {
@@ -991,15 +990,13 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
                 }
             };
 
-            println!("original: `{}`", original);
-            println!("modified_remote: `{}`", modified_remote);
             println!(
                 "modified_remote: `{}`",
                 &std::str::from_utf8(modified_local_file.get_contents()).unwrap()
             );
             let (merged, ok) = merge_lib::merge(
-                &original,
-                &modified_remote,
+                &std::str::from_utf8(original.get_contents()).unwrap(),
+                &std::str::from_utf8(modified_remote.get_contents()).unwrap(),
                 &std::str::from_utf8(modified_local_file.get_contents()).unwrap(),
             );
             modified_local_file.set_contents(merged.into_bytes());
