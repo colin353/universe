@@ -36,6 +36,47 @@ fn edit_file(filename: &str) {
         .unwrap();
 }
 
+fn snapshot(client: &weld::WeldLocalClient, space: String, update_description: bool) {
+    let maybe_id = client.lookup_friendly_name(space.clone());
+    if let Some(id) = maybe_id {
+        let change = match maybe_id {
+            Some(id) => {
+                let mut req = weld::GetChangeRequest::new();
+                req.mut_change().set_id(id);
+                client.get_change(req)
+            }
+            None => {
+                eprintln!("couldn't find change");
+                weld::Change::new()
+            }
+        };
+
+        let mut c = if change.get_description().is_empty() || update_description {
+            // Edit the description (if it isn't already set)
+            let filename = format!("/tmp/change-{}", id);
+            {
+                let mut f = std::fs::File::create(&filename).unwrap();
+                f.write_all(weld::serialize_change(&change, true).as_bytes())
+                    .unwrap();
+            }
+            edit_file(&filename);
+            load_change_file(&filename)
+        } else {
+            change
+        };
+        c.set_id(id);
+        let response = client.snapshot(c);
+        println!(
+            "saved snapshot as {}@{}",
+            response.get_change_id(),
+            response.get_snapshot_id()
+        );
+    } else {
+        eprintln!("No such client '{}`", space);
+        std::process::exit(1);
+    }
+}
+
 fn main() {
     let hostname = define_flag!(
         "weld_hostname",
@@ -195,46 +236,7 @@ fn main() {
                 client.write(req);
             }
         }
-        "snapshot" => {
-            let maybe_id = client.lookup_friendly_name(space.value());
-            if let Some(id) = maybe_id {
-                let change = match maybe_id {
-                    Some(id) => {
-                        let mut req = weld::GetChangeRequest::new();
-                        req.mut_change().set_id(id);
-                        client.get_change(req)
-                    }
-                    None => {
-                        eprintln!("couldn't find change");
-                        weld::Change::new()
-                    }
-                };
-
-                let mut c = if change.get_description().is_empty() || update_description.value() {
-                    // Edit the description (if it isn't already set)
-                    let filename = format!("/tmp/change-{}", id);
-                    {
-                        let mut f = std::fs::File::create(&filename).unwrap();
-                        f.write_all(weld::serialize_change(&change, true).as_bytes())
-                            .unwrap();
-                    }
-                    edit_file(&filename);
-                    load_change_file(&filename)
-                } else {
-                    change
-                };
-                c.set_id(id);
-                let response = client.snapshot(c);
-                println!(
-                    "saved snapshot as {}@{}",
-                    response.get_change_id(),
-                    response.get_snapshot_id()
-                );
-            } else {
-                eprintln!("No such client '{}`", space.value());
-                std::process::exit(1);
-            }
-        }
+        "snapshot" => snapshot(&client, space.value(), update_description.value()),
         "submit" => {
             let maybe_id = client.lookup_friendly_name(space.value());
             if let Some(id) = maybe_id {
@@ -350,6 +352,7 @@ fn main() {
                 let result = client.sync(sync_request.clone());
                 if result.get_conflicted_files().len() == 0 {
                     println!("synced to latest (#{})", result.get_index());
+                    snapshot(&client, space.value(), false);
                     break;
                 }
 
