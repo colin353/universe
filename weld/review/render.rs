@@ -20,9 +20,14 @@ pub fn file_history(fh: &weld::FileHistory, index: u64) -> Option<tmpl::Contents
     );
 
     let mut is_new_file = true;
+    let mut is_deleted = true;
     for f in fh.get_snapshots().iter().rev() {
         if f.get_change_id() == 0 {
             continue;
+        }
+
+        if f.get_deleted() {
+            is_deleted = true;
         }
 
         c.insert("original", file(f));
@@ -30,7 +35,12 @@ pub fn file_history(fh: &weld::FileHistory, index: u64) -> Option<tmpl::Contents
         break;
     }
 
-    c.insert("status", if is_new_file { "new" } else { "modified" });
+    let status = match (is_new_file, is_deleted) {
+        (true, true) => "deleted",
+        (true, false) => "new",
+        _ => "modified",
+    };
+    c.insert("status", status);
 
     let mut has_file = false;
     let mut is_directory = false;
