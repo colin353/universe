@@ -435,4 +435,17 @@ mod tests {
 
         assert_eq!(chunks, vec![expected]);
     }
+
+    #[test]
+    fn test_weird_merge() {
+        let original = "read us all";
+        let a = "heat exposes it\n\nread us all\n\nan obvious one\n";
+        let b = "conflict\nread us all\n\nyou\n";
+
+        let (joined, ok) = merge(original, a, b);
+        assert!(!ok);
+        // TODO(b/20): fix this test. I think the result is wrong and probably indicates a bug with
+        // the merging code.
+        assert_eq!(&joined, "<<<<<<< remote\nheat exposes it\n\n=======\nconflict\n>>>>>>> local\nread us all\nread us all\n\n<<<<<<< remote\nan obvious one\n=======\nyou\n>>>>>>> local\n\nread us all\n");
+    }
 }
