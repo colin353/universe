@@ -31,6 +31,7 @@ pub type PTable<T1, T2> = PCollection<(T1, T2)>;
 pub struct PCollectionUnderlying<T> {
     id: AtomicU64,
     dependency: Option<Arc<dyn PFn>>,
+    proto: PCollectionProto,
     _marker: std::marker::PhantomData<T>,
 }
 
@@ -38,11 +39,28 @@ impl<T> PCollection<T>
 where
     T: 'static + Send + Sync,
 {
-    pub fn new() -> Self {
+    fn new() -> Self {
         Self {
             underlying: Arc::new(PCollectionUnderlying::<T> {
                 id: AtomicU64::new(0),
                 dependency: None,
+                proto: PCollectionProto::new(),
+                _marker: std::marker::PhantomData {},
+            }),
+        }
+    }
+
+    pub fn from_recordio(filename: &str) -> Self {
+        let mut config = PCollectionProto::new();
+        config.set_filename(filename.to_string());
+        config.set_resolved(true);
+        config.set_format(DataFormat::RECORDIO);
+
+        Self {
+            underlying: Arc::new(PCollectionUnderlying::<T> {
+                id: AtomicU64::new(0),
+                dependency: None,
+                proto: config,
                 _marker: std::marker::PhantomData {},
             }),
         }
@@ -72,7 +90,7 @@ where
     }
 
     pub fn to_proto(&self) -> PCollectionProto {
-        let mut out = PCollectionProto::new();
+        let mut out = self.underlying.proto.clone();
         out.set_id(self.underlying.id.load(ORDER));
         out
     }
@@ -130,6 +148,27 @@ where
             function: Box::new(f),
         }));
         out
+    }
+}
+
+impl<String, V> PCollection<(String, V)>
+where
+    V: 'static + Send + Sync,
+{
+    pub fn from_sstable(filename: &str) -> Self {
+        let mut config = PCollectionProto::new();
+        config.set_filename(filename.to_string());
+        config.set_resolved(true);
+        config.set_format(DataFormat::SSTABLE);
+
+        Self {
+            underlying: Arc::new(PCollectionUnderlying::<(String, V)> {
+                id: AtomicU64::new(0),
+                dependency: None,
+                proto: config,
+                _marker: std::marker::PhantomData {},
+            }),
+        }
     }
 }
 

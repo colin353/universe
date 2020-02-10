@@ -2,7 +2,19 @@ syntax = "proto3";
 
 message ShardConfig {}
 
-message PCollectionProto { uint64 id = 1; }
+enum DataFormat {
+  UNKNOWN = 0;
+  SSTABLE = 1;
+  RECORDIO = 2;
+}
+
+message PCollectionProto {
+  uint64 id = 1;
+  bool resolved = 2;
+  string filename = 3;
+  DataFormat format = 4;
+}
+
 message PFnProto {
   uint64 id = 1;
   string description = 2;

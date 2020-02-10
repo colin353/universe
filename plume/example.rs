@@ -40,14 +40,18 @@ impl plume::JoinFn for MyJoinFn {
 }
 
 fn main() {
-    let p = PCollection::<u64>::new();
+    let p = PCollection::<u64>::from_recordio("/tmp/test.recordio");
     let o1 = p.par_do(Do1 {});
     let o2 = p.par_do(Do2 {});
     let joined = o1.join(o2, MyJoinFn {});
     let stages = plume::stages(joined);
     for stage in stages {
+        let mut ready = true;
         print!("[");
         for input in stage.get_inputs() {
+            if !input.get_resolved() {
+                ready = false;
+            }
             print!("PCollection({}), ", input.get_id());
         }
         print!("] --> ");
@@ -60,6 +64,6 @@ fn main() {
         for output in stage.get_outputs() {
             print!("PCollection({}), ", output.get_id());
         }
-        println!("]\n");
+        println!("] (ready={})\n", ready);
     }
 }
