@@ -1,3 +1,15 @@
 syntax = "proto3";
 
 message ShardConfig {}
+
+message PCollectionProto { uint64 id = 1; }
+message PFnProto {
+  uint64 id = 1;
+  string description = 2;
+}
+
+message Stage {
+  repeated PCollectionProto inputs = 1;
+  PFnProto function = 2;
+  repeated PCollectionProto outputs = 3;
+}
