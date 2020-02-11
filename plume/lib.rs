@@ -66,10 +66,6 @@ where
         }
     }
 
-    fn render(&self) -> String {
-        format!("[PCollection<?>]")
-    }
-
     pub fn par_do<O, DoType>(&self, f: DoType) -> PCollection<O>
     where
         DoType: DoFn<Input = T, Output = O> + 'static,
@@ -172,30 +168,77 @@ where
     }
 }
 
-pub fn compute<T>(input: PCollection<T>) -> Vec<T> {
-    println!("[start]");
-    if let Some(ref x) = input.underlying.dependency {
-        println!("|");
-        println!("V");
-        println!("{}", x.render());
-    }
-    println!("|");
-    println!("V");
-    println!("[PCollection]");
+pub fn update_stage(stage: &mut Stage) {
+    for input in stage.mut_inputs().iter_mut() {
+        let reg = PCOLLECTION_REGISTRY.read().unwrap();
+        let latest_input = reg.get(&input.get_id()).unwrap();
 
-    Vec::new()
+        *input = latest_input.clone();
+    }
 }
 
-pub fn stages<T>(input: PCollection<T>) -> Vec<Stage>
+pub fn run<T>(input: PCollection<T>)
 where
     T: 'static + Send + Sync,
 {
-    input.stages()
+    let mut stages = input.stages();
+    let mut completed = std::collections::HashSet::new();
+    loop {
+        let mut did_execute = false;
+        for (id, stage) in stages.iter_mut().enumerate() {
+            update_stage(stage);
+
+            if completed.contains(&id) {
+                continue;
+            }
+
+            let mut ready = true;
+            for input in stage.get_inputs() {
+                if !input.get_resolved() {
+                    ready = false;
+                }
+            }
+
+            if ready {
+                execute_stage(stage);
+                did_execute = true;
+                completed.insert(id);
+            }
+        }
+        if !did_execute {
+            break;
+        }
+    }
+
+    if completed.len() != stages.len() {
+        panic!("Deadlock, didn't execute all stages");
+    }
+}
+
+pub fn execute_stage(stage: &Stage) {
+    println!("Executing stage");
+
+    let pfn = PFN_REGISTRY
+        .read()
+        .unwrap()
+        .get(&stage.get_function().get_id())
+        .unwrap()
+        .clone();
+
+    let mut result = pfn.execute(stage);
+
+    // Update the outputs so they are "resolved"
+    for output in result.take_outputs().into_iter() {
+        PCOLLECTION_REGISTRY
+            .write()
+            .unwrap()
+            .insert(output.get_id(), output);
+    }
 }
 
 pub trait PFn: Send + Sync {
-    fn render(&self) -> String;
     fn stages(&self, id: u64) -> (Stage, Vec<Stage>);
+    fn execute(&self, stage: &Stage) -> Stage;
 }
 pub trait EmitFn<T> {
     fn emit(&mut self, value: T);
@@ -250,12 +293,15 @@ where
         (s, dep_stages)
     }
 
-    fn render(&self) -> String {
-        let mut output = String::new();
-        if let Some(ref x) = self.dependency.underlying.dependency {
-            output = format!("{}\n|\nV\n", x.render());
+    fn execute(&self, stage: &Stage) -> Stage {
+        let mut output = stage.clone();
+        output.clear_outputs();
+        for out in stage.get_outputs() {
+            let mut resolved_output = out.clone();
+            resolved_output.set_resolved(true);
+            output.mut_outputs().push(resolved_output);
         }
-        output += &format!("[PCollection]\n|\nV\n[DoFn]\n");
+
         output
     }
 }
@@ -280,32 +326,14 @@ where
         (s, deps)
     }
 
-    fn render(&self) -> String {
-        let mut left = String::new();
-        if let Some(ref x) = self.dependency_left.underlying.dependency {
-            left = x.render();
-            left += "|\nV\n";
+    fn execute(&self, stage: &Stage) -> Stage {
+        let mut output = stage.clone();
+        output.clear_outputs();
+        for out in stage.get_outputs() {
+            let mut resolved_output = out.clone();
+            resolved_output.set_resolved(true);
+            output.mut_outputs().push(resolved_output);
         }
-        left += "[PCollection]\n";
-
-        let mut right = String::new();
-        if let Some(ref x) = self.dependency_right.underlying.dependency {
-            right = x.render();
-            right += "|\nV\n";
-        }
-        right += "[PCollection]\n";
-        let mut lines_left = left.lines();
-        let mut lines_right = right.lines();
-        let mut output = String::new();
-        loop {
-            let left = lines_left.next();
-            let right = lines_right.next();
-            if left.is_none() && right.is_none() {
-                break;
-            }
-            output += &format!("{:30} {}\n", left.unwrap_or(""), right.unwrap_or(""));
-        }
-        output += "|\n|\nV\n[JoinFn]\n";
 
         output
     }

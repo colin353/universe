@@ -44,26 +44,6 @@ fn main() {
     let o1 = p.par_do(Do1 {});
     let o2 = p.par_do(Do2 {});
     let joined = o1.join(o2, MyJoinFn {});
-    let stages = plume::stages(joined);
-    for stage in stages {
-        let mut ready = true;
-        print!("[");
-        for input in stage.get_inputs() {
-            if !input.get_resolved() {
-                ready = false;
-            }
-            print!("PCollection({}), ", input.get_id());
-        }
-        print!("] --> ");
-        print!(
-            "PFn({}, {})",
-            stage.get_function().get_id(),
-            stage.get_function().get_description()
-        );
-        print!(" --> [");
-        for output in stage.get_outputs() {
-            print!("PCollection({}), ", output.get_id());
-        }
-        println!("] (ready={})\n", ready);
-    }
+
+    plume::run(joined);
 }
