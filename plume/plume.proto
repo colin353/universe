@@ -13,6 +13,11 @@ message PCollectionProto {
   bool resolved = 2;
   string filename = 3;
   DataFormat format = 4;
+  bool group_by_key = 5;
+
+  // Key range spec
+  string starting_key = 6;
+  string ending_key = 7;
 }
 
 message PFnProto {
@@ -21,6 +26,12 @@ message PFnProto {
 }
 
 message Stage {
+  repeated PCollectionProto inputs = 1;
+  PFnProto function = 2;
+  repeated PCollectionProto outputs = 3;
+}
+
+message Shard {
   repeated PCollectionProto inputs = 1;
   PFnProto function = 2;
   repeated PCollectionProto outputs = 3;

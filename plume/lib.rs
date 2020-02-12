@@ -1,13 +1,17 @@
 extern crate plume_proto_rust;
-use plume_proto_rust::*;
+extern crate shard_lib;
 
 #[macro_use]
 extern crate lazy_static;
+
+use plume_proto_rust::*;
 
 use std::collections::HashMap;
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 use std::sync::RwLock;
+
+mod sharded_io;
 
 static ORDER: std::sync::atomic::Ordering = std::sync::atomic::Ordering::Relaxed;
 static LAST_ID: AtomicU64 = AtomicU64::new(1);
@@ -157,10 +161,24 @@ where
         config.set_resolved(true);
         config.set_format(DataFormat::SSTABLE);
 
-        Self {
+        PCollection {
             underlying: Arc::new(PCollectionUnderlying::<(String, V)> {
                 id: AtomicU64::new(0),
                 dependency: None,
+                proto: config,
+                _marker: std::marker::PhantomData {},
+            }),
+        }
+    }
+
+    pub fn group_by_key(&self) -> PCollection<(String, Stream<V>)> {
+        let mut config = self.underlying.proto.clone();
+        config.set_group_by_key(true);
+
+        PCollection {
+            underlying: Arc::new(PCollectionUnderlying::<(String, Stream<V>)> {
+                id: AtomicU64::new(0),
+                dependency: self.underlying.dependency.clone(),
                 proto: config,
                 _marker: std::marker::PhantomData {},
             }),

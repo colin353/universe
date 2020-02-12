@@ -2,6 +2,7 @@ package(default_visibility = ["//visibility:public"])
 
 load("@io_bazel_rules_rust//rust:rust.bzl", "rust_library")
 load("@io_bazel_rules_rust//rust:rust.bzl", "rust_binary")
+load("@io_bazel_rules_rust//rust:rust.bzl", "rust_test")
 load("@io_bazel_rules_rust//proto:proto.bzl", "rust_proto_library")
 
 proto_library(
@@ -18,10 +19,12 @@ rust_library(
     name = "plume",
     srcs = [
         "lib.rs",
+        "sharded_io.rs",
     ],
     deps = [
         ":plume_proto_rust",
         "//third_party:lazy_static",
+        "//util/shard_lib",
     ],
 )
 
@@ -33,4 +36,9 @@ rust_binary(
     deps = [
         ":plume",
     ],
+)
+
+rust_test(
+    name = "plume_test",
+    crate = ":plume",
 )

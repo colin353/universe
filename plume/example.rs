@@ -44,6 +44,7 @@ fn main() {
     let o1 = p.par_do(Do1 {});
     let o2 = p.par_do(Do2 {});
     let joined = o1.join(o2, MyJoinFn {});
+    let output = joined.group_by_key();
 
-    plume::run(joined);
+    plume::run(output);
 }
