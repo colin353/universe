@@ -578,6 +578,10 @@ impl<T: Serializable + Default> SSTableReader<T> {
     pub fn suggest_shards(&self, key_spec: &str, min_key: &str, max_key: &str) -> Vec<String> {
         index::suggest_shards(&self.index, key_spec, min_key, max_key)
     }
+
+    pub fn get_shard_boundaries(&self, target_shard_count: usize) -> Vec<String> {
+        index::get_shard_boundaries(&self.index, target_shard_count)
+    }
 }
 
 impl<T: Serializable + Default> Iterator for SSTableReader<T> {
@@ -596,6 +600,32 @@ mod index {
             Some(i) => Some(index.pointers[i].to_owned()),
             None => None,
         }
+    }
+
+    pub fn get_shard_boundaries(
+        index: &sstable_proto_rust::Index,
+        target_shard_count: usize,
+    ) -> Vec<String> {
+        if target_shard_count <= 1 {
+            return Vec::new();
+        }
+
+        let num_pointers = index.get_pointers().len();
+        let mut output = Vec::new();
+        if num_pointers < target_shard_count {
+            for pointer in index.get_pointers() {
+                output.push(pointer.get_key().to_string());
+            }
+            return output;
+        }
+
+        for i in 1..target_shard_count {
+            let t = ((i * num_pointers) / target_shard_count) as usize;
+            let ref keyentry = index.pointers[t];
+            output.push(keyentry.get_key().to_string());
+        }
+
+        output
     }
 
     // Suggest possible sharding points based on the contents of the index. The suggested sharding
@@ -1307,5 +1337,50 @@ mod tests {
             index::suggest_shards(&index, "", "people_c", "places_e"),
             expected
         );
+    }
+
+    #[test]
+    fn test_shard_boundaries() {
+        let pointers = vec![
+            keyentry("people_colin", 3),
+            keyentry("people_drew", 4),
+            keyentry("people_yang", 5),
+            keyentry("places_dubai", 0),
+            keyentry("places_london", 1),
+            keyentry("places_toronto", 2),
+            keyentry("things_pineapple", 5),
+        ];
+
+        let mut index = sstable_proto_rust::Index::new();
+        index.set_pointers(protobuf::RepeatedField::from_vec(pointers));
+
+        let expected = vec![String::from("people_yang"), String::from("places_london")];
+
+        assert_eq!(index::get_shard_boundaries(&index, 3), expected);
+    }
+
+    #[test]
+    fn test_shard_boundaries_2() {
+        let pointers = vec![
+            keyentry("people_colin", 3),
+            keyentry("people_drew", 4),
+            keyentry("people_yang", 5),
+            keyentry("places_dubai", 0),
+            keyentry("places_london", 1),
+            keyentry("places_toronto", 2),
+            keyentry("things_pineapple", 5),
+        ];
+
+        let mut index = sstable_proto_rust::Index::new();
+        index.set_pointers(protobuf::RepeatedField::from_vec(pointers));
+
+        let expected = vec![
+            String::from("people_drew"),
+            String::from("people_yang"),
+            String::from("places_london"),
+            String::from("places_toronto"),
+        ];
+
+        assert_eq!(index::get_shard_boundaries(&index, 5), expected);
     }
 }
