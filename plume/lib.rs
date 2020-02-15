@@ -14,6 +14,10 @@ use std::sync::RwLock;
 static ORDER: std::sync::atomic::Ordering = std::sync::atomic::Ordering::Relaxed;
 static LAST_ID: AtomicU64 = AtomicU64::new(1);
 
+static TARGET_SHARDS: usize = 10;
+static IN_MEMORY_RECORD_THRESHOLD: u64 = 1000 * 1000;
+static IN_MEMORY_BYTES_THRESHOLD: u64 = 1000 * 1000 * 1000;
+
 lazy_static! {
     static ref PCOLLECTION_REGISTRY: RwLock<HashMap<u64, PCollectionProto>> =
         { RwLock::new(HashMap::new()) };
@@ -418,18 +422,158 @@ where
     }
 }
 
-enum ShardingStrategy {
-    Any,
-    ExclusiveKeyRange,
+struct Planner {
+    target_shards: usize,
+    in_memory_record_threshold: u64,
+    in_memory_bytes_threshold: u64,
+
+    temp_data_folder: String,
 }
 
-struct IOManager {
-    config: Shard,
-}
+impl Planner {
+    pub fn new() -> Self {
+        Self {
+            target_shards: TARGET_SHARDS,
+            in_memory_record_threshold: IN_MEMORY_RECORD_THRESHOLD,
+            in_memory_bytes_threshold: IN_MEMORY_BYTES_THRESHOLD,
+            temp_data_folder: String::from("/tmp/"),
+        }
+    }
 
-impl IOManager {
-    pub fn shard(stage: &Stage, strategy: ShardingStrategy, target_shards: usize) -> Vec<Shard> {
-        Vec::new()
+    pub fn plan(&self, stage: &Stage) -> Vec<Shard> {
+        if stage.get_outputs().len() != 1 {
+            panic!(
+                "I don't know how to plan for {} outputs",
+                stage.get_outputs().len()
+            );
+        }
+
+        let mut output = stage.get_outputs()[0].clone();
+
+        // First, look at the output. If it has a specific shard count, we should stick to that.
+        let mut target_shards = self.target_shards;
+        if let Some(shard_count) = Self::count_shards(&output) {
+            target_shards = shard_count;
+        }
+
+        // Now let's try to construct the input specifications
+        let mut shards = Vec::new();
+
+        if stage.get_inputs().len() != 1 {
+            panic!(
+                "I don't know how to plan for {} inputs",
+                stage.get_inputs().len()
+            );
+        }
+
+        let input = &stage.get_inputs()[0];
+
+        if output.get_format() == DataFormat::UNKNOWN {
+            // If the output is not defined, we should decide what to use. If the
+            // data is not too big, we will keep it in memory, else write to disk
+            let size = Self::estimate_size(&input);
+            if self.keep_in_memory(size) {
+                output.set_format(DataFormat::IN_MEMORY);
+            } else {
+                output.set_format(DataFormat::SSTABLE);
+            }
+        }
+
+        let sharded_inputs = self.shard_inputs(&input, target_shards);
+        let sharded_outputs = self.shard_output(&output, target_shards);
+
+        if sharded_inputs.len() != sharded_outputs.len() {
+            panic!(
+                "Can't plan: got {} inputs and {} outputs!",
+                sharded_inputs.len(),
+                sharded_outputs.len()
+            );
+        }
+
+        for (shard_input, shard_output) in
+            sharded_inputs.into_iter().zip(sharded_outputs.into_iter())
+        {
+            let mut shard = Shard::new();
+            shard.mut_inputs().push(shard_input);
+            shard.set_function(stage.get_function().clone());
+            shard.mut_outputs().push(shard_output);
+
+            shards.push(shard);
+        }
+
+        shards
+    }
+
+    fn shard_output(
+        &self,
+        output: &PCollectionProto,
+        target_shards: usize,
+    ) -> Vec<PCollectionProto> {
+        let mut output = output.clone();
+
+        let mut shards = Vec::new();
+        if output.get_format() == DataFormat::IN_MEMORY {
+            for index in 0..target_shards {
+                let mut s = output.clone();
+                shards.push(s);
+            }
+            return shards;
+        }
+
+        if output.get_format() == DataFormat::SSTABLE {
+            let sharded_filename = output.get_filename().to_string();
+            if sharded_filename.is_empty() {
+                let sharded_filename = format!(
+                    "{}/output{:02}.sstable@{}",
+                    self.temp_data_folder,
+                    output.get_id(),
+                    target_shards
+                );
+            }
+            for filename in shard_lib::unshard(&sharded_filename) {
+                let mut s = output.clone();
+                s.set_filename(filename);
+                shards.push(s);
+            }
+
+            return shards;
+        }
+
+        if output.get_format() == DataFormat::RECORDIO {
+            let sharded_filename = output.get_filename().to_string();
+            if sharded_filename.is_empty() {
+                let sharded_filename = format!(
+                    "{}/output{:02}.recordio@{}",
+                    self.temp_data_folder,
+                    output.get_id(),
+                    target_shards
+                );
+            }
+            for filename in shard_lib::unshard(&sharded_filename) {
+                let mut s = output.clone();
+                s.set_filename(filename);
+                shards.push(s);
+            }
+
+            return shards;
+        }
+
+        panic!(
+            "I don't know how to shard output for type {:?}!",
+            output.get_format()
+        );
+    }
+
+    fn keep_in_memory(&self, size: SizeEstimate) -> bool {
+        if size.get_records() > self.in_memory_record_threshold {
+            return false;
+        }
+
+        if size.get_data_bytes() > self.in_memory_bytes_threshold {
+            return false;
+        }
+
+        true
     }
 
     pub fn estimate_size(input: &PCollectionProto) -> SizeEstimate {
@@ -445,9 +589,24 @@ impl IOManager {
         out
     }
 
+    pub fn count_shards(input: &PCollectionProto) -> Option<usize> {
+        if input.get_format() == DataFormat::IN_MEMORY {
+            return Some(input.get_memory_ids().len());
+        }
+
+        if input.get_format() == DataFormat::RECORDIO || input.get_format() == DataFormat::SSTABLE {
+            if input.get_filename().is_empty() {
+                return None;
+            }
+            return Some(shard_lib::unshard(input.get_filename()).len());
+        }
+
+        None
+    }
+
     fn shard_inputs(
+        &self,
         input: &PCollectionProto,
-        strategy: ShardingStrategy,
         target_shards: usize,
     ) -> Vec<PCollectionProto> {
         // RecordIO doesn't support keyrange sharding, so we have to just use whatever sharding
@@ -541,8 +700,10 @@ mod tests {
         let mut input = PCollectionProto::new();
         input.set_format(DataFormat::RECORDIO);
         input.set_filename(String::from("/tmp/data.recordio@2"));
+        let planner = Planner::new();
         assert_eq!(
-            IOManager::shard_inputs(&input, ShardingStrategy::Any, 10)
+            planner
+                .shard_inputs(&input, 10)
                 .iter()
                 .map(|x| x.get_filename())
                 .collect::<Vec<_>>(),
@@ -556,8 +717,10 @@ mod tests {
     #[test]
     fn test_shard_in_memory() {
         let p = PCollection::<u64>::from_vec(vec![1, 2, 3, 4]);
+        let planner = Planner::new();
         assert_eq!(
-            IOManager::shard_inputs(&p.underlying.proto, ShardingStrategy::Any, 10)
+            planner
+                .shard_inputs(&p.underlying.proto, 10)
                 .iter()
                 .map(|x| (x.get_starting_index(), x.get_ending_index()))
                 .collect::<Vec<_>>(),
@@ -568,8 +731,10 @@ mod tests {
     #[test]
     fn test_shard_in_memory_2() {
         let p = PCollection::<u64>::from_vec(vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+        let planner = Planner::new();
         assert_eq!(
-            IOManager::shard_inputs(&p.underlying.proto, ShardingStrategy::Any, 2)
+            planner
+                .shard_inputs(&p.underlying.proto, 2)
                 .iter()
                 .map(|x| (x.get_starting_index(), x.get_ending_index()))
                 .collect::<Vec<_>>(),
@@ -584,12 +749,72 @@ mod tests {
             vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
             vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
         ]);
+        let planner = Planner::new();
         assert_eq!(
-            IOManager::shard_inputs(&p.underlying.proto, ShardingStrategy::Any, 2)
+            planner
+                .shard_inputs(&p.underlying.proto, 2)
                 .iter()
                 .map(|x| (x.get_memory_ids().len()))
                 .collect::<Vec<_>>(),
             vec![2, 1]
+        );
+    }
+
+    fn pcoll_to_string(s: &PCollectionProto) -> String {
+        format!(
+            "{:?} ({} memory locations), idx {}-->{}",
+            s.get_format(),
+            s.get_memory_ids().len(),
+            s.get_starting_index(),
+            s.get_ending_index()
+        )
+    }
+
+    fn pcoll(format: DataFormat, start: usize, end: usize, memory_ids: usize) -> String {
+        let mut s = PCollectionProto::new();
+        s.set_format(format);
+        s.set_starting_index(start as u64);
+        s.set_ending_index(end as u64);
+        for i in 0..memory_ids {
+            s.mut_memory_ids().push(i as u64);
+        }
+        pcoll_to_string(&s)
+    }
+
+    #[test]
+    fn test_planning() {
+        let mut planner = Planner::new();
+        planner.target_shards = 10;
+
+        let mut stage = Stage::new();
+        let p_in = PCollection::<u64>::from_vecs(vec![
+            vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+            vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+            vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+        ]);
+        stage.mut_inputs().push(p_in.underlying.proto.clone());
+
+        let p_out = PCollection::<(String, u64)>::from_sstable("/data/output.sstable@5");
+        stage.mut_outputs().push(p_out.underlying.proto.clone());
+
+        let shards = planner.plan(&stage);
+
+        assert_eq!(
+            shards[0]
+                .get_inputs()
+                .iter()
+                .map(|i| pcoll_to_string(i))
+                .collect::<Vec<_>>(),
+            vec![pcoll(DataFormat::IN_MEMORY, 0, 5, 1)]
+        );
+
+        assert_eq!(
+            shards[0]
+                .get_outputs()
+                .iter()
+                .map(|i| pcoll_to_string(i))
+                .collect::<Vec<_>>(),
+            vec![pcoll(DataFormat::SSTABLE, 0, 0, 0)]
         );
     }
 }
