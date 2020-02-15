@@ -19,7 +19,6 @@ rust_library(
     name = "plume",
     srcs = [
         "lib.rs",
-        "sharded_io.rs",
     ],
     deps = [
         ":plume_proto_rust",

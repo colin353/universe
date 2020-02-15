@@ -40,7 +40,7 @@ impl plume::JoinFn for MyJoinFn {
 }
 
 fn main() {
-    let p = PCollection::<u64>::from_recordio("/tmp/test.recordio");
+    let p = PCollection::<u64>::from_vec(vec![1, 2, 3, 4]);
     let o1 = p.par_do(Do1 {});
     let o2 = p.par_do(Do2 {});
     let joined = o1.join(o2, MyJoinFn {});

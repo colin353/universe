@@ -6,6 +6,12 @@ enum DataFormat {
   UNKNOWN = 0;
   SSTABLE = 1;
   RECORDIO = 2;
+  IN_MEMORY = 3;
+}
+
+message SizeEstimate {
+  uint64 records = 1;
+  uint64 data_bytes = 2;
 }
 
 message PCollectionProto {
@@ -17,7 +23,14 @@ message PCollectionProto {
 
   // Key range spec
   string starting_key = 6;
-  string ending_key = 7;
+  string ending_key = 7; // ending key is exclusive
+
+  // Index range spec
+  uint64 starting_index = 8;
+  uint64 ending_index = 9; // ending index is exclusive
+
+  // In memory resource ID
+  repeated uint64 memory_ids = 10;
 }
 
 message PFnProto {

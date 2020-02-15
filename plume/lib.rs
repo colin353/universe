@@ -11,8 +11,6 @@ use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 use std::sync::RwLock;
 
-mod sharded_io;
-
 static ORDER: std::sync::atomic::Ordering = std::sync::atomic::Ordering::Relaxed;
 static LAST_ID: AtomicU64 = AtomicU64::new(1);
 
@@ -20,10 +18,50 @@ lazy_static! {
     static ref PCOLLECTION_REGISTRY: RwLock<HashMap<u64, PCollectionProto>> =
         { RwLock::new(HashMap::new()) };
     static ref PFN_REGISTRY: RwLock<HashMap<u64, Arc<dyn PFn>>> = { RwLock::new(HashMap::new()) };
+    static ref IN_MEMORY_DATASETS: RwLock<HashMap<u64, InMemoryPCollection>> =
+        { RwLock::new(HashMap::new()) };
 }
 
 fn reserve_id() -> u64 {
     LAST_ID.fetch_add(1, ORDER)
+}
+
+pub trait InMemoryPCollectionWrapper: Send + Sync {
+    fn len(&self) -> usize;
+}
+
+pub struct InMemoryPCollectionUnderlying<T> {
+    data: RwLock<Vec<T>>,
+}
+
+impl<T> InMemoryPCollectionWrapper for InMemoryPCollectionUnderlying<T>
+where
+    T: Send + Sync,
+{
+    fn len(&self) -> usize {
+        self.data.read().unwrap().len()
+    }
+}
+
+pub struct InMemoryPCollection {
+    data: Arc<Box<dyn InMemoryPCollectionWrapper>>,
+}
+
+impl InMemoryPCollection {
+    pub fn from_vec<T>(data: Vec<T>) -> Self
+    where
+        T: Send + Sync + 'static,
+    {
+        Self {
+            data: Arc::new(Box::new(InMemoryPCollectionUnderlying {
+                data: RwLock::new(data),
+            })),
+        }
+    }
+
+    fn len(&self) -> usize {
+        self.data.len()
+    }
 }
 
 pub struct PCollection<T> {
@@ -49,6 +87,33 @@ where
                 id: AtomicU64::new(0),
                 dependency: None,
                 proto: PCollectionProto::new(),
+                _marker: std::marker::PhantomData {},
+            }),
+        }
+    }
+
+    pub fn from_vec(data: Vec<T>) -> Self {
+        Self::from_vecs(vec![data])
+    }
+
+    pub fn from_vecs(datas: Vec<Vec<T>>) -> Self {
+        let mut config = PCollectionProto::new();
+        config.set_format(DataFormat::IN_MEMORY);
+        config.set_resolved(true);
+
+        for data in datas {
+            let memory_id = reserve_id();
+            config.mut_memory_ids().push(memory_id);
+
+            let data = InMemoryPCollection::from_vec(data);
+            IN_MEMORY_DATASETS.write().unwrap().insert(memory_id, data);
+        }
+
+        Self {
+            underlying: Arc::new(PCollectionUnderlying::<T> {
+                id: AtomicU64::new(0),
+                dependency: None,
+                proto: config,
                 _marker: std::marker::PhantomData {},
             }),
         }
@@ -131,10 +196,6 @@ where
     K: 'static + Send + Sync,
     V: 'static + Send + Sync,
 {
-    pub fn is_ptable(&self) -> bool {
-        true
-    }
-
     pub fn join<V2, O, JoinType>(self, right: PTable<K, V2>, f: JoinType) -> PCollection<O>
     where
         JoinType: JoinFn<Key = K, ValueLeft = V, ValueRight = V2, Output = O> + 'static,
@@ -354,5 +415,181 @@ where
         }
 
         output
+    }
+}
+
+enum ShardingStrategy {
+    Any,
+    ExclusiveKeyRange,
+}
+
+struct IOManager {
+    config: Shard,
+}
+
+impl IOManager {
+    pub fn shard(stage: &Stage, strategy: ShardingStrategy, target_shards: usize) -> Vec<Shard> {
+        Vec::new()
+    }
+
+    pub fn estimate_size(input: &PCollectionProto) -> SizeEstimate {
+        let mut out = SizeEstimate::new();
+        if input.get_format() == DataFormat::IN_MEMORY {
+            let mut count = 0;
+            for memory_id in input.get_memory_ids() {
+                let mem_reader = IN_MEMORY_DATASETS.read().unwrap();
+                count += mem_reader.get(memory_id).unwrap().len();
+            }
+            out.set_records(count as u64);
+        }
+        out
+    }
+
+    fn shard_inputs(
+        input: &PCollectionProto,
+        strategy: ShardingStrategy,
+        target_shards: usize,
+    ) -> Vec<PCollectionProto> {
+        // RecordIO doesn't support keyrange sharding, so we have to just use whatever sharding
+        // strategy was present on the input.
+        if input.get_format() == DataFormat::RECORDIO {
+            return shard_lib::unshard(input.get_filename())
+                .iter()
+                .map(|f| {
+                    let mut s = input.clone();
+                    s.set_filename(f.to_string());
+                    s
+                })
+                .collect();
+        }
+
+        if input.get_format() == DataFormat::IN_MEMORY {
+            let input_shards = input.get_memory_ids().len();
+
+            // If we want to expand the number of shards, we should split the
+            // existing shards into pieces
+            if target_shards > input_shards {
+                let mut output = Vec::new();
+                for (index, memory_id) in input.get_memory_ids().iter().enumerate() {
+                    let mut s = input.clone();
+                    s.mut_memory_ids().clear();
+                    s.mut_memory_ids().push(*memory_id);
+                    let extra = if index < (target_shards % input_shards) {
+                        1
+                    } else {
+                        0
+                    };
+                    output.append(&mut Self::split_memshard(
+                        &s,
+                        (target_shards / input_shards) + extra,
+                    ));
+                }
+                return output;
+            }
+
+            // We have more shards than we want, so we need to group them.
+            let mut memory_id_iter = input.get_memory_ids().iter();
+            let mut output = Vec::new();
+            for index in 0..target_shards {
+                let mut s = input.clone();
+                s.mut_memory_ids().clear();
+
+                let extra = if index < (input_shards % target_shards) {
+                    1
+                } else {
+                    0
+                };
+                let num_to_take = input_shards / target_shards + extra;
+                for memory_id in 0..num_to_take {
+                    s.mut_memory_ids().push(*memory_id_iter.next().unwrap());
+                }
+                output.push(s);
+            }
+
+            return output;
+        }
+
+        Vec::new()
+    }
+
+    fn split_memshard(input: &PCollectionProto, target_shards: usize) -> Vec<PCollectionProto> {
+        let memory_id = input.get_memory_ids()[0];
+        let mem_reader = IN_MEMORY_DATASETS.read().unwrap();
+        let data_len = mem_reader.get(&memory_id).unwrap().len();
+        let target_shards = std::cmp::min(target_shards, data_len);
+        return (0..target_shards)
+            .map(|i| {
+                let mut s = input.clone();
+                s.set_starting_index((i * data_len / target_shards) as u64);
+                if i == target_shards - 1 {
+                    s.set_ending_index(0);
+                } else {
+                    s.set_ending_index(((i + 1) * data_len / target_shards) as u64);
+                }
+                s
+            })
+            .collect();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_shard_recordio() {
+        let mut input = PCollectionProto::new();
+        input.set_format(DataFormat::RECORDIO);
+        input.set_filename(String::from("/tmp/data.recordio@2"));
+        assert_eq!(
+            IOManager::shard_inputs(&input, ShardingStrategy::Any, 10)
+                .iter()
+                .map(|x| x.get_filename())
+                .collect::<Vec<_>>(),
+            vec![
+                "/tmp/data.recordio-00000-of-00002",
+                "/tmp/data.recordio-00001-of-00002",
+            ]
+        );
+    }
+
+    #[test]
+    fn test_shard_in_memory() {
+        let p = PCollection::<u64>::from_vec(vec![1, 2, 3, 4]);
+        assert_eq!(
+            IOManager::shard_inputs(&p.underlying.proto, ShardingStrategy::Any, 10)
+                .iter()
+                .map(|x| (x.get_starting_index(), x.get_ending_index()))
+                .collect::<Vec<_>>(),
+            vec![(0, 1), (1, 2), (2, 3), (3, 0)]
+        );
+    }
+
+    #[test]
+    fn test_shard_in_memory_2() {
+        let p = PCollection::<u64>::from_vec(vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+        assert_eq!(
+            IOManager::shard_inputs(&p.underlying.proto, ShardingStrategy::Any, 2)
+                .iter()
+                .map(|x| (x.get_starting_index(), x.get_ending_index()))
+                .collect::<Vec<_>>(),
+            vec![(0, 5), (5, 0)]
+        );
+    }
+
+    #[test]
+    fn test_shard_in_memory_3() {
+        let p = PCollection::<u64>::from_vecs(vec![
+            vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+            vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+            vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+        ]);
+        assert_eq!(
+            IOManager::shard_inputs(&p.underlying.proto, ShardingStrategy::Any, 2)
+                .iter()
+                .map(|x| (x.get_memory_ids().len()))
+                .collect::<Vec<_>>(),
+            vec![2, 1]
+        );
     }
 }
