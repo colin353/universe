@@ -11,6 +11,7 @@ extern crate sstable_proto_rust;
 extern crate byteorder;
 extern crate primitive;
 extern crate protobuf;
+extern crate shard_lib;
 pub use primitive::{Primitive, Serializable};
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
@@ -439,26 +440,64 @@ impl<'a, T: Serializable + Default> ShardedSSTableReader<T> {
             reached_end: false,
         };
 
+        reader.seek(min_key);
+        reader
+    }
+
+    pub fn seek(&mut self, min_key: &str) {
         // First, seek to the starting key in all the SSTables.
-        for r in reader.readers.iter_mut() {
+        for r in self.readers.iter_mut() {
             r.seek_to_min_key(min_key).unwrap();
         }
 
         // Next, we'll construct a BTreeMap using our keys. This will allow us to efficiently
         // insert while keeping a sorted list.
-        for index in 0..reader.readers.len() {
-            let mut data = match reader.readers[index].read_next_key().unwrap() {
+        self.map.clear();
+        for index in 0..self.readers.len() {
+            let mut data = match self.readers[index].read_next_key().unwrap() {
                 Some(x) => x,
                 None => continue,
             };
 
-            reader.map.insert(
+            self.map.insert(
                 data.get_key().to_owned(),
                 (index as usize, data.take_value()),
             );
         }
+    }
 
-        reader
+    pub fn from_filename(filename: &str, min_key: &str, max_key: String) -> io::Result<Self> {
+        let (successes, failures): (Vec<_>, Vec<_>) = shard_lib::unshard(filename)
+            .iter()
+            .map(|f| SSTableReader::from_filename(f))
+            .partition(Result::is_ok);
+
+        if failures.len() != 0 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "failed to open sharded sstable",
+            ));
+        }
+
+        let readers = successes.into_iter().map(|r| r.unwrap()).collect();
+
+        let mut reader = ShardedSSTableReader {
+            readers: readers,
+            max_key: max_key,
+            map: BTreeMap::<String, (usize, Vec<u8>)>::new(),
+            reached_end: false,
+        };
+        reader.seek(min_key);
+        Ok(reader)
+    }
+
+    pub fn get_shard_boundaries(&self, target_shard_count: usize) -> Vec<String> {
+        let mut output = Vec::new();
+        for shard in &self.readers {
+            output.append(&mut shard.get_shard_boundaries(target_shard_count));
+        }
+
+        compact_shards(output, target_shard_count)
     }
 
     pub fn next(&mut self) -> Option<(String, T)> {
@@ -772,6 +811,41 @@ mod index {
             false => None,
         }
     }
+}
+
+fn compact_shards(data: Vec<String>, target_shard_count: usize) -> Vec<String> {
+    let mut output = data;
+    output.sort();
+    output.dedup();
+    if output.len() <= target_shard_count {
+        return output;
+    }
+
+    let mut num_to_mark = output.len() - target_shard_count;
+    let mut inverted = true;
+    if output.len() > 2 * target_shard_count {
+        inverted = false;
+        num_to_mark = output.len() - num_to_mark;
+    }
+
+    let mut i = 0;
+    let mut retained = 0;
+    let mut num_to_jump = output.len() / num_to_mark;
+    output.retain(|_| {
+        i += 1;
+        let should_retain = (i % (num_to_jump) == 0) ^ inverted;
+
+        if should_retain {
+            if retained == target_shard_count {
+                return false;
+            }
+            retained += 1;
+            return true;
+        }
+
+        false
+    });
+    output
 }
 
 pub fn mem_sstable(data: Vec<(String, u64)>) -> SSTableReader<Primitive<u64>> {
@@ -1382,5 +1456,38 @@ mod tests {
         ];
 
         assert_eq!(index::get_shard_boundaries(&index, 5), expected);
+    }
+
+    #[test]
+    fn test_compact_shards() {
+        let pointers = vec![
+            String::from("a"),
+            String::from("b"),
+            String::from("c"),
+            String::from("d"),
+            String::from("e"),
+            String::from("f"),
+            String::from("g"),
+            String::from("h"),
+            String::from("i"),
+        ];
+
+        let expected = vec![String::from("c"), String::from("f"), String::from("i")];
+
+        assert_eq!(compact_shards(pointers, 3), expected);
+    }
+
+    #[test]
+    fn test_compact_shards_2() {
+        let pointers = vec![
+            String::from("a"),
+            String::from("b"),
+            String::from("c"),
+            String::from("d"),
+        ];
+
+        let expected = vec![String::from("a"), String::from("b"), String::from("c")];
+
+        assert_eq!(compact_shards(pointers, 3), expected);
     }
 }
