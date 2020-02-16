@@ -24,6 +24,7 @@ lazy_static! {
     static ref PFN_REGISTRY: RwLock<HashMap<u64, Arc<dyn PFn>>> = { RwLock::new(HashMap::new()) };
     static ref IN_MEMORY_DATASETS: RwLock<HashMap<u64, InMemoryPCollection>> =
         { RwLock::new(HashMap::new()) };
+    static ref STAGES: RwLock<Vec<Stage>> = { RwLock::new(Vec::new()) };
 }
 
 fn reserve_id() -> u64 {
@@ -34,21 +35,34 @@ pub trait InMemoryPCollectionWrapper: Send + Sync {
     fn len(&self) -> usize;
 }
 
+impl InMemoryPCollectionWrapper {
+    pub fn downcast_ref<T: InMemoryPCollectionWrapper>(&self) -> Result<&T, ()> {
+        // TODO: I don't know how to actually check if the types match. Need to do something like
+        // verify the type ID. Basically if they don't match the program will do some undefined
+        // behaviour so we should actually check and panic.
+        unsafe { Ok(self.downcast_ref_unchecked()) }
+    }
+
+    pub unsafe fn downcast_ref_unchecked<T: InMemoryPCollectionWrapper>(&self) -> &T {
+        &*(self as *const Self as *const T)
+    }
+}
+
 pub struct InMemoryPCollectionUnderlying<T> {
-    data: RwLock<Vec<T>>,
+    data: Arc<Vec<T>>,
 }
 
 impl<T> InMemoryPCollectionWrapper for InMemoryPCollectionUnderlying<T>
 where
-    T: Send + Sync,
+    T: Send + Sync + 'static,
 {
     fn len(&self) -> usize {
-        self.data.read().unwrap().len()
+        self.data.len()
     }
 }
 
 pub struct InMemoryPCollection {
-    data: Arc<Box<dyn InMemoryPCollectionWrapper>>,
+    data: Arc<dyn InMemoryPCollectionWrapper>,
 }
 
 impl InMemoryPCollection {
@@ -57,9 +71,9 @@ impl InMemoryPCollection {
         T: Send + Sync + 'static,
     {
         Self {
-            data: Arc::new(Box::new(InMemoryPCollectionUnderlying {
-                data: RwLock::new(data),
-            })),
+            data: Arc::new(InMemoryPCollectionUnderlying {
+                data: Arc::new(data),
+            }),
         }
     }
 
@@ -219,6 +233,7 @@ where
 impl<String, V> PCollection<(String, V)>
 where
     V: 'static + Send + Sync,
+    (String, V): 'static + Send + Sync,
 {
     pub fn from_sstable(filename: &str) -> Self {
         let mut config = PCollectionProto::new();
@@ -234,6 +249,21 @@ where
                 _marker: std::marker::PhantomData {},
             }),
         }
+    }
+
+    pub fn write_to_sstable(mut self, filename: &str) {
+        if !self.underlying.proto.get_filename().is_empty()
+            || self.underlying.proto.get_format() != DataFormat::UNKNOWN
+        {
+            panic!("This ptable is already being written to disk!");
+        }
+        {
+            let mut_underlying = Arc::get_mut(&mut self.underlying).unwrap();
+            mut_underlying.proto.set_filename(filename.to_string());
+            mut_underlying.proto.set_format(DataFormat::SSTABLE);
+        }
+
+        STAGES.write().unwrap().append(&mut self.stages());
     }
 
     pub fn group_by_key(&self) -> PCollection<(String, Stream<V>)> {
@@ -260,12 +290,10 @@ pub fn update_stage(stage: &mut Stage) {
     }
 }
 
-pub fn run<T>(input: PCollection<T>)
-where
-    T: 'static + Send + Sync,
-{
-    let mut stages = input.stages();
+pub fn run() {
+    let mut stages = STAGES.read().unwrap().clone();
     let mut completed = std::collections::HashSet::new();
+    let planner = Planner::new();
     loop {
         let mut did_execute = false;
         for (id, stage) in stages.iter_mut().enumerate() {
@@ -283,9 +311,22 @@ where
             }
 
             if ready {
-                execute_stage(stage);
+                let shards = planner.plan(&stage);
+                for shard in shards {
+                    execute_shard(&shard);
+                }
                 did_execute = true;
                 completed.insert(id);
+
+                // Update the outputs so they are "resolved"
+                for output in stage.take_outputs().into_iter() {
+                    PCOLLECTION_REGISTRY
+                        .write()
+                        .unwrap()
+                        .get_mut(&output.get_id())
+                        .unwrap()
+                        .set_resolved(true);
+                }
             }
         }
         if !did_execute {
@@ -298,30 +339,20 @@ where
     }
 }
 
-pub fn execute_stage(stage: &Stage) {
-    println!("Executing stage");
-
+pub fn execute_shard(shard: &Shard) {
     let pfn = PFN_REGISTRY
         .read()
         .unwrap()
-        .get(&stage.get_function().get_id())
+        .get(&shard.get_function().get_id())
         .unwrap()
         .clone();
 
-    let mut result = pfn.execute(stage);
-
-    // Update the outputs so they are "resolved"
-    for output in result.take_outputs().into_iter() {
-        PCOLLECTION_REGISTRY
-            .write()
-            .unwrap()
-            .insert(output.get_id(), output);
-    }
+    pfn.execute(shard);
 }
 
 pub trait PFn: Send + Sync {
     fn stages(&self, id: u64) -> (Stage, Vec<Stage>);
-    fn execute(&self, stage: &Stage) -> Stage;
+    fn execute(&self, shard: &Shard);
 }
 pub trait EmitFn<T> {
     fn emit(&mut self, value: T);
@@ -358,7 +389,7 @@ pub struct DoFnWrapper<T1, T2> {
 pub trait DoFn: Send + Sync {
     type Input;
     type Output;
-    fn do_it(&self, input: Self::Input, emit: &mut dyn EmitFn<Self::Output>);
+    fn do_it(&self, input: &Self::Input, emit: &mut dyn EmitFn<Self::Output>);
 }
 impl<T1, T2> PFn for DoFnWrapper<T1, T2>
 where
@@ -376,16 +407,14 @@ where
         (s, dep_stages)
     }
 
-    fn execute(&self, stage: &Stage) -> Stage {
-        let mut output = stage.clone();
-        output.clear_outputs();
-        for out in stage.get_outputs() {
-            let mut resolved_output = out.clone();
-            resolved_output.set_resolved(true);
-            output.mut_outputs().push(resolved_output);
+    fn execute(&self, shard: &Shard) {
+        for input in shard.get_inputs() {
+            let source = Source::<T1>::new(input.clone());
+            let mut sink = Sink::<T2>::new();
+            for item in &mut source.mem_source().iter() {
+                self.function.do_it(item, &mut sink);
+            }
         }
-
-        output
     }
 }
 
@@ -409,16 +438,8 @@ where
         (s, deps)
     }
 
-    fn execute(&self, stage: &Stage) -> Stage {
-        let mut output = stage.clone();
-        output.clear_outputs();
-        for out in stage.get_outputs() {
-            let mut resolved_output = out.clone();
-            resolved_output.set_resolved(true);
-            output.mut_outputs().push(resolved_output);
-        }
-
-        output
+    fn execute(&self, shard: &Shard) {
+        println!("JoinFn: execute {:?}", shard);
     }
 }
 
@@ -509,11 +530,9 @@ impl Planner {
         output: &PCollectionProto,
         target_shards: usize,
     ) -> Vec<PCollectionProto> {
-        let mut output = output.clone();
-
         let mut shards = Vec::new();
         if output.get_format() == DataFormat::IN_MEMORY {
-            for index in 0..target_shards {
+            for _ in 0..target_shards {
                 let mut s = output.clone();
                 shards.push(s);
             }
@@ -521,9 +540,9 @@ impl Planner {
         }
 
         if output.get_format() == DataFormat::SSTABLE {
-            let sharded_filename = output.get_filename().to_string();
+            let mut sharded_filename = output.get_filename().to_string();
             if sharded_filename.is_empty() {
-                let sharded_filename = format!(
+                sharded_filename = format!(
                     "{}/output{:02}.sstable@{}",
                     self.temp_data_folder,
                     output.get_id(),
@@ -688,6 +707,98 @@ impl Planner {
                 s
             })
             .collect();
+    }
+}
+
+struct Sink<T> {
+    _marker: std::marker::PhantomData<T>,
+}
+
+impl<T> EmitFn<T> for Sink<T> {
+    fn emit(&mut self, value: T) {}
+}
+
+impl<T> Sink<T> {
+    fn new() -> Self {
+        Self {
+            _marker: std::marker::PhantomData {},
+        }
+    }
+}
+
+struct Source<T> {
+    config: PCollectionProto,
+    _marker: std::marker::PhantomData<T>,
+}
+
+struct InMemorySourceIteratorWrapper<T> {
+    data: Arc<Vec<T>>,
+    index: usize,
+    end_index: usize,
+}
+
+struct InMemorySourceIterator<'a, T> {
+    data: &'a Arc<Vec<T>>,
+    index: usize,
+    end_index: usize,
+}
+
+impl<T> Source<T>
+where
+    T: Send + Sync + 'static,
+{
+    pub fn new(config: PCollectionProto) -> Self {
+        Self {
+            config: config,
+            _marker: std::marker::PhantomData {},
+        }
+    }
+
+    pub fn mem_source<'a>(&'a self) -> InMemorySourceIteratorWrapper<T> {
+        let data = {
+            let guard = IN_MEMORY_DATASETS.read().unwrap();
+            let dataset = guard.get(&self.config.get_memory_ids()[0]).expect(&format!(
+                "Failed to look up PCollection id={}",
+                &self.config.get_memory_ids()[0]
+            ));
+            let pcoll: Arc<dyn InMemoryPCollectionWrapper> = dataset.data.clone();
+            let data: &InMemoryPCollectionUnderlying<T> =
+                pcoll.downcast_ref().expect("failed to downcast!");
+            data.data.clone()
+        };
+        InMemorySourceIteratorWrapper {
+            index: self.config.get_starting_index() as usize,
+            end_index: self.config.get_ending_index() as usize,
+            data: data,
+        }
+    }
+}
+
+impl<T> InMemorySourceIteratorWrapper<T> {
+    pub fn iter<'a>(&'a self) -> InMemorySourceIterator<'a, T> {
+        InMemorySourceIterator {
+            index: self.index,
+            end_index: self.end_index,
+            data: &self.data,
+        }
+    }
+}
+
+impl<'a, T> Iterator for InMemorySourceIterator<'a, T> {
+    type Item = &'a T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.end_index > 0 && self.index >= self.end_index {
+            return None;
+        }
+
+        if self.index >= self.data.len() {
+            return None;
+        }
+
+        let result = Some(&self.data[self.index]);
+        self.index += 1;
+        result
     }
 }
 
