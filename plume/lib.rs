@@ -288,6 +288,13 @@ pub fn update_stage(stage: &mut Stage) {
 
         *input = latest_input.clone();
     }
+
+    for output in stage.mut_outputs().iter_mut() {
+        let reg = PCOLLECTION_REGISTRY.read().unwrap();
+        let latest_input = reg.get(&output.get_id()).unwrap();
+
+        *output = latest_input.clone();
+    }
 }
 
 pub fn run() {
@@ -317,16 +324,6 @@ pub fn run() {
                 }
                 did_execute = true;
                 completed.insert(id);
-
-                // Update the outputs so they are "resolved"
-                for output in stage.take_outputs().into_iter() {
-                    PCOLLECTION_REGISTRY
-                        .write()
-                        .unwrap()
-                        .get_mut(&output.get_id())
-                        .unwrap()
-                        .set_resolved(true);
-                }
             }
         }
         if !did_execute {
@@ -410,10 +407,11 @@ where
     fn execute(&self, shard: &Shard) {
         for input in shard.get_inputs() {
             let source = Source::<T1>::new(input.clone());
-            let mut sink = Sink::<T2>::new();
+            let mut sink = Sink::<T2>::new(shard.get_outputs());
             for item in &mut source.mem_source().iter() {
                 self.function.do_it(item, &mut sink);
             }
+            sink.finish();
         }
     }
 }
@@ -711,17 +709,77 @@ impl Planner {
 }
 
 struct Sink<T> {
+    outputs: Vec<SinkSingleOutput<T>>,
+    write_count: usize,
+}
+
+impl<T> EmitFn<T> for Sink<T>
+where
+    T: Send + Sync + 'static,
+{
+    fn emit(&mut self, value: T) {
+        let idx = self.write_count % self.outputs.len();
+        self.outputs[idx].emit(value);
+        self.write_count += 1;
+    }
+}
+
+impl<T> Sink<T>
+where
+    T: Send + Sync + 'static,
+{
+    pub fn new(outputs: &[PCollectionProto]) -> Self {
+        Self {
+            outputs: outputs.iter().map(|x| SinkSingleOutput::new(x)).collect(),
+            write_count: 0,
+        }
+    }
+
+    pub fn finish(self) {
+        for out in self.outputs {
+            out.finish();
+        }
+    }
+}
+
+struct SinkSingleOutput<T> {
+    config: PCollectionProto,
+    output: Vec<T>,
     _marker: std::marker::PhantomData<T>,
 }
 
-impl<T> EmitFn<T> for Sink<T> {
-    fn emit(&mut self, value: T) {}
-}
-
-impl<T> Sink<T> {
-    fn new() -> Self {
+impl<T> SinkSingleOutput<T>
+where
+    T: Send + Sync + 'static,
+{
+    pub fn new(config: &PCollectionProto) -> Self {
         Self {
+            config: config.clone(),
+            output: Vec::new(),
             _marker: std::marker::PhantomData {},
+        }
+    }
+
+    pub fn emit(&mut self, value: T) {
+        if self.config.get_format() == DataFormat::IN_MEMORY {
+            self.output.push(value);
+        }
+    }
+
+    pub fn finish(mut self) {
+        if self.config.get_format() == DataFormat::IN_MEMORY {
+            let id = reserve_id();
+
+            IN_MEMORY_DATASETS
+                .write()
+                .unwrap()
+                .insert(id, InMemoryPCollection::from_vec(self.output));
+
+            let mut pcoll_write = PCOLLECTION_REGISTRY.write().unwrap();
+            let mut config = pcoll_write.get_mut(&self.config.get_id()).unwrap();
+            config.mut_memory_ids().push(id);
+            config.set_format(self.config.get_format());
+            config.set_resolved(true);
         }
     }
 }
@@ -731,16 +789,20 @@ struct Source<T> {
     _marker: std::marker::PhantomData<T>,
 }
 
-struct InMemorySourceIteratorWrapper<T> {
+struct InMemorySourceIteratorSpec<T> {
     data: Arc<Vec<T>>,
     index: usize,
     end_index: usize,
 }
 
+struct InMemorySourceIteratorWrapper<T> {
+    specs: Vec<InMemorySourceIteratorSpec<T>>,
+}
+
 struct InMemorySourceIterator<'a, T> {
-    data: &'a Arc<Vec<T>>,
+    specs: &'a Vec<InMemorySourceIteratorSpec<T>>,
+    spec_index: usize,
     index: usize,
-    end_index: usize,
 }
 
 impl<T> Source<T>
@@ -755,31 +817,41 @@ where
     }
 
     pub fn mem_source<'a>(&'a self) -> InMemorySourceIteratorWrapper<T> {
-        let data = {
-            let guard = IN_MEMORY_DATASETS.read().unwrap();
-            let dataset = guard.get(&self.config.get_memory_ids()[0]).expect(&format!(
-                "Failed to look up PCollection id={}",
-                &self.config.get_memory_ids()[0]
-            ));
-            let pcoll: Arc<dyn InMemoryPCollectionWrapper> = dataset.data.clone();
-            let data: &InMemoryPCollectionUnderlying<T> =
-                pcoll.downcast_ref().expect("failed to downcast!");
-            data.data.clone()
-        };
-        InMemorySourceIteratorWrapper {
-            index: self.config.get_starting_index() as usize,
-            end_index: self.config.get_ending_index() as usize,
-            data: data,
+        let mut output = InMemorySourceIteratorWrapper { specs: Vec::new() };
+
+        for memory_id in self.config.get_memory_ids() {
+            let data = {
+                let guard = IN_MEMORY_DATASETS.read().unwrap();
+                let dataset = guard
+                    .get(&memory_id)
+                    .expect(&format!("Failed to look up data in id={}", &memory_id));
+                let pcoll: Arc<dyn InMemoryPCollectionWrapper> = dataset.data.clone();
+                let data: &InMemoryPCollectionUnderlying<T> =
+                    pcoll.downcast_ref().expect("failed to downcast!");
+                data.data.clone()
+            };
+            output.specs.push(InMemorySourceIteratorSpec {
+                index: self.config.get_starting_index() as usize,
+                end_index: self.config.get_ending_index() as usize,
+                data: data,
+            })
         }
+        output
     }
 }
 
 impl<T> InMemorySourceIteratorWrapper<T> {
     pub fn iter<'a>(&'a self) -> InMemorySourceIterator<'a, T> {
+        let index = if self.specs.len() > 0 {
+            self.specs[0].index
+        } else {
+            0
+        };
+
         InMemorySourceIterator {
-            index: self.index,
-            end_index: self.end_index,
-            data: &self.data,
+            spec_index: 0,
+            index: index,
+            specs: &self.specs,
         }
     }
 }
@@ -788,17 +860,25 @@ impl<'a, T> Iterator for InMemorySourceIterator<'a, T> {
     type Item = &'a T;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.end_index > 0 && self.index >= self.end_index {
-            return None;
-        }
+        loop {
+            if self.spec_index >= self.specs.len() {
+                return None;
+            }
 
-        if self.index >= self.data.len() {
-            return None;
-        }
+            let spec = &self.specs[self.spec_index];
+            if spec.end_index > 0 && self.index >= spec.end_index || self.index >= spec.data.len() {
+                self.spec_index += 1;
+                if self.spec_index >= self.specs.len() {
+                    return None;
+                }
+                self.index = self.specs[self.spec_index].index;
+                continue;
+            }
 
-        let result = Some(&self.data[self.index]);
-        self.index += 1;
-        result
+            let result = Some(&spec.data[self.index]);
+            self.index += 1;
+            return result;
+        }
     }
 }
 

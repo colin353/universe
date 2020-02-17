@@ -7,19 +7,20 @@ use plume::Stream;
 struct Do1 {}
 impl plume::DoFn for Do1 {
     type Input = u64;
-    type Output = (String, f64);
-    fn do_it(&self, input: &u64, emit: &mut dyn EmitFn<(String, f64)>) {
+    type Output = (String, u8);
+    fn do_it(&self, input: &u64, emit: &mut dyn EmitFn<Self::Output>) {
         println!("DoFn: got {:?}", input);
-        emit.emit((String::from("k"), *input as f64 / 32.0));
+        emit.emit((String::from("k"), *input as u8));
     }
 }
 
 struct Do2 {}
 impl plume::DoFn for Do2 {
-    type Input = u64;
-    type Output = (String, u8);
-    fn do_it(&self, input: &u64, emit: &mut dyn EmitFn<(String, u8)>) {
-        emit.emit((String::from("k"), 6));
+    type Input = (String, u8);
+    type Output = (String, u32);
+    fn do_it(&self, input: &(String, u8), emit: &mut dyn EmitFn<Self::Output>) {
+        println!("Do2: got {:?}", input);
+        emit.emit((String::from("k"), 5));
     }
 }
 
@@ -43,10 +44,11 @@ impl plume::JoinFn for MyJoinFn {
 fn main() {
     let p = PCollection::<u64>::from_vec(vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
     let o1 = p.par_do(Do1 {});
+    let o2 = o1.par_do(Do2 {});
     //let o2 = p.par_do(Do2 {});
     //let joined = o1.join(o2, MyJoinFn {});
     //let output = joined.group_by_key();
-    o1.write_to_sstable("/home/colin/output.sstable@2");
+    o2.write_to_sstable("/home/colin/output.sstable@2");
 
     plume::run();
 }
