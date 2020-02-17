@@ -273,7 +273,7 @@ impl<C: LargeTableClient> WeldServiceHandler<C> {
             String::new()
         };
 
-        let changes = largetable_client::LargeTableScopedIterator::<weld::Change, _>::new(
+        let mut changes = largetable_client::LargeTableScopedIterator::<weld::Change, _>::new(
             &self.database,
             String::from(SUBMITTED),
             String::from(""),
@@ -281,6 +281,11 @@ impl<C: LargeTableClient> WeldServiceHandler<C> {
             end,
             0,
         );
+        if req.get_limit() > 0 {
+            changes.batch_size = req.get_limit();
+        } else {
+            changes.batch_size = 25;
+        }
         let mut output = weld::GetSubmittedChangesResponse::new();
         let mut count = 0;
         for (_, change) in changes {
