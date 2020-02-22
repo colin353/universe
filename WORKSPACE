@@ -3,26 +3,25 @@ load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 # Add a comment into the WORKSPACE
 http_archive(
     name = "io_bazel_rules_rust",
-    sha256 = "b6da34e057a31b8a85e343c732de4af92a762f804fc36b0baa6c001423a70ebc",
-    strip_prefix = "rules_rust-55f77017a7f5b08e525ebeab6e11d8896a4499d2",
+    #sha256 = "20693441ae5c2cd539b65d7ccc620da73a8b6ac7a912ae6cd9ce85882d98704b",
+    strip_prefix = "rules_rust-2e9ef3dd34245337fb90d973454c98c36f651cd4",
     urls = [
-        # Master branch as of 2018-12-11
-        "https://github.com/bazelbuild/rules_rust/archive/55f77017a7f5b08e525ebeab6e11d8896a4499d2.tar.gz",
+        "https://github.com/bazelbuild/rules_rust/archive/2e9ef3dd34245337fb90d973454c98c36f651cd4.tar.gz",
     ],
 )
 
 http_archive(
     name = "bazel_skylib",
-    sha256 = "eb5c57e4c12e68c0c20bc774bfbc60a568e800d025557bc4ea022c6479acc867",
-    strip_prefix = "bazel-skylib-0.6.0",
-    url = "https://github.com/bazelbuild/bazel-skylib/archive/0.6.0.tar.gz",
+    sha256 = "9a737999532daca978a158f94e77e9af6a6a169709c0cee274f0a4c3359519bd",
+    strip_prefix = "bazel-skylib-1.0.0",
+    url = "https://github.com/bazelbuild/bazel-skylib/archive/1.0.0.tar.gz",
 )
 
 http_archive(
     name = "io_bazel_rules_docker",
-    sha256 = "e513c0ac6534810eb7a14bf025a0f159726753f97f74ab7863c650d26e01d677",
-    strip_prefix = "rules_docker-0.9.0",
-    urls = ["https://github.com/bazelbuild/rules_docker/archive/v0.9.0.tar.gz"],
+    sha256 = "dc97fccceacd4c6be14e800b2a00693d5e8d07f69ee187babfd04a80a9f8e250",
+    strip_prefix = "rules_docker-0.14.1",
+    urls = ["https://github.com/bazelbuild/rules_docker/releases/download/v0.14.1/rules_docker-v0.14.1.tar.gz"],
 )
 
 load(
