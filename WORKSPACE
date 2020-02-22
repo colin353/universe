@@ -3,7 +3,7 @@ load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 # Add a comment into the WORKSPACE
 http_archive(
     name = "io_bazel_rules_rust",
-    #sha256 = "20693441ae5c2cd539b65d7ccc620da73a8b6ac7a912ae6cd9ce85882d98704b",
+    sha256 = "521595e99aabc944fb3b3f40d07884efabed0303d2590645a77a96ebeee6aa11",
     strip_prefix = "rules_rust-2e9ef3dd34245337fb90d973454c98c36f651cd4",
     urls = [
         "https://github.com/bazelbuild/rules_rust/archive/2e9ef3dd34245337fb90d973454c98c36f651cd4.tar.gz",
@@ -37,9 +37,15 @@ load("@io_bazel_rules_docker//repositories:deps.bzl", container_deps = "deps")
 
 container_deps()
 
-load("@io_bazel_rules_rust//rust:repositories.bzl", "rust_repositories")
+load("@io_bazel_rules_rust//rust:repositories.bzl", "rust_repository_set")
 
-rust_repositories()
+rust_repository_set(
+    name = "rust_linux_x86_64",
+    exec_triple = "x86_64-unknown-linux-gnu",
+    extra_target_triples = [],
+    iso_date = "2020-02-16",
+    version = "nightly",
+)
 
 load("@io_bazel_rules_rust//:workspace.bzl", "bazel_version")
 
@@ -50,10 +56,6 @@ load("@io_bazel_rules_rust//proto:repositories.bzl", "rust_proto_repositories")
 rust_proto_repositories()
 
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
-load("@io_bazel_rules_rust//rust:repositories.bzl", "rust_repositories")
-
-rust_repositories()
-
 load(
     "@io_bazel_rules_docker//rust:image.bzl",
     _rust_image_repos = "repositories",
