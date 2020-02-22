@@ -1,3 +1,6 @@
+#![feature(specialization)]
+#![feature(binary_heap_into_iter_sorted)]
+
 extern crate plume_proto_rust;
 extern crate shard_lib;
 
@@ -6,7 +9,9 @@ extern crate lazy_static;
 
 use plume_proto_rust::*;
 
-use std::collections::HashMap;
+use std::collections::{BinaryHeap, HashMap};
+use std::ops::Bound::*;
+use std::rc::Rc;
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 use std::sync::RwLock;
@@ -14,7 +19,7 @@ use std::sync::RwLock;
 static ORDER: std::sync::atomic::Ordering = std::sync::atomic::Ordering::Relaxed;
 static LAST_ID: AtomicU64 = AtomicU64::new(1);
 
-static TARGET_SHARDS: usize = 10;
+static TARGET_SHARDS: usize = 2;
 static IN_MEMORY_RECORD_THRESHOLD: u64 = 1000 * 1000;
 static IN_MEMORY_BYTES_THRESHOLD: u64 = 1000 * 1000 * 1000;
 
@@ -52,6 +57,19 @@ pub struct InMemoryPCollectionUnderlying<T> {
     data: Arc<Vec<T>>,
 }
 
+pub struct InMemoryPTableUnderlying<T> {
+    data: Arc<Vec<(String, T)>>,
+}
+
+impl<T> InMemoryPCollectionWrapper for InMemoryPTableUnderlying<T>
+where
+    T: Send + Sync + 'static,
+{
+    fn len(&self) -> usize {
+        self.data.len()
+    }
+}
+
 impl<T> InMemoryPCollectionWrapper for InMemoryPCollectionUnderlying<T>
 where
     T: Send + Sync + 'static,
@@ -72,6 +90,17 @@ impl InMemoryPCollection {
     {
         Self {
             data: Arc::new(InMemoryPCollectionUnderlying {
+                data: Arc::new(data),
+            }),
+        }
+    }
+
+    pub fn from_table<T>(data: Vec<(String, T)>) -> Self
+    where
+        T: Send + Sync + 'static,
+    {
+        Self {
+            data: Arc::new(InMemoryPTableUnderlying {
                 data: Arc::new(data),
             }),
         }
@@ -230,7 +259,7 @@ where
     }
 }
 
-impl<String, V> PCollection<(String, V)>
+impl<V> PCollection<(String, V)>
 where
     V: 'static + Send + Sync,
     (String, V): 'static + Send + Sync,
@@ -242,6 +271,33 @@ where
         config.set_format(DataFormat::SSTABLE);
 
         PCollection {
+            underlying: Arc::new(PCollectionUnderlying::<(String, V)> {
+                id: AtomicU64::new(0),
+                dependency: None,
+                proto: config,
+                _marker: std::marker::PhantomData {},
+            }),
+        }
+    }
+
+    pub fn from_table(data: Vec<(String, V)>) -> Self {
+        Self::from_tables(vec![data])
+    }
+
+    pub fn from_tables(datas: Vec<Vec<(String, V)>>) -> Self {
+        let mut config = PCollectionProto::new();
+        config.set_format(DataFormat::IN_MEMORY);
+        config.set_resolved(true);
+
+        for data in datas {
+            let memory_id = reserve_id();
+            config.mut_memory_ids().push(memory_id);
+
+            let data = InMemoryPCollection::from_table(data);
+            IN_MEMORY_DATASETS.write().unwrap().insert(memory_id, data);
+        }
+
+        Self {
             underlying: Arc::new(PCollectionUnderlying::<(String, V)> {
                 id: AtomicU64::new(0),
                 dependency: None,
@@ -404,10 +460,27 @@ where
         (s, dep_stages)
     }
 
+    default fn execute(&self, shard: &Shard) {
+        for input in shard.get_inputs() {
+            let source = Source::<T1>::new(input.clone());
+            let mut sink = MemorySink::<T2>::new(shard.get_outputs());
+            for item in &mut source.mem_source().iter() {
+                self.function.do_it(item, &mut sink);
+            }
+            sink.finish();
+        }
+    }
+}
+
+impl<T1, T2> PFn for DoFnWrapper<T1, (String, T2)>
+where
+    T1: 'static + Send + Sync,
+    T2: 'static + Send + Sync,
+{
     fn execute(&self, shard: &Shard) {
         for input in shard.get_inputs() {
             let source = Source::<T1>::new(input.clone());
-            let mut sink = Sink::<T2>::new(shard.get_outputs());
+            let mut sink = OrderedMemorySink::<T2>::new(shard.get_outputs());
             for item in &mut source.mem_source().iter() {
                 self.function.do_it(item, &mut sink);
             }
@@ -708,29 +781,42 @@ impl Planner {
     }
 }
 
-struct Sink<T> {
-    outputs: Vec<SinkSingleOutput<T>>,
+trait Sink<T>: EmitFn<T> {
+    fn emit(&mut self, value: T);
+    fn finish(self);
+}
+
+struct MemorySink<T> {
+    outputs: Vec<MemorySinkSingleOutput<T>>,
     write_count: usize,
 }
 
-impl<T> EmitFn<T> for Sink<T>
+struct OrderedMemorySink<T> {
+    outputs: Vec<OrderedMemorySinkSingleOutput<T>>,
+    write_count: usize,
+}
+
+impl<T> EmitFn<(String, T)> for OrderedMemorySink<T>
 where
     T: Send + Sync + 'static,
 {
-    fn emit(&mut self, value: T) {
+    fn emit(&mut self, value: (String, T)) {
         let idx = self.write_count % self.outputs.len();
         self.outputs[idx].emit(value);
         self.write_count += 1;
     }
 }
 
-impl<T> Sink<T>
+impl<T> OrderedMemorySink<T>
 where
     T: Send + Sync + 'static,
 {
     pub fn new(outputs: &[PCollectionProto]) -> Self {
         Self {
-            outputs: outputs.iter().map(|x| SinkSingleOutput::new(x)).collect(),
+            outputs: outputs
+                .iter()
+                .map(|x| OrderedMemorySinkSingleOutput::new(x))
+                .collect(),
             write_count: 0,
         }
     }
@@ -742,13 +828,88 @@ where
     }
 }
 
-struct SinkSingleOutput<T> {
-    config: PCollectionProto,
-    output: Vec<T>,
-    _marker: std::marker::PhantomData<T>,
+impl<T> EmitFn<T> for MemorySink<T>
+where
+    T: Send + Sync + 'static,
+{
+    fn emit(&mut self, value: T) {
+        let idx = self.write_count % self.outputs.len();
+        self.outputs[idx].emit(value);
+        self.write_count += 1;
+    }
 }
 
-impl<T> SinkSingleOutput<T>
+impl<T> MemorySink<T>
+where
+    T: Send + Sync + 'static,
+{
+    pub fn new(outputs: &[PCollectionProto]) -> Self {
+        Self {
+            outputs: outputs
+                .iter()
+                .map(|x| MemorySinkSingleOutput::new(x))
+                .collect(),
+            write_count: 0,
+        }
+    }
+
+    pub fn finish(self) {
+        for out in self.outputs {
+            out.finish();
+        }
+    }
+}
+
+struct OrderedMemorySinkSingleOutput<T> {
+    config: PCollectionProto,
+    output: BinaryHeap<KV<String, T>>,
+}
+
+impl<T> OrderedMemorySinkSingleOutput<T>
+where
+    T: Send + Sync + 'static,
+{
+    fn new(config: &PCollectionProto) -> Self {
+        Self {
+            output: BinaryHeap::new(),
+            config: config.clone(),
+        }
+    }
+
+    fn emit(&mut self, value: (String, T)) {
+        self.output.push(KV::new(value.0, value.1));
+    }
+
+    pub fn finish(mut self) {
+        if self.config.get_format() == DataFormat::IN_MEMORY {
+            let id = reserve_id();
+
+            let output_vec = self
+                .output
+                .into_iter_sorted()
+                .map(|kv| kv.decompose())
+                .collect();
+
+            IN_MEMORY_DATASETS
+                .write()
+                .unwrap()
+                .insert(id, InMemoryPCollection::from_table(output_vec));
+
+            let mut pcoll_write = PCOLLECTION_REGISTRY.write().unwrap();
+            let mut config = pcoll_write.get_mut(&self.config.get_id()).unwrap();
+            config.mut_memory_ids().push(id);
+            config.set_format(self.config.get_format());
+            config.set_resolved(true);
+        }
+    }
+}
+
+struct MemorySinkSingleOutput<T> {
+    config: PCollectionProto,
+    output: Vec<T>,
+}
+
+impl<T> MemorySinkSingleOutput<T>
 where
     T: Send + Sync + 'static,
 {
@@ -756,7 +917,6 @@ where
         Self {
             config: config.clone(),
             output: Vec::new(),
-            _marker: std::marker::PhantomData {},
         }
     }
 
@@ -784,9 +944,9 @@ where
     }
 }
 
-struct Source<T> {
+struct Source<'a, T> {
     config: PCollectionProto,
-    _marker: std::marker::PhantomData<T>,
+    _marker: std::marker::PhantomData<&'a T>,
 }
 
 struct InMemorySourceIteratorSpec<T> {
@@ -805,7 +965,22 @@ struct InMemorySourceIterator<'a, T> {
     index: usize,
 }
 
-impl<T> Source<T>
+struct InMemoryTableSourceIteratorSpec<T> {
+    data: Arc<Vec<(String, T)>>,
+}
+
+struct InMemoryTableSourceIteratorWrapper<T> {
+    specs: Vec<InMemoryTableSourceIteratorSpec<T>>,
+    start_key: String,
+    end_key: String,
+}
+
+struct InMemoryTableSourceIterator<'a, T> {
+    iters: Vec<std::slice::Iter<'a, (String, T)>>,
+    heap: BinaryHeap<KV<&'a str, (usize, &'a T)>>,
+}
+
+impl<'a, T> Source<'a, T>
 where
     T: Send + Sync + 'static,
 {
@@ -816,7 +991,7 @@ where
         }
     }
 
-    pub fn mem_source<'a>(&'a self) -> InMemorySourceIteratorWrapper<T> {
+    pub fn mem_source(&'a self) -> InMemorySourceIteratorWrapper<T> {
         let mut output = InMemorySourceIteratorWrapper { specs: Vec::new() };
 
         for memory_id in self.config.get_memory_ids() {
@@ -837,6 +1012,122 @@ where
             })
         }
         output
+    }
+}
+
+impl<'a, T> Source<'a, (String, T)>
+where
+    T: Send + Sync + 'static,
+{
+    pub fn mem_table_source(&'a self) -> InMemoryTableSourceIteratorWrapper<T> {
+        let mut output = InMemoryTableSourceIteratorWrapper {
+            specs: Vec::new(),
+            start_key: self.config.get_starting_key().to_string(),
+            end_key: self.config.get_ending_key().to_string(),
+        };
+
+        for memory_id in self.config.get_memory_ids() {
+            let data = {
+                let guard = IN_MEMORY_DATASETS.read().unwrap();
+                let dataset = guard
+                    .get(&memory_id)
+                    .expect(&format!("Failed to look up data in id={}", &memory_id));
+                let pcoll: Arc<dyn InMemoryPCollectionWrapper> = dataset.data.clone();
+                let data: &InMemoryPCollectionUnderlying<(String, T)> =
+                    pcoll.downcast_ref().expect("failed to downcast!");
+                data.data.clone()
+            };
+            output
+                .specs
+                .push(InMemoryTableSourceIteratorSpec { data: data })
+        }
+        output
+    }
+}
+
+struct KV<K, V> {
+    key: K,
+    value: V,
+}
+
+impl<K, V> KV<K, V> {
+    fn new(key: K, value: V) -> Self {
+        Self {
+            key: key,
+            value: value,
+        }
+    }
+
+    fn decompose(self) -> (K, V) {
+        (self.key, self.value)
+    }
+}
+
+impl<K, V> Ord for KV<K, V>
+where
+    K: Ord,
+{
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.key.cmp(&other.key)
+    }
+}
+
+impl<K, V> PartialOrd for KV<K, V>
+where
+    K: Ord,
+{
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.key.cmp(&other.key))
+    }
+}
+
+impl<K, V> PartialEq for KV<K, V>
+where
+    K: Eq,
+{
+    fn eq(&self, other: &Self) -> bool {
+        self.key == other.key
+    }
+}
+
+impl<K, V> Eq for KV<K, V> where K: Eq {}
+
+impl<T> InMemoryTableSourceIteratorWrapper<T> {
+    pub fn iter<'a>(&'a self) -> InMemoryTableSourceIterator<'a, T> {
+        let mut iterator = InMemoryTableSourceIterator {
+            iters: self
+                .specs
+                .iter()
+                .map(|x| {
+                    let start_bound = if self.start_key.is_empty() {
+                        0
+                    } else {
+                        x.data
+                            .binary_search_by_key(&self.start_key.as_str(), |(k, _)| k)
+                            .unwrap_or_else(|e| e)
+                    };
+
+                    let end_bound = if self.end_key.is_empty() {
+                        x.data.len()
+                    } else {
+                        x.data
+                            .binary_search_by_key(&self.end_key.as_str(), |(k, _)| k)
+                            .unwrap_or_else(|e| e)
+                    };
+
+                    x.data[start_bound..end_bound].iter()
+                })
+                .collect(),
+            heap: BinaryHeap::new(),
+        };
+
+        for (idx, iter) in iterator.iters.iter_mut().enumerate() {
+            if let Some((k, v)) = iter.next() {
+                iterator.heap.push(KV::new(&k, (idx, &v)));
+            }
+        }
+
+        iterator
     }
 }
 
@@ -879,6 +1170,25 @@ impl<'a, T> Iterator for InMemorySourceIterator<'a, T> {
             self.index += 1;
             return result;
         }
+    }
+}
+
+impl<'a, T> Iterator for InMemoryTableSourceIterator<'a, T> {
+    type Item = (&'a str, &'a T);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(kv) = self.heap.pop() {
+            let (idx, val) = kv.value;
+            let output = (kv.key, val);
+
+            if let Some((k, v)) = self.iters[idx].next() {
+                self.heap.push(KV::new(&k, (idx, &v)));
+            }
+
+            return Some(output);
+        }
+
+        None
     }
 }
 

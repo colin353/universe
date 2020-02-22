@@ -10,7 +10,7 @@ impl plume::DoFn for Do1 {
     type Output = (String, u8);
     fn do_it(&self, input: &u64, emit: &mut dyn EmitFn<Self::Output>) {
         println!("DoFn: got {:?}", input);
-        emit.emit((String::from("k"), *input as u8));
+        emit.emit((format!("{:?}", (*input)), *input as u8));
     }
 }
 
@@ -49,6 +49,8 @@ fn main() {
     //let joined = o1.join(o2, MyJoinFn {});
     //let output = joined.group_by_key();
     o2.write_to_sstable("/home/colin/output.sstable@2");
+
+    let t = PCollection::<(String, u64)>::from_table(vec![("A".into(), 1), ("B".into(), 1)]);
 
     plume::run();
 }
