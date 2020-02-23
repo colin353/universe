@@ -12,7 +12,7 @@ use plume_proto_rust::*;
 use std::collections::{BinaryHeap, HashMap};
 use std::ops::Bound::*;
 use std::rc::Rc;
-use std::sync::atomic::AtomicU64;
+use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::Arc;
 use std::sync::RwLock;
 
@@ -217,6 +217,7 @@ where
 
         let id = reserve_id();
         self.underlying.id.store(id, ORDER);
+
         PCOLLECTION_REGISTRY
             .write()
             .unwrap()
@@ -322,6 +323,48 @@ where
         STAGES.write().unwrap().append(&mut self.stages());
     }
 
+    pub fn into_vec(self) -> Arc<Vec<(String, V)>> {
+        let reg = PCOLLECTION_REGISTRY.read().unwrap();
+        let latest_pcoll = reg.get(&self.underlying.id.load(ORDER)).expect(&format!(
+            "Couldn't find pcollection {}??",
+            self.underlying.proto.get_id()
+        ));
+        if !latest_pcoll.get_resolved() {
+            panic!("Can't run .into_vec() on a dataset that has not yet been computed",);
+        }
+        if latest_pcoll.get_memory_ids().len() != 1 {
+            panic!(
+                "I don't know how to run .into_vec() on a dataset with {} shards",
+                latest_pcoll.get_memory_ids().len()
+            );
+        }
+        let memory_id = latest_pcoll.get_memory_ids()[0];
+        let guard = IN_MEMORY_DATASETS.read().unwrap();
+        let dataset = guard
+            .get(&memory_id)
+            .expect(&format!("Failed to look up data in id={}", &memory_id));
+        let pcoll: Arc<dyn InMemoryPCollectionWrapper> = dataset.data.clone();
+        let data: &InMemoryPCollectionUnderlying<(String, V)> =
+            pcoll.downcast_ref().expect("failed to downcast!");
+
+        return data.data.clone();
+    }
+
+    pub fn write_to_vec(&mut self) {
+        if !self.underlying.proto.get_filename().is_empty()
+            || self.underlying.proto.get_format() != DataFormat::UNKNOWN
+        {
+            panic!("This ptable is already being written to disk!");
+        }
+        {
+            let mut_underlying = Arc::get_mut(&mut self.underlying).unwrap();
+            mut_underlying.proto.set_format(DataFormat::IN_MEMORY);
+            mut_underlying.proto.set_target_memory_shards(1);
+        }
+
+        STAGES.write().unwrap().append(&mut self.stages());
+    }
+
     pub fn group_by_key(&self) -> PCollection<(String, Stream<V>)> {
         let mut config = self.underlying.proto.clone();
         config.set_group_by_key(true);
@@ -355,6 +398,7 @@ pub fn update_stage(stage: &mut Stage) {
 
 pub fn run() {
     let mut stages = STAGES.read().unwrap().clone();
+    println!("input: {} stages", stages.len());
     let mut completed = std::collections::HashSet::new();
     let planner = Planner::new();
     loop {
@@ -375,6 +419,9 @@ pub fn run() {
 
             if ready {
                 let shards = planner.plan(&stage);
+                if shards.len() == 0 {
+                    panic!("Stage {} has zero shards!", shards.len());
+                }
                 for shard in shards {
                     execute_shard(&shard);
                 }
@@ -409,6 +456,7 @@ pub trait PFn: Send + Sync {
 }
 pub trait EmitFn<T> {
     fn emit(&mut self, value: T);
+    fn finish(self: Box<Self>);
 }
 
 pub struct JoinFnWrapper<K, V1, V2, O> {
@@ -463,9 +511,12 @@ where
     default fn execute(&self, shard: &Shard) {
         for input in shard.get_inputs() {
             let source = Source::<T1>::new(input.clone());
-            let mut sink = MemorySink::<T2>::new(shard.get_outputs());
-            for item in &mut source.mem_source().iter() {
-                self.function.do_it(item, &mut sink);
+            let mut sink = make_sink::<T2>(shard.get_outputs());
+            {
+                let sink_ref: &mut dyn EmitFn<T2> = &mut *sink;
+                for item in &mut source.mem_source().iter() {
+                    self.function.do_it(item, sink_ref);
+                }
             }
             sink.finish();
         }
@@ -480,9 +531,12 @@ where
     fn execute(&self, shard: &Shard) {
         for input in shard.get_inputs() {
             let source = Source::<T1>::new(input.clone());
-            let mut sink = OrderedMemorySink::<T2>::new(shard.get_outputs());
-            for item in &mut source.mem_source().iter() {
-                self.function.do_it(item, &mut sink);
+            let mut sink = make_sink::<(String, T2)>(shard.get_outputs());
+            {
+                let sink_ref: &mut dyn EmitFn<(String, T2)> = &mut *sink;
+                for item in &mut source.mem_source().iter() {
+                    self.function.do_it(item, sink_ref);
+                }
             }
             sink.finish();
         }
@@ -681,7 +735,13 @@ impl Planner {
 
     pub fn count_shards(input: &PCollectionProto) -> Option<usize> {
         if input.get_format() == DataFormat::IN_MEMORY {
-            return Some(input.get_memory_ids().len());
+            if input.get_memory_ids().len() > 0 {
+                return Some(input.get_memory_ids().len());
+            } else if input.get_target_memory_shards() > 0 {
+                return Some(input.get_target_memory_shards() as usize);
+            } else {
+                return None;
+            }
         }
 
         if input.get_format() == DataFormat::RECORDIO || input.get_format() == DataFormat::SSTABLE {
@@ -781,9 +841,22 @@ impl Planner {
     }
 }
 
-trait Sink<T>: EmitFn<T> {
-    fn emit(&mut self, value: T);
-    fn finish(self);
+fn make_sink<T>(outputs: &[PCollectionProto]) -> Box<dyn EmitFn<T>>
+where
+    T: Send + Sync + 'static,
+{
+    if outputs.len() == 0 {
+        panic!("Can't make a sink from zero outputs");
+    }
+
+    if outputs[0].get_format() == DataFormat::IN_MEMORY {
+        return Box::new(MemorySink::new(outputs));
+    }
+
+    panic!(
+        "I don't know how to make a sink for {:?}",
+        outputs[0].get_format()
+    );
 }
 
 struct MemorySink<T> {
@@ -805,6 +878,12 @@ where
         self.outputs[idx].emit(value);
         self.write_count += 1;
     }
+
+    fn finish(self: Box<Self>) {
+        for out in self.outputs {
+            out.finish();
+        }
+    }
 }
 
 impl<T> OrderedMemorySink<T>
@@ -820,18 +899,18 @@ where
             write_count: 0,
         }
     }
-
-    pub fn finish(self) {
-        for out in self.outputs {
-            out.finish();
-        }
-    }
 }
 
 impl<T> EmitFn<T> for MemorySink<T>
 where
     T: Send + Sync + 'static,
 {
+    fn finish(self: Box<Self>) {
+        for out in self.outputs {
+            out.finish();
+        }
+    }
+
     fn emit(&mut self, value: T) {
         let idx = self.write_count % self.outputs.len();
         self.outputs[idx].emit(value);
@@ -850,12 +929,6 @@ where
                 .map(|x| MemorySinkSingleOutput::new(x))
                 .collect(),
             write_count: 0,
-        }
-    }
-
-    pub fn finish(self) {
-        for out in self.outputs {
-            out.finish();
         }
     }
 }

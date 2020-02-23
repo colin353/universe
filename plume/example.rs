@@ -20,7 +20,7 @@ impl plume::DoFn for Do2 {
     type Output = (String, u32);
     fn do_it(&self, input: &(String, u8), emit: &mut dyn EmitFn<Self::Output>) {
         println!("Do2: got {:?}", input);
-        emit.emit((String::from("k"), 5));
+        emit.emit((input.0.clone(), (240 - input.1).into()));
     }
 }
 
@@ -44,13 +44,16 @@ impl plume::JoinFn for MyJoinFn {
 fn main() {
     let p = PCollection::<u64>::from_vec(vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
     let o1 = p.par_do(Do1 {});
-    let o2 = o1.par_do(Do2 {});
+    let mut o2 = o1.par_do(Do2 {});
     //let o2 = p.par_do(Do2 {});
     //let joined = o1.join(o2, MyJoinFn {});
     //let output = joined.group_by_key();
-    o2.write_to_sstable("/home/colin/output.sstable@2");
+    //o2.write_to_sstabe("/home/colin/output.sstable@2");
+    o2.write_to_vec();
 
-    let t = PCollection::<(String, u64)>::from_table(vec![("A".into(), 1), ("B".into(), 1)]);
+    //let t = PCollection::<(String, u64)>::from_table(vec![("A".into(), 1), ("B".into(), 1)]);
 
     plume::run();
+
+    println!("result: {:?}", o2.into_vec());
 }

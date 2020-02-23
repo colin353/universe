@@ -31,9 +31,10 @@ message PCollectionProto {
 
   // In memory resource ID
   repeated uint64 memory_ids = 10;
+  uint64 target_memory_shards = 11;
 
   // Whether the PCollection is a PTable
-  bool is_ptable = 11;
+  bool is_ptable = 12;
 }
 
 message PFnProto {
