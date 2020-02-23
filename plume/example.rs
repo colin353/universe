@@ -3,24 +3,25 @@ use plume::EmitFn;
 use plume::PCollection;
 use plume::PTable;
 use plume::Stream;
+use plume::KV;
 
 struct Do1 {}
 impl plume::DoFn for Do1 {
     type Input = u64;
-    type Output = (String, u8);
+    type Output = KV<String, u8>;
     fn do_it(&self, input: &u64, emit: &mut dyn EmitFn<Self::Output>) {
         println!("DoFn: got {:?}", input);
-        emit.emit((format!("{:?}", (*input)), *input as u8));
+        emit.emit(KV::new(format!("{:?}", (*input)), *input as u8));
     }
 }
 
 struct Do2 {}
 impl plume::DoFn for Do2 {
-    type Input = (String, u8);
-    type Output = (String, u32);
-    fn do_it(&self, input: &(String, u8), emit: &mut dyn EmitFn<Self::Output>) {
-        println!("Do2: got {:?}", input);
-        emit.emit((input.0.clone(), (240 - input.1).into()));
+    type Input = KV<String, Stream<u8>>;
+    type Output = KV<String, u32>;
+    fn do_it(&self, input: &KV<String, Stream<u8>>, emit: &mut dyn EmitFn<Self::Output>) {
+        println!("DoFn2: got a real stream");
+        emit.emit(KV::new(input.key().clone(), 5));
     }
 }
 
@@ -29,21 +30,21 @@ impl plume::JoinFn for MyJoinFn {
     type Key = String;
     type ValueLeft = f64;
     type ValueRight = u8;
-    type Output = (String, String);
+    type Output = KV<String, String>;
     fn join(
         &self,
         key: String,
         left: Stream<f64>,
         right: Stream<u8>,
-        emit: &mut dyn EmitFn<(String, String)>,
+        emit: &mut dyn EmitFn<KV<String, String>>,
     ) {
-        emit.emit((String::from("1"), String::from("aaa")));
+        emit.emit(KV::new(String::from("1"), String::from("aaa")));
     }
 }
 
 fn main() {
     let p = PCollection::<u64>::from_vec(vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
-    let o1 = p.par_do(Do1 {});
+    let o1 = p.par_do(Do1 {}).group_by_key();
     let mut o2 = o1.par_do(Do2 {});
     //let o2 = p.par_do(Do2 {});
     //let joined = o1.join(o2, MyJoinFn {});

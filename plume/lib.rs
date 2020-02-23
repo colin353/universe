@@ -58,7 +58,7 @@ pub struct InMemoryPCollectionUnderlying<T> {
 }
 
 pub struct InMemoryPTableUnderlying<T> {
-    data: Arc<Vec<(String, T)>>,
+    data: Arc<Vec<KV<String, T>>>,
 }
 
 impl<T> InMemoryPCollectionWrapper for InMemoryPTableUnderlying<T>
@@ -95,7 +95,7 @@ impl InMemoryPCollection {
         }
     }
 
-    pub fn from_table<T>(data: Vec<(String, T)>) -> Self
+    pub fn from_table<T>(data: Vec<KV<String, T>>) -> Self
     where
         T: Send + Sync + 'static,
     {
@@ -260,10 +260,10 @@ where
     }
 }
 
-impl<V> PCollection<(String, V)>
+impl<V> PCollection<KV<String, V>>
 where
     V: 'static + Send + Sync,
-    (String, V): 'static + Send + Sync,
+    KV<String, V>: 'static + Send + Sync,
 {
     pub fn from_sstable(filename: &str) -> Self {
         let mut config = PCollectionProto::new();
@@ -272,7 +272,7 @@ where
         config.set_format(DataFormat::SSTABLE);
 
         PCollection {
-            underlying: Arc::new(PCollectionUnderlying::<(String, V)> {
+            underlying: Arc::new(PCollectionUnderlying::<KV<String, V>> {
                 id: AtomicU64::new(0),
                 dependency: None,
                 proto: config,
@@ -281,11 +281,11 @@ where
         }
     }
 
-    pub fn from_table(data: Vec<(String, V)>) -> Self {
+    pub fn from_table(data: Vec<KV<String, V>>) -> Self {
         Self::from_tables(vec![data])
     }
 
-    pub fn from_tables(datas: Vec<Vec<(String, V)>>) -> Self {
+    pub fn from_tables(datas: Vec<Vec<KV<String, V>>>) -> Self {
         let mut config = PCollectionProto::new();
         config.set_format(DataFormat::IN_MEMORY);
         config.set_resolved(true);
@@ -299,7 +299,7 @@ where
         }
 
         Self {
-            underlying: Arc::new(PCollectionUnderlying::<(String, V)> {
+            underlying: Arc::new(PCollectionUnderlying::<KV<String, V>> {
                 id: AtomicU64::new(0),
                 dependency: None,
                 proto: config,
@@ -323,7 +323,7 @@ where
         STAGES.write().unwrap().append(&mut self.stages());
     }
 
-    pub fn into_vec(self) -> Arc<Vec<(String, V)>> {
+    pub fn into_vec(self) -> Arc<Vec<KV<String, V>>> {
         let reg = PCOLLECTION_REGISTRY.read().unwrap();
         let latest_pcoll = reg.get(&self.underlying.id.load(ORDER)).expect(&format!(
             "Couldn't find pcollection {}??",
@@ -344,7 +344,7 @@ where
             .get(&memory_id)
             .expect(&format!("Failed to look up data in id={}", &memory_id));
         let pcoll: Arc<dyn InMemoryPCollectionWrapper> = dataset.data.clone();
-        let data: &InMemoryPCollectionUnderlying<(String, V)> =
+        let data: &InMemoryPCollectionUnderlying<KV<String, V>> =
             pcoll.downcast_ref().expect("failed to downcast!");
 
         return data.data.clone();
@@ -365,12 +365,12 @@ where
         STAGES.write().unwrap().append(&mut self.stages());
     }
 
-    pub fn group_by_key(&self) -> PCollection<(String, Stream<V>)> {
+    pub fn group_by_key(&self) -> PCollection<KV<String, Stream<V>>> {
         let mut config = self.underlying.proto.clone();
         config.set_group_by_key(true);
 
         PCollection {
-            underlying: Arc::new(PCollectionUnderlying::<(String, Stream<V>)> {
+            underlying: Arc::new(PCollectionUnderlying::<KV<String, Stream<V>>> {
                 id: AtomicU64::new(0),
                 dependency: self.underlying.dependency.clone(),
                 proto: config,
@@ -469,6 +469,14 @@ pub struct Stream<T> {
     _mark: std::marker::PhantomData<T>,
 }
 
+impl<T> Stream<T> {
+    fn new() -> Self {
+        Self {
+            _mark: std::marker::PhantomData {},
+        }
+    }
+}
+
 pub trait JoinFn: Send + Sync {
     type Key;
     type ValueLeft;
@@ -492,6 +500,7 @@ pub trait DoFn: Send + Sync {
     type Output;
     fn do_it(&self, input: &Self::Input, emit: &mut dyn EmitFn<Self::Output>);
 }
+
 impl<T1, T2> PFn for DoFnWrapper<T1, T2>
 where
     T1: 'static + Send + Sync,
@@ -523,19 +532,43 @@ where
     }
 }
 
-impl<T1, T2> PFn for DoFnWrapper<T1, (String, T2)>
+impl<T1, T2> PFn for DoFnWrapper<KV<String, T1>, T2>
+where
+    T1: 'static + Send + Sync,
+    T2: 'static + Send + Sync,
+{
+    default fn execute(&self, shard: &Shard) {
+        for input in shard.get_inputs() {
+            let source = Source::<KV<String, T1>>::new(input.clone());
+            let mut sink = make_sink::<T2>(shard.get_outputs());
+            {
+                let sink_ref: &mut dyn EmitFn<T2> = &mut *sink;
+
+                for item in &mut source.mem_table_source().iter() {
+                    self.function.do_it(item, sink_ref);
+                }
+            }
+            sink.finish();
+        }
+    }
+}
+
+impl<T1, T2> PFn for DoFnWrapper<KV<String, Stream<T1>>, T2>
 where
     T1: 'static + Send + Sync,
     T2: 'static + Send + Sync,
 {
     fn execute(&self, shard: &Shard) {
         for input in shard.get_inputs() {
-            let source = Source::<T1>::new(input.clone());
-            let mut sink = make_sink::<(String, T2)>(shard.get_outputs());
+            let source = Source::<KV<String, Stream<T1>>>::new(input.clone());
+            let mut sink = make_sink::<T2>(shard.get_outputs());
             {
-                let sink_ref: &mut dyn EmitFn<(String, T2)> = &mut *sink;
-                for item in &mut source.mem_source().iter() {
-                    self.function.do_it(item, sink_ref);
+                let sink_ref: &mut dyn EmitFn<T2> = &mut *sink;
+
+                for item in &mut source.mem_table_grouped_source().iter() {
+                    // TODO: implement actual stream
+                    self.function
+                        .do_it(&KV(String::new(), Stream::new()), sink_ref);
                 }
             }
             sink.finish();
@@ -869,11 +902,11 @@ struct OrderedMemorySink<T> {
     write_count: usize,
 }
 
-impl<T> EmitFn<(String, T)> for OrderedMemorySink<T>
+impl<T> EmitFn<KV<String, T>> for OrderedMemorySink<T>
 where
     T: Send + Sync + 'static,
 {
-    fn emit(&mut self, value: (String, T)) {
+    fn emit(&mut self, value: KV<String, T>) {
         let idx = self.write_count % self.outputs.len();
         self.outputs[idx].emit(value);
         self.write_count += 1;
@@ -949,19 +982,15 @@ where
         }
     }
 
-    fn emit(&mut self, value: (String, T)) {
-        self.output.push(KV::new(value.0, value.1));
+    fn emit(&mut self, value: KV<String, T>) {
+        self.output.push(KV(value.0, value.1));
     }
 
     pub fn finish(mut self) {
         if self.config.get_format() == DataFormat::IN_MEMORY {
             let id = reserve_id();
 
-            let output_vec = self
-                .output
-                .into_iter_sorted()
-                .map(|kv| kv.decompose())
-                .collect();
+            let output_vec = self.output.into_iter_sorted().collect();
 
             IN_MEMORY_DATASETS
                 .write()
@@ -1039,18 +1068,21 @@ struct InMemorySourceIterator<'a, T> {
 }
 
 struct InMemoryTableSourceIteratorSpec<T> {
-    data: Arc<Vec<(String, T)>>,
+    data: Arc<Vec<KV<String, T>>>,
 }
 
 struct InMemoryTableSourceIteratorWrapper<T> {
     specs: Vec<InMemoryTableSourceIteratorSpec<T>>,
     start_key: String,
     end_key: String,
+    group_by_key: bool,
 }
 
 struct InMemoryTableSourceIterator<'a, T> {
-    iters: Vec<std::slice::Iter<'a, (String, T)>>,
-    heap: BinaryHeap<KV<&'a str, (usize, &'a T)>>,
+    iters: Vec<std::slice::Iter<'a, KV<String, T>>>,
+    heap: BinaryHeap<KV<&'a KV<String, T>, usize>>,
+    group_by_key: bool,
+    current_group: String,
 }
 
 impl<'a, T> Source<'a, T>
@@ -1062,6 +1094,10 @@ where
             config: config,
             _marker: std::marker::PhantomData {},
         }
+    }
+
+    pub fn is_grouped_by_key(&self) -> bool {
+        self.config.get_group_by_key()
     }
 
     pub fn mem_source(&'a self) -> InMemorySourceIteratorWrapper<T> {
@@ -1088,7 +1124,7 @@ where
     }
 }
 
-impl<'a, T> Source<'a, (String, T)>
+impl<'a, T> Source<'a, KV<String, T>>
 where
     T: Send + Sync + 'static,
 {
@@ -1097,6 +1133,7 @@ where
             specs: Vec::new(),
             start_key: self.config.get_starting_key().to_string(),
             end_key: self.config.get_ending_key().to_string(),
+            group_by_key: false,
         };
 
         for memory_id in self.config.get_memory_ids() {
@@ -1106,7 +1143,7 @@ where
                     .get(&memory_id)
                     .expect(&format!("Failed to look up data in id={}", &memory_id));
                 let pcoll: Arc<dyn InMemoryPCollectionWrapper> = dataset.data.clone();
-                let data: &InMemoryPCollectionUnderlying<(String, T)> =
+                let data: &InMemoryPCollectionUnderlying<KV<String, T>> =
                     pcoll.downcast_ref().expect("failed to downcast!");
                 data.data.clone()
             };
@@ -1118,21 +1155,50 @@ where
     }
 }
 
-struct KV<K, V> {
-    key: K,
-    value: V,
+impl<'a, T> Source<'a, KV<String, Stream<T>>>
+where
+    T: Send + Sync + 'static,
+{
+    pub fn mem_table_grouped_source(&'a self) -> InMemoryTableSourceIteratorWrapper<T> {
+        let mut output = InMemoryTableSourceIteratorWrapper {
+            specs: Vec::new(),
+            start_key: self.config.get_starting_key().to_string(),
+            end_key: self.config.get_ending_key().to_string(),
+            group_by_key: true,
+        };
+
+        for memory_id in self.config.get_memory_ids() {
+            let data = {
+                let guard = IN_MEMORY_DATASETS.read().unwrap();
+                let dataset = guard
+                    .get(&memory_id)
+                    .expect(&format!("Failed to look up data in id={}", &memory_id));
+                let pcoll: Arc<dyn InMemoryPCollectionWrapper> = dataset.data.clone();
+                let data: &InMemoryPCollectionUnderlying<KV<String, T>> =
+                    pcoll.downcast_ref().expect("failed to downcast!");
+                data.data.clone()
+            };
+            output
+                .specs
+                .push(InMemoryTableSourceIteratorSpec { data: data })
+        }
+        output
+    }
 }
 
+#[derive(Debug)]
+pub struct KV<K, V>(K, V);
+
 impl<K, V> KV<K, V> {
-    fn new(key: K, value: V) -> Self {
-        Self {
-            key: key,
-            value: value,
-        }
+    pub fn new(k: K, v: V) -> Self {
+        KV(k, v)
     }
 
-    fn decompose(self) -> (K, V) {
-        (self.key, self.value)
+    pub fn key(&self) -> &K {
+        &self.0
+    }
+    pub fn value(&self) -> &V {
+        &self.1
     }
 }
 
@@ -1141,7 +1207,7 @@ where
     K: Ord,
 {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.key.cmp(&other.key)
+        self.0.cmp(&other.0)
     }
 }
 
@@ -1150,7 +1216,7 @@ where
     K: Ord,
 {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.key.cmp(&other.key))
+        Some(self.0.cmp(&other.0))
     }
 }
 
@@ -1159,7 +1225,7 @@ where
     K: Eq,
 {
     fn eq(&self, other: &Self) -> bool {
-        self.key == other.key
+        self.0 == other.0
     }
 }
 
@@ -1176,7 +1242,7 @@ impl<T> InMemoryTableSourceIteratorWrapper<T> {
                         0
                     } else {
                         x.data
-                            .binary_search_by_key(&self.start_key.as_str(), |(k, _)| k)
+                            .binary_search_by_key(&self.start_key.as_str(), |kv| &kv.0)
                             .unwrap_or_else(|e| e)
                     };
 
@@ -1184,7 +1250,7 @@ impl<T> InMemoryTableSourceIteratorWrapper<T> {
                         x.data.len()
                     } else {
                         x.data
-                            .binary_search_by_key(&self.end_key.as_str(), |(k, _)| k)
+                            .binary_search_by_key(&self.end_key.as_str(), |kv| &kv.0)
                             .unwrap_or_else(|e| e)
                     };
 
@@ -1192,11 +1258,19 @@ impl<T> InMemoryTableSourceIteratorWrapper<T> {
                 })
                 .collect(),
             heap: BinaryHeap::new(),
+            group_by_key: self.group_by_key,
+            current_group: String::new(),
         };
 
         for (idx, iter) in iterator.iters.iter_mut().enumerate() {
-            if let Some((k, v)) = iter.next() {
-                iterator.heap.push(KV::new(&k, (idx, &v)));
+            if let Some(kv) = iter.next() {
+                iterator.heap.push(KV(kv, idx));
+            }
+        }
+
+        if iterator.group_by_key {
+            if let Some(s) = iterator.heap.peek() {
+                iterator.current_group = (s.0).0.to_string();
             }
         }
 
@@ -1247,18 +1321,18 @@ impl<'a, T> Iterator for InMemorySourceIterator<'a, T> {
 }
 
 impl<'a, T> Iterator for InMemoryTableSourceIterator<'a, T> {
-    type Item = (&'a str, &'a T);
+    type Item = &'a KV<String, T>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(kv) = self.heap.pop() {
-            let (idx, val) = kv.value;
-            let output = (kv.key, val);
+            let idx = kv.1;
+            let output = kv.0;
 
-            if let Some((k, v)) = self.iters[idx].next() {
-                self.heap.push(KV::new(&k, (idx, &v)));
+            if let Some(kv) = self.iters[idx].next() {
+                self.heap.push(KV(kv, idx));
             }
 
-            return Some(output);
+            return Some(&output);
         }
 
         None
@@ -1368,7 +1442,7 @@ mod tests {
         ]);
         stage.mut_inputs().push(p_in.underlying.proto.clone());
 
-        let p_out = PCollection::<(String, u64)>::from_sstable("/data/output.sstable@5");
+        let p_out = PCollection::<KV<String, u64>>::from_sstable("/data/output.sstable@5");
         stage.mut_outputs().push(p_out.underlying.proto.clone());
 
         let shards = planner.plan(&stage);
