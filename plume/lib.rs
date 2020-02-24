@@ -10,6 +10,7 @@ extern crate lazy_static;
 use plume_proto_rust::*;
 
 use std::collections::{BinaryHeap, HashMap};
+use std::iter::Peekable;
 use std::ops::Bound::*;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, AtomicU64};
@@ -380,6 +381,25 @@ where
     }
 }
 
+impl<'a, 'b, V> PCollection<KV<String, V>>
+where
+    V: 'static + Send + Sync,
+    KV<String, Stream<'a, 'b, V>>: 'static + Send + Sync,
+{
+    pub fn group_by_key_and_par_do<O, DoType>(&self, f: DoType) -> PCollection<O>
+    where
+        DoType: DoStreamFn<Input = V, Output = O> + 'static,
+        O: 'static + Send + Sync,
+    {
+        let mut out: PCollection<O> = PCollection::<O>::new();
+        Arc::get_mut(&mut out.underlying).unwrap().dependency = Some(Arc::new(DoStreamFnWrapper {
+            dependency: self.clone(),
+            function: Box::new(f),
+        }));
+        out
+    }
+}
+
 pub fn update_stage(stage: &mut Stage) {
     for input in stage.mut_inputs().iter_mut() {
         let reg = PCOLLECTION_REGISTRY.read().unwrap();
@@ -465,15 +485,53 @@ pub struct JoinFnWrapper<K, V1, V2, O> {
     function: Box<JoinFn<Key = K, ValueLeft = V1, ValueRight = V2, Output = O>>,
 }
 
-pub struct Stream<T> {
-    _mark: std::marker::PhantomData<T>,
+pub struct Stream<'a, 'b, T> {
+    iter: &'b mut std::iter::Peekable<
+        &'a mut (dyn std::iter::Iterator<Item = &'a KV<std::string::String, T>>),
+    >,
+    current_key: Option<String>,
 }
 
-impl<T> Stream<T> {
-    fn new() -> Self {
+unsafe impl<'a, 'b, T> Send for Stream<'a, 'b, T> where T: Send {}
+unsafe impl<'a, 'b, T> Sync for Stream<'a, 'b, T> where T: Sync {}
+
+impl<'a, 'b, T> Stream<'a, 'b, T> {
+    fn new(
+        iter: &'b mut std::iter::Peekable<&'a mut dyn Iterator<Item = &'a KV<String, T>>>,
+    ) -> Self {
+        let current_key = iter.peek().map(|x| x.0.to_string());
+
         Self {
-            _mark: std::marker::PhantomData {},
+            iter: iter,
+            current_key: current_key,
         }
+    }
+
+    fn kick(&mut self) {
+        // Exhaust the iterator
+        self.count();
+
+        // Load the next key
+        self.current_key = self.iter.peek().map(|x| x.0.to_string());
+    }
+}
+
+impl<'a, 'b, T> Iterator for Stream<'a, 'b, T> {
+    type Item = &'a T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let key = match &self.current_key {
+            Some(x) => x,
+            None => return None,
+        };
+
+        if let Some(x) = self.iter.peek() {
+            if &x.0 == key {
+                return self.iter.next().map(|x| &x.1);
+            }
+        }
+
+        None
     }
 }
 
@@ -499,6 +557,60 @@ pub trait DoFn: Send + Sync {
     type Input;
     type Output;
     fn do_it(&self, input: &Self::Input, emit: &mut dyn EmitFn<Self::Output>);
+}
+
+pub struct DoStreamFnWrapper<T1, T2> {
+    dependency: PCollection<KV<String, T1>>,
+    function: Box<DoStreamFn<Input = T1, Output = T2>>,
+}
+pub trait DoStreamFn: Send + Sync {
+    type Input;
+    type Output;
+    fn do_it(&self, key: &str, values: &Stream<Self::Input>, emit: &mut dyn EmitFn<Self::Output>);
+}
+
+impl<T1, T2> PFn for DoStreamFnWrapper<T1, T2>
+where
+    T1: 'static + Send + Sync,
+    T2: 'static + Send + Sync,
+{
+    fn stages(&self, id: u64) -> (Stage, Vec<Stage>) {
+        let dep_stages = self.dependency.stages();
+
+        let mut s = Stage::new();
+        s.mut_inputs().push(self.dependency.to_proto());
+        s.mut_function().set_description(String::from("DoStreamFn"));
+        s.mut_function().set_id(id);
+
+        (s, dep_stages)
+    }
+
+    default fn execute(&self, shard: &Shard) {
+        for input in shard.get_inputs() {
+            let source = Source::<KV<String, T1>>::new(input.clone());
+            let mut sink = make_sink::<T2>(shard.get_outputs());
+            {
+                let sink_ref: &mut dyn EmitFn<T2> = &mut *sink;
+                let s = source.mem_source();
+                let mut iter = s.iter();
+                let mut dyn_iterator: &mut dyn Iterator<Item = &KV<String, T1>> = &mut iter;
+                let mut peekable = dyn_iterator.peekable();
+                loop {
+                    let key = if let Some(kv) = peekable.peek() {
+                        kv.0.clone()
+                    } else {
+                        break;
+                    };
+                    {
+                        let mut s = Stream::new(&mut peekable);
+                        self.function.do_it(&key, &s, sink_ref);
+                        s.count();
+                    }
+                }
+            }
+            sink.finish();
+        }
+    }
 }
 
 impl<T1, T2> PFn for DoFnWrapper<T1, T2>
@@ -546,29 +658,6 @@ where
 
                 for item in &mut source.mem_table_source().iter() {
                     self.function.do_it(item, sink_ref);
-                }
-            }
-            sink.finish();
-        }
-    }
-}
-
-impl<T1, T2> PFn for DoFnWrapper<KV<String, Stream<T1>>, T2>
-where
-    T1: 'static + Send + Sync,
-    T2: 'static + Send + Sync,
-{
-    fn execute(&self, shard: &Shard) {
-        for input in shard.get_inputs() {
-            let source = Source::<KV<String, Stream<T1>>>::new(input.clone());
-            let mut sink = make_sink::<T2>(shard.get_outputs());
-            {
-                let sink_ref: &mut dyn EmitFn<T2> = &mut *sink;
-
-                for item in &mut source.mem_table_grouped_source().iter() {
-                    // TODO: implement actual stream
-                    self.function
-                        .do_it(&KV(String::new(), Stream::new()), sink_ref);
                 }
             }
             sink.finish();
@@ -1046,9 +1135,9 @@ where
     }
 }
 
-struct Source<'a, T> {
+struct Source<T> {
     config: PCollectionProto,
-    _marker: std::marker::PhantomData<&'a T>,
+    _marker: std::marker::PhantomData<T>,
 }
 
 struct InMemorySourceIteratorSpec<T> {
@@ -1075,17 +1164,14 @@ struct InMemoryTableSourceIteratorWrapper<T> {
     specs: Vec<InMemoryTableSourceIteratorSpec<T>>,
     start_key: String,
     end_key: String,
-    group_by_key: bool,
 }
 
 struct InMemoryTableSourceIterator<'a, T> {
     iters: Vec<std::slice::Iter<'a, KV<String, T>>>,
     heap: BinaryHeap<KV<&'a KV<String, T>, usize>>,
-    group_by_key: bool,
-    current_group: String,
 }
 
-impl<'a, T> Source<'a, T>
+impl<T> Source<T>
 where
     T: Send + Sync + 'static,
 {
@@ -1100,7 +1186,7 @@ where
         self.config.get_group_by_key()
     }
 
-    pub fn mem_source(&'a self) -> InMemorySourceIteratorWrapper<T> {
+    pub fn mem_source<'a>(&'a self) -> InMemorySourceIteratorWrapper<T> {
         let mut output = InMemorySourceIteratorWrapper { specs: Vec::new() };
 
         for memory_id in self.config.get_memory_ids() {
@@ -1124,16 +1210,15 @@ where
     }
 }
 
-impl<'a, T> Source<'a, KV<String, T>>
+impl<T> Source<KV<String, T>>
 where
     T: Send + Sync + 'static,
 {
-    pub fn mem_table_source(&'a self) -> InMemoryTableSourceIteratorWrapper<T> {
+    pub fn mem_table_source<'a>(&'a self) -> InMemoryTableSourceIteratorWrapper<T> {
         let mut output = InMemoryTableSourceIteratorWrapper {
             specs: Vec::new(),
             start_key: self.config.get_starting_key().to_string(),
             end_key: self.config.get_ending_key().to_string(),
-            group_by_key: false,
         };
 
         for memory_id in self.config.get_memory_ids() {
@@ -1155,16 +1240,15 @@ where
     }
 }
 
-impl<'a, T> Source<'a, KV<String, Stream<T>>>
+impl<'b, 'c, T> Source<KV<String, Stream<'b, 'c, T>>>
 where
     T: Send + Sync + 'static,
 {
-    pub fn mem_table_grouped_source(&'a self) -> InMemoryTableSourceIteratorWrapper<T> {
+    pub fn mem_table_grouped_source<'a>(&'a self) -> InMemoryTableSourceIteratorWrapper<T> {
         let mut output = InMemoryTableSourceIteratorWrapper {
             specs: Vec::new(),
             start_key: self.config.get_starting_key().to_string(),
             end_key: self.config.get_ending_key().to_string(),
-            group_by_key: true,
         };
 
         for memory_id in self.config.get_memory_ids() {
@@ -1258,19 +1342,11 @@ impl<T> InMemoryTableSourceIteratorWrapper<T> {
                 })
                 .collect(),
             heap: BinaryHeap::new(),
-            group_by_key: self.group_by_key,
-            current_group: String::new(),
         };
 
         for (idx, iter) in iterator.iters.iter_mut().enumerate() {
             if let Some(kv) = iter.next() {
                 iterator.heap.push(KV(kv, idx));
-            }
-        }
-
-        if iterator.group_by_key {
-            if let Some(s) = iterator.heap.peek() {
-                iterator.current_group = (s.0).0.to_string();
             }
         }
 

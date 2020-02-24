@@ -1,7 +1,6 @@
 extern crate plume;
 use plume::EmitFn;
 use plume::PCollection;
-use plume::PTable;
 use plume::Stream;
 use plume::KV;
 
@@ -16,12 +15,12 @@ impl plume::DoFn for Do1 {
 }
 
 struct Do2 {}
-impl plume::DoFn for Do2 {
-    type Input = KV<String, Stream<u8>>;
+impl plume::DoStreamFn for Do2 {
+    type Input = u8;
     type Output = KV<String, u32>;
-    fn do_it(&self, input: &KV<String, Stream<u8>>, emit: &mut dyn EmitFn<Self::Output>) {
+    fn do_it(&self, key: &str, values: &Stream<u8>, emit: &mut dyn EmitFn<Self::Output>) {
         println!("DoFn2: got a real stream");
-        emit.emit(KV::new(input.key().clone(), 5));
+        emit.emit(KV::new(key.to_string(), 5));
     }
 }
 
@@ -44,8 +43,8 @@ impl plume::JoinFn for MyJoinFn {
 
 fn main() {
     let p = PCollection::<u64>::from_vec(vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
-    let o1 = p.par_do(Do1 {}).group_by_key();
-    let mut o2 = o1.par_do(Do2 {});
+    let o1 = p.par_do(Do1 {});
+    let mut o2 = o1.group_by_key_and_par_do(Do2 {});
     //let o2 = p.par_do(Do2 {});
     //let joined = o1.join(o2, MyJoinFn {});
     //let output = joined.group_by_key();
