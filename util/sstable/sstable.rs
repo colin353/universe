@@ -497,7 +497,7 @@ impl<'a, T: Serializable + Default> ShardedSSTableReader<T> {
             output.append(&mut shard.get_shard_boundaries(target_shard_count));
         }
 
-        compact_shards(output, target_shard_count)
+        shard_lib::compact_shards(output, target_shard_count)
     }
 
     pub fn next(&mut self) -> Option<(String, T)> {
@@ -811,41 +811,6 @@ mod index {
             false => None,
         }
     }
-}
-
-fn compact_shards(data: Vec<String>, target_shard_count: usize) -> Vec<String> {
-    let mut output = data;
-    output.sort();
-    output.dedup();
-    if output.len() <= target_shard_count {
-        return output;
-    }
-
-    let mut num_to_mark = output.len() - target_shard_count;
-    let mut inverted = true;
-    if output.len() > 2 * target_shard_count {
-        inverted = false;
-        num_to_mark = output.len() - num_to_mark;
-    }
-
-    let mut i = 0;
-    let mut retained = 0;
-    let mut num_to_jump = output.len() / num_to_mark;
-    output.retain(|_| {
-        i += 1;
-        let should_retain = (i % (num_to_jump) == 0) ^ inverted;
-
-        if should_retain {
-            if retained == target_shard_count {
-                return false;
-            }
-            retained += 1;
-            return true;
-        }
-
-        false
-    });
-    output
 }
 
 pub fn mem_sstable(data: Vec<(String, u64)>) -> SSTableReader<Primitive<u64>> {
@@ -1456,38 +1421,5 @@ mod tests {
         ];
 
         assert_eq!(index::get_shard_boundaries(&index, 5), expected);
-    }
-
-    #[test]
-    fn test_compact_shards() {
-        let pointers = vec![
-            String::from("a"),
-            String::from("b"),
-            String::from("c"),
-            String::from("d"),
-            String::from("e"),
-            String::from("f"),
-            String::from("g"),
-            String::from("h"),
-            String::from("i"),
-        ];
-
-        let expected = vec![String::from("c"), String::from("f"), String::from("i")];
-
-        assert_eq!(compact_shards(pointers, 3), expected);
-    }
-
-    #[test]
-    fn test_compact_shards_2() {
-        let pointers = vec![
-            String::from("a"),
-            String::from("b"),
-            String::from("c"),
-            String::from("d"),
-        ];
-
-        let expected = vec![String::from("a"), String::from("b"), String::from("c")];
-
-        assert_eq!(compact_shards(pointers, 3), expected);
     }
 }
