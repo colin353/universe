@@ -39,6 +39,7 @@ fn reserve_id() -> u64 {
 
 pub trait InMemoryPCollectionWrapper: Send + Sync {
     fn len(&self) -> usize;
+    fn keyranges(&self, target_shards: usize) -> Vec<String>;
 }
 
 impl InMemoryPCollectionWrapper {
@@ -69,6 +70,16 @@ where
     fn len(&self) -> usize {
         self.data.len()
     }
+
+    fn keyranges(&self, target_shards: usize) -> Vec<String> {
+        (1..(target_shards))
+            .map(|i| {
+                self.data[i * self.data.len() / target_shards]
+                    .key()
+                    .to_string()
+            })
+            .collect()
+    }
 }
 
 impl<T> InMemoryPCollectionWrapper for InMemoryPCollectionUnderlying<T>
@@ -77,6 +88,10 @@ where
 {
     fn len(&self) -> usize {
         self.data.len()
+    }
+
+    fn keyranges(&self, target_shard: usize) -> Vec<String> {
+        Vec::new()
     }
 }
 
@@ -271,6 +286,7 @@ where
         config.set_filename(filename.to_string());
         config.set_resolved(true);
         config.set_format(DataFormat::SSTABLE);
+        config.set_is_ptable(true);
 
         PCollection {
             underlying: Arc::new(PCollectionUnderlying::<KV<String, V>> {
@@ -290,6 +306,7 @@ where
         let mut config = PCollectionProto::new();
         config.set_format(DataFormat::IN_MEMORY);
         config.set_resolved(true);
+        config.set_is_ptable(true);
 
         for data in datas {
             let memory_id = reserve_id();
@@ -364,20 +381,6 @@ where
         }
 
         STAGES.write().unwrap().append(&mut self.stages());
-    }
-
-    pub fn group_by_key(&self) -> PCollection<KV<String, Stream<V>>> {
-        let mut config = self.underlying.proto.clone();
-        config.set_group_by_key(true);
-
-        PCollection {
-            underlying: Arc::new(PCollectionUnderlying::<KV<String, Stream<V>>> {
-                id: AtomicU64::new(0),
-                dependency: self.underlying.dependency.clone(),
-                proto: config,
-                _marker: std::marker::PhantomData {},
-            }),
-        }
     }
 }
 
@@ -506,14 +509,6 @@ impl<'a, 'b, T> Stream<'a, 'b, T> {
             current_key: current_key,
         }
     }
-
-    fn kick(&mut self) {
-        // Exhaust the iterator
-        self.count();
-
-        // Load the next key
-        self.current_key = self.iter.peek().map(|x| x.0.to_string());
-    }
 }
 
 impl<'a, 'b, T> Iterator for Stream<'a, 'b, T> {
@@ -566,7 +561,12 @@ pub struct DoStreamFnWrapper<T1, T2> {
 pub trait DoStreamFn: Send + Sync {
     type Input;
     type Output;
-    fn do_it(&self, key: &str, values: &Stream<Self::Input>, emit: &mut dyn EmitFn<Self::Output>);
+    fn do_it(
+        &self,
+        key: &str,
+        values: &mut Stream<Self::Input>,
+        emit: &mut dyn EmitFn<Self::Output>,
+    );
 }
 
 impl<T1, T2> PFn for DoStreamFnWrapper<T1, T2>
@@ -587,11 +587,12 @@ where
 
     default fn execute(&self, shard: &Shard) {
         for input in shard.get_inputs() {
-            let source = Source::<KV<String, T1>>::new(input.clone());
-            let mut sink = make_sink::<T2>(shard.get_outputs());
+            let source = Source::<KV<String, Stream<'_, '_, T1>>>::new(input.clone());
+            let producer = SinkProducer::<T2>::new();
+            let mut sink = producer.make_sink(shard.get_outputs());
             {
                 let sink_ref: &mut dyn EmitFn<T2> = &mut *sink;
-                let s = source.mem_source();
+                let s = source.mem_table_grouped_source();
                 let mut iter = s.iter();
                 let mut dyn_iterator: &mut dyn Iterator<Item = &KV<String, T1>> = &mut iter;
                 let mut peekable = dyn_iterator.peekable();
@@ -603,7 +604,7 @@ where
                     };
                     {
                         let mut s = Stream::new(&mut peekable);
-                        self.function.do_it(&key, &s, sink_ref);
+                        self.function.do_it(&key, &mut s, sink_ref);
                         s.count();
                     }
                 }
@@ -632,7 +633,8 @@ where
     default fn execute(&self, shard: &Shard) {
         for input in shard.get_inputs() {
             let source = Source::<T1>::new(input.clone());
-            let mut sink = make_sink::<T2>(shard.get_outputs());
+            let producer = SinkProducer::<T2>::new();
+            let mut sink = producer.make_sink(shard.get_outputs());
             {
                 let sink_ref: &mut dyn EmitFn<T2> = &mut *sink;
                 for item in &mut source.mem_source().iter() {
@@ -652,7 +654,8 @@ where
     default fn execute(&self, shard: &Shard) {
         for input in shard.get_inputs() {
             let source = Source::<KV<String, T1>>::new(input.clone());
-            let mut sink = make_sink::<T2>(shard.get_outputs());
+            let producer = SinkProducer::<T2>::new();
+            let mut sink = producer.make_sink(shard.get_outputs());
             {
                 let sink_ref: &mut dyn EmitFn<T2> = &mut *sink;
 
@@ -894,6 +897,25 @@ impl Planner {
                 .collect();
         }
 
+        if input.get_format() == DataFormat::IN_MEMORY && input.get_is_ptable() {
+            println!("planning ptable ({} shards)", target_shards);
+            let mut results = Vec::new();
+            let mut boundaries = Self::shard_memtable(input, target_shards);
+            boundaries.push(String::new());
+            boundaries.insert(0, String::new());
+
+            for window in boundaries.windows(2) {
+                let mut out = input.clone();
+                out.set_starting_key(window[0].to_string());
+                out.set_ending_key(window[1].to_string());
+                println!("shard `{}` --> `{}`", window[0], window[1]);
+                results.push(out);
+            }
+
+            println!("planned input: {:?}", results);
+            return results;
+        }
+
         if input.get_format() == DataFormat::IN_MEMORY {
             let input_shards = input.get_memory_ids().len();
 
@@ -943,6 +965,22 @@ impl Planner {
         Vec::new()
     }
 
+    fn shard_memtable(input: &PCollectionProto, target_shards: usize) -> Vec<String> {
+        let memory_id = input.get_memory_ids()[0];
+        let mem_reader = IN_MEMORY_DATASETS.read().unwrap();
+        let mut shard_boundaries = Vec::new();
+        for memory_id in input.get_memory_ids() {
+            shard_boundaries.append(
+                &mut mem_reader
+                    .get(&memory_id)
+                    .unwrap()
+                    .data
+                    .keyranges(target_shards),
+            );
+        }
+        shard_lib::compact_shards(shard_boundaries, target_shards - 1)
+    }
+
     fn split_memshard(input: &PCollectionProto, target_shards: usize) -> Vec<PCollectionProto> {
         let memory_id = input.get_memory_ids()[0];
         let mem_reader = IN_MEMORY_DATASETS.read().unwrap();
@@ -963,22 +1001,60 @@ impl Planner {
     }
 }
 
-fn make_sink<T>(outputs: &[PCollectionProto]) -> Box<dyn EmitFn<T>>
+struct SinkProducer<T> {
+    _marker: std::marker::PhantomData<T>,
+}
+
+impl<T> SinkProducer<T> {
+    fn new() -> Self {
+        Self {
+            _marker: std::marker::PhantomData {},
+        }
+    }
+}
+
+trait SinkProducerTrait<T> {
+    fn make_sink(&self, outputs: &[PCollectionProto]) -> Box<dyn EmitFn<T>>;
+}
+
+impl<T> SinkProducerTrait<T> for SinkProducer<T>
 where
     T: Send + Sync + 'static,
 {
-    if outputs.len() == 0 {
-        panic!("Can't make a sink from zero outputs");
-    }
+    default fn make_sink(&self, outputs: &[PCollectionProto]) -> Box<dyn EmitFn<T>> {
+        if outputs.len() == 0 {
+            panic!("Can't make a sink from zero outputs");
+        }
 
-    if outputs[0].get_format() == DataFormat::IN_MEMORY {
-        return Box::new(MemorySink::new(outputs));
-    }
+        if outputs[0].get_format() == DataFormat::IN_MEMORY {
+            return Box::new(MemorySink::new(outputs));
+        }
 
-    panic!(
-        "I don't know how to make a sink for {:?}",
-        outputs[0].get_format()
-    );
+        panic!(
+            "I don't know how to make a sink for {:?}",
+            outputs[0].get_format()
+        );
+    }
+}
+
+impl<T> SinkProducerTrait<KV<String, T>> for SinkProducer<KV<String, T>>
+where
+    T: Send + Sync + 'static,
+{
+    fn make_sink(&self, outputs: &[PCollectionProto]) -> Box<dyn EmitFn<KV<String, T>>> {
+        if outputs.len() == 0 {
+            panic!("Can't make a sink from zero outputs");
+        }
+
+        if outputs[0].get_format() == DataFormat::IN_MEMORY {
+            return Box::new(OrderedMemorySink::<T>::new(outputs));
+        }
+
+        panic!(
+            "I don't know how to make a sink for {:?}",
+            outputs[0].get_format()
+        );
+    }
 }
 
 struct MemorySink<T> {
@@ -1090,6 +1166,7 @@ where
             let mut config = pcoll_write.get_mut(&self.config.get_id()).unwrap();
             config.mut_memory_ids().push(id);
             config.set_format(self.config.get_format());
+            config.set_is_ptable(true);
             config.set_resolved(true);
         }
     }
@@ -1120,6 +1197,7 @@ where
     pub fn finish(mut self) {
         if self.config.get_format() == DataFormat::IN_MEMORY {
             let id = reserve_id();
+            println!("finished (regular)");
 
             IN_MEMORY_DATASETS
                 .write()
@@ -1180,10 +1258,6 @@ where
             config: config,
             _marker: std::marker::PhantomData {},
         }
-    }
-
-    pub fn is_grouped_by_key(&self) -> bool {
-        self.config.get_group_by_key()
     }
 
     pub fn mem_source<'a>(&'a self) -> InMemorySourceIteratorWrapper<T> {
@@ -1250,6 +1324,10 @@ where
             start_key: self.config.get_starting_key().to_string(),
             end_key: self.config.get_ending_key().to_string(),
         };
+        println!(
+            "constructed grouped source: `{}` --> `{}`",
+            output.start_key, output.end_key
+        );
 
         for memory_id in self.config.get_memory_ids() {
             let data = {
