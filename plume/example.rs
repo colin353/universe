@@ -33,8 +33,8 @@ impl plume::DoFn for Do3 {
     type Input = KV<String, u32>;
     type Output = KV<String, u32>;
     fn do_it(&self, input: &KV<String, u32>, emit: &mut dyn EmitFn<Self::Output>) {
-        println!("identity map: {}", input.key());
-        emit.emit(KV::new(input.key().to_string(), 0));
+        println!("identity map: {} --> {}", input.key(), input.value());
+        emit.emit(KV::new(input.key().to_string(), *input.value()));
     }
 }
 

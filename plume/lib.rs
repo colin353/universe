@@ -9,6 +9,7 @@ extern crate lazy_static;
 
 use plume_proto_rust::*;
 
+use std::cmp::{Ordering, Reverse};
 use std::collections::{BinaryHeap, HashMap};
 use std::iter::Peekable;
 use std::ops::Bound::*;
@@ -421,7 +422,6 @@ pub fn update_stage(stage: &mut Stage) {
 
 pub fn run() {
     let mut stages = STAGES.read().unwrap().clone();
-    println!("input: {} stages", stages.len());
     let mut completed = std::collections::HashSet::new();
     let planner = Planner::new();
     loop {
@@ -1131,9 +1131,35 @@ where
     }
 }
 
+struct MinHeap<T>(BinaryHeap<Reverse<T>>);
+
+impl<T> MinHeap<T>
+where
+    T: Ord,
+{
+    pub fn new() -> Self {
+        MinHeap(BinaryHeap::new())
+    }
+
+    pub fn pop(&mut self) -> Option<T> {
+        match self.0.pop() {
+            Some(Reverse(out)) => Some(out),
+            None => None,
+        }
+    }
+
+    pub fn push(&mut self, v: T) {
+        self.0.push(Reverse(v));
+    }
+
+    pub fn into_iter_sorted(self) -> impl Iterator<Item = T> {
+        self.0.into_iter_sorted().map(|Reverse(x)| x)
+    }
+}
+
 struct OrderedMemorySinkSingleOutput<T> {
     config: PCollectionProto,
-    output: BinaryHeap<KV<String, T>>,
+    output: MinHeap<KV<String, T>>,
 }
 
 impl<T> OrderedMemorySinkSingleOutput<T>
@@ -1142,7 +1168,7 @@ where
 {
     fn new(config: &PCollectionProto) -> Self {
         Self {
-            output: BinaryHeap::new(),
+            output: MinHeap::new(),
             config: config.clone(),
         }
     }
@@ -1246,7 +1272,7 @@ struct InMemoryTableSourceIteratorWrapper<T> {
 
 struct InMemoryTableSourceIterator<'a, T> {
     iters: Vec<std::slice::Iter<'a, KV<String, T>>>,
-    heap: BinaryHeap<KV<&'a KV<String, T>, usize>>,
+    heap: MinHeap<KV<&'a KV<String, T>, usize>>,
 }
 
 impl<T> Source<T>
@@ -1404,7 +1430,12 @@ impl<T> InMemoryTableSourceIteratorWrapper<T> {
                         0
                     } else {
                         x.data
-                            .binary_search_by_key(&self.start_key.as_str(), |kv| &kv.0)
+                            .binary_search_by(|kv| {
+                                if &kv.0.as_str() >= &self.start_key.as_str() {
+                                    return Ordering::Greater;
+                                }
+                                Ordering::Less
+                            })
                             .unwrap_or_else(|e| e)
                     };
 
@@ -1412,14 +1443,19 @@ impl<T> InMemoryTableSourceIteratorWrapper<T> {
                         x.data.len()
                     } else {
                         x.data
-                            .binary_search_by_key(&self.end_key.as_str(), |kv| &kv.0)
+                            .binary_search_by(|kv| {
+                                if &kv.0.as_str() > &self.end_key.as_str() {
+                                    return Ordering::Greater;
+                                }
+                                Ordering::Less
+                            })
                             .unwrap_or_else(|e| e)
                     };
 
                     x.data[start_bound..end_bound].iter()
                 })
                 .collect(),
-            heap: BinaryHeap::new(),
+            heap: MinHeap::new(),
         };
 
         for (idx, iter) in iterator.iters.iter_mut().enumerate() {
