@@ -254,6 +254,48 @@ where
 
         output
     }
+
+    pub fn into_vec(self) -> Arc<Vec<T>> {
+        let reg = PCOLLECTION_REGISTRY.read().unwrap();
+        let latest_pcoll = reg.get(&self.underlying.id.load(ORDER)).expect(&format!(
+            "Couldn't find pcollection {}??",
+            self.underlying.proto.get_id()
+        ));
+        if !latest_pcoll.get_resolved() {
+            panic!("Can't run .into_vec() on a dataset that has not yet been computed",);
+        }
+        if latest_pcoll.get_memory_ids().len() != 1 {
+            panic!(
+                "I don't know how to run .into_vec() on a dataset with {} shards",
+                latest_pcoll.get_memory_ids().len()
+            );
+        }
+        let memory_id = latest_pcoll.get_memory_ids()[0];
+        let guard = IN_MEMORY_DATASETS.read().unwrap();
+        let dataset = guard
+            .get(&memory_id)
+            .expect(&format!("Failed to look up data in id={}", &memory_id));
+        let pcoll: Arc<dyn InMemoryPCollectionWrapper> = dataset.data.clone();
+        let data: &InMemoryPCollectionUnderlying<T> =
+            pcoll.downcast_ref().expect("failed to downcast!");
+
+        return data.data.clone();
+    }
+
+    pub fn write_to_vec(&mut self) {
+        if !self.underlying.proto.get_filename().is_empty()
+            || self.underlying.proto.get_format() != DataFormat::UNKNOWN
+        {
+            panic!("This ptable is already being written to disk!");
+        }
+        {
+            let mut_underlying = Arc::get_mut(&mut self.underlying).unwrap();
+            mut_underlying.proto.set_format(DataFormat::IN_MEMORY);
+            mut_underlying.proto.set_target_memory_shards(1);
+        }
+
+        STAGES.write().unwrap().append(&mut self.stages());
+    }
 }
 
 impl<K, V> PCollection<(K, V)>
@@ -337,48 +379,6 @@ where
             let mut_underlying = Arc::get_mut(&mut self.underlying).unwrap();
             mut_underlying.proto.set_filename(filename.to_string());
             mut_underlying.proto.set_format(DataFormat::SSTABLE);
-        }
-
-        STAGES.write().unwrap().append(&mut self.stages());
-    }
-
-    pub fn into_vec(self) -> Arc<Vec<KV<String, V>>> {
-        let reg = PCOLLECTION_REGISTRY.read().unwrap();
-        let latest_pcoll = reg.get(&self.underlying.id.load(ORDER)).expect(&format!(
-            "Couldn't find pcollection {}??",
-            self.underlying.proto.get_id()
-        ));
-        if !latest_pcoll.get_resolved() {
-            panic!("Can't run .into_vec() on a dataset that has not yet been computed",);
-        }
-        if latest_pcoll.get_memory_ids().len() != 1 {
-            panic!(
-                "I don't know how to run .into_vec() on a dataset with {} shards",
-                latest_pcoll.get_memory_ids().len()
-            );
-        }
-        let memory_id = latest_pcoll.get_memory_ids()[0];
-        let guard = IN_MEMORY_DATASETS.read().unwrap();
-        let dataset = guard
-            .get(&memory_id)
-            .expect(&format!("Failed to look up data in id={}", &memory_id));
-        let pcoll: Arc<dyn InMemoryPCollectionWrapper> = dataset.data.clone();
-        let data: &InMemoryPCollectionUnderlying<KV<String, V>> =
-            pcoll.downcast_ref().expect("failed to downcast!");
-
-        return data.data.clone();
-    }
-
-    pub fn write_to_vec(&mut self) {
-        if !self.underlying.proto.get_filename().is_empty()
-            || self.underlying.proto.get_format() != DataFormat::UNKNOWN
-        {
-            panic!("This ptable is already being written to disk!");
-        }
-        {
-            let mut_underlying = Arc::get_mut(&mut self.underlying).unwrap();
-            mut_underlying.proto.set_format(DataFormat::IN_MEMORY);
-            mut_underlying.proto.set_target_memory_shards(1);
         }
 
         STAGES.write().unwrap().append(&mut self.stages());

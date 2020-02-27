@@ -41,3 +41,9 @@ rust_test(
     name = "plume_test",
     crate = ":plume",
 )
+
+rust_test(
+    name = "tests",
+    srcs = ["tests.rs"],
+    deps = [":plume"],
+)
