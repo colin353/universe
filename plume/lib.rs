@@ -15,8 +15,7 @@ use std::iter::Peekable;
 use std::ops::Bound::*;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, AtomicU64};
-use std::sync::Arc;
-use std::sync::RwLock;
+use std::sync::{Arc, Mutex, RwLock};
 
 static ORDER: std::sync::atomic::Ordering = std::sync::atomic::Ordering::Relaxed;
 static LAST_ID: AtomicU64 = AtomicU64::new(1);
@@ -32,6 +31,7 @@ lazy_static! {
     static ref IN_MEMORY_DATASETS: RwLock<HashMap<u64, InMemoryPCollection>> =
         { RwLock::new(HashMap::new()) };
     static ref STAGES: RwLock<Vec<Stage>> = { RwLock::new(Vec::new()) };
+    pub static ref RUNLOCK: Arc<Mutex<bool>> = { Arc::new(Mutex::new(false)) };
 }
 
 fn reserve_id() -> u64 {
@@ -132,7 +132,7 @@ pub struct PCollection<T> {
     underlying: Arc<PCollectionUnderlying<T>>,
 }
 
-pub type PTable<T1, T2> = PCollection<(T1, T2)>;
+pub type PTable<T1, T2> = PCollection<KV<T1, T2>>;
 
 pub struct PCollectionUnderlying<T> {
     id: AtomicU64,
@@ -298,14 +298,13 @@ where
     }
 }
 
-impl<K, V> PCollection<(K, V)>
+impl<V> PCollection<KV<String, V>>
 where
-    K: 'static + Send + Sync,
     V: 'static + Send + Sync,
 {
-    pub fn join<V2, O, JoinType>(self, right: PTable<K, V2>, f: JoinType) -> PCollection<O>
+    pub fn join<V2, O, JoinType>(self, right: PTable<String, V2>, f: JoinType) -> PCollection<O>
     where
-        JoinType: JoinFn<Key = K, ValueLeft = V, ValueRight = V2, Output = O> + 'static,
+        JoinType: JoinFn<ValueLeft = V, ValueRight = V2, Output = O> + 'static,
         V2: 'static + Send + Sync,
         O: 'static + Send + Sync,
     {
@@ -462,6 +461,18 @@ pub fn run() {
     }
 }
 
+pub fn cleanup() {
+    let mut stages = STAGES.write().unwrap();
+    stages.clear();
+    let mut pfns = PFN_REGISTRY.write().unwrap();
+    pfns.clear();
+    let mut pcolls = PCOLLECTION_REGISTRY.write().unwrap();
+    pcolls.clear();
+    let mut data = IN_MEMORY_DATASETS.write().unwrap();
+    data.clear();
+    LAST_ID.store(1, ORDER);
+}
+
 pub fn execute_shard(shard: &Shard) {
     let pfn = PFN_REGISTRY
         .read()
@@ -482,10 +493,10 @@ pub trait EmitFn<T> {
     fn finish(self: Box<Self>);
 }
 
-pub struct JoinFnWrapper<K, V1, V2, O> {
-    dependency_left: Arc<PCollection<(K, V1)>>,
-    dependency_right: Arc<PCollection<(K, V2)>>,
-    function: Box<JoinFn<Key = K, ValueLeft = V1, ValueRight = V2, Output = O>>,
+pub struct JoinFnWrapper<V1, V2, O> {
+    dependency_left: Arc<PTable<String, V1>>,
+    dependency_right: Arc<PTable<String, V2>>,
+    function: Box<JoinFn<ValueLeft = V1, ValueRight = V2, Output = O>>,
 }
 
 pub struct Stream<'a, 'b, T> {
@@ -531,15 +542,14 @@ impl<'a, 'b, T> Iterator for Stream<'a, 'b, T> {
 }
 
 pub trait JoinFn: Send + Sync {
-    type Key;
     type ValueLeft;
     type ValueRight;
     type Output;
     fn join(
         &self,
-        key: Self::Key,
-        left: Stream<Self::ValueLeft>,
-        right: Stream<Self::ValueRight>,
+        key: &str,
+        left: &mut Stream<Self::ValueLeft>,
+        right: &mut Stream<Self::ValueRight>,
         emit: &mut dyn EmitFn<Self::Output>,
     );
 }
@@ -668,9 +678,14 @@ where
     }
 }
 
-impl<K, V1, V2, O> PFn for JoinFnWrapper<K, V1, V2, O>
+enum JoinTask {
+    Left,
+    Right,
+    Both,
+}
+
+impl<V1, V2, O> PFn for JoinFnWrapper<V1, V2, O>
 where
-    K: 'static + Send + Sync,
     V1: 'static + Send + Sync,
     V2: 'static + Send + Sync,
     O: 'static + Send + Sync,
@@ -689,7 +704,95 @@ where
     }
 
     fn execute(&self, shard: &Shard) {
-        println!("JoinFn: execute {:?}", shard);
+        if shard.get_inputs().len() != 2 {
+            panic!(
+                "I don't know how to join {} inputs!",
+                shard.get_inputs().len()
+            );
+        }
+        let left = &shard.get_inputs()[0];
+        let right = &shard.get_inputs()[1];
+
+        let source_left = Source::<KV<String, Stream<'_, '_, V1>>>::new(left.clone());
+        let source_right = Source::<KV<String, Stream<'_, '_, V2>>>::new(right.clone());
+        let producer = SinkProducer::<O>::new();
+        let mut sink = producer.make_sink(shard.get_outputs());
+        {
+            let sink_ref: &mut dyn EmitFn<O> = &mut *sink;
+
+            let s_left = source_left.mem_table_grouped_source();
+            let mut left_iter = s_left.iter();
+            let mut dyn_left_iter: &mut dyn Iterator<Item = &KV<String, V1>> = &mut left_iter;
+            let mut peekable_left = dyn_left_iter.peekable();
+
+            let mut empty_left = InMemoryTableSourceIteratorWrapper::<V1>::empty();
+            let mut empty_left_iter = empty_left.iter();
+            let mut dyn_left_empty: &mut dyn Iterator<Item = &KV<String, V1>> =
+                &mut empty_left_iter;
+            let mut peekable_left_empty = dyn_left_empty.peekable();
+
+            let s_right = source_right.mem_table_grouped_source();
+            let mut right_iter = s_right.iter();
+            let mut dyn_right_iter: &mut dyn Iterator<Item = &KV<String, V2>> = &mut right_iter;
+            let mut peekable_right = dyn_right_iter.peekable();
+
+            let mut empty_right = InMemoryTableSourceIteratorWrapper::<V2>::empty();
+            let mut empty_right_iter = empty_right.iter();
+            let mut dyn_right_empty: &mut dyn Iterator<Item = &KV<String, V2>> =
+                &mut empty_right_iter;
+            let mut peekable_right_empty = dyn_right_empty.peekable();
+
+            loop {
+                let mut key;
+                let mut task = match (peekable_left.peek(), peekable_right.peek()) {
+                    (Some(l), Some(r)) => {
+                        if l.key() == r.key() {
+                            key = l.key().to_string();
+                            JoinTask::Both
+                        } else if l.key() < r.key() {
+                            key = l.key().to_string();
+                            JoinTask::Left
+                        } else {
+                            key = r.key().to_string();
+                            JoinTask::Right
+                        }
+                    }
+                    (Some(l), None) => {
+                        key = l.key().to_string();
+                        JoinTask::Both
+                    }
+                    (None, Some(r)) => {
+                        key = r.key().to_string();
+                        JoinTask::Both
+                    }
+                    (None, None) => break,
+                };
+
+                match task {
+                    JoinTask::Both => {
+                        let mut s_l = Stream::new(&mut peekable_left);
+                        let mut s_r = Stream::new(&mut peekable_right);
+                        self.function.join(&key, &mut s_l, &mut s_r, sink_ref);
+                        s_l.count();
+                        s_r.count();
+                    }
+                    JoinTask::Right => {
+                        let mut s_l = Stream::new(&mut peekable_left_empty);
+                        let mut s_r = Stream::new(&mut peekable_right);
+                        self.function.join(&key, &mut s_l, &mut s_r, sink_ref);
+                        s_r.count();
+                    }
+                    JoinTask::Left => {
+                        let mut s_l = Stream::new(&mut peekable_left);
+                        let mut s_r = Stream::new(&mut peekable_right_empty);
+                        self.function.join(&key, &mut s_l, &mut s_r, sink_ref);
+                        s_l.count();
+                    }
+                }
+            }
+
+            sink.finish();
+        }
     }
 }
 
@@ -730,19 +833,17 @@ impl Planner {
         // Now let's try to construct the input specifications
         let mut shards = Vec::new();
 
-        if stage.get_inputs().len() != 1 {
+        if stage.get_inputs().len() > 2 {
             panic!(
                 "I don't know how to plan for {} inputs",
                 stage.get_inputs().len()
             );
         }
 
-        let input = &stage.get_inputs()[0];
-
         if output.get_format() == DataFormat::UNKNOWN {
             // If the output is not defined, we should decide what to use. If the
             // data is not too big, we will keep it in memory, else write to disk
-            let size = Self::estimate_size(&input);
+            let size = Self::estimate_size(stage.get_inputs());
             if self.keep_in_memory(size) {
                 output.set_format(DataFormat::IN_MEMORY);
             } else {
@@ -750,7 +851,7 @@ impl Planner {
             }
         }
 
-        let sharded_inputs = self.shard_inputs(&input, target_shards);
+        let sharded_inputs = self.shard_inputs(stage.get_inputs(), target_shards);
         let sharded_outputs = self.shard_output(&output, target_shards);
 
         if sharded_inputs.len() != sharded_outputs.len() {
@@ -761,11 +862,13 @@ impl Planner {
             );
         }
 
-        for (shard_input, shard_output) in
+        for (shard_inputs, shard_output) in
             sharded_inputs.into_iter().zip(sharded_outputs.into_iter())
         {
             let mut shard = Shard::new();
-            shard.mut_inputs().push(shard_input);
+            for shard_input in shard_inputs {
+                shard.mut_inputs().push(shard_input);
+            }
             shard.set_function(stage.get_function().clone());
             shard.mut_outputs().push(shard_output);
 
@@ -845,16 +948,18 @@ impl Planner {
         true
     }
 
-    pub fn estimate_size(input: &PCollectionProto) -> SizeEstimate {
+    pub fn estimate_size(inputs: &[PCollectionProto]) -> SizeEstimate {
         let mut out = SizeEstimate::new();
-        if input.get_format() == DataFormat::IN_MEMORY {
-            let mut count = 0;
-            for memory_id in input.get_memory_ids() {
-                let mem_reader = IN_MEMORY_DATASETS.read().unwrap();
-                count += mem_reader.get(memory_id).unwrap().len();
+        let mut count = 0;
+        for input in inputs {
+            if input.get_format() == DataFormat::IN_MEMORY {
+                for memory_id in input.get_memory_ids() {
+                    let mem_reader = IN_MEMORY_DATASETS.read().unwrap();
+                    count += mem_reader.get(memory_id).unwrap().len();
+                }
             }
-            out.set_records(count as u64);
         }
+        out.set_records(count as u64);
         out
     }
 
@@ -881,42 +986,55 @@ impl Planner {
 
     fn shard_inputs(
         &self,
-        input: &PCollectionProto,
+        inputs: &[PCollectionProto],
         target_shards: usize,
-    ) -> Vec<PCollectionProto> {
+    ) -> Vec<Vec<PCollectionProto>> {
+        if inputs.len() == 0 {
+            panic!("Can't shard with zero inputs!");
+        }
+
         // RecordIO doesn't support keyrange sharding, so we have to just use whatever sharding
         // strategy was present on the input.
-        if input.get_format() == DataFormat::RECORDIO {
+        if inputs[0].get_format() == DataFormat::RECORDIO {
+            if inputs.len() > 1 {
+                panic!("Can't have multiple RECORDIO inputs!");
+            }
+            let input = &inputs[0];
             return shard_lib::unshard(input.get_filename())
                 .iter()
                 .map(|f| {
                     let mut s = input.clone();
                     s.set_filename(f.to_string());
-                    s
+                    vec![s]
                 })
                 .collect();
         }
 
-        if input.get_format() == DataFormat::IN_MEMORY && input.get_is_ptable() {
+        if inputs[0].get_format() == DataFormat::IN_MEMORY && inputs[0].get_is_ptable() {
             println!("planning ptable ({} shards)", target_shards);
-            let mut results = Vec::new();
-            let mut boundaries = Self::shard_memtable(input, target_shards);
+            let mut boundaries = Self::shard_memtables(inputs, target_shards);
             boundaries.push(String::new());
             boundaries.insert(0, String::new());
 
+            let mut results = Vec::new();
             for window in boundaries.windows(2) {
-                let mut out = input.clone();
-                out.set_starting_key(window[0].to_string());
-                out.set_ending_key(window[1].to_string());
-                println!("shard `{}` --> `{}`", window[0], window[1]);
-                results.push(out);
+                let mut shard = Vec::new();
+                for input in inputs {
+                    let mut out = input.clone();
+                    out.set_starting_key(window[0].to_string());
+                    out.set_ending_key(window[1].to_string());
+                    shard.push(out);
+                }
+                results.push(shard);
             }
-
-            println!("planned input: {:?}", results);
             return results;
         }
 
-        if input.get_format() == DataFormat::IN_MEMORY {
+        if inputs[0].get_format() == DataFormat::IN_MEMORY {
+            if inputs.len() > 1 {
+                panic!("I don't know how to shard multiple non-ptable inputs!");
+            }
+            let input = &inputs[0];
             let input_shards = input.get_memory_ids().len();
 
             // If we want to expand the number of shards, we should split the
@@ -937,7 +1055,7 @@ impl Planner {
                         (target_shards / input_shards) + extra,
                     ));
                 }
-                return output;
+                return output.into_iter().map(|x| vec![x]).collect();
             }
 
             // We have more shards than we want, so we need to group them.
@@ -956,7 +1074,7 @@ impl Planner {
                 for memory_id in 0..num_to_take {
                     s.mut_memory_ids().push(*memory_id_iter.next().unwrap());
                 }
-                output.push(s);
+                output.push(vec![s]);
             }
 
             return output;
@@ -965,18 +1083,19 @@ impl Planner {
         Vec::new()
     }
 
-    fn shard_memtable(input: &PCollectionProto, target_shards: usize) -> Vec<String> {
-        let memory_id = input.get_memory_ids()[0];
+    fn shard_memtables(inputs: &[PCollectionProto], target_shards: usize) -> Vec<String> {
         let mem_reader = IN_MEMORY_DATASETS.read().unwrap();
         let mut shard_boundaries = Vec::new();
-        for memory_id in input.get_memory_ids() {
-            shard_boundaries.append(
-                &mut mem_reader
-                    .get(&memory_id)
-                    .unwrap()
-                    .data
-                    .keyranges(target_shards),
-            );
+        for input in inputs {
+            for memory_id in input.get_memory_ids() {
+                shard_boundaries.append(
+                    &mut mem_reader
+                        .get(&memory_id)
+                        .unwrap()
+                        .data
+                        .keyranges(target_shards),
+                );
+            }
         }
         shard_lib::compact_shards(shard_boundaries, target_shards - 1)
     }
@@ -1420,6 +1539,14 @@ where
 impl<K, V> Eq for KV<K, V> where K: Eq {}
 
 impl<T> InMemoryTableSourceIteratorWrapper<T> {
+    pub fn empty() -> InMemoryTableSourceIteratorWrapper<T> {
+        InMemoryTableSourceIteratorWrapper {
+            specs: Vec::new(),
+            start_key: String::new(),
+            end_key: String::new(),
+        }
+    }
+
     pub fn iter<'a>(&'a self) -> InMemoryTableSourceIterator<'a, T> {
         let mut iterator = InMemoryTableSourceIterator {
             iters: self
@@ -1541,9 +1668,9 @@ mod tests {
         let planner = Planner::new();
         assert_eq!(
             planner
-                .shard_inputs(&input, 10)
+                .shard_inputs(&[input], 10)
                 .iter()
-                .map(|x| x.get_filename())
+                .map(|x| x[0].get_filename())
                 .collect::<Vec<_>>(),
             vec![
                 "/tmp/data.recordio-00000-of-00002",
@@ -1558,9 +1685,9 @@ mod tests {
         let planner = Planner::new();
         assert_eq!(
             planner
-                .shard_inputs(&p.underlying.proto, 10)
+                .shard_inputs(&[p.underlying.proto.clone()], 10)
                 .iter()
-                .map(|x| (x.get_starting_index(), x.get_ending_index()))
+                .map(|x| (x[0].get_starting_index(), x[0].get_ending_index()))
                 .collect::<Vec<_>>(),
             vec![(0, 1), (1, 2), (2, 3), (3, 0)]
         );
@@ -1572,9 +1699,9 @@ mod tests {
         let planner = Planner::new();
         assert_eq!(
             planner
-                .shard_inputs(&p.underlying.proto, 2)
+                .shard_inputs(&[p.underlying.proto.clone()], 2)
                 .iter()
-                .map(|x| (x.get_starting_index(), x.get_ending_index()))
+                .map(|x| (x[0].get_starting_index(), x[0].get_ending_index()))
                 .collect::<Vec<_>>(),
             vec![(0, 5), (5, 0)]
         );
@@ -1590,9 +1717,9 @@ mod tests {
         let planner = Planner::new();
         assert_eq!(
             planner
-                .shard_inputs(&p.underlying.proto, 2)
+                .shard_inputs(&[p.underlying.proto.clone()], 2)
                 .iter()
-                .map(|x| (x.get_memory_ids().len()))
+                .map(|x| (x[0].get_memory_ids().len()))
                 .collect::<Vec<_>>(),
             vec![2, 1]
         );

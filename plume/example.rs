@@ -40,15 +40,14 @@ impl plume::DoFn for Do3 {
 
 struct MyJoinFn {}
 impl plume::JoinFn for MyJoinFn {
-    type Key = String;
     type ValueLeft = f64;
     type ValueRight = u8;
     type Output = KV<String, String>;
     fn join(
         &self,
-        key: String,
-        left: Stream<f64>,
-        right: Stream<u8>,
+        key: &str,
+        left: &mut Stream<f64>,
+        right: &mut Stream<u8>,
         emit: &mut dyn EmitFn<KV<String, String>>,
     ) {
         emit.emit(KV::new(String::from("1"), String::from("aaa")));
