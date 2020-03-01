@@ -2,12 +2,15 @@
 #![feature(binary_heap_into_iter_sorted)]
 
 extern crate plume_proto_rust;
+extern crate primitive;
 extern crate shard_lib;
+extern crate sstable;
 
 #[macro_use]
 extern crate lazy_static;
 
 use plume_proto_rust::*;
+use primitive::Serializable;
 
 use std::cmp::{Ordering, Reverse};
 use std::collections::{BinaryHeap, HashMap};
@@ -19,6 +22,7 @@ use std::sync::{Arc, Mutex, RwLock};
 
 static ORDER: std::sync::atomic::Ordering = std::sync::atomic::Ordering::Relaxed;
 static LAST_ID: AtomicU64 = AtomicU64::new(1);
+static MAX_SSTABLE_HEAP_SIZE: usize = 1000 * 1000 * 1000;
 
 static TARGET_SHARDS: usize = 2;
 static IN_MEMORY_RECORD_THRESHOLD: u64 = 1000 * 1000;
@@ -902,9 +906,18 @@ impl Planner {
                     target_shards
                 );
             }
-            for filename in shard_lib::unshard(&sharded_filename) {
+            for (index, filename) in shard_lib::unshard(&sharded_filename)
+                .into_iter()
+                .enumerate()
+            {
                 let mut s = output.clone();
                 s.set_filename(filename);
+                s.set_temporary_path(format!(
+                    "{}/{}/{}",
+                    self.temp_data_folder,
+                    output.get_id(),
+                    index
+                ));
                 shards.push(s);
             }
 
@@ -1169,10 +1182,73 @@ where
             return Box::new(OrderedMemorySink::<T>::new(outputs));
         }
 
+        /*if outputs[0].get_format() == DataFormat::SSTABLE {
+            return Box::new(SSTableSink::<T>::new(outputs));
+        }*/
+
         panic!(
             "I don't know how to make a sink for {:?}",
             outputs[0].get_format()
         );
+    }
+}
+
+struct SSTableSink<T> {
+    configs: Vec<PCollectionProto>,
+    heap: MinHeap<KV<String, T>>,
+    sstables_written: Vec<String>,
+}
+
+impl<T> SSTableSink<T>
+where
+    T: Serializable + Default,
+{
+    pub fn new(configs: &[PCollectionProto]) -> Self {
+        if configs.len() == 0 {
+            panic!("Can't construct SSTable sink with zero outputs!");
+        }
+        Self {
+            configs: configs.to_vec(),
+            sstables_written: Vec::new(),
+            heap: MinHeap::new(),
+        }
+    }
+
+    pub fn get_filename(idx: usize, path: &str) -> String {
+        format!("{}/{}.sstable", path, idx)
+    }
+
+    pub fn flush(&mut self) {
+        std::fs::create_dir_all(self.configs[0].get_temporary_path()).unwrap();
+        let path = Self::get_filename(
+            self.sstables_written.len(),
+            self.configs[0].get_temporary_path(),
+        );
+        self.sstables_written.push(path.clone());
+        let file = std::fs::File::open(path).unwrap();
+        let mut writer = std::io::BufWriter::new(file);
+        let mut builder = sstable::SSTableBuilder::new(&mut writer);
+        while let Some(KV(key, value)) = self.heap.pop() {
+            builder.write_ordered(&key, value);
+        }
+        builder.finish().unwrap();
+    }
+}
+
+impl<T> EmitFn<KV<String, T>> for SSTableSink<T>
+where
+    T: Serializable + Default + Send + Sync + 'static,
+{
+    fn emit(&mut self, value: KV<String, T>) {
+        self.heap.push(value);
+
+        if self.heap.len() > MAX_SSTABLE_HEAP_SIZE {
+            self.flush();
+        }
+    }
+
+    fn finish(mut self: Box<Self>) {
+        self.flush();
     }
 }
 
@@ -1258,6 +1334,10 @@ where
 {
     pub fn new() -> Self {
         MinHeap(BinaryHeap::new())
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
     }
 
     pub fn pop(&mut self) -> Option<T> {

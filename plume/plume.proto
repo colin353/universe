@@ -35,6 +35,10 @@ message PCollectionProto {
 
   // Whether the PCollection is a PTable
   bool is_ptable = 12;
+
+  // A temporary directory to use before writing the final
+  // output.
+  string temporary_path = 13;
 }
 
 message PFnProto {
