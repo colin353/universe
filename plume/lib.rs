@@ -1,5 +1,6 @@
 #![feature(specialization)]
 #![feature(binary_heap_into_iter_sorted)]
+#![feature(trait_alias)]
 
 extern crate plume_proto_rust;
 extern crate primitive;
@@ -8,6 +9,8 @@ extern crate sstable;
 
 #[macro_use]
 extern crate lazy_static;
+
+pub use primitive::{Primitive, PrimitiveType};
 
 use plume_proto_rust::*;
 use primitive::Serializable;
@@ -37,6 +40,8 @@ lazy_static! {
     static ref STAGES: RwLock<Vec<Stage>> = { RwLock::new(Vec::new()) };
     pub static ref RUNLOCK: Arc<Mutex<bool>> = { Arc::new(Mutex::new(false)) };
 }
+
+pub trait PlumeTrait = Send + Sync + Serializable + 'static;
 
 fn reserve_id() -> u64 {
     LAST_ID.fetch_add(1, ORDER)
@@ -70,7 +75,7 @@ pub struct InMemoryPTableUnderlying<T> {
 
 impl<T> InMemoryPCollectionWrapper for InMemoryPTableUnderlying<T>
 where
-    T: Send + Sync + 'static,
+    T: PlumeTrait + Default,
 {
     fn len(&self) -> usize {
         self.data.len()
@@ -107,7 +112,7 @@ pub struct InMemoryPCollection {
 impl InMemoryPCollection {
     pub fn from_vec<T>(data: Vec<T>) -> Self
     where
-        T: Send + Sync + 'static,
+        T: PlumeTrait + Default,
     {
         Self {
             data: Arc::new(InMemoryPCollectionUnderlying {
@@ -118,7 +123,7 @@ impl InMemoryPCollection {
 
     pub fn from_table<T>(data: Vec<KV<String, T>>) -> Self
     where
-        T: Send + Sync + 'static,
+        T: PlumeTrait + Default,
     {
         Self {
             data: Arc::new(InMemoryPTableUnderlying {
@@ -147,7 +152,7 @@ pub struct PCollectionUnderlying<T> {
 
 impl<T> PCollection<T>
 where
-    T: 'static + Send + Sync,
+    T: PlumeTrait + Default,
 {
     fn new() -> Self {
         Self {
@@ -206,7 +211,7 @@ where
     pub fn par_do<O, DoType>(&self, f: DoType) -> PCollection<O>
     where
         DoType: DoFn<Input = T, Output = O> + 'static,
-        O: 'static + Send + Sync,
+        O: PlumeTrait + Default,
     {
         let mut out: PCollection<O> = PCollection::<O>::new();
         Arc::get_mut(&mut out.underlying).unwrap().dependency = Some(Arc::new(DoFnWrapper {
@@ -302,15 +307,34 @@ where
     }
 }
 
+impl<T> PCollection<Primitive<T>>
+where
+    T: PrimitiveType,
+    Primitive<T>: PlumeTrait + Default,
+{
+    pub fn from_primitive_vec(data: Vec<T>) -> Self {
+        let converted: Vec<Primitive<T>> = data.into_iter().map(|x| x.into()).collect();
+        Self::from_vec(converted)
+    }
+
+    pub fn from_primitive_vecs(data: Vec<Vec<T>>) -> Self {
+        let converted: Vec<Vec<Primitive<T>>> = data
+            .into_iter()
+            .map(|x| x.into_iter().map(|y| y.into()).collect())
+            .collect();
+        Self::from_vecs(converted)
+    }
+}
+
 impl<V> PCollection<KV<String, V>>
 where
-    V: 'static + Send + Sync,
+    V: PlumeTrait + Default,
 {
     pub fn join<V2, O, JoinType>(self, right: PTable<String, V2>, f: JoinType) -> PCollection<O>
     where
         JoinType: JoinFn<ValueLeft = V, ValueRight = V2, Output = O> + 'static,
-        V2: 'static + Send + Sync,
-        O: 'static + Send + Sync,
+        V2: PlumeTrait + Default,
+        O: PlumeTrait + Default,
     {
         let mut out = PCollection::<O>::new();
         Arc::get_mut(&mut out.underlying).unwrap().dependency = Some(Arc::new(JoinFnWrapper {
@@ -324,8 +348,8 @@ where
 
 impl<V> PCollection<KV<String, V>>
 where
-    V: 'static + Send + Sync,
-    KV<String, V>: 'static + Send + Sync,
+    V: PlumeTrait + Default,
+    KV<String, V>: PlumeTrait + Default,
 {
     pub fn from_sstable(filename: &str) -> Self {
         let mut config = PCollectionProto::new();
@@ -390,13 +414,13 @@ where
 
 impl<'a, 'b, V> PCollection<KV<String, V>>
 where
-    V: 'static + Send + Sync,
-    KV<String, Stream<'a, 'b, V>>: 'static + Send + Sync,
+    V: PlumeTrait + Default,
+    KV<String, Stream<'a, 'b, V>>: Send + Sync + 'static,
 {
     pub fn group_by_key_and_par_do<O, DoType>(&self, f: DoType) -> PCollection<O>
     where
         DoType: DoStreamFn<Input = V, Output = O> + 'static,
-        O: 'static + Send + Sync,
+        O: PlumeTrait + Default,
     {
         let mut out: PCollection<O> = PCollection::<O>::new();
         Arc::get_mut(&mut out.underlying).unwrap().dependency = Some(Arc::new(DoStreamFnWrapper {
@@ -585,8 +609,8 @@ pub trait DoStreamFn: Send + Sync {
 
 impl<T1, T2> PFn for DoStreamFnWrapper<T1, T2>
 where
-    T1: 'static + Send + Sync,
-    T2: 'static + Send + Sync,
+    T1: PlumeTrait + Default,
+    T2: PlumeTrait + Default,
 {
     fn stages(&self, id: u64) -> (Stage, Vec<Stage>) {
         let dep_stages = self.dependency.stages();
@@ -630,8 +654,8 @@ where
 
 impl<T1, T2> PFn for DoFnWrapper<T1, T2>
 where
-    T1: 'static + Send + Sync,
-    T2: 'static + Send + Sync,
+    T1: PlumeTrait + Default,
+    T2: PlumeTrait + Default,
 {
     fn stages(&self, id: u64) -> (Stage, Vec<Stage>) {
         let dep_stages = self.dependency.stages();
@@ -662,8 +686,8 @@ where
 
 impl<T1, T2> PFn for DoFnWrapper<KV<String, T1>, T2>
 where
-    T1: 'static + Send + Sync,
-    T2: 'static + Send + Sync,
+    T1: PlumeTrait + Default,
+    T2: PlumeTrait + Default,
 {
     default fn execute(&self, shard: &Shard) {
         for input in shard.get_inputs() {
@@ -690,9 +714,9 @@ enum JoinTask {
 
 impl<V1, V2, O> PFn for JoinFnWrapper<V1, V2, O>
 where
-    V1: 'static + Send + Sync,
-    V2: 'static + Send + Sync,
-    O: 'static + Send + Sync,
+    V1: PlumeTrait + Default,
+    V2: PlumeTrait + Default,
+    O: PlumeTrait + Default,
 {
     fn stages(&self, id: u64) -> (Stage, Vec<Stage>) {
         let mut s = Stage::new();
@@ -1151,7 +1175,7 @@ trait SinkProducerTrait<T> {
 
 impl<T> SinkProducerTrait<T> for SinkProducer<T>
 where
-    T: Send + Sync + 'static,
+    T: PlumeTrait + Default,
 {
     default fn make_sink(&self, outputs: &[PCollectionProto]) -> Box<dyn EmitFn<T>> {
         if outputs.len() == 0 {
@@ -1171,7 +1195,7 @@ where
 
 impl<T> SinkProducerTrait<KV<String, T>> for SinkProducer<KV<String, T>>
 where
-    T: Send + Sync + 'static,
+    T: PlumeTrait + Default,
 {
     fn make_sink(&self, outputs: &[PCollectionProto]) -> Box<dyn EmitFn<KV<String, T>>> {
         if outputs.len() == 0 {
@@ -1182,9 +1206,9 @@ where
             return Box::new(OrderedMemorySink::<T>::new(outputs));
         }
 
-        /*if outputs[0].get_format() == DataFormat::SSTABLE {
+        if outputs[0].get_format() == DataFormat::SSTABLE {
             return Box::new(SSTableSink::<T>::new(outputs));
-        }*/
+        }
 
         panic!(
             "I don't know how to make a sink for {:?}",
@@ -1201,7 +1225,7 @@ struct SSTableSink<T> {
 
 impl<T> SSTableSink<T>
 where
-    T: Serializable + Default,
+    T: PlumeTrait + Default,
 {
     pub fn new(configs: &[PCollectionProto]) -> Self {
         if configs.len() == 0 {
@@ -1237,7 +1261,7 @@ where
 
 impl<T> EmitFn<KV<String, T>> for SSTableSink<T>
 where
-    T: Serializable + Default + Send + Sync + 'static,
+    T: PlumeTrait + Default,
 {
     fn emit(&mut self, value: KV<String, T>) {
         self.heap.push(value);
@@ -1249,6 +1273,13 @@ where
 
     fn finish(mut self: Box<Self>) {
         self.flush();
+        let outputs: Vec<_> = self
+            .configs
+            .iter()
+            .map(|c| c.get_filename().to_owned())
+            .collect();
+
+        sstable::reshard(&self.sstables_written, &outputs);
     }
 }
 
@@ -1264,7 +1295,7 @@ struct OrderedMemorySink<T> {
 
 impl<T> EmitFn<KV<String, T>> for OrderedMemorySink<T>
 where
-    T: Send + Sync + 'static,
+    T: PlumeTrait + Default,
 {
     fn emit(&mut self, value: KV<String, T>) {
         let idx = self.write_count % self.outputs.len();
@@ -1281,7 +1312,7 @@ where
 
 impl<T> OrderedMemorySink<T>
 where
-    T: Send + Sync + 'static,
+    T: PlumeTrait + Default,
 {
     pub fn new(outputs: &[PCollectionProto]) -> Self {
         Self {
@@ -1296,7 +1327,7 @@ where
 
 impl<T> EmitFn<T> for MemorySink<T>
 where
-    T: Send + Sync + 'static,
+    T: PlumeTrait + Default,
 {
     fn finish(self: Box<Self>) {
         for out in self.outputs {
@@ -1313,7 +1344,7 @@ where
 
 impl<T> MemorySink<T>
 where
-    T: Send + Sync + 'static,
+    T: PlumeTrait + Default,
 {
     pub fn new(outputs: &[PCollectionProto]) -> Self {
         Self {
@@ -1363,7 +1394,7 @@ struct OrderedMemorySinkSingleOutput<T> {
 
 impl<T> OrderedMemorySinkSingleOutput<T>
 where
-    T: Send + Sync + 'static,
+    T: PlumeTrait + Default,
 {
     fn new(config: &PCollectionProto) -> Self {
         Self {
@@ -1404,7 +1435,7 @@ struct MemorySinkSingleOutput<T> {
 
 impl<T> MemorySinkSingleOutput<T>
 where
-    T: Send + Sync + 'static,
+    T: PlumeTrait + Default,
 {
     pub fn new(config: &PCollectionProto) -> Self {
         Self {
@@ -1511,7 +1542,7 @@ where
 
 impl<T> Source<KV<String, T>>
 where
-    T: Send + Sync + 'static,
+    T: PlumeTrait + Default,
 {
     pub fn mem_table_source<'a>(&'a self) -> InMemoryTableSourceIteratorWrapper<T> {
         let mut output = InMemoryTableSourceIteratorWrapper {
@@ -1541,7 +1572,7 @@ where
 
 impl<'b, 'c, T> Source<KV<String, Stream<'b, 'c, T>>>
 where
-    T: Send + Sync + 'static,
+    T: PlumeTrait + Default,
 {
     pub fn mem_table_grouped_source<'a>(&'a self) -> InMemoryTableSourceIteratorWrapper<T> {
         let mut output = InMemoryTableSourceIteratorWrapper {
@@ -1617,6 +1648,28 @@ where
 }
 
 impl<K, V> Eq for KV<K, V> where K: Eq {}
+
+impl<K, V> Serializable for KV<K, V>
+where
+    V: Serializable,
+{
+    fn write(&self, write: &mut std::io::Write) -> std::io::Result<u64> {
+        Ok(0)
+    }
+    fn read_from_bytes(&mut self, buffer: &[u8]) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+impl<K, V> Default for KV<K, V>
+where
+    K: Default,
+    V: Default,
+{
+    fn default() -> Self {
+        KV(Default::default(), Default::default())
+    }
+}
 
 impl<T> InMemoryTableSourceIteratorWrapper<T> {
     pub fn empty() -> InMemoryTableSourceIteratorWrapper<T> {
@@ -1761,7 +1814,7 @@ mod tests {
 
     #[test]
     fn test_shard_in_memory() {
-        let p = PCollection::<u64>::from_vec(vec![1, 2, 3, 4]);
+        let p = PCollection::<Primitive<u64>>::from_primitive_vec(vec![1, 2, 3, 4]);
         let planner = Planner::new();
         assert_eq!(
             planner
@@ -1775,7 +1828,8 @@ mod tests {
 
     #[test]
     fn test_shard_in_memory_2() {
-        let p = PCollection::<u64>::from_vec(vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+        let p =
+            PCollection::<Primitive<u64>>::from_primitive_vec(vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
         let planner = Planner::new();
         assert_eq!(
             planner
@@ -1789,7 +1843,7 @@ mod tests {
 
     #[test]
     fn test_shard_in_memory_3() {
-        let p = PCollection::<u64>::from_vecs(vec![
+        let p = PCollection::<Primitive<u64>>::from_primitive_vecs(vec![
             vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
             vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
             vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
@@ -1832,14 +1886,15 @@ mod tests {
         planner.target_shards = 10;
 
         let mut stage = Stage::new();
-        let p_in = PCollection::<u64>::from_vecs(vec![
+        let p_in = PCollection::<Primitive<u64>>::from_primitive_vecs(vec![
             vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
             vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
             vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
         ]);
         stage.mut_inputs().push(p_in.underlying.proto.clone());
 
-        let p_out = PCollection::<KV<String, u64>>::from_sstable("/data/output.sstable@5");
+        let p_out =
+            PCollection::<KV<String, Primitive<u64>>>::from_sstable("/data/output.sstable@5");
         stage.mut_outputs().push(p_out.underlying.proto.clone());
 
         let shards = planner.plan(&stage);

@@ -18,7 +18,7 @@ pub trait Serializable {
 
 // Wrapper for primitive types, so they can be serialized using a standard
 // method.
-#[derive(Eq, Debug)]
+#[derive(Clone, Copy, Eq, Debug)]
 pub struct Primitive<N>(pub N);
 
 pub trait PrimitiveType {}
@@ -27,15 +27,6 @@ impl PrimitiveType for i64 {}
 impl PrimitiveType for f64 {}
 impl PrimitiveType for String {}
 impl PrimitiveType for Vec<u8> {}
-
-impl<T> Clone for Primitive<T>
-where
-    T: Clone + PrimitiveType,
-{
-    fn clone(&self) -> Self {
-        Primitive::from(self.0.clone())
-    }
-}
 
 impl<T: PrimitiveType> From<T> for Primitive<T> {
     fn from(x: T) -> Self {
