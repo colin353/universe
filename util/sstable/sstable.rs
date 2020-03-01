@@ -285,7 +285,8 @@ impl<T: Serializable + Default> SSTableReader<T> {
 
     pub fn from_filename(filename: &str) -> io::Result<SSTableReader<T>> {
         let f = File::open(filename).unwrap();
-        SSTableReader::new(Box::new(f))
+        let r = std::io::BufReader::new(f);
+        SSTableReader::new(Box::new(r))
     }
 
     fn seek_to_min_key(&mut self, key: &str) -> io::Result<()> {
@@ -466,8 +467,12 @@ impl<'a, T: Serializable + Default> ShardedSSTableReader<T> {
         }
     }
 
-    pub fn from_filename(filename: &str, min_key: &str, max_key: String) -> io::Result<Self> {
-        let (successes, failures): (Vec<_>, Vec<_>) = shard_lib::unshard(filename)
+    pub fn from_filenames(
+        filenames: &[String],
+        min_key: &str,
+        max_key: String,
+    ) -> io::Result<Self> {
+        let (successes, failures): (Vec<_>, Vec<_>) = filenames
             .iter()
             .map(|f| SSTableReader::from_filename(f))
             .partition(Result::is_ok);
@@ -489,6 +494,11 @@ impl<'a, T: Serializable + Default> ShardedSSTableReader<T> {
         };
         reader.seek(min_key);
         Ok(reader)
+    }
+
+    pub fn from_filename(filename: &str, min_key: &str, max_key: String) -> io::Result<Self> {
+        let filenames = shard_lib::unshard(filename);
+        Self::from_filenames(&filenames, min_key, max_key)
     }
 
     pub fn get_shard_boundaries(&self, target_shard_count: usize) -> Vec<String> {
@@ -826,10 +836,144 @@ pub fn mem_sstable(data: Vec<(String, u64)>) -> SSTableReader<Primitive<u64>> {
     SSTableReader::<Primitive<u64>>::new(Box::new(d)).unwrap()
 }
 
+#[derive(PartialEq, Debug)]
+pub enum ReshardTask {
+    Split(String, Vec<String>),
+    Copy(String, String),
+    Merge(Vec<String>, String),
+}
+
+pub fn plan_reshard(sources: &[String], sinks: &[String]) -> Vec<ReshardTask> {
+    let reversed = sinks.len() > sources.len();
+    let (from, to) = if reversed {
+        (sinks, sources)
+    } else {
+        (sources, sinks)
+    };
+
+    let mut links = Vec::new();
+    for _ in to {
+        links.push(Vec::new());
+    }
+
+    for (index, f) in from.iter().enumerate() {
+        links[index % to.len()].push(f.to_string());
+    }
+
+    let mut plans = Vec::new();
+    for (x, ys) in to.iter().zip(links.into_iter()) {
+        if reversed {
+            if ys.len() == 1 {
+                plans.push(ReshardTask::Copy(x.into(), ys[0].clone()));
+            } else {
+                plans.push(ReshardTask::Split(x.into(), ys));
+            }
+        } else {
+            if ys.len() == 1 {
+                plans.push(ReshardTask::Copy(ys[0].clone(), x.into()));
+            } else {
+                plans.push(ReshardTask::Merge(ys, x.into()));
+            }
+        }
+    }
+    plans
+}
+
+pub fn execute_reshard_task(task: ReshardTask) {
+    match task {
+        ReshardTask::Copy(from, to) => {
+            std::fs::copy(from, to).unwrap();
+        }
+        ReshardTask::Split(from, to) => {
+            let reader = SSTableReader::<Primitive<Vec<u8>>>::from_filename(&from).unwrap();
+            let mut boundaries = reader.get_shard_boundaries(to.len());
+            let mut source = reader.peekable();
+            boundaries.push(String::new());
+            for (boundary, to_filename) in boundaries.iter().zip(to.iter()) {
+                let f = std::fs::File::open(to_filename).unwrap();
+                let mut w = std::io::BufWriter::new(f);
+                let mut builder = SSTableBuilder::<Primitive<Vec<u8>>>::new(&mut w);
+
+                loop {
+                    if let Some((k, _)) = source.peek() {
+                        if !boundary.is_empty() && k > boundary {
+                            break;
+                        }
+                    } else {
+                        break;
+                    }
+                    let (k, v) = source.next().unwrap();
+                    builder.write_ordered(&k, v);
+                }
+
+                builder.finish();
+            }
+        }
+        ReshardTask::Merge(from, to) => {
+            let mut reader = ShardedSSTableReader::<Primitive<Vec<u8>>>::from_filenames(
+                &from,
+                "",
+                String::new(),
+            )
+            .unwrap();
+            let f = std::fs::File::open(to).unwrap();
+            let mut w = std::io::BufWriter::new(f);
+            let mut builder = SSTableBuilder::new(&mut w);
+            for (k, v) in reader {
+                builder.write_ordered(&k, v);
+            }
+            builder.finish();
+        }
+    }
+}
+
+pub fn reshard(from: &[String], to: &[String]) {
+    for task in plan_reshard(from, to) {
+        execute_reshard_task(task);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::io::Seek;
+
+    #[test]
+    fn test_reshard_planning() {
+        let from = vec!["a.sstable".into(), "b.sstable".into()];
+        let to = vec![
+            "x0.sstable".into(),
+            "x1.sstable".into(),
+            "x2.sstable".into(),
+        ];
+
+        let expected = vec![
+            ReshardTask::Split(
+                "a.sstable".into(),
+                vec!["x0.sstable".into(), "x2.sstable".into()],
+            ),
+            ReshardTask::Copy("b.sstable".into(), "x1.sstable".into()),
+        ];
+
+        let plans = plan_reshard(&from, &to);
+
+        assert_eq!(plans, expected);
+    }
+
+    #[test]
+    fn test_reshard_planning_2() {
+        let from = vec!["a.sstable".into(), "b.sstable".into(), "c.sstable".into()];
+        let to = vec!["x.sstable".into()];
+
+        let expected = vec![ReshardTask::Merge(
+            vec!["a.sstable".into(), "b.sstable".into(), "c.sstable".into()],
+            "x.sstable".into(),
+        )];
+
+        let plans = plan_reshard(&from, &to);
+
+        assert_eq!(plans, expected);
+    }
 
     #[test]
     fn construct_sstable_builder() {
