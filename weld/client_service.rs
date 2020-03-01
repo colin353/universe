@@ -312,10 +312,35 @@ impl<C: LargeTableClient> WeldLocalServiceHandler<C> {
                 // If this is a docker image push, there's no need to upload. That
                 // will already have been done by the run command. Just need to collect
                 // the output, which is the tag of the uploaded image.
-                //
-                let tag = match binary_output.trim().split(" ").last() {
-                    Some(t) => t,
-                    None => {
+
+                if !req.get_target().starts_with("//") {
+                    response.set_upload_output(format!(
+                        "I don't know how to get the digest for target `{}`",
+                        req.get_target()
+                    ));
+                    return response;
+                }
+
+                let split_target: Vec<_> = req.get_target()[2..].split(":").collect();
+                if split_target.len() != 2 {
+                    response.set_upload_output(format!(
+                        "I don't know how to get the digest for target `{}`",
+                        req.get_target()
+                    ));
+                    return response;
+                }
+                let path = split_target[0];
+                let ext = split_target[1];
+
+                let tag = match std::fs::read_to_string(format!(
+                    "{}/unsubmitted/{}/bazel-bin/{}/{}.digest",
+                    self.mount_dir,
+                    req.get_change_id(),
+                    path,
+                    ext
+                )) {
+                    Ok(x) => x,
+                    Err(_) => {
                         response.set_upload_output(format!(
                             "Unable to extract docker tag from upload output: `{}`",
                             binary_output
@@ -323,7 +348,8 @@ impl<C: LargeTableClient> WeldLocalServiceHandler<C> {
                         return response;
                     }
                 };
-                response.set_docker_img_tag(tag.to_owned());
+
+                response.set_docker_img_tag(tag);
                 response.set_upload_success(true);
             } else {
                 let name = format!("{:x}{:x}", rand::random::<u64>(), rand::random::<u64>());
