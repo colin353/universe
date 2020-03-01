@@ -67,15 +67,7 @@ fn main() {
     let o1 = p.par_do(Do1 {});
     let o2 = o1.group_by_key_and_par_do(Do2 {});
     let mut o3 = o2.par_do(Do3 {});
-    //let o2 = p.par_do(Do2 {});
-    //let joined = o1.join(o2, MyJoinFn {});
-    //let output = joined.group_by_key();
-    //o2.write_to_sstabe("/home/colin/output.sstable@2");
-    o3.write_to_vec();
-
-    //let t = PCollection::<(String, u64)>::from_table(vec![("A".into(), 1), ("B".into(), 1)]);
+    o3.write_to_sstable("/tmp/output.sstable@2");
 
     plume::run();
-
-    println!("result: {:?}", o3.into_vec());
 }

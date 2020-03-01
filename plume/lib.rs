@@ -1249,7 +1249,7 @@ where
             self.configs[0].get_temporary_path(),
         );
         self.sstables_written.push(path.clone());
-        let file = std::fs::File::open(path).unwrap();
+        let file = std::fs::File::create(path).unwrap();
         let mut writer = std::io::BufWriter::new(file);
         let mut builder = sstable::SSTableBuilder::new(&mut writer);
         while let Some(KV(key, value)) = self.heap.pop() {
