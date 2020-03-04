@@ -2,6 +2,7 @@
 #![feature(binary_heap_into_iter_sorted)]
 #![feature(trait_alias)]
 
+extern crate itertools;
 extern crate plume_proto_rust;
 extern crate primitive;
 extern crate shard_lib;
@@ -12,6 +13,8 @@ extern crate lazy_static;
 
 pub use primitive::{Primitive, PrimitiveType};
 
+use itertools::MinHeap;
+pub use itertools::KV;
 use plume_proto_rust::*;
 use primitive::Serializable;
 
@@ -541,7 +544,7 @@ impl<'a, 'b, T> Stream<'a, 'b, T> {
     fn new(
         iter: &'b mut std::iter::Peekable<&'a mut dyn Iterator<Item = &'a KV<String, T>>>,
     ) -> Self {
-        let current_key = iter.peek().map(|x| x.0.to_string());
+        let current_key = iter.peek().map(|x| x.key().to_string());
 
         Self {
             iter: iter,
@@ -560,8 +563,8 @@ impl<'a, 'b, T> Iterator for Stream<'a, 'b, T> {
         };
 
         if let Some(x) = self.iter.peek() {
-            if &x.0 == key {
-                return self.iter.next().map(|x| &x.1);
+            if x.key() == key {
+                return self.iter.next().map(|x| x.value());
             }
         }
 
@@ -636,7 +639,7 @@ where
                 let mut peekable = dyn_iterator.peekable();
                 loop {
                     let key = if let Some(kv) = peekable.peek() {
-                        kv.0.clone()
+                        kv.key().clone()
                     } else {
                         break;
                     };
@@ -1357,36 +1360,6 @@ where
     }
 }
 
-struct MinHeap<T>(BinaryHeap<Reverse<T>>);
-
-impl<T> MinHeap<T>
-where
-    T: Ord,
-{
-    pub fn new() -> Self {
-        MinHeap(BinaryHeap::new())
-    }
-
-    pub fn len(&self) -> usize {
-        self.0.len()
-    }
-
-    pub fn pop(&mut self) -> Option<T> {
-        match self.0.pop() {
-            Some(Reverse(out)) => Some(out),
-            None => None,
-        }
-    }
-
-    pub fn push(&mut self, v: T) {
-        self.0.push(Reverse(v));
-    }
-
-    pub fn into_iter_sorted(self) -> impl Iterator<Item = T> {
-        self.0.into_iter_sorted().map(|Reverse(x)| x)
-    }
-}
-
 struct OrderedMemorySinkSingleOutput<T> {
     config: PCollectionProto,
     output: MinHeap<KV<String, T>>,
@@ -1404,7 +1377,7 @@ where
     }
 
     fn emit(&mut self, value: KV<String, T>) {
-        self.output.push(KV(value.0, value.1));
+        self.output.push(value);
     }
 
     pub fn finish(mut self) {
@@ -1604,73 +1577,6 @@ where
     }
 }
 
-#[derive(Debug)]
-pub struct KV<K, V>(K, V);
-
-impl<K, V> KV<K, V> {
-    pub fn new(k: K, v: V) -> Self {
-        KV(k, v)
-    }
-
-    pub fn key(&self) -> &K {
-        &self.0
-    }
-    pub fn value(&self) -> &V {
-        &self.1
-    }
-}
-
-impl<K, V> Ord for KV<K, V>
-where
-    K: Ord,
-{
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.0.cmp(&other.0)
-    }
-}
-
-impl<K, V> PartialOrd for KV<K, V>
-where
-    K: Ord,
-{
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.0.cmp(&other.0))
-    }
-}
-
-impl<K, V> PartialEq for KV<K, V>
-where
-    K: Eq,
-{
-    fn eq(&self, other: &Self) -> bool {
-        self.0 == other.0
-    }
-}
-
-impl<K, V> Eq for KV<K, V> where K: Eq {}
-
-impl<K, V> Serializable for KV<K, V>
-where
-    V: Serializable,
-{
-    fn write(&self, write: &mut std::io::Write) -> std::io::Result<u64> {
-        Ok(0)
-    }
-    fn read_from_bytes(&mut self, buffer: &[u8]) -> std::io::Result<()> {
-        Ok(())
-    }
-}
-
-impl<K, V> Default for KV<K, V>
-where
-    K: Default,
-    V: Default,
-{
-    fn default() -> Self {
-        KV(Default::default(), Default::default())
-    }
-}
-
 impl<T> InMemoryTableSourceIteratorWrapper<T> {
     pub fn empty() -> InMemoryTableSourceIteratorWrapper<T> {
         InMemoryTableSourceIteratorWrapper {
@@ -1691,7 +1597,7 @@ impl<T> InMemoryTableSourceIteratorWrapper<T> {
                     } else {
                         x.data
                             .binary_search_by(|kv| {
-                                if &kv.0.as_str() >= &self.start_key.as_str() {
+                                if &kv.key().as_str() >= &self.start_key.as_str() {
                                     return Ordering::Greater;
                                 }
                                 Ordering::Less
@@ -1704,7 +1610,7 @@ impl<T> InMemoryTableSourceIteratorWrapper<T> {
                     } else {
                         x.data
                             .binary_search_by(|kv| {
-                                if &kv.0.as_str() > &self.end_key.as_str() {
+                                if &kv.key().as_str() > &self.end_key.as_str() {
                                     return Ordering::Greater;
                                 }
                                 Ordering::Less
@@ -1720,7 +1626,7 @@ impl<T> InMemoryTableSourceIteratorWrapper<T> {
 
         for (idx, iter) in iterator.iters.iter_mut().enumerate() {
             if let Some(kv) = iter.next() {
-                iterator.heap.push(KV(kv, idx));
+                iterator.heap.push(KV::new(kv, idx));
             }
         }
 
@@ -1775,11 +1681,11 @@ impl<'a, T> Iterator for InMemoryTableSourceIterator<'a, T> {
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(kv) = self.heap.pop() {
-            let idx = kv.1;
-            let output = kv.0;
+            let idx = *kv.value();
+            let output = kv.key();
 
             if let Some(kv) = self.iters[idx].next() {
-                self.heap.push(KV(kv, idx));
+                self.heap.push(KV::new(kv, idx));
             }
 
             return Some(&output);

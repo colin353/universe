@@ -23,6 +23,7 @@ rust_library(
     deps = [
         ":plume_proto_rust",
         "//third_party:lazy_static",
+        "//util/itertools",
         "//util/primitive",
         "//util/shard_lib",
         "//util/sstable",
