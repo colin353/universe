@@ -13,7 +13,7 @@ impl plume::DoFn for Do1 {
     type Output = KV<String, Primitive<u64>>;
     fn do_it(&self, input: &Primitive<u64>, emit: &mut dyn EmitFn<Self::Output>) {
         println!("DoFn: got {:?}", input);
-        emit.emit(KV::new(format!("{:?}", **input), 1.into()));
+        emit.emit(KV::new(format!("{:04}", **input), 1.into()));
     }
 }
 
@@ -63,13 +63,13 @@ impl plume::JoinFn for MyJoinFn {
 }
 
 fn main() {
-    /*    let p = PTable::<String, Primitive<u64>>::from_sstable("/tmp/output.sstable@2");
+    let p = PTable::<String, Primitive<u64>>::from_sstable("/tmp/output.sstable@2");
     let mut o = p.par_do(Do3 {});
     o.write_to_vec();
 
     plume::run();
 
-    return;*/
+    return;
 
     let p = PCollection::<Primitive<u64>>::from_primitive_vec(vec![
         1, 1, 2, 3, 4, 5, 6, 7, 1, 8, 9, 10, 11, 1, 1,

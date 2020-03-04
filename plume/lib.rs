@@ -995,9 +995,10 @@ impl Planner {
                 .enumerate()
             {
                 let mut s = output.clone();
+                s.mut_filenames().clear();
                 s.mut_filenames().push(filename);
                 s.set_temporary_path(format!(
-                    "{}/{}/{}",
+                    "{}{}/{}",
                     self.temp_data_folder,
                     output.get_id(),
                     index
@@ -1020,6 +1021,7 @@ impl Planner {
             }
             for filename in shard_lib::unshard(&sharded_filename) {
                 let mut s = output.clone();
+                s.mut_filenames().clear();
                 s.mut_filenames().push(filename);
                 shards.push(s);
             }
@@ -1115,6 +1117,7 @@ impl Planner {
                 for file in input.get_filenames() {
                     filenames.append(&mut shard_lib::unshard(file));
                 }
+                println!("try to open sharded sstable: {:?}", filenames);
                 let reader = sstable::ShardedSSTableReader::<Primitive<Vec<u8>>>::from_filenames(
                     &filenames,
                     "",
@@ -1164,6 +1167,7 @@ impl Planner {
                     let mut out = input.clone();
                     out.set_starting_key(window[0].to_string());
                     out.set_ending_key(window[1].to_string());
+                    println!("shard: {:?}", out);
                     shard.push(out);
                 }
                 results.push(shard);
@@ -1386,6 +1390,7 @@ where
             .map(|f| f.to_string())
             .collect();
 
+        println!("reshard {:?} -> {:?}", self.sstables_written, outputs);
         sstable::reshard(&self.sstables_written, &outputs);
     }
 }
@@ -1723,7 +1728,7 @@ impl<T> InMemoryTableSourceIteratorWrapper<T> {
                     } else {
                         x.data
                             .binary_search_by(|kv| {
-                                if &kv.key().as_str() > &self.end_key.as_str() {
+                                if &kv.key().as_str() >= &self.end_key.as_str() {
                                     return Ordering::Greater;
                                 }
                                 Ordering::Less

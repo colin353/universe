@@ -48,5 +48,8 @@ rust_test(
 rust_test(
     name = "tests",
     srcs = ["tests.rs"],
-    deps = [":plume"],
+    deps = [
+        ":plume",
+        "//util/sstable",
+    ],
 )

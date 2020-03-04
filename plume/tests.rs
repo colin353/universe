@@ -1,4 +1,6 @@
 extern crate plume;
+extern crate sstable;
+
 use plume::EmitFn;
 use plume::Stream;
 use plume::StreamingIterator;
@@ -66,6 +68,15 @@ impl plume::JoinFn for EmpJoinFn {
             None => return,
         };
         emit.emit(format!("{}, who is a {}", name, job).into());
+    }
+}
+
+struct DoNothingFn {}
+impl plume::DoFn for DoNothingFn {
+    type Input = KV<String, Primitive<String>>;
+    type Output = KV<String, Primitive<String>>;
+    fn do_it(&self, input: &Self::Input, emit: &mut dyn EmitFn<Self::Output>) {
+        emit.emit(KV::new(input.key().to_owned(), input.value().to_owned()));
     }
 }
 
@@ -156,5 +167,34 @@ mod tests {
                 String::from("tim, who is a marketing"),
             ]
         );
+    }
+
+    // This is a very slow test which writes to disk, so let's not turn it on
+    // by default
+    fn test_write_to_disk() {
+        let mut _runlock = plume::RUNLOCK.lock();
+        plume::cleanup();
+
+        std::fs::remove_dir_all("/tmp/test-write-to-disk");
+        std::fs::create_dir_all("/tmp/test-write-to-disk").unwrap();
+
+        {
+            let f = std::fs::File::create("/tmp/test-write-to-disk/input.sstable").unwrap();
+            let mut writer = std::io::BufWriter::new(f);
+            let mut builder = sstable::SSTableBuilder::new(&mut writer);
+
+            for idx in 0..1_000_000 {
+                builder.write_ordered(&format!("{:06}", idx), Primitive::from(String::from("lorem ipsum dolor sit amet, neque porro quisquam est qui dolorem ipsum quia dolor sit amet, consectetur, adipisci velit")));
+            }
+            builder.finish().unwrap();
+        }
+
+        let p = PTable::<String, Primitive<String>>::from_sstable(
+            "/tmp/test-write-to-disk/input.sstable",
+        );
+        let out = p.par_do(DoNothingFn {});
+        out.write_to_sstable("/tmp/test-write-to-disk/output.sstable@2");
+
+        plume::run();
     }
 }
