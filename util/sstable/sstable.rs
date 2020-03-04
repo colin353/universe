@@ -909,7 +909,7 @@ pub fn execute_reshard_task(task: ReshardTask) {
             let mut source = reader.peekable();
             boundaries.push(String::new());
             for (boundary, to_filename) in boundaries.iter().zip(to.iter()) {
-                let f = std::fs::File::open(to_filename).unwrap();
+                let f = std::fs::File::create(to_filename).unwrap();
                 let mut w = std::io::BufWriter::new(f);
                 let mut builder = SSTableBuilder::<Primitive<Vec<u8>>>::new(&mut w);
 

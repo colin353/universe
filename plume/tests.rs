@@ -1,6 +1,7 @@
 extern crate plume;
 use plume::EmitFn;
 use plume::Stream;
+use plume::StreamingIterator;
 use plume::KV;
 use plume::{PCollection, PTable, Primitive};
 
@@ -37,7 +38,7 @@ impl plume::DoStreamFn for GroupSumFn {
         emit: &mut dyn EmitFn<Self::Output>,
     ) {
         let mut sum: u64 = 0;
-        for value in values {
+        while let Some(value) = values.next() {
             sum += **value;
         }
         emit.emit(KV::new(key.to_string(), sum.into()));

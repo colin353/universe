@@ -17,7 +17,7 @@ message SizeEstimate {
 message PCollectionProto {
   uint64 id = 1;
   bool resolved = 2;
-  string filename = 3;
+  repeated string filenames = 3;
   DataFormat format = 4;
   bool group_by_key = 5;
 

@@ -11,6 +11,7 @@ extern crate sstable;
 #[macro_use]
 extern crate lazy_static;
 
+pub use itertools::StreamingIterator;
 pub use primitive::{Primitive, PrimitiveType};
 
 use itertools::MinHeap;
@@ -197,7 +198,7 @@ where
 
     pub fn from_recordio(filename: &str) -> Self {
         let mut config = PCollectionProto::new();
-        config.set_filename(filename.to_string());
+        config.mut_filenames().push(filename.to_string());
         config.set_resolved(true);
         config.set_format(DataFormat::RECORDIO);
 
@@ -295,7 +296,7 @@ where
     }
 
     pub fn write_to_vec(&mut self) {
-        if !self.underlying.proto.get_filename().is_empty()
+        if self.underlying.proto.get_filenames().len() != 0
             || self.underlying.proto.get_format() != DataFormat::UNKNOWN
         {
             panic!("This ptable is already being written to disk!");
@@ -356,7 +357,7 @@ where
 {
     pub fn from_sstable(filename: &str) -> Self {
         let mut config = PCollectionProto::new();
-        config.set_filename(filename.to_string());
+        config.mut_filenames().push(filename.to_string());
         config.set_resolved(true);
         config.set_format(DataFormat::SSTABLE);
         config.set_is_ptable(true);
@@ -400,14 +401,17 @@ where
     }
 
     pub fn write_to_sstable(mut self, filename: &str) {
-        if !self.underlying.proto.get_filename().is_empty()
+        if !self.underlying.proto.get_filenames().len() == 0
             || self.underlying.proto.get_format() != DataFormat::UNKNOWN
         {
             panic!("This ptable is already being written to disk!");
         }
         {
             let mut_underlying = Arc::get_mut(&mut self.underlying).unwrap();
-            mut_underlying.proto.set_filename(filename.to_string());
+            mut_underlying
+                .proto
+                .mut_filenames()
+                .push(filename.to_string());
             mut_underlying.proto.set_format(DataFormat::SSTABLE);
         }
 
@@ -415,10 +419,10 @@ where
     }
 }
 
-impl<'a, 'b, V> PCollection<KV<String, V>>
+impl<'a, V> PCollection<KV<String, V>>
 where
     V: PlumeTrait + Default,
-    KV<String, Stream<'a, 'b, V>>: Send + Sync + 'static,
+    KV<String, Stream<'a, V>>: Send + Sync + 'static,
 {
     pub fn group_by_key_and_par_do<O, DoType>(&self, f: DoType) -> PCollection<O>
     where
@@ -530,21 +534,17 @@ pub struct JoinFnWrapper<V1, V2, O> {
     function: Box<JoinFn<ValueLeft = V1, ValueRight = V2, Output = O>>,
 }
 
-pub struct Stream<'a, 'b, T> {
-    iter: &'b mut std::iter::Peekable<
-        &'a mut (dyn std::iter::Iterator<Item = &'a KV<std::string::String, T>>),
-    >,
+pub struct Stream<'a, T> {
+    iter: &'a mut (dyn StreamingIterator<Item = KV<std::string::String, T>>),
     current_key: Option<String>,
 }
 
-unsafe impl<'a, 'b, T> Send for Stream<'a, 'b, T> where T: Send {}
-unsafe impl<'a, 'b, T> Sync for Stream<'a, 'b, T> where T: Sync {}
+unsafe impl<'a, T> Send for Stream<'a, T> where T: Send {}
+unsafe impl<'a, T> Sync for Stream<'a, T> where T: Sync {}
 
-impl<'a, 'b, T> Stream<'a, 'b, T> {
-    fn new(
-        iter: &'b mut std::iter::Peekable<&'a mut dyn Iterator<Item = &'a KV<String, T>>>,
-    ) -> Self {
-        let current_key = iter.peek().map(|x| x.key().to_string());
+impl<'a, T> Stream<'a, T> {
+    fn new(iter: &'a mut dyn StreamingIterator<Item = KV<String, T>>) -> Self {
+        let current_key = iter.peek().map(|x| x.0.to_string());
 
         Self {
             iter: iter,
@@ -553,10 +553,10 @@ impl<'a, 'b, T> Stream<'a, 'b, T> {
     }
 }
 
-impl<'a, 'b, T> Iterator for Stream<'a, 'b, T> {
-    type Item = &'a T;
+impl<'a, T> StreamingIterator for Stream<'a, T> {
+    type Item = T;
 
-    fn next(&mut self) -> Option<Self::Item> {
+    fn peek(&mut self) -> Option<&Self::Item> {
         let key = match &self.current_key {
             Some(x) => x,
             None => return None,
@@ -565,6 +565,21 @@ impl<'a, 'b, T> Iterator for Stream<'a, 'b, T> {
         if let Some(x) = self.iter.peek() {
             if x.key() == key {
                 return self.iter.next().map(|x| x.value());
+            }
+        }
+
+        None
+    }
+
+    fn next(&mut self) -> Option<&Self::Item> {
+        let key = match &self.current_key {
+            Some(x) => x,
+            None => return None,
+        };
+
+        if let Some(x) = self.iter.peek() {
+            if &x.0 == key {
+                return self.iter.next().map(|x| &x.1);
             }
         }
 
@@ -628,25 +643,51 @@ where
 
     default fn execute(&self, shard: &Shard) {
         for input in shard.get_inputs() {
-            let source = Source::<KV<String, Stream<'_, '_, T1>>>::new(input.clone());
             let producer = SinkProducer::<T2>::new();
             let mut sink = producer.make_sink(shard.get_outputs());
             {
                 let sink_ref: &mut dyn EmitFn<T2> = &mut *sink;
-                let s = source.mem_table_grouped_source();
-                let mut iter = s.iter();
-                let mut dyn_iterator: &mut dyn Iterator<Item = &KV<String, T1>> = &mut iter;
-                let mut peekable = dyn_iterator.peekable();
-                loop {
-                    let key = if let Some(kv) = peekable.peek() {
-                        kv.key().clone()
-                    } else {
-                        break;
-                    };
-                    {
-                        let mut s = Stream::new(&mut peekable);
-                        self.function.do_it(&key, &mut s, sink_ref);
-                        s.count();
+
+                match input.get_format() {
+                    DataFormat::IN_MEMORY => {
+                        let source = Source::<KV<String, Stream<'_, T1>>>::new(input.clone());
+                        let s = source.mem_table_grouped_source();
+                        let mut iter = s.iter();
+                        let mut dyn_iterator: &mut dyn StreamingIterator<Item = KV<String, T1>> =
+                            &mut iter;
+                        loop {
+                            let key = if let Some(kv) = dyn_iterator.peek() {
+                                kv.0.clone()
+                            } else {
+                                break;
+                            };
+                            {
+                                let mut s = Stream::new(dyn_iterator);
+                                self.function.do_it(&key, &mut s, sink_ref);
+                                s.count();
+                            }
+                        }
+                    }
+                    DataFormat::SSTABLE => {
+                        let source = Source::<KV<String, T1>>::new(input.clone());
+                        let mut iter = source.sstable_source();
+                        let mut dyn_iterator: &mut dyn StreamingIterator<Item = KV<String, T1>> =
+                            &mut iter;
+                        loop {
+                            let key = if let Some(kv) = dyn_iterator.peek() {
+                                kv.0.clone()
+                            } else {
+                                break;
+                            };
+                            {
+                                let mut s = Stream::new(dyn_iterator);
+                                self.function.do_it(&key, &mut s, sink_ref);
+                                s.count();
+                            }
+                        }
+                    }
+                    x => {
+                        panic!("I don't know how to read input type {:?}!", x);
                     }
                 }
             }
@@ -678,7 +719,9 @@ where
             let mut sink = producer.make_sink(shard.get_outputs());
             {
                 let sink_ref: &mut dyn EmitFn<T2> = &mut *sink;
-                for item in &mut source.mem_source().iter() {
+                let mut memsource = source.mem_source();
+                let mut source_iter = memsource.iter();
+                while let Some(item) = source_iter.next() {
                     self.function.do_it(item, sink_ref);
                 }
             }
@@ -700,8 +743,24 @@ where
             {
                 let sink_ref: &mut dyn EmitFn<T2> = &mut *sink;
 
-                for item in &mut source.mem_table_source().iter() {
-                    self.function.do_it(item, sink_ref);
+                match input.get_format() {
+                    DataFormat::IN_MEMORY => {
+                        let memtable = source.mem_table_source();
+                        let mut iter = memtable.iter();
+                        while let Some(item) = iter.next() {
+                            self.function.do_it(item, sink_ref);
+                        }
+                    }
+                    DataFormat::SSTABLE => {
+                        let mut iter = source.sstable_source();
+                        while let Some((key, value)) = iter.next() {
+                            let kv = KV(key, value);
+                            self.function.do_it(&kv, sink_ref);
+                        }
+                    }
+                    x => {
+                        panic!("I don't know how to execute with source type: {:?}", x);
+                    }
                 }
             }
             sink.finish();
@@ -744,8 +803,8 @@ where
         let left = &shard.get_inputs()[0];
         let right = &shard.get_inputs()[1];
 
-        let source_left = Source::<KV<String, Stream<'_, '_, V1>>>::new(left.clone());
-        let source_right = Source::<KV<String, Stream<'_, '_, V2>>>::new(right.clone());
+        let source_left = Source::<KV<String, Stream<'_, V1>>>::new(left.clone());
+        let source_right = Source::<KV<String, Stream<'_, V2>>>::new(right.clone());
         let producer = SinkProducer::<O>::new();
         let mut sink = producer.make_sink(shard.get_outputs());
         {
@@ -753,29 +812,27 @@ where
 
             let s_left = source_left.mem_table_grouped_source();
             let mut left_iter = s_left.iter();
-            let mut dyn_left_iter: &mut dyn Iterator<Item = &KV<String, V1>> = &mut left_iter;
-            let mut peekable_left = dyn_left_iter.peekable();
+            let mut dyn_left_iter: &mut dyn StreamingIterator<Item = KV<String, V1>> =
+                &mut left_iter;
 
             let mut empty_left = InMemoryTableSourceIteratorWrapper::<V1>::empty();
             let mut empty_left_iter = empty_left.iter();
-            let mut dyn_left_empty: &mut dyn Iterator<Item = &KV<String, V1>> =
+            let mut dyn_left_empty: &mut dyn StreamingIterator<Item = KV<String, V1>> =
                 &mut empty_left_iter;
-            let mut peekable_left_empty = dyn_left_empty.peekable();
 
             let s_right = source_right.mem_table_grouped_source();
             let mut right_iter = s_right.iter();
-            let mut dyn_right_iter: &mut dyn Iterator<Item = &KV<String, V2>> = &mut right_iter;
-            let mut peekable_right = dyn_right_iter.peekable();
+            let mut dyn_right_iter: &mut dyn StreamingIterator<Item = KV<String, V2>> =
+                &mut right_iter;
 
             let mut empty_right = InMemoryTableSourceIteratorWrapper::<V2>::empty();
             let mut empty_right_iter = empty_right.iter();
-            let mut dyn_right_empty: &mut dyn Iterator<Item = &KV<String, V2>> =
+            let mut dyn_right_empty: &mut dyn StreamingIterator<Item = KV<String, V2>> =
                 &mut empty_right_iter;
-            let mut peekable_right_empty = dyn_right_empty.peekable();
 
             loop {
                 let mut key;
-                let mut task = match (peekable_left.peek(), peekable_right.peek()) {
+                let mut task = match (dyn_left_iter.peek(), dyn_right_iter.peek()) {
                     (Some(l), Some(r)) => {
                         if l.key() == r.key() {
                             key = l.key().to_string();
@@ -801,21 +858,21 @@ where
 
                 match task {
                     JoinTask::Both => {
-                        let mut s_l = Stream::new(&mut peekable_left);
-                        let mut s_r = Stream::new(&mut peekable_right);
+                        let mut s_l = Stream::new(dyn_left_iter);
+                        let mut s_r = Stream::new(dyn_right_iter);
                         self.function.join(&key, &mut s_l, &mut s_r, sink_ref);
                         s_l.count();
                         s_r.count();
                     }
                     JoinTask::Right => {
-                        let mut s_l = Stream::new(&mut peekable_left_empty);
-                        let mut s_r = Stream::new(&mut peekable_right);
+                        let mut s_l = Stream::new(dyn_left_empty);
+                        let mut s_r = Stream::new(dyn_right_iter);
                         self.function.join(&key, &mut s_l, &mut s_r, sink_ref);
                         s_r.count();
                     }
                     JoinTask::Left => {
-                        let mut s_l = Stream::new(&mut peekable_left);
-                        let mut s_r = Stream::new(&mut peekable_right_empty);
+                        let mut s_l = Stream::new(dyn_left_iter);
+                        let mut s_r = Stream::new(dyn_right_empty);
                         self.function.join(&key, &mut s_l, &mut s_r, sink_ref);
                         s_l.count();
                     }
@@ -924,7 +981,7 @@ impl Planner {
         }
 
         if output.get_format() == DataFormat::SSTABLE {
-            let mut sharded_filename = output.get_filename().to_string();
+            let mut sharded_filename = output.get_filenames()[0].to_string();
             if sharded_filename.is_empty() {
                 sharded_filename = format!(
                     "{}/output{:02}.sstable@{}",
@@ -938,7 +995,7 @@ impl Planner {
                 .enumerate()
             {
                 let mut s = output.clone();
-                s.set_filename(filename);
+                s.mut_filenames().push(filename);
                 s.set_temporary_path(format!(
                     "{}/{}/{}",
                     self.temp_data_folder,
@@ -952,7 +1009,7 @@ impl Planner {
         }
 
         if output.get_format() == DataFormat::RECORDIO {
-            let sharded_filename = output.get_filename().to_string();
+            let sharded_filename = output.get_filenames()[0].to_string();
             if sharded_filename.is_empty() {
                 let sharded_filename = format!(
                     "{}/output{:02}.recordio@{}",
@@ -963,7 +1020,7 @@ impl Planner {
             }
             for filename in shard_lib::unshard(&sharded_filename) {
                 let mut s = output.clone();
-                s.set_filename(filename);
+                s.mut_filenames().push(filename);
                 shards.push(s);
             }
 
@@ -1015,10 +1072,10 @@ impl Planner {
         }
 
         if input.get_format() == DataFormat::RECORDIO || input.get_format() == DataFormat::SSTABLE {
-            if input.get_filename().is_empty() {
+            if input.get_filenames()[0].is_empty() {
                 return None;
             }
-            return Some(shard_lib::unshard(input.get_filename()).len());
+            return Some(shard_lib::unshard(&input.get_filenames()[0]).len());
         }
 
         None
@@ -1040,14 +1097,58 @@ impl Planner {
                 panic!("Can't have multiple RECORDIO inputs!");
             }
             let input = &inputs[0];
-            return shard_lib::unshard(input.get_filename())
+            return shard_lib::unshard(&input.get_filenames()[0])
                 .iter()
                 .map(|f| {
                     let mut s = input.clone();
-                    s.set_filename(f.to_string());
+                    s.mut_filenames().clear();
+                    s.mut_filenames().push(f.to_string());
                     vec![s]
                 })
                 .collect();
+        }
+
+        if inputs[0].get_format() == DataFormat::SSTABLE {
+            let mut boundaries = Vec::new();
+            for input in inputs {
+                let mut filenames = Vec::new();
+                for file in input.get_filenames() {
+                    filenames.append(&mut shard_lib::unshard(file));
+                }
+                let reader = sstable::ShardedSSTableReader::<Primitive<Vec<u8>>>::from_filenames(
+                    &filenames,
+                    "",
+                    String::new(),
+                )
+                .unwrap();
+                boundaries.append(&mut reader.get_shard_boundaries(target_shards));
+            }
+
+            let mut boundaries = shard_lib::compact_shards(boundaries, target_shards);
+            boundaries.push(String::new());
+            boundaries.insert(0, String::new());
+
+            let mut results = Vec::new();
+            for window in boundaries.windows(2) {
+                let mut shard = Vec::new();
+                for input in inputs {
+                    let mut out = input.clone();
+                    out.mut_filenames().clear();
+                    for sharded_file in input.get_filenames() {
+                        for unsharded_file in shard_lib::unshard(sharded_file) {
+                            out.mut_filenames().push(unsharded_file);
+                        }
+                    }
+
+                    out.set_starting_key(window[0].to_string());
+                    out.set_ending_key(window[1].to_string());
+
+                    println!("sstable shard: {:?}", out);
+                    shard.push(out);
+                }
+                results.push(shard);
+            }
+            return results;
         }
 
         if inputs[0].get_format() == DataFormat::IN_MEMORY && inputs[0].get_is_ptable() {
@@ -1256,6 +1357,7 @@ where
         let mut writer = std::io::BufWriter::new(file);
         let mut builder = sstable::SSTableBuilder::new(&mut writer);
         while let Some(KV(key, value)) = self.heap.pop() {
+            println!("write: KV<{}, ...>", key);
             builder.write_ordered(&key, value);
         }
         builder.finish().unwrap();
@@ -1279,7 +1381,9 @@ where
         let outputs: Vec<_> = self
             .configs
             .iter()
-            .map(|c| c.get_filename().to_owned())
+            .map(|c| c.get_filenames())
+            .flatten()
+            .map(|f| f.to_string())
             .collect();
 
         sstable::reshard(&self.sstables_written, &outputs);
@@ -1517,6 +1621,15 @@ impl<T> Source<KV<String, T>>
 where
     T: PlumeTrait + Default,
 {
+    pub fn sstable_source(&self) -> sstable::ShardedSSTableReader<T> {
+        sstable::ShardedSSTableReader::from_filenames(
+            self.config.get_filenames(),
+            self.config.get_starting_key(),
+            self.config.get_ending_key().to_string(),
+        )
+        .unwrap()
+    }
+
     pub fn mem_table_source<'a>(&'a self) -> InMemoryTableSourceIteratorWrapper<T> {
         let mut output = InMemoryTableSourceIteratorWrapper {
             specs: Vec::new(),
@@ -1543,7 +1656,7 @@ where
     }
 }
 
-impl<'b, 'c, T> Source<KV<String, Stream<'b, 'c, T>>>
+impl<'b, T> Source<KV<String, Stream<'b, T>>>
 where
     T: PlumeTrait + Default,
 {
@@ -1650,10 +1763,20 @@ impl<T> InMemorySourceIteratorWrapper<T> {
     }
 }
 
-impl<'a, T> Iterator for InMemorySourceIterator<'a, T> {
-    type Item = &'a T;
+impl<'b, T> StreamingIterator for InMemorySourceIterator<'b, T> {
+    type Item = T;
 
-    fn next(&mut self) -> Option<Self::Item> {
+    fn peek<'a>(&'a mut self) -> Option<&'a Self::Item> {
+        if self.spec_index >= self.specs.len() {
+            return None;
+        }
+
+        let spec = &self.specs[self.spec_index];
+        let result = Some(&spec.data[self.index]);
+        return result;
+    }
+
+    fn next<'a>(&'a mut self) -> Option<&'a Self::Item> {
         loop {
             if self.spec_index >= self.specs.len() {
                 return None;
@@ -1676,10 +1799,21 @@ impl<'a, T> Iterator for InMemorySourceIterator<'a, T> {
     }
 }
 
-impl<'a, T> Iterator for InMemoryTableSourceIterator<'a, T> {
-    type Item = &'a KV<String, T>;
+impl<'a, T> StreamingIterator for InMemoryTableSourceIterator<'a, T> {
+    type Item = KV<String, T>;
 
-    fn next(&mut self) -> Option<Self::Item> {
+    fn peek(&mut self) -> Option<&Self::Item> {
+        if let Some(kv) = self.heap.peek() {
+            let idx = kv.1;
+            let output = kv.0;
+
+            return Some(&output);
+        }
+
+        None
+    }
+
+    fn next(&mut self) -> Option<&Self::Item> {
         if let Some(kv) = self.heap.pop() {
             let idx = *kv.value();
             let output = kv.key();
@@ -1703,13 +1837,15 @@ mod tests {
     fn test_shard_recordio() {
         let mut input = PCollectionProto::new();
         input.set_format(DataFormat::RECORDIO);
-        input.set_filename(String::from("/tmp/data.recordio@2"));
+        input
+            .mut_filenames()
+            .push(String::from("/tmp/data.recordio@2"));
         let planner = Planner::new();
         assert_eq!(
             planner
                 .shard_inputs(&[input], 10)
                 .iter()
-                .map(|x| x[0].get_filename())
+                .map(|x| x[0].get_filenames()[0].clone())
                 .collect::<Vec<_>>(),
             vec![
                 "/tmp/data.recordio-00000-of-00002",
