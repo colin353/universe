@@ -9,12 +9,14 @@
 extern crate sstable_proto_rust;
 
 extern crate byteorder;
+extern crate itertools;
 extern crate primitive;
 extern crate protobuf;
 extern crate shard_lib;
 pub use primitive::{Primitive, Serializable};
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use itertools::{MinHeap, StreamingIterator, KV};
 use protobuf::Message;
 use std::collections::BTreeMap;
 use std::default::Default;
@@ -34,7 +36,7 @@ pub struct SSTableBuilder<'a, T: Serializable> {
     index: sstable_proto_rust::Index,
 
     // The dtable is where the data is actually stored (e.g. the file on disk).
-    dtable: &'a mut std::io::Write,
+    dtable: &'a mut dyn std::io::Write,
 
     // dtable_offset tells us the byte offset where the start of the current struct in the dtable
     // is. It gets incremented as we write new records.
@@ -57,7 +59,7 @@ pub struct SSTableBuilder<'a, T: Serializable> {
 
 pub struct SSTableReader<T> {
     index: sstable_proto_rust::Index,
-    dtable: Box<SeekableRead>,
+    dtable: Box<dyn SeekableRead>,
 
     // We have to explicitly state that the struct uses the type T, or else the rust compiler will
     // get confused. This is a zero-size type to help the compiler infer the usage of T.
@@ -85,8 +87,8 @@ pub struct ShardedSSTableReader<T> {
     readers: Vec<SSTableReader<T>>,
     // A max key of "" means no max.
     max_key: String,
-    map: BTreeMap<String, (usize, Vec<u8>)>,
-    reached_end: bool,
+    heap: MinHeap<KV<KV<String, T>, usize>>,
+    top: Option<KV<String, T>>,
 }
 
 // We write SSTables in a single pass across the disk, but reading
@@ -96,7 +98,7 @@ pub trait SeekableRead: io::Seek + io::Read + Send + Sync {}
 impl<T: io::Seek + io::Read + Send + Sync> SeekableRead for T {}
 
 impl<'a, T: Serializable + Default> SSTableBuilder<'a, T> {
-    pub fn new(dtable: &'a mut std::io::Write) -> SSTableBuilder<'a, T> {
+    pub fn new(dtable: &'a mut dyn std::io::Write) -> SSTableBuilder<'a, T> {
         SSTableBuilder {
             index: sstable_proto_rust::Index::new(),
             dtable: dtable,
@@ -197,7 +199,7 @@ impl<'a, T: Serializable + Default> SSTableBuilder<'a, T> {
 
     // This function merges a series of sstables into one.
     pub fn from_sstables(
-        dtable: &'a mut std::io::Write,
+        dtable: &'a mut dyn std::io::Write,
         readers: &mut [SSTableReader<T>],
     ) -> io::Result<()> {
         let mut builder = SSTableBuilder::<T>::new(dtable);
@@ -251,7 +253,7 @@ impl<'a, T: Serializable + Default> SSTableBuilder<'a, T> {
 }
 
 impl<T: Serializable + Default> SSTableReader<T> {
-    pub fn new(mut dtable: Box<SeekableRead>) -> io::Result<SSTableReader<T>> {
+    pub fn new(mut dtable: Box<dyn SeekableRead>) -> io::Result<SSTableReader<T>> {
         // First, seek directly to the end, which is where we store the location and size of the
         // index table.
         dtable.seek(io::SeekFrom::End(-16))?;
@@ -437,8 +439,8 @@ impl<'a, T: Serializable + Default> ShardedSSTableReader<T> {
         let mut reader = ShardedSSTableReader {
             readers: readers,
             max_key: max_key,
-            map: BTreeMap::<String, (usize, Vec<u8>)>::new(),
-            reached_end: false,
+            heap: MinHeap::new(),
+            top: None,
         };
 
         reader.seek(min_key);
@@ -451,19 +453,16 @@ impl<'a, T: Serializable + Default> ShardedSSTableReader<T> {
             r.seek_to_min_key(min_key).unwrap();
         }
 
-        // Next, we'll construct a BTreeMap using our keys. This will allow us to efficiently
+        // Next, we'll construct a heap using our keys. This will allow us to efficiently
         // insert while keeping a sorted list.
-        self.map.clear();
+        self.heap.clear();
         for index in 0..self.readers.len() {
-            let mut data = match self.readers[index].read_next_key().unwrap() {
+            let (k, v) = match self.readers[index].read_next_data().unwrap() {
                 Some(x) => x,
                 None => continue,
             };
 
-            self.map.insert(
-                data.get_key().to_owned(),
-                (index as usize, data.take_value()),
-            );
+            self.heap.push(KV::new(KV::new(k, v), index));
         }
     }
 
@@ -489,8 +488,8 @@ impl<'a, T: Serializable + Default> ShardedSSTableReader<T> {
         let mut reader = ShardedSSTableReader {
             readers: readers,
             max_key: max_key,
-            map: BTreeMap::<String, (usize, Vec<u8>)>::new(),
-            reached_end: false,
+            heap: MinHeap::new(),
+            top: None,
         };
         reader.seek(min_key);
         Ok(reader)
@@ -511,41 +510,23 @@ impl<'a, T: Serializable + Default> ShardedSSTableReader<T> {
     }
 
     pub fn next(&mut self) -> Option<(String, T)> {
-        if self.reached_end {
-            return None;
-        }
-
-        let (key, value_bytes, index) = {
-            // Now we'll pop off the lowest key and write it into the output sstable. Then we'll
-            // refresh the key by reading from the sstable the key originated from.
-            let (key, &(index, ref value)) = match self.map.iter().next() {
-                Some(x) => x,
-                None => {
-                    self.reached_end = true;
-                    return None;
-                }
-            };
-
-            (key.clone(), value.clone(), index)
+        let (kv, index) = match self.heap.pop() {
+            Some(KV(k, v)) => (k, v),
+            None => return None,
         };
-        self.map.remove(key.as_str()).unwrap();
 
-        match self.readers[index].read_next_key().unwrap() {
-            Some(mut data) => {
-                if self.max_key.as_str() == "" || data.get_key() < self.max_key.as_str() {
-                    self.map.insert(
-                        data.get_key().to_owned(),
-                        (index as usize, data.take_value()),
-                    );
+        match self.readers[index].read_next_data().unwrap() {
+            Some((k, v)) => {
+                if self.max_key.as_str() == "" || k.as_str() < self.max_key.as_str() {
+                    self.heap.push(KV::new(KV::new(k, v), index));
                 }
             }
             None => (),
         };
 
-        if self.max_key.as_str() == "" || key < self.max_key {
-            let mut value = T::default();
-            value.read_from_bytes(&value_bytes).unwrap();
-            Some((key, value))
+        if self.max_key.as_str() == "" || kv.key() < &self.max_key {
+            let KV(k, v) = kv;
+            Some((k, v))
         } else {
             None
         }
@@ -637,6 +618,44 @@ impl<T: Serializable + Default> Iterator for SSTableReader<T> {
     type Item = (String, T);
     fn next(&mut self) -> Option<(String, T)> {
         self.read_next_data().unwrap()
+    }
+}
+
+impl<T> StreamingIterator for ShardedSSTableReader<T>
+where
+    T: Serializable + Default,
+{
+    type Item = KV<String, T>;
+    fn next(&mut self) -> Option<&Self::Item> {
+        let (top, idx) = match self.heap.pop() {
+            Some(KV(kv, idx)) => (Some(kv), Some(idx)),
+            None => (None, None),
+        };
+
+        if let Some(index) = idx {
+            match self.readers[index].read_next_data().unwrap() {
+                Some((k, v)) => {
+                    if self.max_key.as_str() == "" || k.as_str() < self.max_key.as_str() {
+                        self.heap.push(KV::new(KV::new(k, v), index));
+                    }
+                }
+                None => (),
+            };
+        }
+
+        self.top = top;
+
+        match &self.top {
+            Some(kv) => Some(kv),
+            None => None,
+        }
+    }
+
+    fn peek(&mut self) -> Option<&Self::Item> {
+        match self.heap.peek() {
+            Some(o) => Some(o.key()),
+            None => None,
+        }
     }
 }
 
@@ -903,14 +922,14 @@ pub fn execute_reshard_task(task: ReshardTask) {
                         break;
                     }
                     let (k, v) = source.next().unwrap();
-                    builder.write_ordered(&k, v);
+                    builder.write_ordered(&k, v).unwrap();
                 }
 
-                builder.finish();
+                builder.finish().unwrap();
             }
         }
         ReshardTask::Merge(from, to) => {
-            let mut reader = ShardedSSTableReader::<Primitive<Vec<u8>>>::from_filenames(
+            let reader = ShardedSSTableReader::<Primitive<Vec<u8>>>::from_filenames(
                 &from,
                 "",
                 String::new(),
@@ -920,9 +939,9 @@ pub fn execute_reshard_task(task: ReshardTask) {
             let mut w = std::io::BufWriter::new(f);
             let mut builder = SSTableBuilder::new(&mut w);
             for (k, v) in reader {
-                builder.write_ordered(&k, v);
+                builder.write_ordered(&k, v).unwrap();
             }
-            builder.finish();
+            builder.finish().unwrap();
         }
     }
 }
@@ -993,7 +1012,7 @@ mod tests {
     #[test]
     fn serialize_i64() {
         let value: Primitive<i64> = Primitive(5);
-        let x: &Serializable = &value;
+        let x: &dyn Serializable = &value;
         let mut k = std::io::Cursor::new(Vec::new());
         {
             x.write(&mut k).unwrap();
@@ -1001,7 +1020,7 @@ mod tests {
 
         let mut z: Primitive<i64> = Primitive(9);
         {
-            let y: &mut Serializable = &mut z;
+            let y: &mut dyn Serializable = &mut z;
             y.read_from_bytes(&k.into_inner()).unwrap();
         }
 
@@ -1014,7 +1033,7 @@ mod tests {
         value.set_key(String::from("hello world"));
         value.set_offset(1234);
 
-        let x: &Serializable = &value;
+        let x: &dyn Serializable = &value;
         let mut k = std::io::Cursor::new(Vec::new());
         {
             x.write(&mut k).unwrap();
@@ -1565,5 +1584,46 @@ mod tests {
         ];
 
         assert_eq!(index::get_shard_boundaries(&index, 5), expected);
+    }
+
+    #[test]
+    fn test_stream_iterator() {
+        let mut d1 = std::io::Cursor::new(Vec::new());
+        {
+            let mut t = SSTableBuilder::<Primitive<i64>>::new(&mut d1);
+            t.write_ordered("a", Primitive(5)).unwrap();
+            t.write_ordered("b", Primitive(5)).unwrap();
+            t.write_ordered("cat", Primitive(5)).unwrap();
+            t.write_ordered("d", Primitive(5)).unwrap();
+            t.write_ordered("e", Primitive(5)).unwrap();
+            t.write_ordered("f", Primitive(5)).unwrap();
+            t.finish().unwrap();
+        }
+
+        let mut d2 = std::io::Cursor::new(Vec::new());
+        {
+            let mut t = SSTableBuilder::<Primitive<i64>>::new(&mut d2);
+            t.write_ordered("apple", Primitive(5)).unwrap();
+            t.write_ordered("banana", Primitive(5)).unwrap();
+            t.write_ordered("cantaloupe", Primitive(5)).unwrap();
+            t.write_ordered("durian", Primitive(5)).unwrap();
+            t.finish().unwrap();
+        }
+
+        let r1 = SSTableReader::<Primitive<i64>>::new(Box::new(d1)).unwrap();
+        let r2 = SSTableReader::<Primitive<i64>>::new(Box::new(d2)).unwrap();
+        let mut s = ShardedSSTableReader::<Primitive<i64>>::from_readers(
+            vec![r1, r2],
+            "c",
+            String::from("cucumber"),
+        );
+
+        let mut iter: &mut dyn StreamingIterator<Item = KV<String, Primitive<i64>>> = &mut s;
+
+        assert_eq!(
+            iter.next(),
+            Some(&KV::new("cantaloupe".into(), Primitive(5)))
+        );
+        assert_eq!(iter.next(), Some(&KV::new("cat".into(), Primitive(5))));
     }
 }

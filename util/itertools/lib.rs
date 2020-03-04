@@ -95,6 +95,17 @@ where
         MinHeap(BinaryHeap::new())
     }
 
+    pub fn clear(&mut self) {
+        self.0.clear()
+    }
+
+    pub fn peek(&mut self) -> Option<&T> {
+        match self.0.peek() {
+            Some(Reverse(out)) => Some(out),
+            None => None,
+        }
+    }
+
     pub fn len(&self) -> usize {
         self.0.len()
     }
