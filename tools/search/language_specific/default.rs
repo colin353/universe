@@ -1,7 +1,7 @@
 use search_proto_rust::*;
 
 static MIN_KEYWORD_LENGTH: usize = 4;
-static SPLIT_CHARS: &'static [char] = &[' ', ',', '.', '?'];
+static SPLIT_CHARS: &'static [char] = &[' ', ',', '.', '?', ':'];
 
 pub fn extract_keywords(file: &File) -> Vec<ExtractedKeyword> {
     let mut results = std::collections::BTreeMap::<String, ExtractedKeyword>::new();
@@ -12,11 +12,11 @@ pub fn extract_keywords(file: &File) -> Vec<ExtractedKeyword> {
             }
 
             if let Some(kw) = results.get_mut(entity) {
-                kw.set_occurences(kw.get_occurences() + 1);
+                kw.set_occurrences(kw.get_occurrences() + 1);
             } else {
                 let mut kw = ExtractedKeyword::new();
                 kw.set_keyword(entity.to_owned());
-                kw.set_occurences(1);
+                kw.set_occurrences(1);
                 results.insert(entity.to_owned(), kw);
             }
         }
@@ -32,7 +32,7 @@ mod tests {
     fn kw(word: &str, occ: u64) -> ExtractedKeyword {
         let mut xk = ExtractedKeyword::new();
         xk.set_keyword(word.to_owned());
-        xk.set_occurences(occ);
+        xk.set_occurrences(occ);
         xk
     }
 

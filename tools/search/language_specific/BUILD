@@ -8,9 +8,12 @@ rust_library(
     srcs = [
         "default.rs",
         "lib.rs",
+        "rust.rs",
     ],
     edition = "2018",
     deps = [
+        "//third_party:lazy_static",
+        "//third_party:regex",
         "//tools/search:search_proto_rust",
     ],
 )

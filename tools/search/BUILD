@@ -28,6 +28,22 @@ rust_library(
     ],
 )
 
+rust_library(
+    name = "indexer_lib",
+    srcs = ["indexer_lib.rs"],
+    edition = "2018",
+    deps = [
+        ":search_proto_rust",
+        "//plume",
+        "//tools/search/language_specific",
+    ],
+)
+
+rust_test(
+    name = "indexer_test",
+    crate = ":indexer_lib",
+)
+
 rust_binary(
     name = "extract",
     srcs = ["extract.rs"],
