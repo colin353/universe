@@ -25,3 +25,8 @@ message File {
   bool is_binary = 3;
   bool is_directory = 4;
 }
+
+message Candidate {
+  string filename = 1;
+  repeated ExtractedKeyword matched_keywords = 2;
+}

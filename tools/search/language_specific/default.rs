@@ -3,22 +3,25 @@ use search_proto_rust::*;
 static MIN_KEYWORD_LENGTH: usize = 4;
 static SPLIT_CHARS: &'static [char] = &[' ', ',', '.', '?', ':'];
 
+lazy_static! {
+    static ref KEYWORDS_RE: regex::Regex = { regex::Regex::new(r"(\w+)").unwrap() };
+}
+
 pub fn extract_keywords(file: &File) -> Vec<ExtractedKeyword> {
     let mut results = std::collections::BTreeMap::<String, ExtractedKeyword>::new();
-    for line in file.get_content().lines() {
-        for entity in line.split(SPLIT_CHARS) {
-            if entity.len() < MIN_KEYWORD_LENGTH {
-                continue;
-            }
+    for captures in KEYWORDS_RE.captures_iter(file.get_content()) {
+        let keyword = &captures[0];
+        if keyword.len() < MIN_KEYWORD_LENGTH {
+            continue;
+        }
 
-            if let Some(kw) = results.get_mut(entity) {
-                kw.set_occurrences(kw.get_occurrences() + 1);
-            } else {
-                let mut kw = ExtractedKeyword::new();
-                kw.set_keyword(entity.to_owned());
-                kw.set_occurrences(1);
-                results.insert(entity.to_owned(), kw);
-            }
+        if let Some(kw) = results.get_mut(keyword) {
+            kw.set_occurrences(kw.get_occurrences() + 1);
+        } else {
+            let mut kw = ExtractedKeyword::new();
+            kw.set_keyword(keyword.to_owned());
+            kw.set_occurrences(1);
+            results.insert(keyword.to_owned(), kw);
         }
     }
 

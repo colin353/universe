@@ -18,6 +18,27 @@ rust_proto_library(
     deps = [":search_proto"],
 )
 
+rust_binary(
+    name = "search",
+    srcs = ["search.rs"],
+    edition = "2018",
+    deps = [
+        ":search_lib",
+        ":search_proto_rust",
+        "//util/flags",
+    ],
+)
+
+rust_library(
+    name = "search_lib",
+    srcs = ["search_lib.rs"],
+    edition = "2018",
+    deps = [
+        ":search_proto_rust",
+        "//util/sstable",
+    ],
+)
+
 rust_library(
     name = "extract_lib",
     srcs = ["extract_lib.rs"],
@@ -25,6 +46,19 @@ rust_library(
     deps = [
         ":search_proto_rust",
         "//util/sstable",
+    ],
+)
+
+rust_binary(
+    name = "indexer",
+    srcs = ["indexer.rs"],
+    edition = "2018",
+    deps = [
+        ":extract_lib",
+        ":indexer_lib",
+        ":search_proto_rust",
+        "//plume",
+        "//util/flags",
     ],
 )
 
