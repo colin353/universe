@@ -810,20 +810,46 @@ where
         {
             let sink_ref: &mut dyn EmitFn<O> = &mut *sink;
 
-            let s_left = source_left.mem_table_grouped_source();
-            let mut left_iter = s_left.iter();
-            let mut dyn_left_iter: &mut dyn StreamingIterator<Item = KV<String, V1>> =
-                &mut left_iter;
+            let s_left_mem;
+            let mut s_left_mem_iter;
+            let mut s_left_sst;
+            let mut dyn_left_iter: &mut dyn StreamingIterator<Item = KV<String, V1>>;
+            if left.get_format() == DataFormat::IN_MEMORY {
+                s_left_mem = source_left.mem_table_grouped_source();
+                s_left_mem_iter = s_left_mem.iter();
+                dyn_left_iter = &mut s_left_mem_iter;
+            } else if left.get_format() == DataFormat::SSTABLE {
+                s_left_sst = source_left.sstable_source();
+                dyn_left_iter = &mut s_left_sst;
+            } else {
+                panic!(
+                    "I don't know how to join with data format {:?}!",
+                    left.get_format()
+                );
+            }
 
             let mut empty_left = InMemoryTableSourceIteratorWrapper::<V1>::empty();
             let mut empty_left_iter = empty_left.iter();
             let mut dyn_left_empty: &mut dyn StreamingIterator<Item = KV<String, V1>> =
                 &mut empty_left_iter;
 
-            let s_right = source_right.mem_table_grouped_source();
-            let mut right_iter = s_right.iter();
-            let mut dyn_right_iter: &mut dyn StreamingIterator<Item = KV<String, V2>> =
-                &mut right_iter;
+            let s_right_mem;
+            let mut s_right_mem_iter;
+            let mut s_right_sst;
+            let mut dyn_right_iter: &mut dyn StreamingIterator<Item = KV<String, V2>>;
+            if right.get_format() == DataFormat::IN_MEMORY {
+                s_right_mem = source_right.mem_table_grouped_source();
+                s_right_mem_iter = s_right_mem.iter();
+                dyn_right_iter = &mut s_right_mem_iter;
+            } else if right.get_format() == DataFormat::SSTABLE {
+                s_right_sst = source_right.sstable_source();
+                dyn_right_iter = &mut s_right_sst;
+            } else {
+                panic!(
+                    "I don't know how to join with data format {:?}!",
+                    right.get_format()
+                );
+            }
 
             let mut empty_right = InMemoryTableSourceIteratorWrapper::<V2>::empty();
             let mut empty_right_iter = empty_right.iter();
@@ -1658,6 +1684,15 @@ impl<'b, T> Source<KV<String, Stream<'b, T>>>
 where
     T: PlumeTrait + Default,
 {
+    pub fn sstable_source(&self) -> sstable::ShardedSSTableReader<T> {
+        sstable::ShardedSSTableReader::from_filenames(
+            self.config.get_filenames(),
+            self.config.get_starting_key(),
+            self.config.get_ending_key().to_string(),
+        )
+        .unwrap()
+    }
+
     pub fn mem_table_grouped_source<'a>(&'a self) -> InMemoryTableSourceIteratorWrapper<T> {
         let mut output = InMemoryTableSourceIteratorWrapper {
             specs: Vec::new(),

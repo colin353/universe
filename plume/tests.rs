@@ -217,4 +217,103 @@ mod tests {
             count += 1;
         }
     }
+
+    // This is a very slow test which writes to disk, so let's not turn it on
+    // by default
+    //#[test]
+    fn test_group_from_sstable() {
+        let mut _runlock = plume::RUNLOCK.lock();
+        plume::cleanup();
+
+        let RECORD_COUNT = 100;
+
+        std::fs::remove_dir_all("/tmp/test-write-to-disk");
+        std::fs::create_dir_all("/tmp/test-write-to-disk").unwrap();
+
+        {
+            let f = std::fs::File::create("/tmp/test-write-to-disk/input.sstable").unwrap();
+            let mut writer = std::io::BufWriter::new(f);
+            let mut builder = sstable::SSTableBuilder::new(&mut writer);
+
+            for idx in 0..RECORD_COUNT {
+                builder.write_ordered(&format!("{:06}", idx), Primitive::from(12 as u64));
+                builder.write_ordered(&format!("{:06}", idx), Primitive::from(23));
+                builder.write_ordered(&format!("{:06}", idx), Primitive::from(34));
+                builder.write_ordered(&format!("{:06}", idx), Primitive::from(45));
+            }
+            builder.finish().unwrap();
+        }
+
+        let p =
+            PTable::<String, Primitive<u64>>::from_sstable("/tmp/test-write-to-disk/input.sstable");
+        let mut out = p.group_by_key_and_par_do(GroupSumFn {});
+        out.write_to_vec();
+        plume::run();
+
+        let result = out.into_vec();
+        assert_eq!(result.len(), RECORD_COUNT);
+
+        let mut count = 0;
+        for element in result.as_ref() {
+            assert_eq!(element.key(), &format!("{:06}", count));
+            assert_eq!(element.value(), &114);
+            count += 1;
+        }
+    }
+
+    // This is a very slow test which writes to disk, so let's not turn it on
+    // by default
+    //#[test]
+    fn test_join_sstable() {
+        let mut _runlock = plume::RUNLOCK.lock();
+        plume::cleanup();
+
+        std::fs::remove_dir_all("/tmp/test-write-to-disk");
+        std::fs::create_dir_all("/tmp/test-write-to-disk").unwrap();
+
+        {
+            let f = std::fs::File::create("/tmp/test-write-to-disk/names.sstable").unwrap();
+            let mut writer = std::io::BufWriter::new(f);
+            let mut builder = sstable::SSTableBuilder::new(&mut writer);
+
+            builder.write_ordered("1", Primitive::from(String::from("Tim")));
+            builder.write_ordered("2", Primitive::from(String::from("Colin")));
+            builder.write_ordered("3", Primitive::from(String::from("John")));
+            builder.write_ordered("4", Primitive::from(String::from("Paul")));
+            builder.finish().unwrap();
+        }
+
+        {
+            let f = std::fs::File::create("/tmp/test-write-to-disk/jobs.sstable").unwrap();
+            let mut writer = std::io::BufWriter::new(f);
+            let mut builder = sstable::SSTableBuilder::new(&mut writer);
+
+            builder.write_ordered("2", Primitive::from(String::from("barber")));
+            builder.write_ordered("4", Primitive::from(String::from("ghost")));
+            builder.write_ordered("6", Primitive::from(String::from("artist")));
+            builder.write_ordered("8", Primitive::from(String::from("author")));
+            builder.finish().unwrap();
+        }
+
+        let names = PTable::<String, Primitive<String>>::from_sstable(
+            "/tmp/test-write-to-disk/names.sstable",
+        );
+        let jobs = PTable::<String, Primitive<String>>::from_sstable(
+            "/tmp/test-write-to-disk/jobs.sstable",
+        );
+        let mut out = jobs.join(names, EmpJoinFn {});
+        out.write_to_vec();
+        plume::run();
+
+        let result = out.into_vec();
+        assert_eq!(result.len(), 2);
+
+        let mut iter = result.as_ref().iter();
+
+        assert_eq!(
+            *(iter.next().unwrap()),
+            "Colin, who is a barber".to_string()
+        );
+        assert_eq!(*(iter.next().unwrap()), "Paul, who is a ghost".to_string());
+    }
 }

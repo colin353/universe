@@ -63,13 +63,13 @@ impl plume::JoinFn for MyJoinFn {
 }
 
 fn main() {
-    let p = PTable::<String, Primitive<u64>>::from_sstable("/tmp/output.sstable@2");
+    /*let p = PTable::<String, Primitive<u64>>::from_sstable("/tmp/output.sstable@2");
     let mut o = p.par_do(Do3 {});
     o.write_to_vec();
 
     plume::run();
 
-    return;
+    return;*/
 
     let p = PCollection::<Primitive<u64>>::from_primitive_vec(vec![
         1, 1, 2, 3, 4, 5, 6, 7, 1, 8, 9, 10, 11, 1, 1,
