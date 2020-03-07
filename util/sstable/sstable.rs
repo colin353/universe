@@ -305,7 +305,7 @@ impl<T: Serializable + Default> SSTableReader<T> {
                 Some(x) => x,
                 None => return Ok(()),
             };
-            if current_key.as_str() > key {
+            if current_key.as_str() >= key {
                 break;
             }
         }
@@ -1625,5 +1625,42 @@ mod tests {
             Some(&KV::new("cantaloupe".into(), Primitive(5)))
         );
         assert_eq!(iter.next(), Some(&KV::new("cat".into(), Primitive(5))));
+    }
+
+    #[test]
+    fn test_stream_iterator_2() {
+        let mut d1 = std::io::Cursor::new(Vec::new());
+        {
+            let mut t = SSTableBuilder::<Primitive<i64>>::new(&mut d1);
+            t.write_ordered("a", Primitive(5)).unwrap();
+            t.write_ordered("b", Primitive(5)).unwrap();
+            t.write_ordered("cat", Primitive(5)).unwrap();
+            t.write_ordered("d", Primitive(5)).unwrap();
+            t.write_ordered("e", Primitive(5)).unwrap();
+            t.write_ordered("f", Primitive(5)).unwrap();
+            t.finish().unwrap();
+        }
+
+        let mut d2 = std::io::Cursor::new(Vec::new());
+        {
+            let mut t = SSTableBuilder::<Primitive<i64>>::new(&mut d2);
+            t.write_ordered("apple", Primitive(5)).unwrap();
+            t.write_ordered("banana", Primitive(5)).unwrap();
+            t.write_ordered("cantaloupe", Primitive(5)).unwrap();
+            t.write_ordered("durian", Primitive(5)).unwrap();
+            t.finish().unwrap();
+        }
+
+        let r1 = SSTableReader::<Primitive<i64>>::new(Box::new(d1)).unwrap();
+        let r2 = SSTableReader::<Primitive<i64>>::new(Box::new(d2)).unwrap();
+        let mut s =
+            ShardedSSTableReader::<Primitive<i64>>::from_readers(vec![r1, r2], "a", String::new());
+
+        let mut iter: &mut dyn StreamingIterator<Item = KV<String, Primitive<i64>>> = &mut s;
+
+        assert_eq!(iter.peek(), Some(&KV::new("a".into(), Primitive(5))));
+        assert_eq!(iter.next(), Some(&KV::new("a".into(), Primitive(5))));
+        assert_eq!(iter.peek(), Some(&KV::new("apple".into(), Primitive(5))));
+        assert_eq!(iter.next(), Some(&KV::new("apple".into(), Primitive(5))));
     }
 }

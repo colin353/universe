@@ -171,9 +171,12 @@ mod tests {
 
     // This is a very slow test which writes to disk, so let's not turn it on
     // by default
+    // #[test]
     fn test_write_to_disk() {
         let mut _runlock = plume::RUNLOCK.lock();
         plume::cleanup();
+
+        let RECORD_COUNT = 1_000_000;
 
         std::fs::remove_dir_all("/tmp/test-write-to-disk");
         std::fs::create_dir_all("/tmp/test-write-to-disk").unwrap();
@@ -183,7 +186,7 @@ mod tests {
             let mut writer = std::io::BufWriter::new(f);
             let mut builder = sstable::SSTableBuilder::new(&mut writer);
 
-            for idx in 0..1_000_000 {
+            for idx in 0..RECORD_COUNT {
                 builder.write_ordered(&format!("{:06}", idx), Primitive::from(String::from("lorem ipsum dolor sit amet, neque porro quisquam est qui dolorem ipsum quia dolor sit amet, consectetur, adipisci velit")));
             }
             builder.finish().unwrap();
@@ -196,5 +199,22 @@ mod tests {
         out.write_to_sstable("/tmp/test-write-to-disk/output.sstable@2");
 
         plume::run();
+        plume::cleanup();
+
+        let p = PTable::<String, Primitive<String>>::from_sstable(
+            "/tmp/test-write-to-disk/output.sstable@2",
+        );
+        let mut out = p.par_do(DoNothingFn {});
+        out.write_to_vec();
+        plume::run();
+
+        let result = out.into_vec();
+        assert_eq!(result.len(), RECORD_COUNT);
+
+        let mut count = 0;
+        for element in result.as_ref() {
+            assert_eq!(element.key(), &format!("{:06}", count));
+            count += 1;
+        }
     }
 }

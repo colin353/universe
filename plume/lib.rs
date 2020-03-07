@@ -1361,7 +1361,6 @@ where
         let mut writer = std::io::BufWriter::new(file);
         let mut builder = sstable::SSTableBuilder::new(&mut writer);
         while let Some(KV(key, value)) = self.heap.pop() {
-            println!("write: KV<{}, ...>", key);
             builder.write_ordered(&key, value);
         }
         builder.finish().unwrap();
@@ -1490,23 +1489,21 @@ where
     }
 
     pub fn finish(mut self) {
-        if self.config.get_format() == DataFormat::IN_MEMORY {
-            let id = reserve_id();
+        let id = reserve_id();
 
-            let output_vec = self.output.into_iter_sorted().collect();
+        let output_vec: Vec<_> = self.output.into_iter_sorted().collect();
 
-            IN_MEMORY_DATASETS
-                .write()
-                .unwrap()
-                .insert(id, InMemoryPCollection::from_table(output_vec));
+        IN_MEMORY_DATASETS
+            .write()
+            .unwrap()
+            .insert(id, InMemoryPCollection::from_table(output_vec));
 
-            let mut pcoll_write = PCOLLECTION_REGISTRY.write().unwrap();
-            let mut config = pcoll_write.get_mut(&self.config.get_id()).unwrap();
-            config.mut_memory_ids().push(id);
-            config.set_format(self.config.get_format());
-            config.set_is_ptable(true);
-            config.set_resolved(true);
-        }
+        let mut pcoll_write = PCOLLECTION_REGISTRY.write().unwrap();
+        let mut config = pcoll_write.get_mut(&self.config.get_id()).unwrap();
+        config.mut_memory_ids().push(id);
+        config.set_format(self.config.get_format());
+        config.set_is_ptable(true);
+        config.set_resolved(true);
     }
 }
 
@@ -1527,27 +1524,23 @@ where
     }
 
     pub fn emit(&mut self, value: T) {
-        if self.config.get_format() == DataFormat::IN_MEMORY {
-            self.output.push(value);
-        }
+        self.output.push(value);
     }
 
     pub fn finish(mut self) {
-        if self.config.get_format() == DataFormat::IN_MEMORY {
-            let id = reserve_id();
-            println!("finished (regular)");
+        let id = reserve_id();
+        println!("finished (regular)");
 
-            IN_MEMORY_DATASETS
-                .write()
-                .unwrap()
-                .insert(id, InMemoryPCollection::from_vec(self.output));
+        IN_MEMORY_DATASETS
+            .write()
+            .unwrap()
+            .insert(id, InMemoryPCollection::from_vec(self.output));
 
-            let mut pcoll_write = PCOLLECTION_REGISTRY.write().unwrap();
-            let mut config = pcoll_write.get_mut(&self.config.get_id()).unwrap();
-            config.mut_memory_ids().push(id);
-            config.set_format(self.config.get_format());
-            config.set_resolved(true);
-        }
+        let mut pcoll_write = PCOLLECTION_REGISTRY.write().unwrap();
+        let mut config = pcoll_write.get_mut(&self.config.get_id()).unwrap();
+        config.mut_memory_ids().push(id);
+        config.set_format(self.config.get_format());
+        config.set_resolved(true);
     }
 }
 
