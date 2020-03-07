@@ -1,0 +1,8 @@
+syntax = "proto3";
+
+message File {
+  string filename = 1;
+  string content = 2;
+  bool is_binary = 3;
+  bool is_directory = 4;
+}
