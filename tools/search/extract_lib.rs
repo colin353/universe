@@ -1,6 +1,5 @@
 use search_proto_rust::*;
 
-use std::fs::FileType;
 use std::path::{Path, PathBuf};
 
 pub fn extract_code(root_dir: &Path, output_filename: &str) {

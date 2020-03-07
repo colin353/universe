@@ -1,5 +1,17 @@
 syntax = "proto3";
 
+enum FileType {
+  UNKNOWN = 0;
+  RUST = 1;
+  PROTO = 2;
+  BINARY = 3;
+}
+
+message ExtractedKeyword {
+  string keyword = 1;
+  uint64 occurences = 2;
+}
+
 message File {
   string filename = 1;
   string content = 2;
