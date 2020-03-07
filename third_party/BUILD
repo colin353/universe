@@ -104,3 +104,8 @@ alias(
     name = "json",
     actual = "//third_party/vendor/json:json",
 )
+
+alias(
+    name = "regex",
+    actual = "//third_party/vendor/regex-1.3.4:regex",
+)
