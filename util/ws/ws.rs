@@ -5,7 +5,7 @@ use rand::Rng;
 
 use futures::future;
 use hyper::header::HeaderValue;
-use hyper::header::{COOKIE, LOCATION, SET_COOKIE};
+use hyper::header::{CACHE_CONTROL, COOKIE, LOCATION, SET_COOKIE};
 use hyper::http::StatusCode;
 use hyper::rt::Future;
 use hyper::service::service_fn;
@@ -64,7 +64,12 @@ pub trait Server: Sync + Send + Clone + 'static {
         if let Err(_) = file.read_to_string(&mut contents) {
             return self.not_found(path);
         }
-        return Response::new(Body::from(contents));
+        let mut response = Response::new(Body::from(contents));
+        response.headers_mut().insert(
+            CACHE_CONTROL,
+            HeaderValue::from_bytes("max-age=100000".as_bytes()).unwrap(),
+        );
+        response
     }
 
     fn not_found(&self, path: String) -> Response {
