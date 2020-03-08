@@ -5,6 +5,7 @@ use ws::{Body, Request, Response, Server};
 
 static TEMPLATE: &str = include_str!("html/template.html");
 static INDEX: &str = include_str!("html/index.html");
+static DETAIL: &str = include_str!("html/detail.html");
 static RESULTS: &str = include_str!("html/results.html");
 
 #[derive(Clone)]
@@ -45,18 +46,31 @@ where
     }
 
     fn results(&self, keywords: &str, path: String, req: Request) -> Response {
-        let mut candidates = self.searcher.search(keywords);
+        let candidates = self.searcher.search(keywords);
 
         let page = tmpl::apply(
             RESULTS,
-            &content!(;"results" => candidates.iter().map(|r| render::result(r)).collect()),
+            &content!("query" => keywords; "results" => candidates.iter().map(|r| render::result(r)).collect()),
         );
         Response::new(Body::from(self.wrap_template(true, keywords, page)))
+    }
+
+    fn detail(&self, query: &str, path: String, req: Request) -> Response {
+        let file = match self.searcher.get_document(&path) {
+            Some(f) => f,
+            None => return self.not_found(path, req),
+        };
+        let page = tmpl::apply(DETAIL, &render::file(&file));
+        Response::new(Body::from(self.wrap_template(true, query, page)))
     }
 
     fn index(&self, path: String, req: Request) -> Response {
         let page = tmpl::apply(INDEX, &content!());
         Response::new(Body::from(self.wrap_template(false, "", page)))
+    }
+
+    fn not_found(&self, path: String, _req: Request) -> Response {
+        Response::new(Body::from(format!("404 not found: path {}", path)))
     }
 }
 
@@ -80,12 +94,21 @@ where
             return response;
         }
 
+        let mut query = String::new();
         if let Some(q) = req.uri().query() {
             let params = ws_utils::parse_params(q);
             if let Some(keywords) = params.get("q") {
-                return self.results(keywords, path, req);
+                query = keywords.to_owned();
             }
         };
+
+        if path.len() > 1 {
+            return self.detail(&query, path, req);
+        }
+
+        if query.len() > 0 {
+            return self.results(&query, path, req);
+        }
 
         self.index(path, req)
     }

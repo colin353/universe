@@ -31,6 +31,7 @@ rust_binary(
         "webserver.rs",
     ],
     data = [
+        "html/detail.html",
         "html/index.html",
         "html/results.html",
         "html/template.html",
@@ -42,6 +43,7 @@ rust_binary(
         ":search_proto_rust",
         ":server_lib",
         "//auth:auth_client",
+        "//third_party:base64",
         "//util/flags",
         "//util/tmpl",
         "//util/ws",

@@ -13,6 +13,7 @@ lazy_static! {
 
 pub struct Searcher {
     keywords: Mutex<sstable::SSTableReader<KeywordMatches>>,
+    code: Mutex<sstable::SSTableReader<File>>,
 
     // Configuration options
     pub candidates_to_return: usize,
@@ -23,8 +24,11 @@ impl Searcher {
         let keywords =
             sstable::SSTableReader::from_filename(&format!("{}/keywords.sstable", base_dir))
                 .unwrap();
+        let code =
+            sstable::SSTableReader::from_filename(&format!("{}/code.sstable", base_dir)).unwrap();
 
         Self {
+            code: Mutex::new(code),
             keywords: Mutex::new(keywords),
             candidates_to_return: CANDIDATES_TO_RETURN,
         }
@@ -39,6 +43,10 @@ impl Searcher {
         self.cutoff(&mut candidates);
         self.render_results(&candidates);
         return candidates;
+    }
+
+    pub fn get_document(&self, filename: &str) -> Option<File> {
+        self.code.lock().unwrap().get(filename).unwrap()
     }
 
     fn parse_query(&self, query: &str) -> Query {

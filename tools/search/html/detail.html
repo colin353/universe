@@ -1,0 +1,46 @@
+<div class='content'>
+<p>{{filename}}</p>
+<div style="height: 800px;" id="editor" data-type="{{status}}" data-filename="{{filename}}" data-content="{{content}}" style="width:100%;height:1024px;"></div>
+
+<script>
+    var require = {
+        paths: {
+            'vs': '/static/vs'
+        }
+    };
+</script>
+<script src="/static/vs/loader.js"></script>
+<script src="/static/vs/editor/editor.main.nls.js"></script>
+<script src="/static/vs/editor/editor.main.js"></script>
+<script>
+    require(["vs/editor/editor.main"], function() {
+        var editorElement = document.getElementById("editor");
+        var changeType = editorElement.getAttribute("data-type");
+
+        const language_map = {
+            'css': 'css',
+            'md': 'markdown',
+            'js': 'javascript',
+            'ts': 'typescript',
+            'py': 'python',
+            'sh': 'bash',
+            'rs': 'rust',
+            'cc': 'c',
+            'c': 'c',
+            'cpp': 'c',
+        };
+        const extension = editorElement.getAttribute("data-filename").split(".").pop();
+        const language = language_map[extension] || 'text/plain';
+
+        var content = atob(editorElement.getAttribute("data-content"));
+        monaco.editor.create(editorElement, {
+            readOnly: true,
+            value: content,
+            language: language,
+            wordWrap: "bounded",
+            theme: "vs",
+            wordWrapCols: 80,
+        });
+  });
+</script>
+</div>
