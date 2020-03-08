@@ -14,6 +14,7 @@ lazy_static! {
 pub struct Searcher {
     keywords: Mutex<sstable::SSTableReader<KeywordMatches>>,
     code: Mutex<sstable::SSTableReader<File>>,
+    filenames: Vec<String>,
 
     // Configuration options
     pub candidates_to_return: usize,
@@ -24,13 +25,19 @@ impl Searcher {
         let keywords =
             sstable::SSTableReader::from_filename(&format!("{}/keywords.sstable", base_dir))
                 .unwrap();
-        let code =
+        let mut code =
             sstable::SSTableReader::from_filename(&format!("{}/code.sstable", base_dir)).unwrap();
+
+        let mut filenames = Vec::new();
+        for (filename, _) in &mut code {
+            filenames.push(filename);
+        }
 
         Self {
             code: Mutex::new(code),
             keywords: Mutex::new(keywords),
             candidates_to_return: CANDIDATES_TO_RETURN,
+            filenames: filenames,
         }
     }
 
@@ -60,6 +67,55 @@ impl Searcher {
     }
 
     fn get_candidates(&self, query: &Query, candidates: &mut Vec<Candidate>) {
+        self.get_candidates_by_keyword(query, candidates);
+        self.get_candidates_by_filename(query, candidates);
+    }
+
+    fn get_candidates_by_filename(&self, query: &Query, candidates: &mut Vec<Candidate>) {
+        for filename in &self.filenames {
+            let mut matched = true;
+            let mut query_match = false;
+            let mut exact_match = false;
+            let mut match_position = 0;
+            for keyword in query.get_keywords() {
+                if let Some(idx) = filename.rfind(keyword) {
+                    match_position = std::cmp::max(match_position, idx + keyword.len());
+                } else {
+                    matched = false;
+                }
+            }
+
+            if let Some(idx) = filename.rfind(query.get_query()) {
+                matched = true;
+                query_match = true;
+
+                match_position = std::cmp::max(match_position, idx + query.get_query().len());
+
+                if filename == query.get_query() {
+                    exact_match = true;
+                }
+            }
+
+            if matched {
+                println!("match! query: {:?}", query);
+                println!("filename: {:?}", filename);
+                println!(
+                    "matches: {} {} {}",
+                    query_match, exact_match, match_position
+                );
+
+                let mut c = Candidate::new();
+                c.set_filename(filename.to_owned());
+                c.set_keyword_matched_filename(true);
+                c.set_query_in_filename(query_match);
+                c.set_exactly_matched_filename(exact_match);
+                c.set_filename_match_position(match_position as u32);
+                candidates.push(c);
+            }
+        }
+    }
+
+    fn get_candidates_by_keyword(&self, query: &Query, candidates: &mut Vec<Candidate>) {
         let mut or_set = None;
         let mut all_candidates = Vec::new();
         for keyword in query.get_keywords() {
@@ -136,10 +192,28 @@ impl Searcher {
 
     fn score(&self, query: &Query, candidate: &mut Candidate) {
         let mut score = candidate.get_score();
+
+        // Keyword match scoring
         for kw in candidate.get_matched_keywords() {
             score += 10.0;
             score += 0.1 * std::cmp::min(kw.get_occurrences(), 10) as f32;
         }
+
+        // Filename match scoring
+        if candidate.get_keyword_matched_filename() {
+            score += 10.0;
+        }
+
+        if candidate.get_query_in_filename() {
+            score += 20.0;
+        }
+
+        if candidate.get_exactly_matched_filename() {
+            score += 100.0;
+        }
+
+        score +=
+            candidate.get_filename_match_position() as f32 / candidate.get_filename().len() as f32;
 
         candidate.set_score(score);
     }
@@ -149,10 +223,8 @@ impl Searcher {
         let mut index = 0;
         while index < candidates.len() {
             if let Some(observed_idx) = observed.get(candidates[index].get_filename()) {
-                for mkw in candidates[index].take_matched_keywords().into_iter() {
-                    candidates[*observed_idx].mut_matched_keywords().push(mkw);
-                }
-                candidates.swap_remove(index);
+                let to = candidates.swap_remove(index);
+                merge_candidates(to, &mut candidates[*observed_idx])
             } else {
                 observed.insert(candidates[index].get_filename().to_owned(), index);
                 index += 1;
@@ -174,4 +246,22 @@ impl Searcher {
             );
         }
     }
+}
+
+fn merge_candidates(mut from: Candidate, to: &mut Candidate) {
+    for mkw in from.take_matched_keywords().into_iter() {
+        to.mut_matched_keywords().push(mkw);
+    }
+
+    to.set_keyword_matched_filename(
+        to.get_keyword_matched_filename() || from.get_keyword_matched_filename(),
+    );
+    to.set_query_in_filename(to.get_query_in_filename() || from.get_query_in_filename());
+    to.set_exactly_matched_filename(
+        to.get_exactly_matched_filename() || from.get_exactly_matched_filename(),
+    );
+    to.set_filename_match_position(std::cmp::max(
+        from.get_filename_match_position(),
+        to.get_filename_match_position(),
+    ));
 }

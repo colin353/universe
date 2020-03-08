@@ -48,6 +48,20 @@ where
     fn results(&self, keywords: &str, path: String, req: Request) -> Response {
         let candidates = self.searcher.search(keywords);
 
+        if candidates.len() == 1 {
+            // Only one search result! Skip right to the detail page.
+            let mut response = Response::new(Body::from(""));
+            self.redirect(
+                &format!(
+                    "/{}?q={}",
+                    candidates[0].get_filename(),
+                    ws_utils::urlencode(keywords)
+                ),
+                &mut response,
+            );
+            return response;
+        }
+
         let page = tmpl::apply(
             RESULTS,
             &content!("query" => keywords; "results" => candidates.iter().map(|r| render::result(r)).collect()),
@@ -56,7 +70,7 @@ where
     }
 
     fn detail(&self, query: &str, path: String, req: Request) -> Response {
-        let file = match self.searcher.get_document(&path) {
+        let file = match self.searcher.get_document(&path[1..]) {
             Some(f) => f,
             None => return self.not_found(path, req),
         };

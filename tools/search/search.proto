@@ -36,6 +36,11 @@ message Candidate {
   repeated ExtractedKeyword matched_keywords = 2;
 
   float score = 3;
+
+  bool keyword_matched_filename = 4;
+  bool query_in_filename = 5;
+  bool exactly_matched_filename = 6;
+  uint32 filename_match_position = 7;
 }
 
 message SearchRequest { string query = 1; }
