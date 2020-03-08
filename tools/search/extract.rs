@@ -16,15 +16,15 @@ fn main() {
 
     parse_flags!(root_dir, output);
 
-    if output.value().is_empty() {
+    if output.path().is_empty() {
         fail("You must specify an --output to write to!");
     }
 
-    let starting_dir = if root_dir.value().is_empty() {
+    let starting_dir = if root_dir.path().is_empty() {
         std::env::current_dir().unwrap()
     } else {
-        root_dir.value().into()
+        root_dir.path().into()
     };
 
-    extract_lib::extract_code(&starting_dir, &output.value());
+    extract_lib::extract_code(&starting_dir, &output.path());
 }
