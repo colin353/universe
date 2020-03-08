@@ -1,5 +1,13 @@
 #[macro_use]
 extern crate flags;
+#[macro_use]
+extern crate tmpl;
+
+use std::sync::Arc;
+use ws::Server;
+
+mod render;
+mod webserver;
 
 fn main() {
     let port = define_flag!("port", 9898, "The port to bind to");
@@ -8,21 +16,51 @@ fn main() {
         String::new(),
         "The directory of the search index."
     );
+    let auth_hostname = define_flag!(
+        "auth_hostname",
+        String::from("auth.colinmerkel.xyz"),
+        "the hostname for auth service"
+    );
+    let auth_port = define_flag!("auth_port", 8888, "the port for auth service");
+    let static_files = define_flag!(
+        "static_files",
+        String::from("/static/"),
+        "the directory containing static files"
+    );
+    let base_url = define_flag!(
+        "base_url",
+        String::from("http://localhost:9898/"),
+        "the base URL of the site"
+    );
 
-    parse_flags!(port, index_dir);
+    parse_flags!(
+        port,
+        index_dir,
+        auth_hostname,
+        auth_port,
+        static_files,
+        base_url
+    );
 
     let mut server = grpc::ServerBuilder::<tls_api_stub::TlsAcceptor>::new();
     server.http.set_port(port.value());
     server.http.set_cpu_pool_threads(2);
 
     let searcher = search_lib::Searcher::new(&index_dir.path());
-    let handler = server_lib::SearchServiceHandler::new(searcher);
+
+    /*let handler = server_lib::SearchServiceHandler::new(searcher);
     server.add_service(search_grpc_rust::SearchServiceServer::new_service_def(
         handler,
     ));
-    let _server = server.build().unwrap();
+    let _server = server.build().unwrap();*/
 
-    loop {
-        std::thread::park();
-    }
+    let auth = auth_client::AuthClient::new(&auth_hostname.value(), auth_port.value());
+
+    webserver::SearchWebserver::new(
+        Arc::new(searcher),
+        static_files.value(),
+        base_url.value(),
+        auth,
+    )
+    .serve(port.value());
 }

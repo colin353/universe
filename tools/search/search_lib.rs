@@ -3,6 +3,7 @@ extern crate lazy_static;
 
 use search_proto_rust::*;
 use std::collections::HashSet;
+use std::sync::Mutex;
 
 const CANDIDATES_TO_RETURN: usize = 25;
 
@@ -11,7 +12,7 @@ lazy_static! {
 }
 
 pub struct Searcher {
-    keywords: sstable::SSTableReader<KeywordMatches>,
+    keywords: Mutex<sstable::SSTableReader<KeywordMatches>>,
 
     // Configuration options
     pub candidates_to_return: usize,
@@ -24,12 +25,12 @@ impl Searcher {
                 .unwrap();
 
         Self {
-            keywords: keywords,
+            keywords: Mutex::new(keywords),
             candidates_to_return: CANDIDATES_TO_RETURN,
         }
     }
 
-    pub fn search(&mut self, keywords: &str) -> Vec<Candidate> {
+    pub fn search(&self, keywords: &str) -> Vec<Candidate> {
         let query = self.parse_query(keywords);
         let mut candidates = Vec::new();
         self.get_candidates(&query, &mut candidates);
@@ -50,7 +51,7 @@ impl Searcher {
         out
     }
 
-    fn get_candidates(&mut self, query: &Query, candidates: &mut Vec<Candidate>) {
+    fn get_candidates(&self, query: &Query, candidates: &mut Vec<Candidate>) {
         let mut or_set = None;
         let mut all_candidates = Vec::new();
         for keyword in query.get_keywords() {
@@ -80,12 +81,12 @@ impl Searcher {
     }
 
     fn get_candidates_matching_keyword(
-        &mut self,
+        &self,
         keyword: &str,
         or_set: &Option<HashSet<String>>,
         candidates: &mut Vec<Candidate>,
     ) {
-        let mut matches = match self.keywords.get(keyword).unwrap() {
+        let mut matches = match self.keywords.lock().unwrap().get(keyword).unwrap() {
             Some(s) => s,
             None => return,
         };

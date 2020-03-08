@@ -25,13 +25,27 @@ rust_grpc_library(
 
 rust_binary(
     name = "server",
-    srcs = ["server.rs"],
+    srcs = [
+        "render.rs",
+        "server.rs",
+        "webserver.rs",
+    ],
+    data = [
+        "html/index.html",
+        "html/results.html",
+        "html/template.html",
+    ],
     edition = "2018",
     deps = [
         "search_grpc_rust",
         ":search_lib",
+        ":search_proto_rust",
         ":server_lib",
+        "//auth:auth_client",
         "//util/flags",
+        "//util/tmpl",
+        "//util/ws",
+        "//util/ws:ws_utils",
         "@io_bazel_rules_rust//proto/raze:grpc",
         "@io_bazel_rules_rust//proto/raze:tls_api_stub",
     ],

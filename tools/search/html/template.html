@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" type="text/css" href="/static/style.css">
+    <title>{{title}}</title>
+
+    <style type="text/css">
+        @import url(https://fonts.googleapis.com/css?family=Roboto+Mono);
+
+        body {
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            color: rgba(0, 0, 0, 0.87);
+            font-family: 'Roboto Mono', sans-serif;
+        }
+
+        .page {
+            display: block;
+        }
+
+        .form-field .title {
+            text-transform: uppercase;
+            font-size: 0.6em;
+        }
+
+        .form-field .contents {
+            height: 1.25em;
+        }
+
+        .form-field {
+            padding: 4px;
+            border: 0.5px solid rgba(0, 0, 0, 0.2);
+        }
+
+        .small-heading {
+            text-transform: uppercase;
+            font-size: 0.6em;
+        }
+
+        .header {
+            width: 1024px;
+            display: flex;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .search-input {
+            height: 30px;
+            padding-left: 10px;
+            padding-right: 10px;
+            font-family: monospace;
+            font-size: 20px;
+            border-radius: 0px;
+            width: 600px;
+            margin-left: auto;
+            margin-right: auto;
+            margin-top: 40px;
+            display: block;
+        }
+
+        .search-input-small {
+            height: 30px;
+            padding-left: 10px;
+            padding-right: 10px;
+            font-family: monospace;
+            font-size: 20px;
+            border-radius: 0px;
+            width: 600px;
+            margin-top: 20px;
+            display: inline-block;
+            position: relative;
+            top: -2px;
+        }
+
+        .content {
+            width: 1024px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        a.invisible-link {
+            color: black;
+            text-decoration: none;
+        }
+
+        button {
+            font-size: 12pt;
+        }
+
+        .big-title {
+            margin-left: auto;
+            margin-right: auto;
+            margin-top: 100px;
+            display: inherit;
+            width: fit-content;
+        }
+    </style>
+</head>
+
+<body>
+    {{show_header==true}}
+    <div class="header">
+        <h2 style="margin-right: 40px;"><a class="invisible-link" href="/">code search</a></h2>
+        <input id="search-input" class="search-input-small" type=text value="{{query}}" />
+    </div>
+    {{/show_header}}
+    {{content}}
+</body>
+
+<script>
+    const elements = document.getElementsByClassName("timestamp");
+    for (var i = 0; i < elements.length; i++) {
+        const el = elements[i];
+        const t = el.getAttribute("data-timestamp");
+        const options = {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+        }
+        el.innerHTML = (new Date(parseInt(t) / 1000)).toLocaleDateString("en-US", options);
+    };
+
+    const searchInput = document.getElementById("search-input");
+    searchInput.addEventListener('keyup', function(e) {
+      if (e.keyCode == 13) {
+        event.preventDefault();
+        window.location.href = '/?q=' + encodeURIComponent(searchInput.value);
+      }
+    });
+</script>
+
+
+</html>
