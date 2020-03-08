@@ -33,6 +33,13 @@ lazy_static! {
         map.insert('>', "%3E");
         map
     };
+    static ref REVERSE_RESERVED_CHARS: HashMap<&'static str, char> = {
+        let mut map = HashMap::new();
+        for (k, v) in RESERVED_CHARS.iter() {
+            map.insert(v.clone(), k.to_owned());
+        }
+        map
+    };
 }
 
 pub fn urlencode(input: &str) -> String {
@@ -47,13 +54,56 @@ pub fn urlencode(input: &str) -> String {
     output
 }
 
+pub fn urldecode(input: &str) -> String {
+    let mut output = String::new();
+    let mut chiter = input.chars();
+    loop {
+        let c = match chiter.next() {
+            Some(c) => c,
+            None => break,
+        };
+
+        if c == '%' {
+            let mut code = String::new();
+            code.push('%');
+
+            let c = match chiter.next() {
+                Some(c) => c,
+                None => {
+                    output += &code;
+                    break;
+                }
+            };
+            code.push(c);
+
+            let c = match chiter.next() {
+                Some(c) => c,
+                None => {
+                    output += &code;
+                    break;
+                }
+            };
+            code.push(c);
+
+            if let Some(decode) = REVERSE_RESERVED_CHARS.get(code.as_str()) {
+                output.push(*decode);
+            } else {
+                output += &code;
+            }
+        } else {
+            output.push(c);
+        }
+    }
+    output
+}
+
 pub fn parse_params(params: &str) -> HashMap<String, String> {
     let mut output = HashMap::new();
     for param in params.split("&") {
         if let Some(idx) = param.find("=") {
             let (key, value) = param.split_at(idx);
             if value.len() > 0 {
-                output.insert(key.to_owned(), value[1..].to_owned());
+                output.insert(key.to_owned(), urldecode(&value[1..]));
             } else {
                 output.insert(key.to_owned(), String::from(""));
             }
@@ -78,7 +128,15 @@ mod tests {
 
     #[test]
     fn test_parse() {
-        let p = parse_params("parameter1=true&parameter2=false");
+        let p = parse_params("parameter1=true&parameter2=false&parm3=a%20space%20here");
         assert_eq!(p.get("parameter1").unwrap(), "true");
+        assert_eq!(p.get("parm3").unwrap(), "a space here");
+    }
+
+    #[test]
+    fn test_decode() {
+        assert_eq!(urldecode("%2F%20asdf%20%2F"), "/ asdf /");
+        assert_eq!(urldecode("my%20dog%20has%20fleas"), "my dog has fleas");
+        assert_eq!(urldecode("my%20dog%20has%2"), "my dog has%2");
     }
 }
