@@ -7,6 +7,11 @@ enum FileType {
   BINARY = 3;
 }
 
+message Query {
+  string query = 1;
+  repeated string keywords = 2;
+}
+
 message ExtractedKeyword {
   string keyword = 1;
   uint64 occurrences = 2;
@@ -29,4 +34,6 @@ message File {
 message Candidate {
   string filename = 1;
   repeated ExtractedKeyword matched_keywords = 2;
+
+  float score = 3;
 }

@@ -11,13 +11,18 @@ fn fail(message: &str) -> ! {
 
 fn main() {
     let input_dir = define_flag!("input_dir", String::new(), "The directory to read from");
+    let input_sstable = define_flag!(
+        "input_sstable",
+        String::new(),
+        "The code sstable to read from. If provided, won't generate one"
+    );
     let output_dir = define_flag!(
         "output_dir",
         String::new(),
         "The directory to write the index to"
     );
 
-    parse_flags!(input_dir, output_dir);
+    parse_flags!(input_dir, output_dir, input_sstable);
 
     if output_dir.path().is_empty() {
         fail("You must specify an --output to write to!");
@@ -30,8 +35,13 @@ fn main() {
     };
 
     // Extract the codebase into a code sstable
-    let code_sstable = format!("{}/code.sstable", output_dir.path());
-    extract_lib::extract_code(&starting_dir, &code_sstable);
+    let code_sstable = if input_sstable.path().is_empty() {
+        let code_sstable = format!("{}/code.sstable", output_dir.path());
+        extract_lib::extract_code(&starting_dir, &code_sstable);
+        code_sstable
+    } else {
+        input_sstable.path()
+    };
 
     // Process the codebase into a keyword map
     let code = PTable::from_sstable(&code_sstable);

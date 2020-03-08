@@ -35,6 +35,8 @@ rust_library(
     edition = "2018",
     deps = [
         ":search_proto_rust",
+        "//third_party:lazy_static",
+        "//third_party:regex",
         "//util/sstable",
     ],
 )
