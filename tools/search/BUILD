@@ -18,6 +18,36 @@ rust_proto_library(
     deps = [":search_proto"],
 )
 
+rust_grpc_library(
+    name = "search_grpc_rust",
+    deps = [":search_proto"],
+)
+
+rust_binary(
+    name = "server",
+    srcs = ["server.rs"],
+    edition = "2018",
+    deps = [
+        "search_grpc_rust",
+        ":search_lib",
+        ":server_lib",
+        "//util/flags",
+        "@io_bazel_rules_rust//proto/raze:grpc",
+        "@io_bazel_rules_rust//proto/raze:tls_api_stub",
+    ],
+)
+
+rust_library(
+    name = "server_lib",
+    srcs = ["server_lib.rs"],
+    edition = "2018",
+    deps = [
+        ":search_grpc_rust",
+        ":search_lib",
+        "@io_bazel_rules_rust//proto/raze:grpc",
+    ],
+)
+
 rust_binary(
     name = "search",
     srcs = ["search.rs"],

@@ -37,3 +37,8 @@ message Candidate {
 
   float score = 3;
 }
+
+message SearchRequest { string query = 1; }
+message SearchResponse { repeated Candidate candidates = 1; }
+
+service SearchService { rpc Search(SearchRequest) returns (SearchResponse); }
