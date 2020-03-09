@@ -40,6 +40,13 @@ lazy_static! {
         }
         map
     };
+    static ref ESCAPE_MAP: HashMap<char, &'static str> = {
+        let mut map = HashMap::new();
+        map.insert('>', "&gt;");
+        map.insert('<', "&lt;");
+        map.insert('"', "&quot;");
+        map
+    };
 }
 
 pub fn urlencode(input: &str) -> String {
@@ -114,6 +121,18 @@ pub fn parse_params(params: &str) -> HashMap<String, String> {
     output
 }
 
+pub fn escape_htmlentities(html: &str) -> String {
+    let mut output = String::new();
+    for ch in html.chars() {
+        if let Some(code) = ESCAPE_MAP.get(&ch) {
+            output += code
+        } else {
+            output.push(ch)
+        }
+    }
+    output
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -123,6 +142,14 @@ mod tests {
         assert_eq!(
             urlencode("http://hello_world.com"),
             "http%3A%2F%2Fhello_world.com"
+        );
+    }
+
+    #[test]
+    fn test_escape() {
+        assert_eq!(
+            &escape_htmlentities("<pre>\"hello world\"</pre>"),
+            "&lt;pre&gt;&quot;hello world&quot;&lt;/pre&gt;"
         );
     }
 
