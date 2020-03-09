@@ -41,6 +41,9 @@ message Candidate {
   bool query_in_filename = 5;
   bool exactly_matched_filename = 6;
   uint32 filename_match_position = 7;
+
+  uint32 snippet_starting_line = 8;
+  repeated string snippet = 9;
 }
 
 message SearchRequest { string query = 1; }

@@ -6,6 +6,8 @@ use std::collections::HashSet;
 use std::sync::Mutex;
 
 const CANDIDATES_TO_RETURN: usize = 25;
+const MAX_LINE_LENGTH: usize = 144;
+const SNIPPET_LENGTH: usize = 7;
 
 lazy_static! {
     static ref KEYWORDS_RE: regex::Regex = { regex::Regex::new(r"(\w+)").unwrap() };
@@ -48,6 +50,7 @@ impl Searcher {
         self.deduplicate(&mut candidates);
         self.rank(&query, &mut candidates);
         self.cutoff(&mut candidates);
+        self.expand_candidates(&mut candidates);
         self.render_results(&candidates);
         return candidates;
     }
@@ -97,13 +100,6 @@ impl Searcher {
             }
 
             if matched {
-                println!("match! query: {:?}", query);
-                println!("filename: {:?}", filename);
-                println!(
-                    "matches: {} {} {}",
-                    query_match, exact_match, match_position
-                );
-
                 let mut c = Candidate::new();
                 c.set_filename(filename.to_owned());
                 c.set_keyword_matched_filename(true);
@@ -244,6 +240,37 @@ impl Searcher {
                 candidate.get_score(),
                 candidate.get_filename()
             );
+        }
+    }
+
+    pub fn expand_candidates(&self, candidates: &mut Vec<Candidate>) {
+        for candidate in candidates {
+            if let Some(doc) = self.get_document(candidate.get_filename()) {
+                let mut started = false;
+                for line in doc.get_content().lines().take(SNIPPET_LENGTH) {
+                    // Make sure that the first included line is not empty.
+                    if !started && line.trim().is_empty() {
+                        continue;
+                    }
+
+                    let mut snippet = line.to_string();
+                    if let Some((idx, _)) = snippet.char_indices().nth(MAX_LINE_LENGTH) {
+                        snippet.truncate(idx);
+                        candidate.mut_snippet().push(snippet);
+                    } else {
+                        candidate.mut_snippet().push(snippet);
+                    }
+                }
+
+                // Make sure that the LAST included line isn't whitespace
+                while let Some(l) = candidate.get_snippet().last() {
+                    if l.trim().is_empty() {
+                        candidate.mut_snippet().pop();
+                    } else {
+                        break;
+                    }
+                }
+            }
         }
     }
 }
