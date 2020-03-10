@@ -83,6 +83,7 @@ rust_library(
         ":search_proto_rust",
         "//third_party:lazy_static",
         "//third_party:regex",
+        "//util/itertools",
         "//util/sstable",
     ],
 )

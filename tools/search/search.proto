@@ -33,6 +33,12 @@ message File {
   bool is_directory = 4;
 }
 
+message Span {
+  uint64 line = 1;
+  uint64 offset = 2;
+  uint64 length = 3;
+}
+
 message Candidate {
   string filename = 1;
   repeated ExtractedKeyword matched_keywords = 2;

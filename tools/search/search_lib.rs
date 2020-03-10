@@ -50,7 +50,7 @@ impl Searcher {
         self.deduplicate(&mut candidates);
         self.rank(&query, &mut candidates);
         self.cutoff(&mut candidates);
-        self.expand_candidates(&mut candidates);
+        self.expand_candidates(&query, &mut candidates);
         self.render_results(&candidates);
         return candidates;
     }
@@ -150,8 +150,7 @@ impl Searcher {
             Some(s) => s,
             None => KeywordMatches::new(),
         };
-        let mut normalized_keyword = keyword.to_lowercase();
-        normalized_keyword.retain(|c| c != '_' && c != '-');
+        let normalized_keyword = normalize_keyword(keyword);
         let mut normalized_matches = match self
             .keywords
             .lock()
@@ -265,36 +264,104 @@ impl Searcher {
         }
     }
 
-    pub fn expand_candidates(&self, candidates: &mut Vec<Candidate>) {
-        for candidate in candidates {
-            if let Some(doc) = self.get_document(candidate.get_filename()) {
-                let mut started = false;
-                for line in doc.get_content().lines().take(SNIPPET_LENGTH) {
-                    // Make sure that the first included line is not empty.
-                    if !started && line.trim().is_empty() {
-                        continue;
-                    }
+    pub fn expand_candidates(&self, query: &Query, candidates: &mut Vec<Candidate>) {
+        for candidate in candidates.iter_mut() {
+            self.expand_candidate(query, candidate);
+        }
+    }
 
-                    let mut snippet = line.to_string();
-                    if let Some((idx, _)) = snippet.char_indices().nth(MAX_LINE_LENGTH) {
-                        snippet.truncate(idx);
-                        candidate.mut_snippet().push(snippet);
-                    } else {
-                        candidate.mut_snippet().push(snippet);
-                    }
-                }
+    pub fn expand_candidate(&self, query: &Query, candidate: &mut Candidate) {
+        let doc = match self.get_document(candidate.get_filename()) {
+            Some(d) => d,
+            None => return,
+        };
 
-                // Make sure that the LAST included line isn't whitespace
-                while let Some(l) = candidate.get_snippet().last() {
-                    if l.trim().is_empty() {
-                        candidate.mut_snippet().pop();
-                    } else {
-                        break;
-                    }
+        let mut spans = Vec::new();
+        for (line_number, line) in doc.get_content().lines().enumerate() {
+            let line = line.to_lowercase();
+
+            for keyword in query.get_keywords() {
+                let mut s = extract_spans(keyword, &line);
+                for span in s.iter_mut() {
+                    span.set_line(line_number as u64);
                 }
+                spans.append(&mut s);
+            }
+        }
+
+        let window_start = find_max_span_window(spans);
+
+        let mut started = false;
+        for line in doc
+            .get_content()
+            .lines()
+            .skip(window_start)
+            .take(SNIPPET_LENGTH)
+        {
+            if !started && line.trim().is_empty() {
+                continue;
+            }
+            let mut snippet = line.to_string();
+            if let Some((idx, _)) = snippet.char_indices().nth(MAX_LINE_LENGTH) {
+                snippet.truncate(idx);
+                candidate.mut_snippet().push(snippet);
+            } else {
+                candidate.mut_snippet().push(snippet);
             }
         }
     }
+}
+
+fn find_max_span_window(spans: Vec<Span>) -> usize {
+    if spans.len() == 0 {
+        return 0;
+    }
+
+    // Find the highest density of spans within a window
+    let mut max_window_start = 0;
+    let mut window_start = 0;
+    let mut max_spans = 0;
+    let mut included_spans = std::collections::VecDeque::new();
+    let mut span_iter = spans.iter();
+    for span in spans {
+        if (span.get_line() as usize) < window_start + SNIPPET_LENGTH {
+            included_spans.push_back(span.get_line() as usize);
+        } else {
+            window_start = span.get_line() as usize - SNIPPET_LENGTH;
+            included_spans.push_back(span.get_line() as usize);
+            while let Some(s) = included_spans.front() {
+                if *s < window_start {
+                    included_spans.pop_front();
+                } else {
+                    break;
+                }
+            }
+        }
+
+        if included_spans.len() > max_spans {
+            max_spans = included_spans.len();
+            max_window_start = window_start;
+        }
+    }
+
+    max_window_start
+}
+
+fn extract_spans(term: &str, line: &str) -> Vec<Span> {
+    let mut output = Vec::new();
+    for (idx, _) in line.match_indices(term) {
+        let mut s = Span::new();
+        s.set_offset(idx as u64);
+        s.set_length(term.len() as u64);
+        output.push(s);
+    }
+    output
+}
+
+fn normalize_keyword(keyword: &str) -> String {
+    let mut normalized_keyword = keyword.to_lowercase();
+    normalized_keyword.retain(|c| c != '_' && c != '-');
+    normalized_keyword
 }
 
 fn merge_candidates(mut from: Candidate, to: &mut Candidate) {
