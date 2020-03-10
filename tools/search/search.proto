@@ -15,11 +15,13 @@ message Query {
 message ExtractedKeyword {
   string keyword = 1;
   uint64 occurrences = 2;
+  bool normalized = 3;
 }
 
 message KeywordMatch {
   string filename = 1;
   uint64 occurrences = 2;
+  bool normalized = 3;
 }
 
 message KeywordMatches { repeated KeywordMatch matches = 1; }

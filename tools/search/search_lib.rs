@@ -148,10 +148,26 @@ impl Searcher {
     ) {
         let mut matches = match self.keywords.lock().unwrap().get(keyword).unwrap() {
             Some(s) => s,
-            None => return,
+            None => KeywordMatches::new(),
+        };
+        let mut normalized_keyword = keyword.to_lowercase();
+        normalized_keyword.retain(|c| c != '_' && c != '-');
+        let mut normalized_matches = match self
+            .keywords
+            .lock()
+            .unwrap()
+            .get(&normalized_keyword)
+            .unwrap()
+        {
+            Some(s) => s,
+            None => KeywordMatches::new(),
         };
 
-        for mut m in matches.take_matches().into_iter() {
+        for mut m in matches
+            .take_matches()
+            .into_iter()
+            .chain(normalized_matches.take_matches().into_iter())
+        {
             if let Some(ref set) = or_set {
                 if !set.contains(m.get_filename()) {
                     continue;
@@ -164,6 +180,7 @@ impl Searcher {
             let mut k = ExtractedKeyword::new();
             k.set_keyword(keyword.to_owned());
             k.set_occurrences(m.get_occurrences());
+            k.set_normalized(m.get_normalized());
             c.mut_matched_keywords().push(k);
 
             candidates.push(c);
@@ -193,6 +210,11 @@ impl Searcher {
         for kw in candidate.get_matched_keywords() {
             score += 10.0;
             score += 0.1 * std::cmp::min(kw.get_occurrences(), 10) as f32;
+
+            // Penalty for non-exact keyword match
+            if kw.get_normalized() {
+                score -= 3.0;
+            }
         }
 
         // Filename match scoring

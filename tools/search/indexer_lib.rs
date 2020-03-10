@@ -12,7 +12,16 @@ impl plume::DoFn for ExtractKeywordsFn {
             doc.set_filename(input.key().to_owned());
             doc.set_occurrences(extracted_keyword.get_occurrences());
             let keyword = extracted_keyword.get_keyword().to_owned();
-            emit.emit(KV::new(keyword, doc));
+            emit.emit(KV::new(keyword.clone(), doc.clone()));
+
+            // Also create a normalized version, which is lowercase
+            // and has _ and - chars stripped
+            let mut normalized_keyword = keyword.to_lowercase();
+            normalized_keyword.retain(|c| c != '_' && c != '-');
+            if normalized_keyword != keyword {
+                doc.set_normalized(true);
+                emit.emit(KV::new(normalized_keyword, doc));
+            }
         }
     }
 }
@@ -42,10 +51,11 @@ impl plume::DoStreamFn for AggregateKeywordsFn {
 mod tests {
     use super::*;
 
-    fn kw(filename: &str, occ: u64) -> KeywordMatch {
+    fn kw(filename: &str, occ: u64, norm: bool) -> KeywordMatch {
         let mut m = KeywordMatch::new();
         m.set_filename(filename.to_owned());
         m.set_occurrences(occ);
+        m.set_normalized(norm);
         m
     }
 
@@ -76,14 +86,20 @@ mod tests {
         let output = index.into_vec();
 
         let mut m = KeywordMatches::new();
-        m.mut_matches().push(kw("dk.txt", 1));
-        m.mut_matches().push(kw("mario.txt", 1));
+        m.mut_matches().push(kw("dk.txt", 1, false));
+        m.mut_matches().push(kw("mario.txt", 1, false));
 
         assert_eq!(output.as_ref()[0], KV::new(String::from("donkey_kong"), m));
 
         let mut m = KeywordMatches::new();
-        m.mut_matches().push(kw("mario.txt", 1));
+        m.mut_matches().push(kw("dk.txt", 1, true));
+        m.mut_matches().push(kw("mario.txt", 1, true));
 
-        assert_eq!(output.as_ref()[1], KV::new(String::from("mario"), m));
+        assert_eq!(output.as_ref()[1], KV::new(String::from("donkeykong"), m));
+
+        let mut m = KeywordMatches::new();
+        m.mut_matches().push(kw("mario.txt", 1, false));
+
+        assert_eq!(output.as_ref()[2], KV::new(String::from("mario"), m));
     }
 }
