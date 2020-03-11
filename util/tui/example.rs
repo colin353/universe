@@ -4,6 +4,7 @@ use tui::Component;
 struct AppState {
     query: String,
     filename: String,
+    results: Vec<String>,
 }
 
 struct SearchInput;
@@ -46,12 +47,12 @@ impl SearchResult {
     }
 }
 
-impl Component<AppState> for SearchResult {
+impl Component<String> for SearchResult {
     fn render(
         &mut self,
         t: &mut tui::Terminal,
-        state: &AppState,
-        prev_state: Option<&AppState>,
+        state: &String,
+        prev_state: Option<&String>,
     ) -> usize {
         t.move_cursor_to(0, 0);
         t.wrap = false;
@@ -59,12 +60,34 @@ impl Component<AppState> for SearchResult {
         t.move_cursor_to(0, 1);
         t.clear_line();
         t.print("1. ");
-        t.print(&state.filename);
+        t.print(state);
         t.move_cursor_to(0, 2);
-        t.print("# script to run just executes the binary\n\n");
-        t.print("cargo build \\\n");
         t.flush();
         3
+    }
+}
+
+fn transform<'a>(s: &'a AppState) -> &'a Vec<String> {
+    &s.results
+}
+
+struct CodeContainer();
+impl Component<Vec<String>> for CodeContainer {
+    fn render(
+        &mut self,
+        t: &mut tui::Terminal,
+        state: &Vec<String>,
+        prev_state: Option<&Vec<String>>,
+    ) -> usize {
+        let mut t = t.clone();
+        t.offset_x += 5;
+        t.width -= 10;
+        t.wrap = false;
+        for (idx, line) in state.iter().enumerate() {
+            t.move_cursor_to(0, idx);
+            t.print(line);
+        }
+        state.len()
     }
 }
 
@@ -74,10 +97,17 @@ fn main() {
     let state = AppState {
         query: String::from("hello"),
         filename: String::from("text 1 2 3"),
+        results: vec![
+            String::from("/util/sstable.rs"),
+            String::from("/tmp/largetable.txt"),
+        ],
     };
     let mut s = SearchInput::new();
-    let mut r = SearchResult::new();
 
-    let mut c = tui::Container::new(vec![Box::new(s), Box::new(r)]);
+    let mut r = SearchResult::new();
+    let mut v = tui::VecContainer::new(Box::new(r));
+    let mut tr = tui::Transformer::new(Box::new(v), transform);
+
+    let mut c = tui::Container::new(vec![Box::new(s), Box::new(tr)]);
     c.render(&mut t, &state, None);
 }

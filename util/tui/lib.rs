@@ -157,3 +157,61 @@ where
         self.size
     }
 }
+
+pub struct VecContainer<T> {
+    component: Box<dyn Component<T>>,
+}
+
+impl<T> VecContainer<T> {
+    pub fn new(component: Box<dyn Component<T>>) -> Self {
+        Self {
+            component: component,
+        }
+    }
+}
+
+impl<T> Component<Vec<T>> for VecContainer<T>
+where
+    T: PartialEq,
+{
+    fn render(
+        &mut self,
+        term: &mut Terminal,
+        state: &Vec<T>,
+        prev_state: Option<&Vec<T>>,
+    ) -> usize {
+        let mut t = term.clone();
+        let mut size = 0;
+        for (index, s_i) in state.iter().enumerate() {
+            let offset = self.component.render(&mut t, s_i, None);
+            t.offset_y += offset;
+            size += offset;
+        }
+        size
+    }
+}
+
+pub struct Transformer<F, T2> {
+    transformer: F,
+    component: Box<dyn Component<T2>>,
+}
+
+impl<F, T2> Transformer<F, T2> {
+    pub fn new(component: Box<dyn Component<T2>>, transformer: F) -> Self {
+        Self {
+            component: component,
+            transformer: transformer,
+        }
+    }
+}
+
+impl<F, T1, T2> Component<T1> for Transformer<F, T2>
+where
+    F: Fn(&T1) -> &T2,
+{
+    fn render(&mut self, term: &mut Terminal, state: &T1, prev_state: Option<&T1>) -> usize {
+        let transformed = (self.transformer)(state);
+        self.component
+            .render(term, transformed, prev_state.map(|s| (self.transformer)(s)))
+    }
+}
