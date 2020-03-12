@@ -1,6 +1,7 @@
+use std::io::Read;
 use tui::Component;
 
-#[derive(PartialEq)]
+#[derive(Clone, PartialEq)]
 struct AppState {
     query: String,
     filename: String,
@@ -37,6 +38,10 @@ impl tui::Component<AppState> for SearchInput {
         t.print(&(0..t.width).map(|_| '-').collect::<String>());
         3
     }
+}
+
+enum InputEvent {
+    Keyboard(char),
 }
 
 struct SearchResult {}
@@ -91,23 +96,61 @@ impl Component<Vec<String>> for CodeContainer {
     }
 }
 
+struct App {
+    component: tui::Container<AppState>,
+}
+impl App {
+    pub fn new() -> Self {
+        let mut s = SearchInput::new();
+
+        let mut r = SearchResult::new();
+        let mut v = tui::VecContainer::new(Box::new(r));
+        let mut tr = tui::Transformer::new(Box::new(v), transform);
+
+        let mut c = tui::Container::new(vec![Box::new(s), Box::new(tr)]);
+
+        Self { component: c }
+    }
+}
+
+impl tui::AppController<AppState, InputEvent> for App {
+    fn render(
+        &mut self,
+        term: &mut tui::Terminal,
+        state: &AppState,
+        prev_state: Option<&AppState>,
+    ) {
+        self.component.render(term, state, prev_state);
+    }
+
+    fn transition(&mut self, state: &AppState, event: InputEvent) -> Option<AppState> {
+        match event {
+            InputEvent::Keyboard(c) => {
+                let mut new_state = (*state).clone();
+                new_state.query.push(c);
+                return Some(new_state);
+            }
+            _ => None,
+        }
+    }
+
+    fn initial_state(&self) -> AppState {
+        AppState {
+            query: String::from("hello"),
+            filename: String::from("text 1 2 3"),
+            results: vec![
+                String::from("/util/sstable.rs"),
+                String::from("/tmp/largetable.txt"),
+            ],
+        }
+    }
+}
+
 fn main() {
-    let mut t = tui::Terminal::new();
-    t.clear_screen();
-    let state = AppState {
-        query: String::from("hello"),
-        filename: String::from("text 1 2 3"),
-        results: vec![
-            String::from("/util/sstable.rs"),
-            String::from("/tmp/largetable.txt"),
-        ],
-    };
-    let mut s = SearchInput::new();
+    let ctrl = App::new();
+    let mut app = tui::App::start(Box::new(ctrl));
 
-    let mut r = SearchResult::new();
-    let mut v = tui::VecContainer::new(Box::new(r));
-    let mut tr = tui::Transformer::new(Box::new(v), transform);
-
-    let mut c = tui::Container::new(vec![Box::new(s), Box::new(tr)]);
-    c.render(&mut t, &state, None);
+    for ch in std::io::stdin().lock().bytes() {
+        app.handle_event(InputEvent::Keyboard(ch.unwrap().into()));
+    }
 }

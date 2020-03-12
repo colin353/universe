@@ -215,3 +215,36 @@ where
             .render(term, transformed, prev_state.map(|s| (self.transformer)(s)))
     }
 }
+
+pub trait AppController<S, E> {
+    fn render(&mut self, term: &mut Terminal, state: &S, prev_state: Option<&S>);
+    fn initial_state(&self) -> S;
+    fn transition(&mut self, state: &S, event: E) -> Option<S>;
+}
+
+pub struct App<S, E> {
+    terminal: Terminal,
+    state: S,
+    controller: Box<dyn AppController<S, E>>,
+}
+
+impl<S, E> App<S, E> {
+    pub fn start(controller: Box<dyn AppController<S, E>>) -> Self {
+        let mut app = Self {
+            terminal: Terminal::new(),
+            state: controller.initial_state(),
+            controller: controller,
+        };
+        app.terminal.clear_screen();
+        app.controller.render(&mut app.terminal, &app.state, None);
+        app
+    }
+
+    pub fn handle_event(&mut self, event: E) {
+        if let Some(new_state) = self.controller.transition(&self.state, event) {
+            self.controller
+                .render(&mut self.terminal, &new_state, Some(&self.state));
+            self.state = new_state;
+        }
+    }
+}
