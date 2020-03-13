@@ -1,4 +1,6 @@
+use raw_tty::GuardMode;
 use std::io::Write;
+use std::rc::Rc;
 
 #[derive(Clone)]
 pub struct Terminal {
@@ -9,6 +11,7 @@ pub struct Terminal {
     pos_x: usize,
     pos_y: usize,
     pub wrap: bool,
+    stdout: Rc<raw_tty::TtyWithGuard<std::io::Stdout>>,
 }
 
 impl Terminal {
@@ -21,9 +24,20 @@ impl Terminal {
             pos_x: 0,
             pos_y: 0,
             wrap: true,
+            stdout: Rc::new(std::io::stdout().guard_mode().unwrap()),
         };
         t.determine_terminal_size();
+        t.disable_echo();
         t
+    }
+
+    pub fn disable_echo(&mut self) {
+        Rc::get_mut(&mut self.stdout)
+            .unwrap()
+            .modify_mode(|mut ios| {
+                ios.c_lflag &= !0000010;
+                ios
+            });
     }
 
     pub fn determine_terminal_size(&mut self) {
@@ -183,7 +197,8 @@ where
         let mut t = term.clone();
         let mut size = 0;
         for (index, s_i) in state.iter().enumerate() {
-            let offset = self.component.render(&mut t, s_i, None);
+            let prev_item = prev_state.as_ref().map(|s| s.get(index)).flatten();
+            let offset = self.component.render(&mut t, s_i, prev_item);
             t.offset_y += offset;
             size += offset;
         }

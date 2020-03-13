@@ -23,6 +23,23 @@ impl tui::Component<AppState> for SearchInput {
         state: &AppState,
         prev_state: Option<&AppState>,
     ) -> usize {
+        if let Some(prev) = prev_state {
+            if state == prev {
+                return 3;
+            }
+
+            t.move_cursor_to(19, 1);
+            t.print(&state.query);
+            if state.query.len() < prev.query.len() {
+                t.print(
+                    &(0..prev.query.len() - state.query.len())
+                        .map(|_| ' ')
+                        .collect::<String>(),
+                );
+            }
+            return 3;
+        }
+
         t.move_cursor_to(0, 0);
         t.print(&(0..t.width).map(|_| '-').collect::<String>());
         t.move_cursor_to(0, 1);
@@ -125,6 +142,20 @@ impl tui::AppController<AppState, InputEvent> for App {
 
     fn transition(&mut self, state: &AppState, event: InputEvent) -> Option<AppState> {
         match event {
+            InputEvent::Keyboard('\x7f') => {
+                let mut new_state = (*state).clone();
+                new_state.query.pop();
+                return Some(new_state);
+            }
+            InputEvent::Keyboard('\n') => {
+                let mut new_state = (*state).clone();
+                new_state.results.push(new_state.query.clone());
+                new_state.query = String::new();
+                return Some(new_state);
+            }
+            InputEvent::Keyboard('q') => {
+                std::process::exit(0);
+            }
             InputEvent::Keyboard(c) => {
                 let mut new_state = (*state).clone();
                 new_state.query.push(c);
