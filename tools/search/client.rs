@@ -6,7 +6,7 @@ pub struct SearchClient {
 }
 
 impl SearchClient {
-    pub fn new(hostname: &str, port: u16, token: String) -> Self {
+    pub fn new(hostname: &str, port: u16) -> Self {
         SearchClient {
             client: Arc::new(
                 search_grpc_rust::SearchServiceClient::new_plain(

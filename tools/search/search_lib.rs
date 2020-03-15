@@ -1,7 +1,7 @@
 #[macro_use]
 extern crate lazy_static;
 
-use search_proto_rust::*;
+use search_grpc_rust::*;
 use std::collections::HashSet;
 use std::sync::Mutex;
 

@@ -20,6 +20,10 @@ impl SearchService for SearchServiceHandler {
         _: grpc::RequestOptions,
         req: SearchRequest,
     ) -> grpc::SingleResponse<SearchResponse> {
-        grpc::SingleResponse::completed(SearchResponse::new())
+        let mut response = SearchResponse::new();
+        for result in self.searcher.search(req.get_query()) {
+            response.mut_candidates().push(result);
+        }
+        grpc::SingleResponse::completed(response)
     }
 }

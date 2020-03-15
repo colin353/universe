@@ -40,7 +40,6 @@ rust_binary(
     deps = [
         "search_grpc_rust",
         ":search_lib",
-        ":search_proto_rust",
         ":server_lib",
         "//auth:auth_client",
         "//third_party:base64",
@@ -89,7 +88,7 @@ rust_library(
     srcs = ["search_lib.rs"],
     edition = "2018",
     deps = [
-        ":search_proto_rust",
+        ":search_grpc_rust",
         "//third_party:lazy_static",
         "//third_party:regex",
         "//util/itertools",

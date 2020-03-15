@@ -1,4 +1,4 @@
-use search_proto_rust::*;
+use search_grpc_rust::*;
 
 pub fn result(c: &Candidate) -> tmpl::ContentsMap {
     let snippet_starting_line = 1 + c.get_snippet_starting_line() as usize;
