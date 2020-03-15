@@ -10,7 +10,8 @@ mod render;
 mod webserver;
 
 fn main() {
-    let port = define_flag!("port", 9898, "The port to bind to");
+    let web_port = define_flag!("web_port", 9898, "The port to bind to (for web)");
+    let grpc_port = define_flag!("grpc_port", 9899, "The port to bind to (for grpc)");
     let index_dir = define_flag!(
         "index_dir",
         String::new(),
@@ -34,7 +35,8 @@ fn main() {
     );
 
     parse_flags!(
-        port,
+        web_port,
+        grpc_port,
         index_dir,
         auth_hostname,
         auth_port,
@@ -43,24 +45,19 @@ fn main() {
     );
 
     let mut server = grpc::ServerBuilder::<tls_api_stub::TlsAcceptor>::new();
-    server.http.set_port(port.value());
+    server.http.set_port(grpc_port.value());
     server.http.set_cpu_pool_threads(2);
 
-    let searcher = search_lib::Searcher::new(&index_dir.path());
+    let searcher = Arc::new(search_lib::Searcher::new(&index_dir.path()));
 
-    /*let handler = server_lib::SearchServiceHandler::new(searcher);
+    let handler = server_lib::SearchServiceHandler::new(searcher.clone());
     server.add_service(search_grpc_rust::SearchServiceServer::new_service_def(
         handler,
     ));
-    let _server = server.build().unwrap();*/
+    let _server = server.build().unwrap();
 
     let auth = auth_client::AuthClient::new(&auth_hostname.value(), auth_port.value());
 
-    webserver::SearchWebserver::new(
-        Arc::new(searcher),
-        static_files.value(),
-        base_url.value(),
-        auth,
-    )
-    .serve(port.value());
+    webserver::SearchWebserver::new(searcher, static_files.value(), base_url.value(), auth)
+        .serve(web_port.value());
 }

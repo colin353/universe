@@ -54,6 +54,15 @@ rust_binary(
 )
 
 rust_library(
+    name = "search_client",
+    srcs = ["client.rs"],
+    edition = "2018",
+    deps = [
+        ":search_grpc_rust",
+    ],
+)
+
+rust_library(
     name = "server_lib",
     srcs = ["server_lib.rs"],
     edition = "2018",

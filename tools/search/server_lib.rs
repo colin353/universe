@@ -9,10 +9,8 @@ pub struct SearchServiceHandler {
 }
 
 impl SearchServiceHandler {
-    pub fn new(searcher: Searcher) -> Self {
-        Self {
-            searcher: Arc::new(searcher),
-        }
+    pub fn new(searcher: Arc<Searcher>) -> Self {
+        Self { searcher: searcher }
     }
 }
 
