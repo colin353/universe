@@ -1,6 +1,8 @@
 use raw_tty::GuardMode;
+use std::collections::HashMap;
 use std::io::Write;
 use std::rc::Rc;
+use std::sync::Mutex;
 
 #[derive(Clone)]
 pub struct Terminal {
@@ -11,7 +13,10 @@ pub struct Terminal {
     pos_x: usize,
     pos_y: usize,
     pub wrap: bool,
-    stdout: Rc<raw_tty::TtyWithGuard<std::io::Stdout>>,
+    stdout: Rc<raw_tty::TtyWithGuard<std::io::Stderr>>,
+    prefix: String,
+    tree: Rc<Mutex<HashMap<String, usize>>>,
+    focus: Rc<Mutex<Option<(usize, usize)>>>,
 }
 
 impl Terminal {
@@ -24,11 +29,38 @@ impl Terminal {
             pos_x: 0,
             pos_y: 0,
             wrap: true,
-            stdout: Rc::new(std::io::stdout().guard_mode().unwrap()),
+            stdout: Rc::new(std::io::stderr().guard_mode().unwrap()),
+            prefix: String::new(),
+            tree: Rc::new(Mutex::new(HashMap::new())),
+            focus: Rc::new(Mutex::new(None)),
         };
         t.determine_terminal_size();
         t.disable_echo();
         t
+    }
+
+    pub fn derive(&self, prefix: String) -> Self {
+        let mut t = self.clone();
+        t.prefix += "::";
+        t.prefix += &prefix;
+        t
+    }
+
+    pub fn set_rendered_size(&self, size: usize) -> usize {
+        self.tree.lock().unwrap().insert(self.prefix.clone(), size);
+        size
+    }
+
+    pub fn get_rendered_size(&self) -> usize {
+        *self.tree.lock().unwrap().get(&self.prefix).unwrap()
+    }
+
+    pub fn set_focus(&self, x: usize, y: usize) {
+        *self.focus.lock().unwrap() = Some((x, y));
+    }
+
+    pub fn unset_focus(&self) {
+        *self.focus.lock().unwrap() = None;
     }
 
     pub fn disable_echo(&mut self) {
@@ -137,14 +169,12 @@ pub trait Component<T> {
 
 pub struct Container<T> {
     components: Vec<Box<dyn Component<T>>>,
-    size: usize,
 }
 
 impl<T> Container<T> {
     pub fn new(components: Vec<Box<dyn Component<T>>>) -> Self {
         Self {
             components: components,
-            size: 0,
         }
     }
 }
@@ -156,19 +186,19 @@ where
     fn render(&mut self, term: &mut Terminal, state: &T, prev_state: Option<&T>) -> usize {
         if let Some(p) = prev_state {
             if state == p {
-                return self.size;
+                return term.get_rendered_size();
             }
         }
 
-        let mut t = term.clone();
-        self.size = 0;
-        for component in &mut self.components {
+        let mut size = 0;
+        for (idx, component) in self.components.iter_mut().enumerate() {
+            let mut t = term.derive(format!("{}", idx));
+            t.offset_y += size;
             let offset = component.render(&mut t, state, prev_state);
-            t.offset_y += offset;
-            self.size += offset;
+            size += offset;
         }
 
-        self.size
+        term.set_rendered_size(size)
     }
 }
 
@@ -194,15 +224,23 @@ where
         state: &Vec<T>,
         prev_state: Option<&Vec<T>>,
     ) -> usize {
-        let mut t = term.clone();
+        if let Some(prev) = prev_state {
+            if state == prev {
+                return term.get_rendered_size();
+            }
+        }
+
         let mut size = 0;
         for (index, s_i) in state.iter().enumerate() {
+            let mut t = term.derive(format!("{}", index));
+            t.offset_y += size;
             let prev_item = prev_state.as_ref().map(|s| s.get(index)).flatten();
             let offset = self.component.render(&mut t, s_i, prev_item);
             t.offset_y += offset;
             size += offset;
         }
-        size
+
+        term.set_rendered_size(size)
     }
 }
 
@@ -234,13 +272,21 @@ where
 pub trait AppController<S, E> {
     fn render(&mut self, term: &mut Terminal, state: &S, prev_state: Option<&S>);
     fn initial_state(&self) -> S;
-    fn transition(&mut self, state: &S, event: E) -> Option<S>;
+    fn transition(&mut self, state: &S, event: E) -> Transition<S>;
 }
 
 pub struct App<S, E> {
     terminal: Terminal,
     state: S,
     controller: Box<dyn AppController<S, E>>,
+}
+
+pub enum Transition<S> {
+    Updated(S),
+    // Terminate the program with the provided exit code
+    Terminate(i32),
+    // No state update
+    Nothing,
 }
 
 impl<S, E> App<S, E> {
@@ -252,14 +298,37 @@ impl<S, E> App<S, E> {
         };
         app.terminal.clear_screen();
         app.controller.render(&mut app.terminal, &app.state, None);
+        let focus = *app.terminal.focus.lock().unwrap();
+        if let Some((x, y)) = focus {
+            app.terminal.move_cursor_to(x, y);
+            app.terminal.show_cursor();
+        } else {
+            app.terminal.hide_cursor();
+        }
         app
     }
 
     pub fn handle_event(&mut self, event: E) {
-        if let Some(new_state) = self.controller.transition(&self.state, event) {
-            self.controller
-                .render(&mut self.terminal, &new_state, Some(&self.state));
-            self.state = new_state;
+        match self.controller.transition(&self.state, event) {
+            Transition::Updated(new_state) => {
+                self.terminal.hide_cursor();
+                self.controller
+                    .render(&mut self.terminal, &new_state, Some(&self.state));
+                let focus = *self.terminal.focus.lock().unwrap();
+                if let Some((x, y)) = focus {
+                    self.terminal.move_cursor_to(x, y);
+                    self.terminal.show_cursor();
+                } else {
+                    self.terminal.hide_cursor();
+                }
+                self.state = new_state;
+            }
+            Transition::Terminate(exit_code) => {
+                self.terminal.show_cursor();
+                self.terminal.clear_screen();
+                std::process::exit(exit_code);
+            }
+            Transition::Nothing => (),
         }
     }
 }

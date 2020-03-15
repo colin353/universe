@@ -1,11 +1,38 @@
 use std::io::Read;
 use tui::Component;
+use tui::Transition;
 
 #[derive(Clone, PartialEq)]
 struct AppState {
+    edit_mode: bool,
     query: String,
+    selected: usize,
+    results: Vec<SearchResult>,
+}
+
+impl AppState {
+    fn update_selected(&mut self) {
+        for (idx, result) in self.results.iter_mut().enumerate() {
+            result.selected = !self.edit_mode && idx == self.selected;
+        }
+    }
+}
+
+#[derive(Clone, PartialEq)]
+struct SearchResult {
+    index: usize,
     filename: String,
-    results: Vec<String>,
+    selected: bool,
+}
+
+impl SearchResult {
+    pub fn new() -> Self {
+        Self {
+            index: 0,
+            filename: String::new(),
+            selected: false,
+        }
+    }
 }
 
 struct SearchInput;
@@ -23,6 +50,12 @@ impl tui::Component<AppState> for SearchInput {
         state: &AppState,
         prev_state: Option<&AppState>,
     ) -> usize {
+        if state.edit_mode {
+            t.set_focus(19 + state.query.len(), 1);
+        } else {
+            t.unset_focus();
+        }
+
         if let Some(prev) = prev_state {
             if state == prev {
                 return 3;
@@ -61,35 +94,46 @@ enum InputEvent {
     Keyboard(char),
 }
 
-struct SearchResult {}
+struct SearchResultComponent {}
 
-impl SearchResult {
+impl SearchResultComponent {
     pub fn new() -> Self {
-        SearchResult {}
+        SearchResultComponent {}
     }
 }
 
-impl Component<String> for SearchResult {
+impl Component<SearchResult> for SearchResultComponent {
     fn render(
         &mut self,
         t: &mut tui::Terminal,
-        state: &String,
-        prev_state: Option<&String>,
+        state: &SearchResult,
+        prev_state: Option<&SearchResult>,
     ) -> usize {
+        if let Some(prev) = prev_state {
+            if prev == state {
+                return 3;
+            }
+        }
         t.move_cursor_to(0, 0);
         t.wrap = false;
         t.clear_line();
         t.move_cursor_to(0, 1);
         t.clear_line();
-        t.print("1. ");
-        t.print(state);
+        t.print(&format!("{}. ", state.index));
+        if state.selected {
+            t.set_inverted();
+            t.print(&state.filename);
+            t.set_normal();
+        } else {
+            t.print(&state.filename);
+        }
         t.move_cursor_to(0, 2);
         t.flush();
         3
     }
 }
 
-fn transform<'a>(s: &'a AppState) -> &'a Vec<String> {
+fn transform<'a>(s: &'a AppState) -> &'a Vec<SearchResult> {
     &s.results
 }
 
@@ -120,7 +164,7 @@ impl App {
     pub fn new() -> Self {
         let mut s = SearchInput::new();
 
-        let mut r = SearchResult::new();
+        let mut r = SearchResultComponent::new();
         let mut v = tui::VecContainer::new(Box::new(r));
         let mut tr = tui::Transformer::new(Box::new(v), transform);
 
@@ -140,39 +184,107 @@ impl tui::AppController<AppState, InputEvent> for App {
         self.component.render(term, state, prev_state);
     }
 
-    fn transition(&mut self, state: &AppState, event: InputEvent) -> Option<AppState> {
+    fn transition(&mut self, state: &AppState, event: InputEvent) -> Transition<AppState> {
         match event {
+            InputEvent::Keyboard('\x1B') => {
+                let mut new_state = (*state).clone();
+                new_state.edit_mode = false;
+                Transition::Updated(new_state)
+            }
+            InputEvent::Keyboard('/') => {
+                let mut new_state = (*state).clone();
+                if state.edit_mode {
+                    new_state.query.push('/');
+                } else {
+                    new_state.edit_mode = true;
+                    new_state.update_selected();
+                }
+                Transition::Updated(new_state)
+            }
+            InputEvent::Keyboard('\x17') => {
+                let mut new_state = (*state).clone();
+                let index = new_state.query.rfind(' ').unwrap_or(0);
+                new_state.query = (&new_state.query[0..index]).to_string();
+                Transition::Updated(new_state)
+            }
             InputEvent::Keyboard('\x7f') => {
                 let mut new_state = (*state).clone();
                 new_state.query.pop();
-                return Some(new_state);
+                Transition::Updated(new_state)
             }
             InputEvent::Keyboard('\n') => {
-                let mut new_state = (*state).clone();
-                new_state.results.push(new_state.query.clone());
-                new_state.query = String::new();
-                return Some(new_state);
+                if state.edit_mode {
+                    let mut new_state = (*state).clone();
+                    let mut sr = SearchResult::new();
+                    sr.filename = new_state.query.clone();
+                    sr.index = 1 + new_state.results.len();
+                    sr.selected = false;
+                    new_state.results.push(sr);
+                    new_state.query = String::new();
+                    new_state.edit_mode = false;
+                    new_state.selected = 0;
+                    new_state.update_selected();
+                    Transition::Updated(new_state)
+                } else {
+                    println!("{}", state.results[state.selected].filename);
+                    Transition::Terminate(0)
+                }
             }
             InputEvent::Keyboard('q') => {
-                std::process::exit(0);
+                if !state.edit_mode {
+                    Transition::Terminate(1)
+                } else {
+                    let mut new_state = (*state).clone();
+                    new_state.query.push('q');
+                    Transition::Updated(new_state)
+                }
+            }
+            InputEvent::Keyboard('j') => {
+                let mut new_state = (*state).clone();
+                if state.edit_mode {
+                    new_state.query.push('j');
+                    return Transition::Updated(new_state);
+                }
+
+                if state.selected < state.results.len() - 1 {
+                    new_state.selected += 1;
+                    new_state.update_selected();
+                    return Transition::Updated(new_state);
+                }
+                Transition::Nothing
+            }
+            InputEvent::Keyboard('k') => {
+                let mut new_state = (*state).clone();
+                if state.edit_mode {
+                    new_state.query.push('q');
+                    return Transition::Updated(new_state);
+                }
+
+                if state.selected > 0 {
+                    new_state.selected -= 1;
+                    new_state.update_selected();
+                    return Transition::Updated(new_state);
+                }
+                Transition::Nothing
             }
             InputEvent::Keyboard(c) => {
-                let mut new_state = (*state).clone();
-                new_state.query.push(c);
-                return Some(new_state);
+                if state.edit_mode {
+                    let mut new_state = (*state).clone();
+                    new_state.query.push(c);
+                    return Transition::Updated(new_state);
+                }
+                Transition::Nothing
             }
-            _ => None,
+            _ => Transition::Nothing,
         }
     }
 
     fn initial_state(&self) -> AppState {
         AppState {
-            query: String::from("hello"),
-            filename: String::from("text 1 2 3"),
-            results: vec![
-                String::from("/util/sstable.rs"),
-                String::from("/tmp/largetable.txt"),
-            ],
+            edit_mode: true,
+            query: String::from(""),
+            results: vec![],
+            selected: 0,
         }
     }
 }
