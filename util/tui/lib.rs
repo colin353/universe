@@ -112,6 +112,10 @@ impl Terminal {
         eprint!("\x1b[{}m", 1);
     }
 
+    pub fn set_grey(&self) {
+        eprint!("\x1b[{}m", 36);
+    }
+
     pub fn set_normal(&self) {
         eprint!("\x1b[{}m", 1);
         eprint!("\x1b[{}m", 49);
@@ -135,19 +139,20 @@ impl Terminal {
             }
 
             if self.pos_y > self.height {
-                panic!("overflow!");
+                break;
             }
 
             let line = if line.len() > self.width - self.pos_x {
                 eprint!("{}", &line[0..self.width - self.pos_x]);
+                let idx = self.width - self.pos_x;
                 self.move_cursor_to(0, self.pos_y + 1);
-                &line[self.width - self.pos_x..]
+                &line[idx..]
             } else {
                 line
             };
 
             if self.pos_y > self.height {
-                panic!("overflow!");
+                break;
             }
 
             let c: Vec<_> = line.chars().collect();

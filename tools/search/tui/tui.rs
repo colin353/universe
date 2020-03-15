@@ -22,6 +22,7 @@ impl AppState {
 struct SearchResult {
     index: usize,
     filename: String,
+    snippet: Vec<String>,
     selected: bool,
 }
 
@@ -30,6 +31,7 @@ impl SearchResult {
         Self {
             index: 0,
             filename: String::new(),
+            snippet: Vec::new(),
             selected: false,
         }
     }
@@ -111,7 +113,7 @@ impl Component<SearchResult> for SearchResultComponent {
     ) -> usize {
         if let Some(prev) = prev_state {
             if prev == state {
-                return 3;
+                return t.get_rendered_size();
             }
         }
         t.move_cursor_to(0, 0);
@@ -127,9 +129,20 @@ impl Component<SearchResult> for SearchResultComponent {
         } else {
             t.print(&state.filename);
         }
+        let mut size = 3;
         t.move_cursor_to(0, 2);
+        t.clear_line();
+        for (idx, line) in state.snippet.iter().enumerate() {
+            t.set_grey();
+            t.move_cursor_to(5, 3 + idx);
+            t.clear_line();
+            t.print(line);
+            t.set_normal();
+            size += 1;
+        }
         t.flush();
-        3
+
+        t.set_rendered_size(size)
     }
 }
 
@@ -232,6 +245,7 @@ impl tui::AppController<AppState, InputEvent> for App {
                             let mut sr = SearchResult::new();
                             sr.filename = candidate.take_filename();
                             sr.index = 1 + index;
+                            sr.snippet = candidate.take_snippet().into_iter().collect();
                             sr
                         })
                         .collect();
