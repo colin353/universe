@@ -28,6 +28,10 @@ pub fn extract_keywords(file: &File) -> Vec<ExtractedKeyword> {
     results.into_iter().map(|(_, x)| x).collect()
 }
 
+pub fn extract_definitions(file: &File) -> Vec<SymbolDefinition> {
+    Vec::new()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

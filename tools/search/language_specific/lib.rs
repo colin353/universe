@@ -19,3 +19,10 @@ pub fn extract_keywords(file: &File) -> Vec<ExtractedKeyword> {
         _ => default::extract_keywords(file),
     }
 }
+
+pub fn extract_definitions(file: &File) -> Vec<SymbolDefinition> {
+    match get_filetype(file.get_filename()) {
+        FileType::RUST => rust::extract_definitions(file),
+        _ => default::extract_definitions(file),
+    }
+}

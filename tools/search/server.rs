@@ -30,7 +30,7 @@ fn main() {
     );
     let base_url = define_flag!(
         "base_url",
-        String::from("http://localhost:9898/"),
+        String::from("http://localhost:9898"),
         "the base URL of the site"
     );
 

@@ -54,6 +54,20 @@ message Candidate {
   repeated string snippet = 9;
 }
 
+enum SymbolType {
+  VARIABLE = 0;
+  FUNCTION = 1;
+  STRUCTURE = 2;
+  TRAIT = 3;
+}
+
+message SymbolDefinition {
+  string symbol = 1;
+  string filename = 2;
+  uint32 line_number = 3;
+  SymbolType symbol_type = 4;
+}
+
 message SearchRequest { string query = 1; }
 message SearchResponse { repeated Candidate candidates = 1; }
 
