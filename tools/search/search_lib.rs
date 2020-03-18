@@ -6,6 +6,7 @@ use std::collections::HashSet;
 use std::sync::Mutex;
 
 const CANDIDATES_TO_RETURN: usize = 25;
+const CANDIDATES_TO_EXPAND: usize = 100;
 const MAX_LINE_LENGTH: usize = 144;
 const SNIPPET_LENGTH: usize = 7;
 
@@ -20,6 +21,7 @@ pub struct Searcher {
 
     // Configuration options
     pub candidates_to_return: usize,
+    pub candidates_to_expand: usize,
 }
 
 impl Searcher {
@@ -28,7 +30,7 @@ impl Searcher {
             sstable::SSTableReader::from_filename(&format!("{}/keywords.sstable", base_dir))
                 .unwrap();
         let mut code =
-            sstable::SSTableReader::from_filename(&format!("{}/code.sstable", base_dir)).unwrap();
+            sstable::SSTableReader::from_filename(&format!("{}/files.sstable", base_dir)).unwrap();
 
         let mut filenames = Vec::new();
         for (filename, _) in &mut code {
@@ -39,6 +41,7 @@ impl Searcher {
             code: Mutex::new(code),
             keywords: Mutex::new(keywords),
             candidates_to_return: CANDIDATES_TO_RETURN,
+            candidates_to_expand: CANDIDATES_TO_EXPAND,
             filenames: filenames,
         }
     }
@@ -48,9 +51,11 @@ impl Searcher {
         let mut candidates = Vec::new();
         self.get_candidates(&query, &mut candidates);
         self.deduplicate(&mut candidates);
-        self.rank(&query, &mut candidates);
-        self.cutoff(&mut candidates);
+        self.initial_rank(&query, &mut candidates);
+        self.cutoff(&mut candidates, self.candidates_to_expand);
         self.expand_candidates(&query, &mut candidates);
+        self.final_rank(&query, &mut candidates);
+        self.cutoff(&mut candidates, self.candidates_to_return);
         self.render_results(&candidates);
         return candidates;
     }
@@ -186,13 +191,25 @@ impl Searcher {
         }
     }
 
-    fn cutoff(&self, candidates: &mut Vec<Candidate>) {
-        candidates.truncate(self.candidates_to_return);
+    fn cutoff(&self, candidates: &mut Vec<Candidate>, num_candidates: usize) {
+        candidates.truncate(num_candidates);
     }
 
-    fn rank(&self, query: &Query, candidates: &mut Vec<Candidate>) {
+    fn initial_rank(&self, query: &Query, candidates: &mut Vec<Candidate>) {
         for mut candidate in candidates.iter_mut() {
             self.score(query, &mut candidate);
+        }
+
+        candidates.sort_by(|a, b| {
+            b.get_score()
+                .partial_cmp(&a.get_score())
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+    }
+
+    fn final_rank(&self, query: &Query, candidates: &mut Vec<Candidate>) {
+        for mut candidate in candidates.iter_mut() {
+            self.fullscore(query, &mut candidate);
         }
 
         candidates.sort_by(|a, b| {
@@ -229,10 +246,20 @@ impl Searcher {
             score += 100.0;
         }
 
+        if candidate.get_filename().starts_with("third_party") {
+            score /= 2.0;
+        }
+
         score +=
             candidate.get_filename_match_position() as f32 / candidate.get_filename().len() as f32;
 
         candidate.set_score(score);
+    }
+
+    fn fullscore(&self, query: &Query, candidate: &mut Candidate) {
+        if candidate.get_is_ugly() {
+            candidate.set_score(candidate.get_score() / 10.0);
+        }
     }
 
     fn deduplicate(&self, candidates: &mut Vec<Candidate>) {
@@ -275,6 +302,9 @@ impl Searcher {
             Some(d) => d,
             None => return,
         };
+
+        candidate.set_is_ugly(doc.get_is_ugly());
+        candidate.set_file_type(doc.get_file_type());
 
         let mut spans = Vec::new();
         for (line_number, line) in doc.get_content().lines().enumerate() {

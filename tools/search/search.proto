@@ -5,6 +5,9 @@ enum FileType {
   RUST = 1;
   PROTO = 2;
   BINARY = 3;
+  JAVASCRIPT = 4;
+  HTML = 5;
+  BAZEL = 6;
 }
 
 message Query {
@@ -31,6 +34,8 @@ message File {
   string content = 2;
   bool is_binary = 3;
   bool is_directory = 4;
+  bool is_ugly = 5;
+  FileType file_type = 6;
 }
 
 message Span {
@@ -52,6 +57,9 @@ message Candidate {
 
   uint32 snippet_starting_line = 8;
   repeated string snippet = 9;
+
+  bool is_ugly = 10;
+  FileType file_type = 11;
 }
 
 enum SymbolType {

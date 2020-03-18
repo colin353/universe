@@ -47,6 +47,26 @@ impl plume::DoStreamFn for AggregateKeywordsFn {
     }
 }
 
+pub struct ProcessFilesFn {}
+impl plume::DoFn for ProcessFilesFn {
+    type Input = KV<String, File>;
+    type Output = KV<String, File>;
+    fn do_it(&self, input: &KV<String, File>, emit: &mut dyn EmitFn<Self::Output>) {
+        let mut file = input.value().clone();
+        file.set_file_type(language_specific::get_filetype(file.get_filename()));
+
+        // Some machine-generated files have insanely long lines. Usually humans
+        // don't want to read files like that.
+        let lines = file.get_content().lines().count();
+        let chars = file.get_content().len();
+        if chars > 200 * lines {
+            file.set_is_ugly(true);
+        }
+
+        emit.emit(KV::new(input.key().to_owned(), file));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
