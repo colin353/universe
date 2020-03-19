@@ -26,6 +26,7 @@ impl plume::DoFn for ExtractKeywordsFn {
     }
 }
 
+
 pub struct AggregateKeywordsFn {}
 impl plume::DoStreamFn for AggregateKeywordsFn {
     type Input = KeywordMatch;
@@ -37,6 +38,48 @@ impl plume::DoStreamFn for AggregateKeywordsFn {
         emit: &mut dyn EmitFn<Self::Output>,
     ) {
         let mut matches = KeywordMatches::new();
+        while let Some(m) = values.next() {
+            matches.mut_matches().push(m.clone());
+        }
+
+        if matches.get_matches().len() > 0 {
+            emit.emit(KV::new(key.to_owned(), matches));
+        }
+    }
+}
+
+pub struct ExtractDefinitionsFn {}
+impl plume::DoFn for ExtractDefinitionsFn {
+    type Input = KV<String, File>;
+    type Output = KV<String, SymbolDefinition>;
+
+    fn do_it(&self, input: &KV<String, File>, emit: &mut dyn EmitFn<Self::Output>) {
+        for definition in language_specific::extract_definitions(input.value()) {
+            let symbol = definition.get_symbol().to_string();
+            emit.emit(KV::new(symbol.clone(), definition.clone()));
+
+            // Also create a normalized version, which is lowercase
+            // and has _ and - chars stripped
+            let mut normalized_symbol = definition.get_symbol().to_lowercase();
+            normalized_symbol.retain(|c| c != '_' && c != '-');
+            if normalized_symbol != symbol {
+                emit.emit(KV::new(normalized_symbol, definition));
+            }
+        }
+    }
+}
+
+pub struct AggregateDefinitionsFn {}
+impl plume::DoStreamFn for AggregateDefinitionsFn {
+    type Input = SymbolDefinition;
+    type Output = KV<String, DefinitionMatches>;
+    fn do_it(
+        &self,
+        key: &str,
+        values: &mut Stream<SymbolDefinition>,
+        emit: &mut dyn EmitFn<Self::Output>,
+    ) {
+        let mut matches = DefinitionMatches::new();
         while let Some(m) = values.next() {
             matches.mut_matches().push(m.clone());
         }
@@ -79,6 +122,15 @@ mod tests {
         m
     }
 
+    fn df(filename: &str, symbol: &str, line: u32) -> SymbolDefinition {
+        let mut s = SymbolDefinition::new();
+        s.set_filename(filename.to_owned());
+        s.set_symbol(symbol.to_owned());
+        s.set_line_number(line);
+        s.set_symbol_type(SymbolType::VARIABLE);
+        s
+    }
+
     #[test]
     fn test_extract_keywords() {
         let mut _runlock = plume::RUNLOCK.lock();
@@ -119,6 +171,49 @@ mod tests {
 
         let mut m = KeywordMatches::new();
         m.mut_matches().push(kw("mario.txt", 1, false));
+
+        assert_eq!(output.as_ref()[2], KV::new(String::from("mario"), m));
+    }
+
+    #[test]
+    fn test_extract_definitions() {
+        let mut _runlock = plume::RUNLOCK.lock();
+        plume::cleanup();
+
+        let mut dk = File::new();
+        dk.set_filename("dk.rs".into());
+        dk.set_content("let donkey_kong = 5;".into());
+
+        let mut mario = File::new();
+        mario.set_filename("mario.rs".into());
+        mario.set_content("let mario = donkey_kong * 5;".into());
+
+        let code = PTable::from_table(vec![
+            KV::new(String::from("dk.rs"), dk),
+            KV::new(String::from("mario.rs"), mario),
+        ]);
+
+        let definitions = code.par_do(ExtractDefinitionsFn {});
+        let mut index = definitions.group_by_key_and_par_do(AggregateDefinitionsFn {});
+        index.write_to_vec();
+
+        plume::run();
+
+        let output = index.into_vec();
+        assert_eq!(output.len(), 3);
+
+        let mut m = DefinitionMatches::new();
+        m.mut_matches().push(df("dk.rs", "donkey_kong", 0));
+
+        assert_eq!(output.as_ref()[0], KV::new(String::from("donkey_kong"), m));
+
+        let mut m = DefinitionMatches::new();
+        m.mut_matches().push(df("dk.rs", "donkey_kong", 0));
+
+        assert_eq!(output.as_ref()[1], KV::new(String::from("donkeykong"), m));
+
+        let mut m = DefinitionMatches::new();
+        m.mut_matches().push(df("mario.rs", "mario", 0));
 
         assert_eq!(output.as_ref()[2], KV::new(String::from("mario"), m));
     }

@@ -316,4 +316,61 @@ mod tests {
         );
         assert_eq!(*(iter.next().unwrap()), "Paul, who is a ghost".to_string());
     }
+
+    // This is a very slow test which writes to disk, so let's not turn it on
+    // by default
+    #[test]
+    fn test_multiple_parallel_ops() {
+        let mut _runlock = plume::RUNLOCK.lock();
+        plume::cleanup();
+
+        let RECORD_COUNT = 100;
+
+        std::fs::remove_dir_all("/tmp/test-write-to-disk");
+        std::fs::create_dir_all("/tmp/test-write-to-disk").unwrap();
+
+        {
+            let f = std::fs::File::create("/tmp/test-write-to-disk/input.sstable").unwrap();
+            let mut writer = std::io::BufWriter::new(f);
+            let mut builder = sstable::SSTableBuilder::new(&mut writer);
+
+            for idx in 0..RECORD_COUNT {
+                builder.write_ordered(&format!("{:06}", idx), Primitive::from(12 as u64));
+                builder.write_ordered(&format!("{:06}", idx), Primitive::from(23));
+                builder.write_ordered(&format!("{:06}", idx), Primitive::from(34));
+                builder.write_ordered(&format!("{:06}", idx), Primitive::from(45));
+            }
+            builder.finish().unwrap();
+        }
+
+
+        {
+            let f = std::fs::File::create("/tmp/test-write-to-disk/input2.sstable").unwrap();
+            let mut writer = std::io::BufWriter::new(f);
+            let mut builder = sstable::SSTableBuilder::new(&mut writer);
+
+            for idx in 0..RECORD_COUNT {
+                builder.write_ordered(&format!("{:06}", idx), Primitive::from(12 as u64));
+                builder.write_ordered(&format!("{:06}", idx), Primitive::from(23));
+                builder.write_ordered(&format!("{:06}", idx), Primitive::from(34));
+                builder.write_ordered(&format!("{:06}", idx), Primitive::from(45));
+            }
+            builder.finish().unwrap();
+        }
+
+        let p =
+            PTable::<String, Primitive<u64>>::from_sstable("/tmp/test-write-to-disk/input.sstable");
+        let mut out = p.group_by_key_and_par_do(GroupSumFn {});
+        out.write_to_sstable("/tmp/test-write-to-disk/output.sstable");
+
+        let p2 =
+            PTable::<String, Primitive<u64>>::from_sstable("/tmp/test-write-to-disk/input2.sstable");
+        let mut out2 = p.group_by_key_and_par_do(GroupSumFn {});
+        out2.write_to_sstable("/tmp/test-write-to-disk/output2.sstable");
+
+        plume::run();
+
+        assert!(std::path::Path::new("/tmp/test-write-to-disk/output.sstable").exists());
+        assert!(std::path::Path::new("/tmp/test-write-to-disk/output2.sstable").exists());
+    }
 }

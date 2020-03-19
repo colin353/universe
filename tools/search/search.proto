@@ -28,6 +28,7 @@ message KeywordMatch {
 }
 
 message KeywordMatches { repeated KeywordMatch matches = 1; }
+message DefinitionMatches { repeated SymbolDefinition matches = 1; }
 
 message File {
   string filename = 1;

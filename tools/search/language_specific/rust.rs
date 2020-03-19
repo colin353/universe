@@ -5,11 +5,11 @@ static MIN_KEYWORD_LENGTH: usize = 3;
 lazy_static! {
     static ref KEYWORDS_RE: regex::Regex = { regex::Regex::new(r"(\w+)").unwrap() };
     static ref FUNCTION_DEFINITION: regex::Regex =
-        { regex::Regex::new(r"\s+(pub)?\s*fn\s+(\w+)").unwrap() };
+        { regex::Regex::new(r"\s*(pub)?\s*fn\s+(\w+)").unwrap() };
     static ref STRUCTURE_DEFINITION: regex::Regex =
-        { regex::Regex::new(r"\s+(pub)?\s*struct\s+(\w+)").unwrap() };
+        { regex::Regex::new(r"\s*(pub)?\s*struct\s+(\w+)").unwrap() };
     static ref LET_BINDING: regex::Regex =
-        { regex::Regex::new(r"\s+let\s*(mut)?\s+(\w+)").unwrap() };
+        { regex::Regex::new(r"\s*let\s*(mut)?\s+(\w+)").unwrap() };
     static ref STOPWORDS: std::collections::HashSet<String> = {
         let mut s = std::collections::HashSet::new();
         s.insert("let".into());
@@ -79,7 +79,6 @@ pub fn extract_definitions(file: &File) -> Vec<SymbolDefinition> {
             results.push(d);
         }
     }
-
     results
 }
 
