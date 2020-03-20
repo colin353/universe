@@ -26,7 +26,6 @@ impl plume::DoFn for ExtractKeywordsFn {
     }
 }
 
-
 pub struct AggregateKeywordsFn {}
 impl plume::DoStreamFn for AggregateKeywordsFn {
     type Input = KeywordMatch;
@@ -55,16 +54,9 @@ impl plume::DoFn for ExtractDefinitionsFn {
 
     fn do_it(&self, input: &KV<String, File>, emit: &mut dyn EmitFn<Self::Output>) {
         for definition in language_specific::extract_definitions(input.value()) {
-            let symbol = definition.get_symbol().to_string();
-            emit.emit(KV::new(symbol.clone(), definition.clone()));
-
-            // Also create a normalized version, which is lowercase
-            // and has _ and - chars stripped
             let mut normalized_symbol = definition.get_symbol().to_lowercase();
             normalized_symbol.retain(|c| c != '_' && c != '-');
-            if normalized_symbol != symbol {
-                emit.emit(KV::new(normalized_symbol, definition));
-            }
+            emit.emit(KV::new(normalized_symbol, definition));
         }
     }
 }
@@ -200,21 +192,16 @@ mod tests {
         plume::run();
 
         let output = index.into_vec();
-        assert_eq!(output.len(), 3);
+        assert_eq!(output.len(), 2);
 
         let mut m = DefinitionMatches::new();
         m.mut_matches().push(df("dk.rs", "donkey_kong", 0));
 
-        assert_eq!(output.as_ref()[0], KV::new(String::from("donkey_kong"), m));
-
-        let mut m = DefinitionMatches::new();
-        m.mut_matches().push(df("dk.rs", "donkey_kong", 0));
-
-        assert_eq!(output.as_ref()[1], KV::new(String::from("donkeykong"), m));
+        assert_eq!(output.as_ref()[0], KV::new(String::from("donkeykong"), m));
 
         let mut m = DefinitionMatches::new();
         m.mut_matches().push(df("mario.rs", "mario", 0));
 
-        assert_eq!(output.as_ref()[2], KV::new(String::from("mario"), m));
+        assert_eq!(output.as_ref()[1], KV::new(String::from("mario"), m));
     }
 }

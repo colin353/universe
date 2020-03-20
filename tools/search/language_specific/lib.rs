@@ -4,6 +4,7 @@ extern crate lazy_static;
 use search_proto_rust::*;
 
 mod default;
+mod proto;
 mod rust;
 
 pub fn get_filetype(filename: &str) -> FileType {
@@ -28,13 +29,14 @@ pub fn get_filetype(filename: &str) -> FileType {
 pub fn extract_keywords(file: &File) -> Vec<ExtractedKeyword> {
     match get_filetype(file.get_filename()) {
         FileType::RUST => rust::extract_keywords(file),
+        FileType::PROTO => proto::extract_keywords(file),
         _ => default::extract_keywords(file),
     }
 }
 pub fn extract_definitions(file: &File) -> Vec<SymbolDefinition> {
     match get_filetype(file.get_filename()) {
         FileType::RUST => rust::extract_definitions(file),
+        FileType::PROTO => proto::extract_definitions(file),
         _ => default::extract_definitions(file),
     }
 }
-

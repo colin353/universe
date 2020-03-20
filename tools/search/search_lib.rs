@@ -17,6 +17,7 @@ lazy_static! {
 pub struct Searcher {
     keywords: Mutex<sstable::SSTableReader<KeywordMatches>>,
     code: Mutex<sstable::SSTableReader<File>>,
+    definitions: Mutex<sstable::SSTableReader<DefinitionMatches>>,
     filenames: Vec<String>,
 
     // Configuration options
@@ -31,6 +32,9 @@ impl Searcher {
                 .unwrap();
         let mut code =
             sstable::SSTableReader::from_filename(&format!("{}/files.sstable", base_dir)).unwrap();
+        let mut definitions =
+            sstable::SSTableReader::from_filename(&format!("{}/definitions.sstable", base_dir))
+                .unwrap();
 
         let mut filenames = Vec::new();
         for (filename, _) in &mut code {
@@ -40,6 +44,7 @@ impl Searcher {
         Self {
             code: Mutex::new(code),
             keywords: Mutex::new(keywords),
+            definitions: Mutex::new(definitions),
             candidates_to_return: CANDIDATES_TO_RETURN,
             candidates_to_expand: CANDIDATES_TO_EXPAND,
             filenames: filenames,
@@ -138,8 +143,34 @@ impl Searcher {
             return;
         }
 
-        for candidate in all_candidates {
+        // Check symbol definitions as well
+        let mut defs = std::collections::HashMap::new();
+        for keyword in query.get_keywords() {
+            let mut matches = match self
+                .definitions
+                .lock()
+                .unwrap()
+                .get(&normalize_keyword(keyword))
+                .unwrap()
+            {
+                Some(s) => s,
+                None => DefinitionMatches::new(),
+            };
+            for m in matches.take_matches().into_iter() {
+                if or_set.as_ref().unwrap().contains(m.get_filename()) {
+                    defs.insert(m.get_filename().to_owned(), m);
+                }
+            }
+        }
+
+        for mut candidate in all_candidates {
             if or_set.as_mut().unwrap().contains(candidate.get_filename()) {
+                if let Some(symbol_def) = defs.get(candidate.get_filename()) {
+                    candidate
+                        .mut_matched_definitions()
+                        .push(symbol_def.to_owned().to_owned());
+                }
+
                 candidates.push(candidate);
             }
         }
@@ -250,6 +281,18 @@ impl Searcher {
             score /= 2.0;
         }
 
+        // Definition scoring
+        // TODO: adjust score based on symbol type
+        score += 50.0 * candidate.get_matched_definitions().len() as f32;
+        for def in candidate.get_matched_definitions() {
+            for keyword in query.get_keywords() {
+                if def.get_symbol() == keyword {
+                    // Exact match, give an extra 50 points
+                    score += 50.0;
+                }
+            }
+        }
+
         score +=
             candidate.get_filename_match_position() as f32 / candidate.get_filename().len() as f32;
 
@@ -319,7 +362,17 @@ impl Searcher {
             }
         }
 
-        let window_start = find_max_span_window(spans);
+        let window_start = if candidate.get_matched_definitions().len() > 0 {
+            let mut line_number = candidate.get_matched_definitions()[0].get_line_number() as usize;
+            if line_number > SNIPPET_LENGTH / 2 {
+                line_number -= SNIPPET_LENGTH / 2;
+            } else {
+                line_number = 0;
+            }
+            line_number
+        } else {
+            find_max_span_window(spans)
+        };
 
         let mut started = false;
         for line in doc
@@ -370,7 +423,18 @@ fn find_max_span_window(spans: Vec<Span>) -> usize {
 
         if included_spans.len() > max_spans {
             max_spans = included_spans.len();
-            max_window_start = window_start;
+
+            // Adjust the window to be centered: let's find the max and min included spans and set
+            // the window to center on that position.
+            let max = *included_spans.iter().max().unwrap();
+            let min = *included_spans.iter().min().unwrap();
+            let offset = (SNIPPET_LENGTH - (max - min)) / 2;
+
+            if min > offset {
+                max_window_start = min - offset;
+            } else {
+                max_window_start = 0;
+            }
         }
     }
 

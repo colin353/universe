@@ -8,6 +8,7 @@ rust_library(
     srcs = [
         "default.rs",
         "lib.rs",
+        "proto.rs",
         "rust.rs",
     ],
     edition = "2018",

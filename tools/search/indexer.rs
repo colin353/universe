@@ -1,7 +1,10 @@
 #[macro_use]
 extern crate flags;
 
-use indexer_lib::{AggregateKeywordsFn, ExtractKeywordsFn, ProcessFilesFn};
+use indexer_lib::{
+    AggregateDefinitionsFn, AggregateKeywordsFn, ExtractDefinitionsFn, ExtractKeywordsFn,
+    ProcessFilesFn,
+};
 use plume::{EmitFn, PTable, Stream, StreamingIterator, KV};
 
 fn fail(message: &str) -> ! {
@@ -56,6 +59,14 @@ fn main() {
 
     let keywords_sstable = format!("{}/keywords.sstable", output_dir.path());
     index.write_to_sstable(&keywords_sstable);
+
+    // Process the codebase into a keyword map
+    let code = PTable::from_sstable(&code_sstable);
+    let keywords = code.par_do(ExtractDefinitionsFn {});
+    let mut index = keywords.group_by_key_and_par_do(AggregateDefinitionsFn {});
+
+    let definitions_sstable = format!("{}/definitions.sstable", output_dir.path());
+    index.write_to_sstable(&definitions_sstable);
 
     plume::run();
 }
