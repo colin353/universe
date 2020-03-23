@@ -4,7 +4,8 @@ pub fn result(c: &Candidate) -> tmpl::ContentsMap {
     let snippet_starting_line = 1 + c.get_snippet_starting_line() as usize;
 
     content!(
-        "filename" => c.get_filename();
+        "filename" => c.get_filename(),
+        "jump_to_line" => c.get_jump_to_line() + 1;
         "snippet" => c.get_snippet().iter().enumerate().map(|(idx, s)| content!("line_number" => idx+snippet_starting_line, "snippet" => ws_utils::escape_htmlentities(s))).collect()
     )
 }

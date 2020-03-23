@@ -13,6 +13,9 @@ enum FileType {
 message Query {
   string query = 1;
   repeated string keywords = 2;
+
+  // Search for a specific definition
+  string definition = 3;
 }
 
 message ExtractedKeyword {
@@ -63,6 +66,8 @@ message Candidate {
   FileType file_type = 11;
 
   repeated SymbolDefinition matched_definitions = 12;
+
+  uint32 jump_to_line = 13;
 }
 
 enum SymbolType {

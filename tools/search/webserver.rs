@@ -53,9 +53,10 @@ where
             let mut response = Response::new(Body::from(""));
             self.redirect(
                 &format!(
-                    "/{}?q={}",
+                    "/{}?q={}#L{}",
                     candidates[0].get_filename(),
-                    ws_utils::urlencode(keywords)
+                    ws_utils::urlencode(keywords),
+                    candidates[0].get_jump_to_line() + 1,
                 ),
                 &mut response,
             );

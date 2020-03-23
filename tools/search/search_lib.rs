@@ -12,6 +12,7 @@ const SNIPPET_LENGTH: usize = 7;
 
 lazy_static! {
     static ref KEYWORDS_RE: regex::Regex = { regex::Regex::new(r"(\w+)").unwrap() };
+    static ref DEFINITION_RE: regex::Regex = { regex::Regex::new(r"def:(\w+)").unwrap() };
 }
 
 pub struct Searcher {
@@ -76,12 +77,40 @@ impl Searcher {
             let keyword = &captures[0];
             out.mut_keywords().push(keyword.to_owned());
         }
+        for captures in DEFINITION_RE.captures_iter(query) {
+            out.set_definition(captures[1].to_owned());
+        }
         out
     }
 
     fn get_candidates(&self, query: &Query, candidates: &mut Vec<Candidate>) {
+        // If we are doing a definition search, only extract definition candidates
+        if query.get_definition().len() > 0 {
+            self.get_candidates_by_definition(query, candidates);
+            return;
+        }
+
         self.get_candidates_by_keyword(query, candidates);
         self.get_candidates_by_filename(query, candidates);
+    }
+
+    fn get_candidates_by_definition(&self, query: &Query, candidates: &mut Vec<Candidate>) {
+        let mut matches = match self
+            .definitions
+            .lock()
+            .unwrap()
+            .get(&normalize_keyword(query.get_definition()))
+            .unwrap()
+        {
+            Some(s) => s,
+            None => DefinitionMatches::new(),
+        };
+        for mut m in matches.take_matches().into_iter() {
+            let mut c = Candidate::new();
+            c.mut_matched_definitions().push(m.clone());
+            c.set_filename(m.take_filename());
+            candidates.push(c);
+        }
     }
 
     fn get_candidates_by_filename(&self, query: &Query, candidates: &mut Vec<Candidate>) {
@@ -364,6 +393,8 @@ impl Searcher {
 
         let window_start = if candidate.get_matched_definitions().len() > 0 {
             let mut line_number = candidate.get_matched_definitions()[0].get_line_number() as usize;
+            candidate.set_jump_to_line(line_number as u32);
+
             if line_number > SNIPPET_LENGTH / 2 {
                 line_number -= SNIPPET_LENGTH / 2;
             } else {
@@ -371,8 +402,12 @@ impl Searcher {
             }
             line_number
         } else {
-            find_max_span_window(spans)
+            let n = find_max_span_window(spans);
+            candidate.set_jump_to_line(n as u32);
+            n
         };
+
+        candidate.set_snippet_starting_line(window_start as u32);
 
         let mut started = false;
         for line in doc

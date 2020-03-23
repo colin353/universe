@@ -33,7 +33,7 @@
         const language = language_map[extension] || 'text/plain';
 
         var content = atob(editorElement.getAttribute("data-content"));
-        monaco.editor.create(editorElement, {
+        const editor = monaco.editor.create(editorElement, {
             readOnly: true,
             value: content,
             language: language,
@@ -41,6 +41,11 @@
             theme: "vs",
             wordWrapCols: 80,
         });
+        if (window.location.hash.startsWith("#L")) {
+          const line = parseInt(window.location.hash.substring(2));
+          editor.setPosition({column: 1, lineNumber: line});
+          editor.revealLineInCenter(line + 10);
+        }
   });
 </script>
 </div>
