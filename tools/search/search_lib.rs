@@ -2,7 +2,9 @@
 extern crate lazy_static;
 
 use search_grpc_rust::*;
-use std::collections::HashSet;
+use std::collections::hash_map::DefaultHasher;
+use std::collections::{HashMap, HashSet};
+use std::hash::{Hash, Hasher};
 use std::sync::Mutex;
 
 const CANDIDATES_TO_RETURN: usize = 25;
@@ -11,15 +13,17 @@ const MAX_LINE_LENGTH: usize = 144;
 const SNIPPET_LENGTH: usize = 7;
 
 lazy_static! {
-    static ref KEYWORDS_RE: regex::Regex = { regex::Regex::new(r"(\w+)").unwrap() };
+    static ref KEYWORDS_RE: regex::Regex = { regex::Regex::new(r#"("(.*?)")|([^\s]+)"#).unwrap() };
     static ref DEFINITION_RE: regex::Regex = { regex::Regex::new(r"def:(\w+)").unwrap() };
 }
 
 pub struct Searcher {
-    keywords: Mutex<sstable::SSTableReader<KeywordMatches>>,
     code: Mutex<sstable::SSTableReader<File>>,
+    candidates: Mutex<sstable::SSTableReader<File>>,
     definitions: Mutex<sstable::SSTableReader<DefinitionMatches>>,
-    filenames: Vec<String>,
+    trigrams: Mutex<sstable::SSTableReader<KeywordMatches>>,
+
+    files: HashMap<u64, File>,
 
     // Configuration options
     pub candidates_to_return: usize,
@@ -28,35 +32,37 @@ pub struct Searcher {
 
 impl Searcher {
     pub fn new(base_dir: &str) -> Self {
-        let keywords =
-            sstable::SSTableReader::from_filename(&format!("{}/keywords.sstable", base_dir))
-                .unwrap();
         let mut code =
             sstable::SSTableReader::from_filename(&format!("{}/files.sstable", base_dir)).unwrap();
         let mut definitions =
             sstable::SSTableReader::from_filename(&format!("{}/definitions.sstable", base_dir))
                 .unwrap();
+        let mut candidates =
+            sstable::SSTableReader::from_filename(&format!("{}/candidates.sstable", base_dir))
+                .unwrap();
+        let mut trigrams =
+            sstable::SSTableReader::from_filename(&format!("{}/trigrams.sstable", base_dir))
+                .unwrap();
 
-        let mut filenames = Vec::new();
-        for (filename, _) in &mut code {
-            filenames.push(filename);
+        let mut files = HashMap::<u64, File>::new();
+        for (key, file) in &mut candidates {
+            files.insert(key.parse::<u64>().unwrap(), file);
         }
 
         Self {
             code: Mutex::new(code),
-            keywords: Mutex::new(keywords),
             definitions: Mutex::new(definitions),
+            candidates: Mutex::new(candidates),
+            trigrams: Mutex::new(trigrams),
             candidates_to_return: CANDIDATES_TO_RETURN,
             candidates_to_expand: CANDIDATES_TO_EXPAND,
-            filenames: filenames,
+            files: files,
         }
     }
 
     pub fn search(&self, keywords: &str) -> Vec<Candidate> {
         let query = self.parse_query(keywords);
-        let mut candidates = Vec::new();
-        self.get_candidates(&query, &mut candidates);
-        self.deduplicate(&mut candidates);
+        let mut candidates = self.get_candidates(&query);
         self.initial_rank(&query, &mut candidates);
         self.cutoff(&mut candidates, self.candidates_to_expand);
         self.expand_candidates(&query, &mut candidates);
@@ -74,62 +80,90 @@ impl Searcher {
         let mut out = Query::new();
         out.set_query(query.to_owned());
         for captures in KEYWORDS_RE.captures_iter(query) {
-            let keyword = &captures[0];
-            out.mut_keywords().push(keyword.to_owned());
+            let mut kw = captures.get(3);
+            if kw.is_none() {
+                kw = captures.get(2);
+            }
+            if kw.is_none() {
+                kw = captures.get(1);
+            }
+            let mut keyword = QueryKeyword::new();
+            keyword.set_keyword(kw.unwrap().as_str().to_owned());
+
+            // Support definition search
+            if keyword.get_keyword().starts_with("def:") {
+                keyword.set_keyword(keyword.get_keyword()[4..].to_owned());
+                keyword.set_is_definition(true);
+            }
+
+            out.mut_keywords().push(keyword);
         }
-        for captures in DEFINITION_RE.captures_iter(query) {
-            out.set_definition(captures[1].to_owned());
-        }
+
         out
     }
 
-    fn get_candidates(&self, query: &Query, candidates: &mut Vec<Candidate>) {
-        // If we are doing a definition search, only extract definition candidates
-        if query.get_definition().len() > 0 {
-            self.get_candidates_by_definition(query, candidates);
-            return;
-        }
+    fn get_candidates(&self, query: &Query) -> Vec<Candidate> {
+        let mut candidates = HashMap::new();
+        self.get_candidates_by_definition(query, &mut candidates);
+        self.get_candidates_by_filename(query, &mut candidates);
+        self.get_possible_candidates_by_keyword(query, &mut candidates);
+        self.eliminate_partially_matched_candidates(query, &mut candidates);
+        self.finalize_keyword_matches(query, &mut candidates);
 
-        self.get_candidates_by_keyword(query, candidates);
-        self.get_candidates_by_filename(query, candidates);
+        candidates.into_iter().map(|(_, x)| x).collect()
     }
 
-    fn get_candidates_by_definition(&self, query: &Query, candidates: &mut Vec<Candidate>) {
-        let mut matches = match self
-            .definitions
-            .lock()
-            .unwrap()
-            .get(&normalize_keyword(query.get_definition()))
-            .unwrap()
-        {
-            Some(s) => s,
-            None => DefinitionMatches::new(),
-        };
-        for mut m in matches.take_matches().into_iter() {
-            let mut c = Candidate::new();
-            c.mut_matched_definitions().push(m.clone());
-            c.set_filename(m.take_filename());
-            candidates.push(c);
+    fn get_candidates_by_definition(
+        &self,
+        query: &Query,
+        candidates: &mut HashMap<u64, Candidate>,
+    ) {
+        for (index, keyword) in query.get_keywords().iter().enumerate() {
+            let mut matches = match self
+                .definitions
+                .lock()
+                .unwrap()
+                .get(&normalize_keyword(keyword.get_keyword()))
+                .unwrap()
+            {
+                Some(s) => s,
+                None => DefinitionMatches::new(),
+            };
+            for mut m in matches.take_matches().into_iter() {
+                let c = candidates
+                    .entry(hash_filename(m.get_filename()))
+                    .or_insert(Candidate::new());
+
+                c.mut_matched_definitions().push(m.clone());
+                c.set_filename(m.take_filename());
+                c.set_keyword_definite_match_mask(update_mask(
+                    c.get_keyword_definite_match_mask(),
+                    index,
+                ));
+            }
         }
     }
 
-    fn get_candidates_by_filename(&self, query: &Query, candidates: &mut Vec<Candidate>) {
-        for filename in &self.filenames {
-            let mut matched = true;
+    fn get_candidates_by_filename(&self, query: &Query, candidates: &mut HashMap<u64, Candidate>) {
+        for file in self.files.values() {
+            let filename = file.get_filename();
             let mut query_match = false;
             let mut exact_match = false;
             let mut match_position = 0;
-            for keyword in query.get_keywords() {
-                if let Some(idx) = filename.rfind(keyword) {
-                    match_position = std::cmp::max(match_position, idx + keyword.len());
-                } else {
-                    matched = false;
+            let mut match_mask = 0;
+            for (index, keyword) in query.get_keywords().iter().enumerate() {
+                if let Some(idx) = filename.rfind(keyword.get_keyword()) {
+                    match_position =
+                        std::cmp::max(match_position, idx + keyword.get_keyword().len());
+                    match_mask = update_mask(match_mask, index);
                 }
             }
 
             if let Some(idx) = filename.rfind(query.get_query()) {
-                matched = true;
                 query_match = true;
+
+                // It matched all components of the query so just fill the match mask with 1s
+                match_mask = std::u32::MAX;
 
                 match_position = std::cmp::max(match_position, idx + query.get_query().len());
 
@@ -138,117 +172,124 @@ impl Searcher {
                 }
             }
 
-            if matched {
-                let mut c = Candidate::new();
+            if match_mask > 0 {
+                let c = candidates
+                    .entry(hash_filename(filename))
+                    .or_insert(Candidate::new());
                 c.set_filename(filename.to_owned());
                 c.set_keyword_matched_filename(true);
                 c.set_query_in_filename(query_match);
                 c.set_exactly_matched_filename(exact_match);
                 c.set_filename_match_position(match_position as u32);
-                candidates.push(c);
+                c.set_keyword_definite_match_mask(c.get_keyword_definite_match_mask() | match_mask);
             }
         }
     }
 
-    fn get_candidates_by_keyword(&self, query: &Query, candidates: &mut Vec<Candidate>) {
-        let mut or_set = None;
-        let mut all_candidates = Vec::new();
-        for keyword in query.get_keywords() {
-            let mut these_candidates = Vec::new();
-            self.get_candidates_matching_keyword(keyword, &or_set, &mut these_candidates);
+    fn get_possible_candidates_by_keyword(
+        &self,
+        query: &Query,
+        candidates: &mut HashMap<u64, Candidate>,
+    ) {
+        for (index, keyword) in query.get_keywords().iter().enumerate() {
+            let mut or_set: Option<HashSet<u64>> = None;
+            for trigram in trigrams(&keyword.get_keyword().to_lowercase()) {
+                let mut matches = HashSet::new();
 
-            or_set = Some(HashSet::new());
+                let mut results = match self.trigrams.lock().unwrap().get(&trigram).unwrap() {
+                    Some(s) => s,
+                    None => KeywordMatches::new(),
+                };
+                for file_id in results.get_matches() {
+                    if let Some(o) = or_set.as_ref() {
+                        if o.contains(file_id) {
+                            matches.insert(*file_id);
+                        }
+                    } else {
+                        matches.insert(*file_id);
+                    }
+                }
 
-            for candidate in &these_candidates {
-                or_set
-                    .as_mut()
-                    .unwrap()
-                    .insert(candidate.get_filename().to_owned());
+                or_set = Some(matches);
             }
-            all_candidates.append(&mut these_candidates);
-        }
 
-        if or_set.is_none() {
-            return;
+            if let Some(o) = or_set.as_ref() {
+                for file_id in o.iter() {
+                    let c = candidates.entry(*file_id).or_insert(Candidate::new());
+                    c.set_keyword_possible_match_mask(update_mask(
+                        c.get_keyword_possible_match_mask(),
+                        index,
+                    ));
+                }
+            }
         }
+    }
 
-        // Check symbol definitions as well
-        let mut defs = std::collections::HashMap::new();
-        for keyword in query.get_keywords() {
-            let mut matches = match self
-                .definitions
+    fn eliminate_partially_matched_candidates(
+        &self,
+        query: &Query,
+        candidates: &mut HashMap<u64, Candidate>,
+    ) {
+        let target_match_mask = (1 << (query.get_keywords().len())) - 1;
+
+        // Eliminate all candidates that didn't possibly match all keywords
+        candidates.retain(|_, c| {
+            let match_mask =
+                c.get_keyword_definite_match_mask() | c.get_keyword_possible_match_mask();
+
+            match_mask >= target_match_mask
+        });
+    }
+
+    fn finalize_keyword_matches(&self, query: &Query, candidates: &mut HashMap<u64, Candidate>) {
+        for (file_id, candidate) in candidates.iter_mut() {
+            let file = self
+                .candidates
                 .lock()
                 .unwrap()
-                .get(&normalize_keyword(keyword))
+                .get(&file_id.to_string())
                 .unwrap()
-            {
-                Some(s) => s,
-                None => DefinitionMatches::new(),
-            };
-            for m in matches.take_matches().into_iter() {
-                if or_set.as_ref().unwrap().contains(m.get_filename()) {
-                    defs.insert(m.get_filename().to_owned(), m);
-                }
-            }
-        }
+                .unwrap();
 
-        for mut candidate in all_candidates {
-            if or_set.as_mut().unwrap().contains(candidate.get_filename()) {
-                if let Some(symbol_def) = defs.get(candidate.get_filename()) {
-                    candidate
-                        .mut_matched_definitions()
-                        .push(symbol_def.to_owned().to_owned());
-                }
+            candidate.set_filename(file.get_filename().to_string());
+            candidate.set_is_ugly(file.get_is_ugly());
+            candidate.set_file_type(file.get_file_type());
 
-                candidates.push(candidate);
-            }
-        }
-    }
+            let mut matched_keywords = HashMap::new();
+            for (line_number, line) in file.get_content().lines().enumerate() {
+                let line = line.to_lowercase();
+                for (index, keyword) in query.get_keywords().iter().enumerate() {
+                    let mut s = extract_spans(&keyword.get_keyword().to_lowercase(), &line);
 
-    fn get_candidates_matching_keyword(
-        &self,
-        keyword: &str,
-        or_set: &Option<HashSet<String>>,
-        candidates: &mut Vec<Candidate>,
-    ) {
-        let mut matches = match self.keywords.lock().unwrap().get(keyword).unwrap() {
-            Some(s) => s,
-            None => KeywordMatches::new(),
-        };
-        let normalized_keyword = normalize_keyword(keyword);
-        let mut normalized_matches = match self
-            .keywords
-            .lock()
-            .unwrap()
-            .get(&normalized_keyword)
-            .unwrap()
-        {
-            Some(s) => s,
-            None => KeywordMatches::new(),
-        };
+                    if s.len() == 0 {
+                        continue;
+                    }
 
-        for mut m in matches
-            .take_matches()
-            .into_iter()
-            .chain(normalized_matches.take_matches().into_iter())
-        {
-            if let Some(ref set) = or_set {
-                if !set.contains(m.get_filename()) {
-                    continue;
+                    for mut span in s.into_iter() {
+                        span.set_line(line_number as u64);
+                        candidate.mut_spans().push(span);
+                    }
+
+                    let k = matched_keywords.entry(index).or_insert_with(|| {
+                        let mut e = ExtractedKeyword::new();
+                        e.set_keyword(keyword.get_keyword().to_owned());
+                        e
+                    });
+                    k.set_occurrences(k.get_occurrences() + 1);
                 }
             }
 
-            let mut c = Candidate::new();
-            c.set_filename(m.take_filename());
-
-            let mut k = ExtractedKeyword::new();
-            k.set_keyword(keyword.to_owned());
-            k.set_occurrences(m.get_occurrences());
-            k.set_normalized(m.get_normalized());
-            c.mut_matched_keywords().push(k);
-
-            candidates.push(c);
+            for (index, k) in matched_keywords.into_iter() {
+                candidate.mut_matched_keywords().push(k);
+                candidate.set_keyword_definite_match_mask(update_mask(
+                    candidate.get_keyword_definite_match_mask(),
+                    index,
+                ));
+            }
         }
+
+        let target_match_mask = (1 << (query.get_keywords().len())) - 1;
+        candidates.retain(|_, c| c.get_keyword_definite_match_mask() >= target_match_mask);
     }
 
     fn cutoff(&self, candidates: &mut Vec<Candidate>, num_candidates: usize) {
@@ -315,7 +356,7 @@ impl Searcher {
         score += 50.0 * candidate.get_matched_definitions().len() as f32;
         for def in candidate.get_matched_definitions() {
             for keyword in query.get_keywords() {
-                if def.get_symbol() == keyword {
+                if def.get_symbol() == keyword.get_keyword() {
                     // Exact match, give an extra 50 points
                     score += 50.0;
                 }
@@ -331,20 +372,6 @@ impl Searcher {
     fn fullscore(&self, query: &Query, candidate: &mut Candidate) {
         if candidate.get_is_ugly() {
             candidate.set_score(candidate.get_score() / 10.0);
-        }
-    }
-
-    fn deduplicate(&self, candidates: &mut Vec<Candidate>) {
-        let mut observed = std::collections::HashMap::<String, usize>::new();
-        let mut index = 0;
-        while index < candidates.len() {
-            if let Some(observed_idx) = observed.get(candidates[index].get_filename()) {
-                let to = candidates.swap_remove(index);
-                merge_candidates(to, &mut candidates[*observed_idx])
-            } else {
-                observed.insert(candidates[index].get_filename().to_owned(), index);
-                index += 1;
-            }
         }
     }
 
@@ -378,19 +405,6 @@ impl Searcher {
         candidate.set_is_ugly(doc.get_is_ugly());
         candidate.set_file_type(doc.get_file_type());
 
-        let mut spans = Vec::new();
-        for (line_number, line) in doc.get_content().lines().enumerate() {
-            let line = line.to_lowercase();
-
-            for keyword in query.get_keywords() {
-                let mut s = extract_spans(keyword, &line);
-                for span in s.iter_mut() {
-                    span.set_line(line_number as u64);
-                }
-                spans.append(&mut s);
-            }
-        }
-
         let window_start = if candidate.get_matched_definitions().len() > 0 {
             let mut line_number = candidate.get_matched_definitions()[0].get_line_number() as usize;
             candidate.set_jump_to_line(line_number as u32);
@@ -402,7 +416,7 @@ impl Searcher {
             }
             line_number
         } else {
-            let n = find_max_span_window(spans);
+            let n = find_max_span_window(candidate.get_spans());
             candidate.set_jump_to_line(n as u32);
             n
         };
@@ -430,7 +444,7 @@ impl Searcher {
     }
 }
 
-fn find_max_span_window(spans: Vec<Span>) -> usize {
+fn find_max_span_window(spans: &[Span]) -> usize {
     if spans.len() == 0 {
         return 0;
     }
@@ -493,20 +507,22 @@ fn normalize_keyword(keyword: &str) -> String {
     normalized_keyword
 }
 
-fn merge_candidates(mut from: Candidate, to: &mut Candidate) {
-    for mkw in from.take_matched_keywords().into_iter() {
-        to.mut_matched_keywords().push(mkw);
-    }
+fn update_mask(mask: u32, index: usize) -> u32 {
+    mask | (1 << index)
+}
 
-    to.set_keyword_matched_filename(
-        to.get_keyword_matched_filename() || from.get_keyword_matched_filename(),
-    );
-    to.set_query_in_filename(to.get_query_in_filename() || from.get_query_in_filename());
-    to.set_exactly_matched_filename(
-        to.get_exactly_matched_filename() || from.get_exactly_matched_filename(),
-    );
-    to.set_filename_match_position(std::cmp::max(
-        from.get_filename_match_position(),
-        to.get_filename_match_position(),
-    ));
+pub fn hash_filename(filename: &str) -> u64 {
+    let mut s = DefaultHasher::new();
+    filename.hash(&mut s);
+    s.finish()
+}
+
+fn trigrams<'a>(src: &'a str) -> impl Iterator<Item = &'a str> {
+    src.char_indices().flat_map(move |(from, _)| {
+        src[from..]
+            .char_indices()
+            .skip(2)
+            .next()
+            .map(|(to, c)| &src[from..from + to + c.len_utf8()])
+    })
 }

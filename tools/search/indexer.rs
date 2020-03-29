@@ -2,8 +2,8 @@
 extern crate flags;
 
 use indexer_lib::{
-    AggregateDefinitionsFn, AggregateKeywordsFn, ExtractDefinitionsFn, ExtractKeywordsFn,
-    ProcessFilesFn,
+    AggregateDefinitionsFn, AggregateTrigramsFn, ExtractCandidatesFn, ExtractDefinitionsFn,
+    ExtractTrigramsFn, ProcessFilesFn,
 };
 use plume::{EmitFn, PTable, Stream, StreamingIterator, KV};
 
@@ -52,15 +52,20 @@ fn main() {
     let files_sstable = format!("{}/files.sstable", output_dir.path());
     files.write_to_sstable(&files_sstable);
 
-    // Process the codebase into a keyword map
+    // Extract file info by file_id
     let code = PTable::from_sstable(&code_sstable);
-    let keywords = code.par_do(ExtractKeywordsFn {});
-    let mut index = keywords.group_by_key_and_par_do(AggregateKeywordsFn {});
+    let files = code.par_do(ExtractCandidatesFn {});
+    let files_sstable = format!("{}/candidates.sstable", output_dir.path());
+    files.write_to_sstable(&files_sstable);
 
-    let keywords_sstable = format!("{}/keywords.sstable", output_dir.path());
-    index.write_to_sstable(&keywords_sstable);
+    // Extract trigrams
+    let code = PTable::from_sstable(&code_sstable);
+    let trigrams = code.par_do(ExtractTrigramsFn {});
+    let trigram_matches = trigrams.group_by_key_and_par_do(AggregateTrigramsFn {});
+    let trigrams_sstable = format!("{}/trigrams.sstable", output_dir.path());
+    trigram_matches.write_to_sstable(&trigrams_sstable);
 
-    // Process the codebase into a keyword map
+    // Extract definitions
     let code = PTable::from_sstable(&code_sstable);
     let keywords = code.par_do(ExtractDefinitionsFn {});
     let mut index = keywords.group_by_key_and_par_do(AggregateDefinitionsFn {});

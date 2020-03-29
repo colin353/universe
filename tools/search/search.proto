@@ -10,12 +10,16 @@ enum FileType {
   BAZEL = 6;
 }
 
+message QueryKeyword {
+  string keyword = 1;
+
+  // If it is a search for a specific definition
+  bool is_definition = 2;
+}
+
 message Query {
   string query = 1;
-  repeated string keywords = 2;
-
-  // Search for a specific definition
-  string definition = 3;
+  repeated QueryKeyword keywords = 2;
 }
 
 message ExtractedKeyword {
@@ -25,12 +29,12 @@ message ExtractedKeyword {
 }
 
 message KeywordMatch {
-  string filename = 1;
+  uint64 file_id = 1;
   uint64 occurrences = 2;
   bool normalized = 3;
 }
 
-message KeywordMatches { repeated KeywordMatch matches = 1; }
+message KeywordMatches { repeated uint64 matches = 1; }
 message DefinitionMatches { repeated SymbolDefinition matches = 1; }
 
 message File {
@@ -68,6 +72,11 @@ message Candidate {
   repeated SymbolDefinition matched_definitions = 12;
 
   uint32 jump_to_line = 13;
+
+  uint32 keyword_possible_match_mask = 14;
+  uint32 keyword_definite_match_mask = 15;
+
+  repeated Span spans = 16;
 }
 
 enum SymbolType {
