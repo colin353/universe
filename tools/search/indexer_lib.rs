@@ -59,12 +59,6 @@ impl plume::DoFn for ProcessFilesFn {
     }
 }
 
-pub fn hash_filename(filename: &str) -> u64 {
-    let mut s = DefaultHasher::new();
-    filename.hash(&mut s);
-    s.finish()
-}
-
 pub struct ExtractCandidatesFn {}
 impl plume::DoFn for ExtractCandidatesFn {
     type Input = KV<String, File>;
@@ -81,18 +75,11 @@ impl plume::DoFn for ExtractCandidatesFn {
             file.set_is_ugly(true);
         }
 
-        emit.emit(KV::new(hash_filename(input.key()).to_string(), file));
+        emit.emit(KV::new(
+            search_utils::hash_filename(input.key()).to_string(),
+            file,
+        ));
     }
-}
-
-fn trigrams<'a>(src: &'a str) -> impl Iterator<Item = &'a str> {
-    src.char_indices().flat_map(move |(from, _)| {
-        src[from..]
-            .char_indices()
-            .skip(2)
-            .next()
-            .map(|(to, c)| &src[from..from + to + c.len_utf8()])
-    })
 }
 
 pub struct ExtractTrigramsFn {}
@@ -101,11 +88,11 @@ impl plume::DoFn for ExtractTrigramsFn {
     type Output = KV<String, Primitive<u64>>;
     fn do_it(&self, input: &KV<String, File>, emit: &mut dyn EmitFn<Self::Output>) {
         let file = input.value();
-        let file_id = Primitive::from(hash_filename(input.key()));
+        let file_id = Primitive::from(search_utils::hash_filename(input.key()));
 
         let mut collected_trigrams = std::collections::HashSet::new();
         for line in file.get_content().lines() {
-            for trigram in trigrams(&line.to_lowercase()) {
+            for trigram in search_utils::trigrams(&line.to_lowercase()) {
                 collected_trigrams.insert(trigram.to_string());
             }
         }

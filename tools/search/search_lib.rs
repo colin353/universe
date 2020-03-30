@@ -2,9 +2,7 @@
 extern crate lazy_static;
 
 use search_grpc_rust::*;
-use std::collections::hash_map::DefaultHasher;
 use std::collections::{HashMap, HashSet};
-use std::hash::{Hash, Hasher};
 use std::sync::Mutex;
 
 const CANDIDATES_TO_RETURN: usize = 25;
@@ -123,7 +121,7 @@ impl Searcher {
                 .definitions
                 .lock()
                 .unwrap()
-                .get(&normalize_keyword(keyword.get_keyword()))
+                .get(&search_utils::normalize_keyword(keyword.get_keyword()))
                 .unwrap()
             {
                 Some(s) => s,
@@ -131,7 +129,7 @@ impl Searcher {
             };
             for mut m in matches.take_matches().into_iter() {
                 let c = candidates
-                    .entry(hash_filename(m.get_filename()))
+                    .entry(search_utils::hash_filename(m.get_filename()))
                     .or_insert(Candidate::new());
 
                 c.mut_matched_definitions().push(m.clone());
@@ -174,7 +172,7 @@ impl Searcher {
 
             if match_mask > 0 {
                 let c = candidates
-                    .entry(hash_filename(filename))
+                    .entry(search_utils::hash_filename(filename))
                     .or_insert(Candidate::new());
                 c.set_filename(filename.to_owned());
                 c.set_keyword_matched_filename(true);
@@ -193,7 +191,7 @@ impl Searcher {
     ) {
         for (index, keyword) in query.get_keywords().iter().enumerate() {
             let mut or_set: Option<HashSet<u64>> = None;
-            for trigram in trigrams(&keyword.get_keyword().to_lowercase()) {
+            for trigram in search_utils::trigrams(&keyword.get_keyword().to_lowercase()) {
                 let mut matches = HashSet::new();
 
                 let mut results = match self.trigrams.lock().unwrap().get(&trigram).unwrap() {
@@ -501,28 +499,6 @@ fn extract_spans(term: &str, line: &str) -> Vec<Span> {
     output
 }
 
-fn normalize_keyword(keyword: &str) -> String {
-    let mut normalized_keyword = keyword.to_lowercase();
-    normalized_keyword.retain(|c| c != '_' && c != '-');
-    normalized_keyword
-}
-
 fn update_mask(mask: u32, index: usize) -> u32 {
     mask | (1 << index)
-}
-
-pub fn hash_filename(filename: &str) -> u64 {
-    let mut s = DefaultHasher::new();
-    filename.hash(&mut s);
-    s.finish()
-}
-
-fn trigrams<'a>(src: &'a str) -> impl Iterator<Item = &'a str> {
-    src.char_indices().flat_map(move |(from, _)| {
-        src[from..]
-            .char_indices()
-            .skip(2)
-            .next()
-            .map(|(to, c)| &src[from..from + to + c.len_utf8()])
-    })
 }

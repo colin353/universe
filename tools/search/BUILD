@@ -89,6 +89,7 @@ rust_library(
     edition = "2018",
     deps = [
         ":search_grpc_rust",
+        ":search_utils",
         "//third_party:lazy_static",
         "//third_party:regex",
         "//util/itertools",
@@ -125,9 +126,15 @@ rust_library(
     edition = "2018",
     deps = [
         ":search_proto_rust",
+        ":search_utils",
         "//plume",
         "//tools/search/language_specific",
     ],
+)
+
+rust_library(
+    name = "search_utils",
+    srcs = ["utils.rs"],
 )
 
 rust_test(
