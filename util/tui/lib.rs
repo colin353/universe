@@ -151,10 +151,15 @@ impl Terminal {
                     &line_chars.by_ref().take(space_left).collect::<String>()
                 );
                 self.move_cursor_to(0, self.pos_y + 1);
+                has_printed = true;
             }
 
-            if self.pos_y > self.height {
+            if self.pos_y >= self.height {
                 break;
+            }
+
+            if has_printed && !self.wrap {
+                return;
             }
 
             let c: Vec<_> = line_chars.collect();
@@ -241,16 +246,12 @@ where
         let selected_index = (self.selected)(state);
         let component_state = (self.transformer)(state);
 
-        if let Some(prev) = prev_state {
-            let prev_selected_index = (self.selected)(prev);
-            let prev_component_state = (self.transformer)(prev);
-            if prev_selected_index == selected_index && component_state == prev_component_state {
-                return term.height;
-            }
-        }
-
         let prev_component_state = match prev_state {
             Some(x) => Some((self.transformer)(x)),
+            None => None,
+        };
+        let prev_selected_index = match prev_state {
+            Some(x) => Some((self.selected)(x)),
             None => None,
         };
 
@@ -262,15 +263,26 @@ where
             self.view_position = selected_index - self.num_rendered_components;
         }
 
+        if let Some(prev) = prev_state {
+            if *prev_selected_index.as_ref().unwrap() == selected_index
+                && &component_state == prev_component_state.as_ref().unwrap()
+            {
+                return term.height;
+            }
+        }
+
         let mut size = 0;
         let mut fully_rendered_components = 0;
-        for (index, s_i) in component_state.iter().skip(self.view_position).enumerate() {
+        for (index, s_i) in component_state.iter().enumerate().skip(self.view_position) {
             let mut t = term.derive(format!("{}", index));
             t.offset_y += size;
-            let prev_item = prev_component_state
-                .as_ref()
-                .map(|s| s.get(index))
-                .flatten();
+
+            let prev_item = match prev_selected_index {
+                Some(idx) if idx == selected_index => {
+                    prev_component_state.as_ref().map(|s| s.get(idx)).flatten()
+                }
+                _ => None,
+            };
             let offset = self.component.render(&mut t, s_i, prev_item);
             t.offset_y += offset;
             size += offset;
