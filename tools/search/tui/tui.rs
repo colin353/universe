@@ -154,6 +154,10 @@ fn transform<'a>(s: &'a AppState) -> &'a Vec<SearchResult> {
     &s.results
 }
 
+fn selected_index<'a>(s: &'a AppState) -> usize {
+    s.selected
+}
+
 struct CodeContainer();
 impl Component<Vec<String>> for CodeContainer {
     fn render(
@@ -183,10 +187,9 @@ impl App {
         let mut s = SearchInput::new();
 
         let mut r = SearchResultComponent::new();
-        let mut v = tui::VecContainer::new(Box::new(r));
-        let mut tr = tui::Transformer::new(Box::new(v), transform);
+        let mut scroll_view = tui::ScrollContainer::new(Box::new(r), transform, selected_index);
 
-        let mut c = tui::Container::new(vec![Box::new(s), Box::new(tr)]);
+        let mut c = tui::Container::new(vec![Box::new(s), Box::new(scroll_view)]);
 
         Self {
             component: c,

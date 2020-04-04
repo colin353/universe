@@ -202,11 +202,88 @@ where
         for (idx, component) in self.components.iter_mut().enumerate() {
             let mut t = term.derive(format!("{}", idx));
             t.offset_y += size;
+            t.height -= size;
             let offset = component.render(&mut t, state, prev_state);
             size += offset;
         }
 
         term.set_rendered_size(size)
+    }
+}
+
+pub struct ScrollContainer<T, F, G> {
+    selected: F,
+    transformer: G,
+    component: Box<dyn Component<T>>,
+    view_position: usize,
+    num_rendered_components: usize,
+}
+
+impl<T, F, G> ScrollContainer<T, F, G> {
+    pub fn new(component: Box<dyn Component<T>>, transformer: G, selected: F) -> Self {
+        ScrollContainer {
+            selected: selected,
+            transformer: transformer,
+            component: component,
+            view_position: 0,
+            num_rendered_components: 0,
+        }
+    }
+}
+
+impl<S, T, F, G> Component<S> for ScrollContainer<T, F, G>
+where
+    T: PartialEq,
+    F: Fn(&S) -> usize,
+    G: Fn(&S) -> &Vec<T>,
+{
+    fn render(&mut self, term: &mut Terminal, state: &S, prev_state: Option<&S>) -> usize {
+        let selected_index = (self.selected)(state);
+        let component_state = (self.transformer)(state);
+
+        if let Some(prev) = prev_state {
+            let prev_selected_index = (self.selected)(prev);
+            let prev_component_state = (self.transformer)(prev);
+            if prev_selected_index == selected_index && component_state == prev_component_state {
+                return term.height;
+            }
+        }
+
+        let prev_component_state = match prev_state {
+            Some(x) => Some((self.transformer)(x)),
+            None => None,
+        };
+
+        if selected_index < self.view_position {
+            self.view_position = selected_index;
+        }
+
+        if selected_index > self.view_position + self.num_rendered_components {
+            self.view_position = selected_index - self.num_rendered_components;
+        }
+
+        let mut size = 0;
+        let mut fully_rendered_components = 0;
+        for (index, s_i) in component_state.iter().skip(self.view_position).enumerate() {
+            let mut t = term.derive(format!("{}", index));
+            t.offset_y += size;
+            let prev_item = prev_component_state
+                .as_ref()
+                .map(|s| s.get(index))
+                .flatten();
+            let offset = self.component.render(&mut t, s_i, prev_item);
+            t.offset_y += offset;
+            size += offset;
+            if t.offset_y <= t.height {
+                fully_rendered_components += 1;
+            } else {
+                break;
+            }
+        }
+
+        self.num_rendered_components = fully_rendered_components;
+
+        term.height
     }
 }
 
