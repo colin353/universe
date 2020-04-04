@@ -23,6 +23,7 @@ struct SearchResult {
     index: usize,
     filename: String,
     snippet: Vec<String>,
+    snippet_starting_line: u32,
     selected: bool,
 }
 
@@ -32,6 +33,7 @@ impl SearchResult {
             index: 0,
             filename: String::new(),
             snippet: Vec::new(),
+            snippet_starting_line: 0,
             selected: false,
         }
     }
@@ -253,6 +255,7 @@ impl tui::AppController<AppState, InputEvent> for App {
                             sr.filename = candidate.take_filename();
                             sr.index = 1 + index;
                             sr.snippet = candidate.take_snippet().into_iter().collect();
+                            sr.snippet_starting_line = candidate.get_snippet_starting_line();
                             sr
                         })
                         .collect();
@@ -262,7 +265,13 @@ impl tui::AppController<AppState, InputEvent> for App {
                     new_state.update_selected();
                     Transition::Updated(new_state)
                 } else {
-                    println!("{}", state.results[state.selected].filename);
+                    let result = &state.results[state.selected];
+                    println!(
+                        "{}#L{}",
+                        result.filename,
+                        result.snippet_starting_line
+                            + (result.snippet.len() / 2 + result.snippet.len() % 2 + 1) as u32
+                    );
                     Transition::Terminate(0)
                 }
             }
