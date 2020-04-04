@@ -142,22 +142,25 @@ impl Terminal {
                 break;
             }
 
-            let line = if line.len() > self.width - self.pos_x {
-                eprint!("{}", &line[0..self.width - self.pos_x]);
-                let idx = self.width - self.pos_x;
+            let line_width = line.chars().count();
+            let mut line_chars = line.chars();
+            let space_left = self.width - self.pos_x;
+            if line_width > space_left {
+                eprint!(
+                    "{}",
+                    &line_chars.by_ref().take(space_left).collect::<String>()
+                );
                 self.move_cursor_to(0, self.pos_y + 1);
-                &line[idx..]
-            } else {
-                line
-            };
+            }
 
             if self.pos_y > self.height {
                 break;
             }
 
-            let c: Vec<_> = line.chars().collect();
+            let c: Vec<_> = line_chars.collect();
             for chunk in c.chunks(self.width) {
                 eprint!("{}", chunk.iter().collect::<String>());
+                self.pos_x += chunk.len();
                 if self.wrap {
                     break;
                 }

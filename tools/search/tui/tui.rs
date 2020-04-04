@@ -53,7 +53,7 @@ impl tui::Component<AppState> for SearchInput {
         prev_state: Option<&AppState>,
     ) -> usize {
         if state.edit_mode {
-            t.set_focus(19 + state.query.len(), 1);
+            t.set_focus(17 + state.query.len(), 1);
         } else {
             t.unset_focus();
         }
@@ -63,7 +63,7 @@ impl tui::Component<AppState> for SearchInput {
                 return 3;
             }
 
-            t.move_cursor_to(19, 1);
+            t.move_cursor_to(17, 1);
             t.print(&state.query);
             if state.query.len() < prev.query.len() {
                 t.print(
@@ -76,18 +76,22 @@ impl tui::Component<AppState> for SearchInput {
         }
 
         t.move_cursor_to(0, 0);
-        t.print(&(0..t.width).map(|_| '-').collect::<String>());
+        t.print("┌");
+        t.print(&(0..t.width - 2).map(|_| '─').collect::<String>());
+        t.print("┐");
         t.move_cursor_to(0, 1);
-        let query_line = format!("| code search | :: {}", state.query);
+        let query_line = format!("│ code search │  {}", state.query);
         t.print(&query_line);
         t.print(
-            &(0..t.width - query_line.len() - 1)
+            &(0..t.width - query_line.len() + 3)
                 .map(|_| ' ')
                 .collect::<String>(),
         );
-        t.print("|");
+        t.print("│");
         t.move_cursor_to(0, 2);
-        t.print(&(0..t.width).map(|_| '-').collect::<String>());
+        t.print("└");
+        t.print(&(0..t.width - 2).map(|_| '─').collect::<String>());
+        t.print("┘");
         3
     }
 }
