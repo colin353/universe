@@ -370,6 +370,10 @@ pub trait AppController<S, E> {
     fn render(&mut self, term: &mut Terminal, state: &S, prev_state: Option<&S>);
     fn initial_state(&self) -> S;
     fn transition(&mut self, state: &S, event: E) -> Transition<S>;
+
+    fn get_terminal_size(&self) -> (usize, usize) {
+        (0, 0)
+    }
 }
 
 pub struct App<S, E> {
@@ -393,6 +397,12 @@ impl<S, E> App<S, E> {
             state: controller.initial_state(),
             controller: controller,
         };
+
+        let terminal_size_override = app.controller.get_terminal_size();
+        if terminal_size_override != (0, 0) {
+            app.terminal.width = terminal_size_override.0;
+            app.terminal.height = terminal_size_override.1;
+        }
         app.terminal.clear_screen();
         app.controller.render(&mut app.terminal, &app.state, None);
         let focus = *app.terminal.focus.lock().unwrap();

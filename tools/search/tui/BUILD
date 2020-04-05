@@ -9,6 +9,7 @@ rust_binary(
     deps = [
         "//tools/search:search_client",
         "//tools/search:search_grpc_rust",
+        "//util/flags",
         "//util/tui",
     ],
 )

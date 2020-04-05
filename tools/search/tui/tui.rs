@@ -2,6 +2,9 @@ use std::io::Read;
 use tui::Component;
 use tui::Transition;
 
+#[macro_use]
+extern crate flags;
+
 #[derive(Clone, PartialEq)]
 struct AppState {
     edit_mode: bool,
@@ -183,6 +186,8 @@ impl Component<Vec<String>> for CodeContainer {
 struct App {
     component: tui::Container<AppState>,
     client: search_client::SearchClient,
+    terminal_size_override: (usize, usize),
+    initial_query: String,
 }
 impl App {
     pub fn new(client: search_client::SearchClient) -> Self {
@@ -196,7 +201,37 @@ impl App {
         Self {
             component: c,
             client: client,
+            terminal_size_override: (0, 0),
+            initial_query: String::new(),
         }
+    }
+
+    fn search(&self, query: String, state: &AppState) -> AppState {
+        let mut new_state = (*state).clone();
+
+        let mut req = search_grpc_rust::SearchRequest::new();
+        req.set_query(query);
+        let mut results = self.client.search(req);
+
+        new_state.results = results
+            .take_candidates()
+            .into_iter()
+            .enumerate()
+            .map(|(index, mut candidate)| {
+                let mut sr = SearchResult::new();
+                sr.filename = candidate.take_filename();
+                sr.index = 1 + index;
+                sr.snippet = candidate.take_snippet().into_iter().collect();
+                sr.snippet_starting_line = candidate.get_snippet_starting_line();
+                sr
+            })
+            .collect();
+
+        new_state.edit_mode = false;
+        new_state.selected = 0;
+        new_state.update_selected();
+
+        new_state
     }
 }
 
@@ -240,29 +275,7 @@ impl tui::AppController<AppState, InputEvent> for App {
             }
             InputEvent::Keyboard('\n') => {
                 if state.edit_mode {
-                    let mut new_state = (*state).clone();
-
-                    let mut req = search_grpc_rust::SearchRequest::new();
-                    req.set_query(new_state.query.clone());
-                    let mut results = self.client.search(req);
-
-                    new_state.results = results
-                        .take_candidates()
-                        .into_iter()
-                        .enumerate()
-                        .map(|(index, mut candidate)| {
-                            let mut sr = SearchResult::new();
-                            sr.filename = candidate.take_filename();
-                            sr.index = 1 + index;
-                            sr.snippet = candidate.take_snippet().into_iter().collect();
-                            sr.snippet_starting_line = candidate.get_snippet_starting_line();
-                            sr
-                        })
-                        .collect();
-
-                    new_state.edit_mode = false;
-                    new_state.selected = 0;
-                    new_state.update_selected();
+                    let new_state = self.search(state.query.clone(), state);
                     Transition::Updated(new_state)
                 } else {
                     let result = &state.results[state.selected];
@@ -325,18 +338,41 @@ impl tui::AppController<AppState, InputEvent> for App {
     }
 
     fn initial_state(&self) -> AppState {
-        AppState {
+        let mut state = AppState {
             edit_mode: true,
             query: String::from(""),
             results: vec![],
             selected: 0,
+        };
+        if !self.initial_query.is_empty() {
+            state.query = self.initial_query.clone();
+            return self.search(self.initial_query.clone(), &state);
         }
+        state
+    }
+
+    fn get_terminal_size(&self) -> (usize, usize) {
+        self.terminal_size_override
     }
 }
 
 fn main() {
+    let app_width = define_flag!("app_width", 0, "If specified, overrides the terminal width");
+    let app_height = define_flag!(
+        "app_height",
+        0,
+        "If specified, overrides the terminal width"
+    );
+    let query = define_flag!("query", String::new(), "A query to load initially");
+    parse_flags!(app_width, app_height, query);
+
     let client = search_client::SearchClient::new("127.0.0.1", 9899);
-    let ctrl = App::new(client);
+    let mut ctrl = App::new(client);
+    if app_width.value() > 0 {
+        ctrl.terminal_size_override = (app_width.value(), app_height.value());
+    }
+    ctrl.initial_query = query.value();
+
     let mut app = tui::App::start(Box::new(ctrl));
 
     for ch in std::io::stdin().lock().bytes() {
