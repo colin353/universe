@@ -240,7 +240,14 @@ impl Searcher {
     }
 
     fn finalize_keyword_matches(&self, query: &Query, candidates: &mut HashMap<u64, Candidate>) {
+        let mut scanned = 0;
         for (file_id, candidate) in candidates.iter_mut() {
+            if candidate.get_keyword_possible_match_mask() == 0 {
+                continue;
+            }
+
+            scanned += 1;
+
             let file = self
                 .candidates
                 .lock()
@@ -285,6 +292,7 @@ impl Searcher {
                 ));
             }
         }
+        println!("fully scanned {} candidates", scanned);
 
         let target_match_mask = (1 << (query.get_keywords().len())) - 1;
         candidates.retain(|_, c| c.get_keyword_definite_match_mask() >= target_match_mask);
