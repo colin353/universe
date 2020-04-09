@@ -456,14 +456,16 @@ pub fn update_stage(stage: &mut Stage) {
 
 pub fn run() {
     let mut stages = STAGES.read().unwrap().clone();
-    let mut completed = std::collections::HashSet::new();
+    let mut started = std::collections::HashSet::new();
     let planner = Planner::new();
+    let pool = pool::ThreadPool::new(4);
+
     loop {
         let mut did_execute = false;
         for (id, stage) in stages.iter_mut().enumerate() {
             update_stage(stage);
 
-            if completed.contains(&id) {
+            if started.contains(&id) {
                 continue;
             }
 
@@ -476,23 +478,38 @@ pub fn run() {
 
             if ready {
                 let shards = planner.plan(&stage);
+
+                // Update the total number of shards in the pcollection regsitry. Note,
+                // this means we only support a single sharded output per stage.
+                if shards.len() > 0 && shards[0].get_outputs().len() > 0 {
+                    let mut pcoll_write = PCOLLECTION_REGISTRY.write().unwrap();
+                    let mut config = pcoll_write
+                        .get_mut(&shards[0].get_outputs()[0].get_id())
+                        .unwrap();
+                    config.set_num_shards(shards.len() as u64);
+                    config.set_num_resolved_shards(0);
+                }
+
                 if shards.len() == 0 {
                     panic!("Stage {} has zero shards!", shards.len());
                 }
                 for shard in shards {
-                    execute_shard(&shard);
+                    let s = shard.clone();
+                    pool.execute(move || {
+                        execute_shard(&s);
+                    })
                 }
                 did_execute = true;
-                completed.insert(id);
+                started.insert(id);
             }
         }
         if !did_execute {
-            break;
+            if pool.get_in_progress() == 0 && started.len() == stages.len() {
+                println!("we're done!");
+                break;
+            }
+            pool.block_until_job_completes();
         }
-    }
-
-    if completed.len() != stages.len() {
-        panic!("Deadlock, didn't execute all stages");
     }
 }
 
@@ -1416,6 +1433,10 @@ where
             .collect();
 
         println!("reshard {:?} -> {:?}", self.sstables_written, outputs);
+
+        // TODO: we aren't marking the config as resolved. I think if
+        // you make a stage which depends on the output of an sstablesink,
+        // you will end up with a problem because it won't ever mark as resolved?
         sstable::reshard(&self.sstables_written, &outputs);
     }
 }
@@ -1529,7 +1550,10 @@ where
         config.mut_memory_ids().push(id);
         config.set_format(self.config.get_format());
         config.set_is_ptable(true);
-        config.set_resolved(true);
+        config.set_num_resolved_shards(config.get_num_resolved_shards() + 1);
+        if config.get_num_resolved_shards() == config.get_num_shards() {
+            config.set_resolved(true);
+        }
     }
 }
 
@@ -1566,7 +1590,11 @@ where
         let mut config = pcoll_write.get_mut(&self.config.get_id()).unwrap();
         config.mut_memory_ids().push(id);
         config.set_format(self.config.get_format());
-        config.set_resolved(true);
+
+        config.set_num_resolved_shards(config.get_num_resolved_shards() + 1);
+        if config.get_num_resolved_shards() == config.get_num_shards() {
+            config.set_resolved(true);
+        }
     }
 }
 

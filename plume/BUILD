@@ -24,6 +24,7 @@ rust_library(
         ":plume_proto_rust",
         "//third_party:lazy_static",
         "//util/itertools",
+        "//util/pool",
         "//util/primitive",
         "//util/shard_lib",
         "//util/sstable",

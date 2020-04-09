@@ -39,6 +39,9 @@ message PCollectionProto {
   // A temporary directory to use before writing the final
   // output.
   string temporary_path = 13;
+
+  uint64 num_resolved_shards = 14;
+  uint64 num_shards = 15;
 }
 
 message PFnProto {
