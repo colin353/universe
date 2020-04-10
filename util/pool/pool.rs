@@ -2,15 +2,18 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 
-pub struct ThreadPool {
-    threads: Vec<Worker>,
-    sender: mpsc::Sender<Job>,
-    alarm: mpsc::Receiver<()>,
+pub struct ThreadPool<T> {
+    threads: Vec<Worker<T>>,
+    sender: mpsc::Sender<Job<T>>,
+    alarm: mpsc::Receiver<T>,
     in_progress: Arc<AtomicUsize>,
 }
 
-impl ThreadPool {
-    pub fn new(size: usize) -> ThreadPool {
+impl<T> ThreadPool<T>
+where
+    T: Send + 'static,
+{
+    pub fn new(size: usize) -> Self {
         let mut threads = Vec::with_capacity(size);
 
         let (sender, receiver) = mpsc::channel();
@@ -34,12 +37,10 @@ impl ThreadPool {
             in_progress,
         }
     }
-}
 
-impl ThreadPool {
     pub fn execute<F>(&self, f: F)
     where
-        F: FnOnce() + Send + 'static,
+        F: FnOnce() -> T + Send + 'static,
     {
         let job = Box::new(f);
         self.in_progress.fetch_add(1, Ordering::Relaxed);
@@ -47,16 +48,25 @@ impl ThreadPool {
     }
 
     // blocks until at least one job completes
-    pub fn block_until_job_completes(&self) {
+    pub fn block_until_job_completes(&self) -> Option<T> {
         if self.in_progress.load(Ordering::Relaxed) > 0 {
-            self.alarm.recv().unwrap();
+            return Some(self.alarm.recv().unwrap());
         }
+        None
     }
 
-    pub fn join(&self) {
+    pub fn join(&self) -> Vec<T> {
+        let mut output = Vec::new();
         while self.in_progress.load(Ordering::Relaxed) > 0 {
-            self.alarm.recv().unwrap();
+            output.push(self.alarm.recv().unwrap());
         }
+
+        // All tasks are done, so flush the remaining stuff in the channel
+        while let Ok(r) = self.alarm.try_recv() {
+            output.push(r);
+        }
+
+        output
     }
 
     pub fn get_in_progress(&self) -> usize {
@@ -64,18 +74,22 @@ impl ThreadPool {
     }
 }
 
-pub struct Worker {
+pub struct Worker<T> {
     id: usize,
     thread: thread::JoinHandle<()>,
+    _mark: std::marker::PhantomData<T>,
 }
 
-impl Worker {
+impl<T> Worker<T>
+where
+    T: Send + 'static,
+{
     fn new(
         id: usize,
-        receiver: Arc<Mutex<mpsc::Receiver<Job>>>,
-        waker: mpsc::Sender<()>,
+        receiver: Arc<Mutex<mpsc::Receiver<Job<T>>>>,
+        waker: mpsc::Sender<T>,
         in_progress: Arc<AtomicUsize>,
-    ) -> Worker {
+    ) -> Self {
         let thread = thread::spawn(move || loop {
             let job = {
                 let r = receiver.lock().unwrap();
@@ -87,22 +101,26 @@ impl Worker {
                     Err(_) => return,
                 }
             };
-            job.call_box();
+            let result = job.call_box();
             in_progress.fetch_sub(1, Ordering::Relaxed);
-            waker.send(()).unwrap();
+            waker.send(result).unwrap();
         });
-        Worker { id, thread }
+        Worker {
+            id,
+            thread,
+            _mark: std::marker::PhantomData,
+        }
     }
 }
 
-trait FnBox {
-    fn call_box(self: Box<Self>);
+trait FnBox<T> {
+    fn call_box(self: Box<Self>) -> T;
 }
 
-impl<F: FnOnce()> FnBox for F {
-    fn call_box(self: Box<F>) {
+impl<T, F: FnOnce() -> T> FnBox<T> for F {
+    fn call_box(self: Box<F>) -> T {
         (*self)()
     }
 }
 
-type Job = Box<FnBox + Send + 'static>;
+type Job<T> = Box<FnBox<T> + Send + 'static>;

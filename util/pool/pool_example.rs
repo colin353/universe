@@ -3,12 +3,14 @@ extern crate pool;
 use std::thread;
 
 fn main() {
-    let threadpool = pool::ThreadPool::new(5);
+    let pool = pool::ThreadPool::new(5);
     for i in 0..10 {
-        threadpool.execute(move || {
+        pool.execute(move || {
             println!("iteration {}", i);
+            i
         });
     }
 
-    thread::park();
+    let result = pool.join();
+    println!("result: {:?}", result);
 }

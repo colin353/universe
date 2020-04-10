@@ -6,7 +6,7 @@ use std::time::SystemTime;
 
 pub struct WeldParallelFs<C: largetable_client::LargeTableClient> {
     filesystem: Arc<fs::WeldFS<C>>,
-    threadpool: ThreadPool,
+    threadpool: ThreadPool<()>,
 }
 
 fn get_timestamp_usec() -> u64 {
