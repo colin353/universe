@@ -314,7 +314,7 @@ impl tui::AppController<AppState, InputEvent> for App {
             InputEvent::Keyboard('k') => {
                 let mut new_state = (*state).clone();
                 if state.edit_mode {
-                    new_state.query.push('q');
+                    new_state.query.push('k');
                     return Transition::Updated(new_state);
                 }
 
