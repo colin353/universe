@@ -52,6 +52,19 @@ rust_binary(
     ],
 )
 
+rust_image(
+    name = "search_server_img",
+    binary = ":server",
+)
+
+docker_push(
+    name = "search_server_img_push",
+    image = ":search_server_img",
+    registry = "us.gcr.io",
+    repository = "mushu-194218/search_server",
+    tag = "dev",
+)
+
 rust_library(
     name = "search_client",
     srcs = ["client.rs"],
