@@ -3,7 +3,7 @@ extern crate lazy_static;
 
 use search_grpc_rust::*;
 use std::collections::{HashMap, HashSet};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 const CANDIDATES_TO_RETURN: usize = 25;
 const CANDIDATES_TO_EXPAND: usize = 100;
@@ -17,7 +17,7 @@ lazy_static! {
 
 pub struct Searcher {
     code: Mutex<sstable::SSTableReader<File>>,
-    candidates: Mutex<sstable::SSTableReader<File>>,
+    candidates: Arc<Mutex<sstable::SSTableReader<File>>>,
     definitions: Mutex<sstable::SSTableReader<DefinitionMatches>>,
     trigrams: Mutex<sstable::SSTableReader<KeywordMatches>>,
 
@@ -50,7 +50,7 @@ impl Searcher {
         Self {
             code: Mutex::new(code),
             definitions: Mutex::new(definitions),
-            candidates: Mutex::new(candidates),
+            candidates: Arc::new(Mutex::new(candidates)),
             trigrams: Mutex::new(trigrams),
             candidates_to_return: CANDIDATES_TO_RETURN,
             candidates_to_expand: CANDIDATES_TO_EXPAND,
@@ -108,9 +108,7 @@ impl Searcher {
         self.get_candidates_by_filename(query, &mut candidates);
         self.get_possible_candidates_by_keyword(query, &mut candidates);
         self.eliminate_partially_matched_candidates(query, &mut candidates);
-        self.finalize_keyword_matches(query, &mut candidates);
-
-        candidates.into_iter().map(|(_, x)| x).collect()
+        self.finalize_keyword_matches(query, candidates)
     }
 
     fn get_candidates_by_definition(
@@ -241,7 +239,11 @@ impl Searcher {
         });
     }
 
-    fn finalize_keyword_matches(&self, query: &Query, candidates: &mut HashMap<u64, Candidate>) {
+    fn finalize_keyword_matches(
+        &self,
+        query: &Query,
+        candidates: HashMap<u64, Candidate>,
+    ) -> Vec<Candidate> {
         let mut scanned = 0;
 
         // Construct regex matchers for each keyword
@@ -250,7 +252,7 @@ impl Searcher {
             .iter()
             .map(|k| {
                 (
-                    k,
+                    k.clone(),
                     aho_corasick::AhoCorasickBuilder::new()
                         .ascii_case_insensitive(true)
                         .build(&[k.get_keyword()]),
@@ -258,73 +260,88 @@ impl Searcher {
             })
             .collect();
 
-        for (file_id, candidate) in candidates.iter_mut() {
-            if candidate.get_keyword_possible_match_mask() == 0 {
-                continue;
-            }
+        let pool = pool::ThreadPool::new(4);
 
+        for (file_id, candidate) in candidates.into_iter() {
+            let matchers = keyword_matchers.clone();
+            let reader = self.candidates.clone();
+            pool.execute(move || {
+                Self::finalize_keyword_matches_for_candidate(reader, file_id, candidate, matchers)
+            });
             scanned += 1;
+        }
+        println!("fully scanned {} candidates", scanned);
 
-            let start = std::time::Instant::now();
-            let file = self
-                .candidates
+        let mut candidates = pool.join();
+        let target_match_mask = (1 << (query.get_keywords().len())) - 1;
+        candidates.retain(|c| c.get_keyword_definite_match_mask() >= target_match_mask);
+        candidates
+    }
+
+    fn finalize_keyword_matches_for_candidate(
+        reader: Arc<Mutex<sstable::SSTableReader<File>>>,
+        file_id: u64,
+        mut candidate: Candidate,
+        keyword_matchers: Vec<(QueryKeyword, aho_corasick::AhoCorasick)>,
+    ) -> Candidate {
+        let start = std::time::Instant::now();
+        let file = {
+            reader
                 .lock()
                 .unwrap()
                 .get(&file_id.to_string())
                 .unwrap()
-                .unwrap();
+                .unwrap()
+        };
 
-            candidate.set_filename(file.get_filename().to_string());
-            candidate.set_is_ugly(file.get_is_ugly());
-            candidate.set_file_type(file.get_file_type());
+        candidate.set_filename(file.get_filename().to_string());
+        candidate.set_is_ugly(file.get_is_ugly());
+        candidate.set_file_type(file.get_file_type());
 
-            let start = std::time::Instant::now();
-            let mut matched_keywords = HashMap::new();
-            for (index, (keyword, re)) in keyword_matchers.iter().enumerate() {
-                for (line_number, line) in file.get_content().lines().enumerate() {
-                    let mut s = extract_spans(&re, &line);
+        let start = std::time::Instant::now();
+        let mut matched_keywords = HashMap::new();
+        for (index, (keyword, re)) in keyword_matchers.iter().enumerate() {
+            for (line_number, line) in file.get_content().lines().enumerate() {
+                let mut s = extract_spans(&re, &line);
 
-                    if s.len() == 0 {
-                        continue;
-                    }
+                if s.len() == 0 {
+                    continue;
+                }
 
-                    for mut span in s.into_iter() {
-                        span.set_line(line_number as u64);
-                        candidate.mut_spans().push(span);
-                    }
+                for mut span in s.into_iter() {
+                    span.set_line(line_number as u64);
+                    candidate.mut_spans().push(span);
+                }
 
-                    let k = matched_keywords.entry(index).or_insert_with(|| {
-                        let mut e = ExtractedKeyword::new();
-                        e.set_keyword(keyword.get_keyword().to_owned());
-                        e
-                    });
-                    k.set_occurrences(k.get_occurrences() + 1);
+                let k = matched_keywords.entry(index).or_insert_with(|| {
+                    let mut e = ExtractedKeyword::new();
+                    e.set_keyword(keyword.get_keyword().to_owned());
+                    e
+                });
+                k.set_occurrences(k.get_occurrences() + 1);
 
-                    if k.get_occurrences() > 20 {
-                        break;
-                    }
+                if k.get_occurrences() > 20 {
+                    break;
                 }
             }
-            if start.elapsed().as_millis() > 10 {
-                println!(
-                    "scanned {} in {} us",
-                    file.get_filename(),
-                    start.elapsed().as_micros()
-                );
-            }
-
-            for (index, k) in matched_keywords.into_iter() {
-                candidate.mut_matched_keywords().push(k);
-                candidate.set_keyword_definite_match_mask(update_mask(
-                    candidate.get_keyword_definite_match_mask(),
-                    index,
-                ));
-            }
         }
-        println!("fully scanned {} candidates", scanned);
+        if start.elapsed().as_millis() > 10 {
+            println!(
+                "scanned {} in {} us",
+                file.get_filename(),
+                start.elapsed().as_micros()
+            );
+        }
 
-        let target_match_mask = (1 << (query.get_keywords().len())) - 1;
-        candidates.retain(|_, c| c.get_keyword_definite_match_mask() >= target_match_mask);
+        for (index, k) in matched_keywords.into_iter() {
+            candidate.mut_matched_keywords().push(k);
+            candidate.set_keyword_definite_match_mask(update_mask(
+                candidate.get_keyword_definite_match_mask(),
+                index,
+            ));
+        }
+
+        candidate
     }
 
     fn cutoff(&self, candidates: &mut Vec<Candidate>, num_candidates: usize) {

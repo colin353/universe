@@ -94,6 +94,7 @@ rust_library(
         "//third_party:lazy_static",
         "//third_party:regex",
         "//util/itertools",
+        "//util/pool",
         "//util/sstable",
     ],
 )
