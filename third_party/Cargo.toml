@@ -21,6 +21,7 @@ openssl-sys = "=0.9.42"
 difference = "2.0"
 base64 = "=0.10.1"
 hyper-tls = "=0.3.2"
+aho-corasick = "=0.7.10"
 
 [raze]
 # The WORKSPACE relative path to the Cargo.toml working directory.
