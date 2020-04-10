@@ -90,6 +90,13 @@ impl plume::DoFn for ExtractTrigramsFn {
         let file = input.value();
         let file_id = Primitive::from(search_utils::hash_filename(input.key()));
 
+        // Only extract trigrams for files < 1MB or else it basically matches
+        // everything and is useless
+        if file.get_content().len() > 1_000_000 {
+            println!("skipped `{}`, too big", file.get_filename());
+            return;
+        }
+
         let mut collected_trigrams = std::collections::HashSet::new();
         for line in file.get_content().lines() {
             for trigram in search_utils::trigrams(&line.to_lowercase()) {

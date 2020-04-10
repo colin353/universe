@@ -90,6 +90,7 @@ rust_library(
     deps = [
         ":search_grpc_rust",
         ":search_utils",
+        "//third_party:aho_corasick",
         "//third_party:lazy_static",
         "//third_party:regex",
         "//util/itertools",

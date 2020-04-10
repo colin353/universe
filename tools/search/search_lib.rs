@@ -60,6 +60,7 @@ impl Searcher {
 
     pub fn search(&self, keywords: &str) -> Vec<Candidate> {
         let query = self.parse_query(keywords);
+        let start = std::time::Instant::now();
         let mut candidates = self.get_candidates(&query);
         self.initial_rank(&query, &mut candidates);
         self.cutoff(&mut candidates, self.candidates_to_expand);
@@ -67,6 +68,7 @@ impl Searcher {
         self.final_rank(&query, &mut candidates);
         self.cutoff(&mut candidates, self.candidates_to_return);
         self.render_results(&candidates);
+        println!("total search: {} ms", start.elapsed().as_millis());
         return candidates;
     }
 
@@ -241,6 +243,21 @@ impl Searcher {
 
     fn finalize_keyword_matches(&self, query: &Query, candidates: &mut HashMap<u64, Candidate>) {
         let mut scanned = 0;
+
+        // Construct regex matchers for each keyword
+        let keyword_matchers: Vec<_> = query
+            .get_keywords()
+            .iter()
+            .map(|k| {
+                (
+                    k,
+                    aho_corasick::AhoCorasickBuilder::new()
+                        .ascii_case_insensitive(true)
+                        .build(&[k.get_keyword()]),
+                )
+            })
+            .collect();
+
         for (file_id, candidate) in candidates.iter_mut() {
             if candidate.get_keyword_possible_match_mask() == 0 {
                 continue;
@@ -248,6 +265,7 @@ impl Searcher {
 
             scanned += 1;
 
+            let start = std::time::Instant::now();
             let file = self
                 .candidates
                 .lock()
@@ -260,11 +278,11 @@ impl Searcher {
             candidate.set_is_ugly(file.get_is_ugly());
             candidate.set_file_type(file.get_file_type());
 
+            let start = std::time::Instant::now();
             let mut matched_keywords = HashMap::new();
-            for (line_number, line) in file.get_content().lines().enumerate() {
-                let line = line.to_lowercase();
-                for (index, keyword) in query.get_keywords().iter().enumerate() {
-                    let mut s = extract_spans(&keyword.get_keyword().to_lowercase(), &line);
+            for (index, (keyword, re)) in keyword_matchers.iter().enumerate() {
+                for (line_number, line) in file.get_content().lines().enumerate() {
+                    let mut s = extract_spans(&re, &line);
 
                     if s.len() == 0 {
                         continue;
@@ -281,7 +299,18 @@ impl Searcher {
                         e
                     });
                     k.set_occurrences(k.get_occurrences() + 1);
+
+                    if k.get_occurrences() > 20 {
+                        break;
+                    }
                 }
+            }
+            if start.elapsed().as_millis() > 10 {
+                println!(
+                    "scanned {} in {} us",
+                    file.get_filename(),
+                    start.elapsed().as_micros()
+                );
             }
 
             for (index, k) in matched_keywords.into_iter() {
@@ -483,7 +512,11 @@ fn find_max_span_window(spans: &[Span]) -> usize {
             // the window to center on that position.
             let max = *included_spans.iter().max().unwrap();
             let min = *included_spans.iter().min().unwrap();
-            let offset = (SNIPPET_LENGTH - (max - min)) / 2;
+            let offset = if SNIPPET_LENGTH > (max - min) {
+                (SNIPPET_LENGTH - (max - min)) / 2
+            } else {
+                0
+            };
 
             if min > offset {
                 max_window_start = min - offset;
@@ -496,12 +529,12 @@ fn find_max_span_window(spans: &[Span]) -> usize {
     max_window_start
 }
 
-fn extract_spans(term: &str, line: &str) -> Vec<Span> {
+fn extract_spans(re: &aho_corasick::AhoCorasick, line: &str) -> Vec<Span> {
     let mut output = Vec::new();
-    for (idx, _) in line.match_indices(term) {
+    if let Some(m) = re.find(line) {
         let mut s = Span::new();
-        s.set_offset(idx as u64);
-        s.set_length(term.len() as u64);
+        s.set_offset(m.start() as u64);
+        s.set_length((m.end() - m.start()) as u64);
         output.push(s);
     }
     output
