@@ -31,7 +31,7 @@ static ORDER: std::sync::atomic::Ordering = std::sync::atomic::Ordering::Relaxed
 static LAST_ID: AtomicU64 = AtomicU64::new(1);
 static MAX_SSTABLE_HEAP_SIZE: usize = 1000 * 1000 * 1000;
 
-static TARGET_SHARDS: usize = 2;
+static TARGET_SHARDS: usize = 8;
 static IN_MEMORY_RECORD_THRESHOLD: u64 = 1000 * 1000;
 static IN_MEMORY_BYTES_THRESHOLD: u64 = 1000 * 1000 * 1000;
 
@@ -983,13 +983,13 @@ impl Planner {
         }
 
         let sharded_inputs = self.shard_inputs(stage.get_inputs(), target_shards);
-        let sharded_outputs = self.shard_output(&output, target_shards);
+        let sharded_outputs = self.shard_output(&output, sharded_inputs.len());
 
         if sharded_inputs.len() != sharded_outputs.len() {
             panic!(
                 "Can't plan: got {} inputs and {} outputs!",
                 sharded_inputs.len(),
-                sharded_outputs.len()
+                sharded_outputs.len(),
             );
         }
 
