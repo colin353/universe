@@ -9,7 +9,8 @@
         "grpc_port": "50002",
         "index_dir": "/index",
         "auth_hostname": "auth",
-        "auth_port": "8888"
+        "auth_port": "8888",
+        "base_url": "http://search.colinmerkel.xyz"
     },
     "docker_arguments": [
         "--init",

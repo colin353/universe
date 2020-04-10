@@ -54,6 +54,7 @@ rust_binary(
 
 rust_image(
     name = "search_server_img",
+    base = "//weld/review:review_base_img",
     binary = ":server",
 )
 
