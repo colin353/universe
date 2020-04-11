@@ -113,7 +113,8 @@ where
         if let Some(q) = req.uri().query() {
             let params = ws_utils::parse_params(q);
             if let Some(keywords) = params.get("q") {
-                query = keywords.to_owned();
+                // Chrome's search engine plugin turns + into space
+                query = keywords.replace("+", " ");
             }
         };
 
