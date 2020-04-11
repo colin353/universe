@@ -364,9 +364,15 @@ fn main() {
         "If specified, overrides the terminal width"
     );
     let query = define_flag!("query", String::new(), "A query to load initially");
-    parse_flags!(app_width, app_height, query);
+    let host = define_flag!(
+        "host",
+        String::from("search.colinmerkel.xyz"),
+        "The hostname of the search service"
+    );
+    let port = define_flag!("port", 50002, "The port of the search service");
+    parse_flags!(app_width, app_height, query, host, port);
 
-    let client = search_client::SearchClient::new("127.0.0.1", 9899);
+    let client = search_client::SearchClient::new(&host.value(), port.value());
     let mut ctrl = App::new(client);
     if app_width.value() > 0 {
         ctrl.terminal_size_override = (app_width.value(), app_height.value());

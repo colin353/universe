@@ -1,7 +1,7 @@
 {
     "name": "search_server",
     "binary_name": "search_server",
-    "priority": 200,
+    "priority": 100,
     "environment": "server",
     "long_running": true,
     "arguments": {
