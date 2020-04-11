@@ -143,27 +143,53 @@ impl Searcher {
     }
 
     fn get_candidates_by_filename(&self, query: &Query, candidates: &mut HashMap<u64, Candidate>) {
+        // Construct regex matchers for each keyword
+        let keyword_matchers: Vec<_> = query
+            .get_keywords()
+            .iter()
+            .map(|k| {
+                (
+                    k.clone(),
+                    aho_corasick::AhoCorasickBuilder::new()
+                        .ascii_case_insensitive(true)
+                        .build(&[k.get_keyword()]),
+                )
+            })
+            .collect();
+
+        let query_matcher = aho_corasick::AhoCorasickBuilder::new()
+            .ascii_case_insensitive(true)
+            .build(&[query.get_query()]);
+
         for file in self.files.values() {
             let filename = file.get_filename();
             let mut query_match = false;
             let mut exact_match = false;
             let mut match_position = 0;
             let mut match_mask = 0;
-            for (index, keyword) in query.get_keywords().iter().enumerate() {
-                if let Some(idx) = filename.rfind(keyword.get_keyword()) {
-                    match_position =
-                        std::cmp::max(match_position, idx + keyword.get_keyword().len());
+            let mut num_matches = 0;
+            let mut matched_in_order = true;
+            let mut filename_coverage = 0;
+            for (index, (keyword, re)) in keyword_matchers.iter().enumerate() {
+                if let Some(m) = re.find(filename) {
+                    if m.end() < match_position {
+                        matched_in_order = false;
+                    }
+                    num_matches += 1;
+                    filename_coverage += m.end() - m.start();
+                    match_position = std::cmp::max(match_position, m.end());
                     match_mask = update_mask(match_mask, index);
                 }
             }
 
-            if let Some(idx) = filename.rfind(query.get_query()) {
+            if let Some(m) = query_matcher.find(filename) {
                 query_match = true;
+                num_matches += 1;
 
                 // It matched all components of the query so just fill the match mask with 1s
                 match_mask = std::u32::MAX;
 
-                match_position = std::cmp::max(match_position, idx + query.get_query().len());
+                match_position = std::cmp::max(match_position, m.end());
 
                 if filename == query.get_query() {
                     exact_match = true;
@@ -179,7 +205,10 @@ impl Searcher {
                 c.set_query_in_filename(query_match);
                 c.set_exactly_matched_filename(exact_match);
                 c.set_filename_match_position(match_position as u32);
+                c.set_filename_query_matches(num_matches);
+                c.set_filename_keywords_matched_in_order(matched_in_order);
                 c.set_keyword_definite_match_mask(c.get_keyword_definite_match_mask() | match_mask);
+                c.set_filename_match_coverage(filename_coverage as f32 / filename.len() as f32);
             }
         }
     }
@@ -389,10 +418,16 @@ impl Searcher {
         // Filename match scoring
         if candidate.get_keyword_matched_filename() {
             score += 10.0;
+            score += 200.0 * candidate.get_filename_match_coverage();
+            score += 40.0 * candidate.get_filename_query_matches() as f32;
         }
+        score +=
+            candidate.get_filename_match_position() as f32 / candidate.get_filename().len() as f32;
 
         if candidate.get_query_in_filename() {
-            score += 20.0;
+            if candidate.get_filename_keywords_matched_in_order() {
+                score += 20.0 * candidate.get_filename_query_matches() as f32;
+            }
         }
 
         if candidate.get_exactly_matched_filename() {
@@ -400,23 +435,31 @@ impl Searcher {
         }
 
         if candidate.get_filename().starts_with("third_party") {
-            score /= 2.0;
+            score /= 3.0;
         }
 
         // Definition scoring
         // TODO: adjust score based on symbol type
-        score += 50.0 * candidate.get_matched_definitions().len() as f32;
+        let mut definition_score = 0;
         for def in candidate.get_matched_definitions() {
+            let symbol_score = match def.get_symbol_type() {
+                SymbolType::VARIABLE => 5,
+                SymbolType::FUNCTION => 40,
+                SymbolType::STRUCTURE => 50,
+                SymbolType::TRAIT => 40,
+            };
+            definition_score += symbol_score;
             for keyword in query.get_keywords() {
                 if def.get_symbol() == keyword.get_keyword() {
-                    // Exact match, give an extra 50 points
-                    score += 50.0;
+                    // Exact match, give extra points
+                    definition_score += symbol_score;
                 }
             }
         }
 
-        score +=
-            candidate.get_filename_match_position() as f32 / candidate.get_filename().len() as f32;
+        // Sometimes definition scores can get really crazy, e.g. if there are
+        // a billion instances of a variable being defined over and over. Limit at 100.
+        score += std::cmp::min(definition_score, 100) as f32;
 
         candidate.set_score(score);
     }

@@ -77,6 +77,10 @@ message Candidate {
   uint32 keyword_definite_match_mask = 15;
 
   repeated Span spans = 16;
+
+  uint32 filename_query_matches = 17;
+  bool filename_keywords_matched_in_order = 18;
+  float filename_match_coverage = 19;
 }
 
 enum SymbolType {
