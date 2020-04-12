@@ -109,6 +109,7 @@ impl auth_grpc_rust::AuthenticationService for AuthServiceHandler {
 pub struct AuthWebServer {
     tokens: Arc<RwLock<HashMap<String, LoginRecord>>>,
     hostname: String,
+    cookie_domain: String,
     client_id: String,
     client_secret: String,
     email_whitelist: Arc<HashSet<String>>,
@@ -118,6 +119,7 @@ impl AuthWebServer {
     pub fn new(
         tokens: Arc<RwLock<HashMap<String, LoginRecord>>>,
         hostname: String,
+        cookie_domain: String,
         client_id: String,
         client_secret: String,
         email_whitelist: Arc<HashSet<String>>,
@@ -125,6 +127,7 @@ impl AuthWebServer {
         Self {
             tokens: tokens,
             hostname: hostname,
+            cookie_domain: cookie_domain,
             client_id: client_id,
             client_secret: client_secret,
             email_whitelist: email_whitelist,
@@ -171,7 +174,7 @@ impl AuthWebServer {
             headers.insert("Location", HeaderValue::from_str(&url).unwrap());
         }
 
-        self.set_cookie(token, &mut response);
+        self.set_cookie_for_domain(token, &self.cookie_domain, &mut response);
         Box::new(future::ok(response))
     }
 

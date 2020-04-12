@@ -76,6 +76,14 @@ pub trait Server: Sync + Send + Clone + 'static {
         Response::new(Body::from(format!("404 not found: path {}", path)))
     }
 
+    fn set_cookie_for_domain(&self, new_token: &str, domain: &str, response: &mut Response) {
+        response.headers_mut().insert(
+            SET_COOKIE,
+            HeaderValue::from_bytes(format!("token={}; Domain={}", new_token, domain).as_bytes())
+                .unwrap(),
+        );
+    }
+
     fn set_cookie(&self, new_token: &str, response: &mut Response) {
         response.headers_mut().insert(
             SET_COOKIE,
@@ -106,18 +114,17 @@ pub trait Server: Sync + Send + Clone + 'static {
                             maybe_session_key = extract_key(c, "token");
                         }
                         let (has_cookie, session_key) = match maybe_session_key {
-                            Some(k) => (true, k),
-                            None => (false, random_string()),
+                            Some(k) => {
+                                println!("has cookie: {}", k);
+                                (true, k)
+                            }
+                            None => {
+                                println!("no cookie found");
+                                (false, random_string())
+                            }
                         };
 
-                        let mut response =
-                            s.respond_future(req.uri().path().into(), req, &session_key);
-
-                        /*if !has_cookie {
-                            s.set_cookie(&session_key, &mut response);
-                        }*/
-
-                        response
+                        s.respond_future(req.uri().path().into(), req, &session_key)
                     })
                 })
                 .map_err(|e| println!("error: {}", e)),

@@ -30,11 +30,17 @@ fn main() {
         String::new(),
         "a list of allowed emails separated by commas"
     );
+    let cookie_domain = define_flag!(
+        "cookie_domain",
+        String::from("colinmerkel.xyz"),
+        "the domain setting to use for cookies"
+    );
     parse_flags!(
         allowed_emails,
         grpc_port,
         web_port,
         hostname,
+        cookie_domain,
         oauth_client_id,
         oauth_client_secret
     );
@@ -60,6 +66,7 @@ fn main() {
     auth_service_impl::AuthWebServer::new(
         tokens,
         hostname.value(),
+        cookie_domain.value(),
         oauth_client_id.value(),
         oauth_client_secret.value(),
         Arc::new(email_whitelist),
