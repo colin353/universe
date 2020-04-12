@@ -35,6 +35,8 @@ fn main() {
         String::from("colinmerkel.xyz"),
         "the domain setting to use for cookies"
     );
+    let secret_key = define_flag!("secret_key", String::new(), "the shared secret key string");
+
     parse_flags!(
         allowed_emails,
         grpc_port,
@@ -42,7 +44,8 @@ fn main() {
         hostname,
         cookie_domain,
         oauth_client_id,
-        oauth_client_secret
+        oauth_client_secret,
+        secret_key
     );
 
     let email_whitelist = std::collections::HashSet::from_iter(
@@ -58,6 +61,7 @@ fn main() {
         hostname.value(),
         oauth_client_id.value(),
         tokens.clone(),
+        secret_key.value(),
     );
 
     server.add_service(auth_grpc_rust::AuthenticationServiceServer::new_service_def(handler));

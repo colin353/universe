@@ -17,6 +17,8 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 use ws::{Body, Request, Response, ResponseFuture, Server};
 
+const MACHINE_USERNAME: &str = "service-account";
+
 pub struct LoginRecord {
     username: String,
     state: String,
@@ -44,17 +46,20 @@ pub struct AuthServiceHandler {
     hostname: String,
     oauth_client_id: String,
     tokens: Arc<RwLock<HashMap<String, LoginRecord>>>,
+    secret_key: String,
 }
 impl AuthServiceHandler {
     pub fn new(
         hostname: String,
         oauth_client_id: String,
         tokens: Arc<RwLock<HashMap<String, LoginRecord>>>,
+        secret_key: String,
     ) -> Self {
         Self {
             hostname: hostname,
             tokens: tokens,
             oauth_client_id: oauth_client_id,
+            secret_key: secret_key,
         }
     }
 }
@@ -95,7 +100,10 @@ impl auth_grpc_rust::AuthenticationService for AuthServiceHandler {
         req: auth_grpc_rust::AuthenticateRequest,
     ) -> grpc::SingleResponse<auth_grpc_rust::AuthenticateResponse> {
         let mut response = auth_grpc_rust::AuthenticateResponse::new();
-        if let Some(t) = self.tokens.read().unwrap().get(req.get_token()) {
+        if req.get_token() == &self.secret_key {
+            response.set_success(true);
+            response.set_username(MACHINE_USERNAME.to_owned());
+        } else if let Some(t) = self.tokens.read().unwrap().get(req.get_token()) {
             if t.is_valid() {
                 response.set_success(true);
                 response.set_username(t.username.clone());
