@@ -1,7 +1,9 @@
+extern crate auth_client;
 extern crate grpc;
 extern crate largetable_client;
 extern crate x20_grpc_rust as x20;
 
+use auth_client::AuthServer;
 use largetable_client::LargeTableClient;
 
 const BINARY_VERSIONS: &'static str = "x20::binary_versions";
@@ -12,6 +14,7 @@ const CONFIGS: &'static str = "x20::configs";
 #[derive(Clone)]
 pub struct X20ServiceHandler<C: LargeTableClient> {
     database: C,
+    auth: auth_client::AuthClient,
 }
 
 fn config_rowname(env: &str) -> String {
@@ -19,8 +22,11 @@ fn config_rowname(env: &str) -> String {
 }
 
 impl<C: LargeTableClient + Clone> X20ServiceHandler<C> {
-    pub fn new(db: C) -> Self {
-        Self { database: db }
+    pub fn new(db: C, auth: auth_client::AuthClient) -> Self {
+        Self {
+            database: db,
+            auth: auth,
+        }
     }
 
     fn get_binaries(&self) -> x20::GetBinariesResponse {
@@ -39,7 +45,17 @@ impl<C: LargeTableClient + Clone> X20ServiceHandler<C> {
         response
     }
 
+    fn authenticate(&self, token: &str) -> bool {
+        self.auth.authenticate(token.to_owned()).get_success()
+    }
+
     fn publish_binary(&self, mut req: x20::PublishBinaryRequest) -> x20::PublishBinaryResponse {
+        if !self.authenticate(req.get_token()) {
+            let mut response = x20::PublishBinaryResponse::new();
+            response.set_error(x20::Error::AUTHENTICATION);
+            return response;
+        }
+
         let name = req.get_binary().get_name().to_owned();
 
         if req.get_binary().get_name().is_empty() {
@@ -75,6 +91,12 @@ impl<C: LargeTableClient + Clone> X20ServiceHandler<C> {
     }
 
     fn publish_config(&self, mut req: x20::PublishConfigRequest) -> x20::PublishConfigResponse {
+        if !self.authenticate(req.get_token()) {
+            let mut response = x20::PublishConfigResponse::new();
+            response.set_error(x20::Error::AUTHENTICATION);
+            return response;
+        }
+
         let name = req.get_config().get_name().to_owned();
 
         if name.is_empty() {
@@ -134,7 +156,7 @@ mod tests {
 
     fn create_test_handler() -> X20ServiceHandler<largetable_test::LargeTableMockClient> {
         let db = largetable_test::LargeTableMockClient::new();
-        X20ServiceHandler::new(db)
+        X20ServiceHandler::new(db, auth_client::AuthClient::new_fake())
     }
 
     #[test]

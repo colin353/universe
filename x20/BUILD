@@ -23,6 +23,7 @@ rust_library(
     srcs = ["server_lib.rs"],
     deps = [
         ":x20_grpc_rust",
+        "//auth:auth_client",
         "//largetable:largetable_client",
         "@io_bazel_rules_rust//proto/raze:grpc",
         "@io_bazel_rules_rust//proto/raze:protobuf",
@@ -45,6 +46,7 @@ rust_binary(
     deps = [
         ":x20_grpc_rust",
         ":x20_server_lib",
+        "//auth:auth_client",
         "//largetable:largetable_client",
         "//util/flags",
         "@io_bazel_rules_rust//proto/raze:grpc",

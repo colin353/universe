@@ -11,16 +11,20 @@ pub trait AuthServer: Send + Sync + Clone + 'static {
 
 #[derive(Clone)]
 pub struct AuthClient {
-    client: Arc<AuthenticationServiceClient>,
+    client: Option<Arc<AuthenticationServiceClient>>,
 }
 
 impl AuthClient {
     pub fn new(hostname: &str, port: u16) -> Self {
         Self {
-            client: Arc::new(
+            client: Some(Arc::new(
                 AuthenticationServiceClient::new_plain(hostname, port, Default::default()).unwrap(),
-            ),
+            )),
         }
+    }
+
+    pub fn new_fake() -> Self {
+        Self { client: None }
     }
 
     fn opts(&self) -> grpc::RequestOptions {
@@ -30,9 +34,18 @@ impl AuthClient {
 
 impl AuthServer for AuthClient {
     fn authenticate(&self, token: String) -> AuthenticateResponse {
+        if self.client.is_none() {
+            let mut response = AuthenticateResponse::new();
+            response.set_username(String::from("fake-user"));
+            response.set_success(true);
+            return response;
+        }
+
         let mut req = AuthenticateRequest::new();
         req.set_token(token);
         self.client
+            .as_ref()
+            .unwrap()
             .authenticate(self.opts(), req)
             .wait()
             .expect("rpc")
@@ -41,6 +54,8 @@ impl AuthServer for AuthClient {
 
     fn login(&self) -> LoginChallenge {
         self.client
+            .as_ref()
+            .unwrap()
             .login(self.opts(), LoginRequest::new())
             .wait()
             .expect("rpc")
@@ -50,6 +65,12 @@ impl AuthServer for AuthClient {
     fn login_then_redirect(&self, return_url: String) -> LoginChallenge {
         let mut req = LoginRequest::new();
         req.set_return_url(return_url);
-        self.client.login(self.opts(), req).wait().expect("rpc").1
+        self.client
+            .as_ref()
+            .unwrap()
+            .login(self.opts(), req)
+            .wait()
+            .expect("rpc")
+            .1
     }
 }
