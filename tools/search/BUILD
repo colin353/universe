@@ -82,6 +82,7 @@ rust_library(
     deps = [
         ":search_grpc_rust",
         ":search_lib",
+        "//auth:auth_client",
         "@io_bazel_rules_rust//proto/raze:grpc",
     ],
 )

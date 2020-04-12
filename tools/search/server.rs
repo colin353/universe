@@ -50,13 +50,13 @@ fn main() {
 
     let searcher = Arc::new(search_lib::Searcher::new(&index_dir.path()));
 
-    let handler = server_lib::SearchServiceHandler::new(searcher.clone());
+    let auth = auth_client::AuthClient::new(&auth_hostname.value(), auth_port.value());
+
+    let handler = server_lib::SearchServiceHandler::new(searcher.clone(), auth.clone());
     server.add_service(search_grpc_rust::SearchServiceServer::new_service_def(
         handler,
     ));
     let _server = server.build().unwrap();
-
-    let auth = auth_client::AuthClient::new(&auth_hostname.value(), auth_port.value());
 
     webserver::SearchWebserver::new(searcher, static_files.value(), base_url.value(), auth)
         .serve(web_port.value());

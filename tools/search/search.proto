@@ -90,6 +90,11 @@ enum SymbolType {
   TRAIT = 3;
 }
 
+enum Error {
+  NONE = 0;
+  AUTHENTICATION = 1;
+}
+
 message SymbolDefinition {
   string symbol = 1;
   string filename = 2;
@@ -97,7 +102,13 @@ message SymbolDefinition {
   SymbolType symbol_type = 4;
 }
 
-message SearchRequest { string query = 1; }
-message SearchResponse { repeated Candidate candidates = 1; }
+message SearchRequest {
+  string query = 1;
+  string token = 2;
+}
+message SearchResponse {
+  repeated Candidate candidates = 1;
+  Error error = 2;
+}
 
 service SearchService { rpc Search(SearchRequest) returns (SearchResponse); }

@@ -370,9 +370,26 @@ fn main() {
         "The hostname of the search service"
     );
     let port = define_flag!("port", 50002, "The port of the search service");
-    parse_flags!(app_width, app_height, query, host, port);
+    let auth_hostname = define_flag!(
+        "auth_hostname",
+        String::from("auth.colinmerkel.xyz"),
+        "The hostname of the authentication service"
+    );
+    let auth_port = define_flag!("auth_port", 8888, "The port of the authentication service");
+    parse_flags!(
+        app_width,
+        app_height,
+        query,
+        host,
+        port,
+        auth_hostname,
+        auth_port
+    );
 
-    let client = search_client::SearchClient::new(&host.value(), port.value());
+    let auth = auth_client::AuthClient::new(&auth_hostname.value(), auth_port.value());
+    let token = cli::load_and_check_auth(auth);
+
+    let client = search_client::SearchClient::new(&host.value(), port.value(), token);
     let mut ctrl = App::new(client);
     if app_width.value() > 0 {
         ctrl.terminal_size_override = (app_width.value(), app_height.value());

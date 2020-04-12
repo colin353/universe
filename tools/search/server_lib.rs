@@ -1,16 +1,26 @@
 use search_grpc_rust::*;
 use search_lib::Searcher;
 
+use auth_client::AuthServer;
+
 use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct SearchServiceHandler {
     searcher: Arc<Searcher>,
+    auth: auth_client::AuthClient,
 }
 
 impl SearchServiceHandler {
-    pub fn new(searcher: Arc<Searcher>) -> Self {
-        Self { searcher: searcher }
+    pub fn new(searcher: Arc<Searcher>, auth: auth_client::AuthClient) -> Self {
+        Self {
+            searcher: searcher,
+            auth: auth,
+        }
+    }
+
+    pub fn authenticate(&self, token: &str) -> bool {
+        self.auth.authenticate(token.to_owned()).get_success()
     }
 }
 
@@ -20,6 +30,12 @@ impl SearchService for SearchServiceHandler {
         _: grpc::RequestOptions,
         req: SearchRequest,
     ) -> grpc::SingleResponse<SearchResponse> {
+        if !self.authenticate(req.get_token()) {
+            let mut response = SearchResponse::new();
+            response.set_error(Error::AUTHENTICATION);
+            return grpc::SingleResponse::completed(response);
+        }
+
         let mut response = SearchResponse::new();
         for result in self.searcher.search(req.get_query()) {
             response.mut_candidates().push(result);
