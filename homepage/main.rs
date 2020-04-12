@@ -33,7 +33,6 @@ where
             .login_then_redirect(format!("{}/login-test", self.base_url));
         let mut response = Response::new(Body::from("redirecting..."));
         self.redirect(result.get_url(), &mut response);
-        self.set_cookie(result.get_token(), &mut response);
         response
     }
 

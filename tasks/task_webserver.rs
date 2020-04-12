@@ -89,7 +89,6 @@ impl<C: LargeTableClient + Send + Sync + Clone + 'static> Server for TaskWebServ
                 .auth
                 .login_then_redirect(format!("{}{}", self.base_url, path));
             let mut response = Response::new(Body::from("redirect to login"));
-            self.set_cookie(challenge.get_token(), &mut response);
             self.redirect(challenge.get_url(), &mut response);
             return response;
         }
