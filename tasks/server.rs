@@ -49,6 +49,11 @@ fn main() {
         "the host for the x20 service"
     );
     let x20_port = define_flag!("x20_port", 8001, "the port of the x20 service");
+    let secret_key = define_flag!(
+        "secret_key",
+        String::new(),
+        "the service account secret key"
+    );
     parse_flags!(
         grpc_port,
         web_port,
@@ -60,7 +65,8 @@ fn main() {
         auth_hostname,
         auth_port,
         x20_hostname,
-        x20_port
+        x20_port,
+        secret_key
     );
 
     let auth = auth_client::AuthClient::new(&auth_hostname.value(), auth_port.value());
@@ -77,6 +83,7 @@ fn main() {
     config.weld_server_port = weld_server_port.value();
     config.x20_hostname = x20_hostname.value();
     config.x20_port = x20_port.value();
+    config.secret_key = secret_key.value();
 
     let database = largetable_test::LargeTableMockClient::new();
     let handler = server_impl::TaskServiceHandler::new(config, database.clone());

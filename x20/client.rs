@@ -6,14 +6,16 @@ use x20::X20Service;
 #[derive(Clone)]
 pub struct X20Client {
     client: Arc<x20::X20ServiceClient>,
+    token: String,
 }
 
 impl X20Client {
-    pub fn new(hostname: &str, port: u16) -> Self {
+    pub fn new(hostname: &str, port: u16, token: String) -> Self {
         Self {
             client: Arc::new(
                 x20::X20ServiceClient::new_plain(hostname, port, Default::default()).unwrap(),
             ),
+            token: token,
         }
     }
 
@@ -30,7 +32,8 @@ impl X20Client {
             .into_vec()
     }
 
-    pub fn publish_binary(&self, req: x20::PublishBinaryRequest) -> x20::PublishBinaryResponse {
+    pub fn publish_binary(&self, mut req: x20::PublishBinaryRequest) -> x20::PublishBinaryResponse {
+        req.set_token(self.token.clone());
         self.client
             .publish_binary(std::default::Default::default(), req)
             .wait()
@@ -50,7 +53,8 @@ impl X20Client {
             .into_vec()
     }
 
-    pub fn publish_config(&self, req: x20::PublishConfigRequest) -> x20::PublishConfigResponse {
+    pub fn publish_config(&self, mut req: x20::PublishConfigRequest) -> x20::PublishConfigResponse {
+        req.set_token(self.token.clone());
         self.client
             .publish_config(std::default::Default::default(), req)
             .wait()

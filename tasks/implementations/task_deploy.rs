@@ -40,7 +40,11 @@ impl Task for X20QueryTask {
 
         let client = {
             let config = manager.get_configuration();
-            x20_client::X20Client::new(&config.x20_hostname, config.x20_port)
+            x20_client::X20Client::new(
+                &config.x20_hostname,
+                config.x20_port,
+                config.secret_key.clone(),
+            )
         };
 
         let binaries_to_rebuild: Vec<_> = client
@@ -168,7 +172,11 @@ impl Task for X20PublishTask {
 
         let x20_client = {
             let config = manager.get_configuration();
-            x20_client::X20Client::new(&config.x20_hostname, config.x20_port)
+            x20_client::X20Client::new(
+                &config.x20_hostname,
+                config.x20_port,
+                config.secret_key.clone(),
+            )
         };
 
         let binary = match x20_client
@@ -297,7 +305,11 @@ impl Task for X20PublishScriptTask {
 
         let x20_client = {
             let config = manager.get_configuration();
-            x20_client::X20Client::new(&config.x20_hostname, config.x20_port)
+            x20_client::X20Client::new(
+                &config.x20_hostname,
+                config.x20_port,
+                config.secret_key.clone(),
+            )
         };
 
         let binary = match x20_client

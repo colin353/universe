@@ -71,6 +71,7 @@ rust_binary(
         ":x20_grpc_rust",
         "//third_party:json",
         "//third_party:rand",
+        "//util/cli",
         "//util/flags",
         "//util/recordio",
     ],

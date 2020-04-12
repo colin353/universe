@@ -53,6 +53,12 @@ fn main() {
     );
     let x20_port = define_flag!("x20_port", 8009, "The port of the x20 service");
     let env = define_flag!("env", String::new(), "The environment to use");
+    let auth_hostname = define_flag!(
+        "auth_hostname",
+        String::from("auth.colinmerkel.xyz"),
+        "The hostname of the authentication service"
+    );
+    let auth_port = define_flag!("auth_port", 8888, "The port of the authentication service");
 
     let args = parse_flags!(
         name,
@@ -64,13 +70,19 @@ fn main() {
         x20_port,
         env,
         docker_img,
-        docker_img_tag
+        docker_img_tag,
+        auth_hostname,
+        auth_port
     );
     if args.len() != 1 {
         return usage();
     }
 
-    let client = x20_client::X20Client::new(&x20_hostname.value(), x20_port.value());
+    // We may not have valid authentication on initial bootstrap, and that's OK. Just proceed
+    // without errors, since in that scenario we won't be doing auth-required actions like
+    // publishing binaries.
+    let token = cli::load_auth();
+    let client = x20_client::X20Client::new(&x20_hostname.value(), x20_port.value(), token);
     let base_dir = format!("{}/.x20", std::env::home_dir().unwrap().to_str().unwrap());
     let manager = util::X20Manager::new(client, base_dir);
 

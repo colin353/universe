@@ -30,17 +30,28 @@ message Argument {
   string secret_name = 3;
 }
 
+enum Error {
+  NONE = 0;
+  AUTHENTICATION = 1;
+}
+
 message GetBinariesRequest {}
 message GetBinariesResponse { repeated Binary binaries = 1; }
 
-message PublishBinaryRequest { Binary binary = 1; }
-message PublishBinaryResponse {}
+message PublishBinaryRequest {
+  Binary binary = 1;
+  string token = 2;
+}
+message PublishBinaryResponse { Error error = 1; }
 
 message GetConfigsRequest { string environment = 1; }
 message GetConfigsResponse { repeated Configuration configs = 1; }
 
-message PublishConfigRequest { Configuration config = 1; }
-message PublishConfigResponse {}
+message PublishConfigRequest {
+  Configuration config = 1;
+  string token = 2;
+}
+message PublishConfigResponse { Error error = 1; }
 
 service X20Service {
   rpc GetBinaries(GetBinariesRequest) returns (GetBinariesResponse);

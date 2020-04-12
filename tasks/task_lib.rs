@@ -38,6 +38,7 @@ pub struct TaskServerConfiguration {
     pub base_url: String,
     pub x20_hostname: String,
     pub x20_port: u16,
+    pub secret_key: String,
 }
 
 impl TaskServerConfiguration {
@@ -50,6 +51,7 @@ impl TaskServerConfiguration {
             weld_server_port: 0,
             x20_hostname: String::new(),
             x20_port: 0,
+            secret_key: String::new(),
         }
     }
 }

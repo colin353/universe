@@ -339,7 +339,11 @@ impl X20Manager {
 
         let mut req = x20::PublishBinaryRequest::new();
         req.set_binary(binary);
-        self.client.publish_binary(req);
+        let response = self.client.publish_binary(req);
+        if response.get_error() != x20::Error::NONE {
+            eprintln!("❌could not publish binary: {:?}", response.get_error());
+            std::process::exit(1);
+        }
 
         println!("✔️ published");
     }
@@ -355,7 +359,11 @@ impl X20Manager {
 
         let mut req = x20::PublishConfigRequest::new();
         req.set_config(config);
-        self.client.publish_config(req);
+        let response = self.client.publish_config(req);
+        if response.get_error() != x20::Error::NONE {
+            eprintln!("❌could not publish config: {:?}", response.get_error());
+            std::process::exit(1);
+        }
 
         println!("✔️ published");
     }

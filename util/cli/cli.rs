@@ -10,6 +10,18 @@ pub fn wait_for_enter() {
     }
 }
 
+// If the authentication token exists, will read from that token. Doesn't check if it's valid. If
+// not set, just gives back an empty string.
+pub fn load_auth() -> String {
+    let home = std::env::var("HOME").unwrap();
+    let auth_path = format!("{}/.x20/auth_token", home);
+    if let Ok(token) = std::fs::read_to_string(&auth_path) {
+        return token;
+    }
+
+    String::new()
+}
+
 pub fn load_and_check_auth(auth: auth_client::AuthClient) -> String {
     let home = std::env::var("HOME").unwrap();
     let auth_path = format!("{}/.x20/auth_token", home);

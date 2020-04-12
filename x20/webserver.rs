@@ -67,6 +67,6 @@ fn main() {
     let x20_port = define_flag!("x20_port", 8009, "the port of the x20 service");
     parse_flags!(port, x20_hostname, x20_port);
 
-    let client = x20_client::X20Client::new(&x20_hostname.value(), x20_port.value());
+    let client = x20_client::X20Client::new(&x20_hostname.value(), x20_port.value(), String::new());
     X20Webserver::new(client).serve(port.value());
 }
