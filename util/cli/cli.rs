@@ -199,7 +199,7 @@ mod tests {
 
         assert_eq!(
             &d.to_string(),
-            "This is a change description\n\nanother line\n\nand another line\n\nR=person1,person2"
+            "This is a change description\nanother line\n\nand another line\n\nR=person1,person2"
         );
     }
 }
