@@ -79,15 +79,18 @@ pub trait Server: Sync + Send + Clone + 'static {
     fn set_cookie_for_domain(&self, new_token: &str, domain: &str, response: &mut Response) {
         response.headers_mut().insert(
             SET_COOKIE,
-            HeaderValue::from_bytes(format!("token={}; Domain={}", new_token, domain).as_bytes())
-                .unwrap(),
+            HeaderValue::from_bytes(
+                format!("token={}; Domain={}; Path=/; HttpOnly", new_token, domain).as_bytes(),
+            )
+            .unwrap(),
         );
     }
 
     fn set_cookie(&self, new_token: &str, response: &mut Response) {
         response.headers_mut().insert(
             SET_COOKIE,
-            HeaderValue::from_bytes(format!("token={}", new_token).as_bytes()).unwrap(),
+            HeaderValue::from_bytes(format!("token={}; Path=/; HttpOnly", new_token).as_bytes())
+                .unwrap(),
         );
     }
 
