@@ -11,6 +11,7 @@
         "weld_server_port": "8001",
         "auth_hostname": "auth",
         "auth_port": "8888",
+        "base_url": "https://tasks.colinmerkel.xyz",
         "x20_hostname": "x20",
         "x20_port": "8009",
         "secret_key": "SECRETS::secret_key"

@@ -7,11 +7,12 @@
     "arguments": {
         "use_tls": "false",
         "auth_hostname": "auth",
+        "base_url": "https://review.colinmerkel.xyz",
         "task_hostname": "tasks",
         "task_port": "7777",
         "server_hostname": "weld"
     },
     "docker_arguments": [
-      "--init", "-e", "RUST_BACKTRACE=1"
+        "--init", "-e", "RUST_BACKTRACE=1"
     ]
 }

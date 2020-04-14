@@ -6,7 +6,7 @@
     "long_running": true,
     "arguments": {
         "auth_hostname": "auth",
-        "base_url": "http://colinmerkel.xyz"
+        "base_url": "https://colinmerkel.xyz"
     },
-    "docker_arguments": [ "--init" ]
+    "docker_arguments": ["--init"]
 }
