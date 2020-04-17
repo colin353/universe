@@ -72,6 +72,10 @@ rust_library(
     edition = "2018",
     deps = [
         ":search_grpc_rust",
+        "//third_party:tls_api_openssl",
+        "@io_bazel_rules_rust//proto/raze:grpc",
+        "@io_bazel_rules_rust//proto/raze:tls_api",
+        "@raze__httpbis__0_6_1//:httpbis",
     ],
 )
 

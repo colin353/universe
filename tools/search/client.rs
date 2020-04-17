@@ -1,5 +1,8 @@
 use search_grpc_rust::{Error, SearchService};
+use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::Arc;
+use tls_api::TlsConnector;
+use tls_api::TlsConnectorBuilder;
 
 pub struct SearchClient {
     client: Arc<search_grpc_rust::SearchServiceClient>,
@@ -17,6 +20,27 @@ impl SearchClient {
                 )
                 .unwrap(),
             ),
+            token: token,
+        }
+    }
+
+    pub fn new_tls(hostname: &str, port: u16, token: String) -> Self {
+        let mut builder = tls_api_openssl::TlsConnector::builder().unwrap();
+        builder.set_alpn_protocols(&[b"h2"]).unwrap();
+        let connector = Arc::new(builder.build().unwrap());
+        let tls_option = httpbis::ClientTlsOption::Tls(hostname.to_owned(), connector);
+        let addr = (&format!("{}:{}", hostname, port))
+            .to_socket_addrs()
+            .unwrap()
+            .next()
+            .unwrap();
+        let grpc_client =
+            grpc::Client::new_expl(&addr, hostname, tls_option, Default::default()).unwrap();
+
+        SearchClient {
+            client: Arc::new(search_grpc_rust::SearchServiceClient::with_client(
+                grpc_client,
+            )),
             token: token,
         }
     }

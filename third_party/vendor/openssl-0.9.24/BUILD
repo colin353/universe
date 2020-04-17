@@ -26,6 +26,7 @@ load(
 rust_library(
     name = "openssl",
     srcs = glob(["**/*.rs"]),
+    crate_features = ["v102"],
     crate_root = "src/lib.rs",
     crate_type = "lib",
     edition = "2015",

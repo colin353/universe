@@ -96,6 +96,11 @@ alias(
 )
 
 alias(
+    name = "tls_api_openssl",
+    actual = "//third_party/vendor/tls-api-openssl-0.4.0:tls_api_openssl",
+)
+
+alias(
     name = "tokio",
     actual = "//third_party/vendor/tokio-0.1.18:tokio",
 )

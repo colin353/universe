@@ -389,7 +389,7 @@ fn main() {
     let auth = auth_client::AuthClient::new(&auth_hostname.value(), auth_port.value());
     let token = cli::load_and_check_auth(auth);
 
-    let client = search_client::SearchClient::new(&host.value(), port.value(), token);
+    let client = search_client::SearchClient::new_tls(&host.value(), port.value(), token);
     let mut ctrl = App::new(client);
     if app_width.value() > 0 {
         ctrl.terminal_size_override = (app_width.value(), app_height.value());

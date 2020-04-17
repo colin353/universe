@@ -1,3 +1,5 @@
+package(default_visibility = ["//visibility:public"])
+
 load(
     "@io_bazel_rules_rust//rust:rust.bzl",
     "rust_binary",
@@ -11,6 +13,9 @@ rust_library(
         "lib.rs",
     ],
     edition = "2018",
+    rustc_flags = [
+        "--cfg=has_alpn",
+    ],
     deps = [
         "//third_party:openssl",
         "//third_party:tls_api",
