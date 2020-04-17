@@ -376,6 +376,11 @@ fn main() {
         "The hostname of the authentication service"
     );
     let auth_port = define_flag!("auth_port", 8888, "The port of the authentication service");
+    let use_tls = define_flag!(
+        "use_tls",
+        true,
+        "Whether to use TLS when connecting to the server"
+    );
     parse_flags!(
         app_width,
         app_height,
@@ -383,13 +388,19 @@ fn main() {
         host,
         port,
         auth_hostname,
-        auth_port
+        auth_port,
+        use_tls
     );
 
     let auth = auth_client::AuthClient::new(&auth_hostname.value(), auth_port.value());
     let token = cli::load_and_check_auth(auth);
 
-    let client = search_client::SearchClient::new_tls(&host.value(), port.value(), token);
+    let client = if use_tls.value() {
+        search_client::SearchClient::new_tls(&host.value(), port.value(), token)
+    } else {
+        search_client::SearchClient::new(&host.value(), port.value(), token)
+    };
+
     let mut ctrl = App::new(client);
     if app_width.value() > 0 {
         ctrl.terminal_size_override = (app_width.value(), app_height.value());
