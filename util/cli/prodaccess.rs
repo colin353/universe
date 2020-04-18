@@ -13,5 +13,5 @@ fn main() {
     let auth = auth_client::AuthClient::new(&auth_hostname.value(), auth_port.value());
     cli::load_and_check_auth(auth);
 
-    println!("✔️ Authentication succeeded");
+    eprintln!("✔️ Authentication succeeded");
 }

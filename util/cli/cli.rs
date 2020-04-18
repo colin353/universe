@@ -35,18 +35,15 @@ pub fn load_and_check_auth(auth: auth_client::AuthClient) -> String {
         Err(_) => (),
     };
 
-    println!("You need to log in.");
+    eprintln!("You need to log in.");
     loop {
-        println!("Getting challenge...");
         let mut challenge = auth.login();
-        println!(
+        eprintln!(
             "Visit this URL: \n\n{}\n\nthen press enter when you've logged in.",
             challenge.get_url()
         );
 
         wait_for_enter();
-
-        println!("Challenge got");
 
         let response = auth.authenticate(challenge.get_token().to_string());
         if response.get_success() {
@@ -54,7 +51,7 @@ pub fn load_and_check_auth(auth: auth_client::AuthClient) -> String {
             return challenge.take_token();
         }
 
-        println!("That didn't work. Let's try again.");
+        eprintln!("That didn't work. Let's try again.");
     }
 }
 
