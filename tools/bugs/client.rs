@@ -1,6 +1,8 @@
 extern crate bugs_grpc_rust as bugs;
 
 use bugs::BugService;
+use grpc::ClientStub;
+use grpc::ClientStubExt;
 use std::sync::Arc;
 
 pub struct BugClient {
@@ -21,7 +23,7 @@ impl BugClient {
     pub fn new_tls(hostname: &str, port: u16, token: String) -> Self {
         let grpc_client = grpc_tls::make_tls_client(hostname, port);
         BugClient {
-            client: Arc::new(bugs::BugServiceClient::with_client(grpc_client)),
+            client: Arc::new(bugs::BugServiceClient::with_client(Arc::new(grpc_client))),
             token: token,
         }
     }

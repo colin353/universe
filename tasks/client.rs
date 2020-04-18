@@ -3,6 +3,7 @@ extern crate largetable_client;
 extern crate protobuf;
 extern crate tasks_grpc_rust;
 
+use grpc::ClientStubExt;
 use largetable_client::LargeTableClient;
 use std::sync::Arc;
 use tasks_grpc_rust::TaskService;

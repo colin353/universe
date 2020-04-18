@@ -50,11 +50,11 @@ rust_binary(
         ":tasks_grpc_rust",
         "//auth:auth_client",
         "//largetable:largetable_test",
-        "//third_party:tls_api_native_tls",
         "//util/flags",
         "//util/ws",
         "@io_bazel_rules_rust//proto/raze:grpc",
         "@io_bazel_rules_rust//proto/raze:protobuf",
+        "@io_bazel_rules_rust//proto/raze:tls_api_stub",
     ],
 )
 

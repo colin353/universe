@@ -1,3 +1,6 @@
+use grpc::ClientStub;
+use grpc::ClientStubExt;
+
 use search_grpc_rust::{Error, SearchService};
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::Arc;
@@ -28,7 +31,7 @@ impl SearchClient {
         let grpc_client = grpc_tls::make_tls_client(hostname, port);
         SearchClient {
             client: Arc::new(search_grpc_rust::SearchServiceClient::with_client(
-                grpc_client,
+                Arc::new(grpc_client),
             )),
             token: token,
         }

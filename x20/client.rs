@@ -1,5 +1,7 @@
+extern crate grpc;
 extern crate x20_grpc_rust as x20;
 
+use grpc::ClientStubExt;
 use std::sync::Arc;
 use x20::X20Service;
 

@@ -1,6 +1,8 @@
 extern crate auth_grpc_rust;
 extern crate grpc;
+
 pub use auth_grpc_rust::*;
+use grpc::ClientStubExt;
 use std::sync::Arc;
 
 pub trait AuthServer: Send + Sync + Clone + 'static {

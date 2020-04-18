@@ -76,7 +76,7 @@ rust_library(
         "//util/grpc_tls",
         "@io_bazel_rules_rust//proto/raze:grpc",
         "@io_bazel_rules_rust//proto/raze:tls_api",
-        "@raze__httpbis__0_6_1//:httpbis",
+        "@raze__httpbis__0_7_0//:httpbis",
     ],
 )
 

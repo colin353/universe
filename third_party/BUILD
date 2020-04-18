@@ -62,7 +62,7 @@ alias(
 
 alias(
     name = "openssl",
-    actual = "//third_party/vendor/openssl-0.9.24:openssl",
+    actual = "//third_party/vendor/openssl-0.10.19:openssl",
 )
 
 alias(
@@ -73,11 +73,6 @@ alias(
 alias(
     name = "time",
     actual = "//third_party/vendor/time-0.1.38:time",
-)
-
-alias(
-    name = "tls_api_native_tls",
-    actual = "//third_party/vendor/tls-api-native-tls-0.1.19:tls_api_native_tls",
 )
 
 alias(

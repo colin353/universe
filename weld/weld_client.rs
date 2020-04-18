@@ -10,7 +10,7 @@ extern crate flags;
 extern crate largetable_client;
 extern crate largetable_test;
 extern crate protobuf;
-extern crate tls_api_native_tls;
+extern crate tls_api_openssl;
 extern crate weld;
 extern crate weld_repo;
 
@@ -128,7 +128,7 @@ fn main() {
     let mut handler = client_service::WeldLocalServiceHandler::new(repo.clone());
     handler.set_mount_dir(mount_point.path());
 
-    let mut server = grpc::ServerBuilder::<tls_api_native_tls::TlsAcceptor>::new();
+    let mut server = grpc::ServerBuilder::<tls_api_openssl::TlsAcceptor>::new();
     server.http.set_port(port.value());
     server.add_service(weld::WeldLocalServiceServer::new_service_def(
         handler.clone(),

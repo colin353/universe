@@ -1,5 +1,5 @@
 extern crate grpc;
-extern crate tls_api_native_tls;
+extern crate tls_api_openssl;
 extern crate ws;
 #[macro_use]
 extern crate flags;
@@ -52,7 +52,7 @@ fn main() {
         allowed_emails.value().split(",").map(|x| x.to_owned()),
     );
 
-    let mut server = grpc::ServerBuilder::<tls_api_native_tls::TlsAcceptor>::new();
+    let mut server = grpc::ServerBuilder::<tls_api_openssl::TlsAcceptor>::new();
     server.http.set_port(grpc_port.value());
     server.http.set_cpu_pool_threads(2);
 

@@ -56,9 +56,11 @@ rust_binary(
 rust_library(
     name = "bug_client",
     srcs = ["client.rs"],
+    edition = "2018",
     deps = [
         ":bugs_grpc_rust",
         "//util/grpc_tls",
+        "@io_bazel_rules_rust//proto/raze:grpc",
     ],
 )
 

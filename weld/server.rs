@@ -7,7 +7,7 @@ extern crate largetable_test;
 extern crate native_tls;
 extern crate openssl;
 extern crate tls_api;
-extern crate tls_api_native_tls;
+extern crate tls_api_openssl;
 extern crate weld;
 extern crate weld_repo;
 
@@ -55,7 +55,7 @@ fn main() {
         root_cert
     );
 
-    let mut server = grpc::ServerBuilder::<tls_api_native_tls::TlsAcceptor>::new();
+    let mut server = grpc::ServerBuilder::<tls_api_openssl::TlsAcceptor>::new();
     server.http.set_port(port.value());
     server.http.set_cpu_pool_threads(8);
 
@@ -69,7 +69,7 @@ fn main() {
         println!("Read {} bytes of pkcs12", p12_contents.len());
 
         let acceptor =
-            tls_api_native_tls::TlsAcceptorBuilder::from_pkcs12(&p12_contents, "test").unwrap();
+            tls_api_openssl::TlsAcceptorBuilder::from_pkcs12(&p12_contents, "test").unwrap();
 
         server.http.set_tls(acceptor.build().unwrap());
     }

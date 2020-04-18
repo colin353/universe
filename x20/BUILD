@@ -57,7 +57,10 @@ rust_binary(
 rust_library(
     name = "x20_client",
     srcs = ["client.rs"],
-    deps = [":x20_grpc_rust"],
+    deps = [
+        ":x20_grpc_rust",
+        "@io_bazel_rules_rust//proto/raze:grpc",
+    ],
 )
 
 rust_binary(
