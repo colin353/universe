@@ -78,7 +78,7 @@ fn main() {
     let auth = auth_client::AuthClient::new(&auth_hostname.value(), auth_port.value());
     let token = cli::load_and_check_auth(auth);
 
-    let client = bug_client::BugClient::new(&bug_hostname.value(), bug_port.value(), token);
+    let client = bug_client::BugClient::new_tls(&bug_hostname.value(), bug_port.value(), token);
 
     if args.len() == 0 {
         // By default, just list the bugs

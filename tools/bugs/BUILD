@@ -56,7 +56,10 @@ rust_binary(
 rust_library(
     name = "bug_client",
     srcs = ["client.rs"],
-    deps = [":bugs_grpc_rust"],
+    deps = [
+        ":bugs_grpc_rust",
+        "//util/grpc_tls",
+    ],
 )
 
 rust_binary(
@@ -74,6 +77,7 @@ rust_binary(
         "//util/flags",
     ],
 )
+
 rust_image(
     name = "bug_server_img",
     binary = ":bug_server",
@@ -86,4 +90,3 @@ docker_push(
     repository = "mushu-194218/bugs",
     tag = "dev",
 )
-

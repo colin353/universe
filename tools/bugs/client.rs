@@ -18,6 +18,14 @@ impl BugClient {
         }
     }
 
+    pub fn new_tls(hostname: &str, port: u16, token: String) -> Self {
+        let grpc_client = grpc_tls::make_tls_client(hostname, port);
+        BugClient {
+            client: Arc::new(bugs::BugServiceClient::with_client(grpc_client)),
+            token: token,
+        }
+    }
+
     pub fn get_bugs(&self, status: bugs::BugStatus) -> Result<Vec<bugs::Bug>, bugs::Error> {
         let mut req = bugs::GetBugsRequest::new();
         req.set_token(self.token.clone());
