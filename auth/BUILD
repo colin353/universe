@@ -57,7 +57,6 @@ rust_binary(
     deps = [
         ":auth_grpc_rust",
         ":auth_service_impl",
-        "//third_party:native_tls",
         "//third_party:tls_api_openssl",
         "//util/flags",
         "//util/ws",
@@ -76,7 +75,6 @@ rust_image(
     deps = [
         ":auth_grpc_rust",
         ":auth_service_impl",
-        "//third_party:native_tls",
         "//third_party:tls_api_openssl",
         "//util/flags",
         "//util/ws",

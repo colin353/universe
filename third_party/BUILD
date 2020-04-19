@@ -57,7 +57,7 @@ alias(
 
 alias(
     name = "native_tls",
-    actual = "//third_party/vendor/native-tls-0.1.5:native_tls",
+    actual = "//third_party/vendor/native-tls-0.2.2:native_tls",
 )
 
 alias(

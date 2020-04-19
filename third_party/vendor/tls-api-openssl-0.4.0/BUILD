@@ -19,6 +19,6 @@ rust_library(
     deps = [
         "//third_party:openssl",
         "//third_party:tls_api",
-        "//third_party/vendor/native-tls-0.1.5:native_tls",
+        "//third_party/vendor/native-tls-0.2.2:native_tls",
     ],
 )
