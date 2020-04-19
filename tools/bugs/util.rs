@@ -94,9 +94,11 @@ fn main() {
             println!("");
         }
 
-        println!("[WAITING]");
-        for bug in client.get_bugs(bugs::BugStatus::WAITING).unwrap() {
-            println!("b/{} {}", bug.get_id(), bug.get_title());
+        for _ in 0..10 {
+            println!("[WAITING]");
+            for bug in client.get_bugs(bugs::BugStatus::WAITING).unwrap() {
+                println!("b/{} {}", bug.get_id(), bug.get_title());
+            }
         }
         return;
     }

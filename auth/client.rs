@@ -43,15 +43,19 @@ impl AuthServer for AuthClient {
             return response;
         }
 
+        let start = std::time::Instant::now();
         let mut req = AuthenticateRequest::new();
         req.set_token(token);
-        self.client
+        let result = self
+            .client
             .as_ref()
             .unwrap()
             .authenticate(self.opts(), req)
             .wait()
             .expect("rpc")
-            .1
+            .1;
+        println!("auth: request took {} us", start.elapsed().as_micros());
+        result
     }
 
     fn login(&self) -> LoginChallenge {

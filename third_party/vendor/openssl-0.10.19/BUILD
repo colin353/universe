@@ -36,9 +36,12 @@ rust_library(
     edition = "2015",
     rustc_flags = [
         "--cap-lints=allow",
-        "--cfg=ossl102",
         "--cfg=ossl101",
-        "--cfg=version=\"102\"",
+        "--cfg=ossl102",
+        "--cfg=ossl110",
+        "--cfg=ossl110g",
+        "--cfg=ossl111",
+        "--cfg=version=\"111b\"",
     ],
     version = "0.10.19",
     deps = [

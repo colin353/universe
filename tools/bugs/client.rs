@@ -33,12 +33,15 @@ impl BugClient {
         req.set_token(self.token.clone());
         req.set_status(status);
 
+        let start = std::time::Instant::now();
         let mut response = self
             .client
             .get_bugs(std::default::Default::default(), req)
             .wait()
             .expect("rpc")
             .1;
+
+        println!("request took: {} us", start.elapsed().as_micros());
 
         if response.get_error() == bugs::Error::NONE {
             return Ok(response.take_bugs().into_vec());
