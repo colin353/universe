@@ -392,7 +392,7 @@ fn main() {
         use_tls
     );
 
-    let auth = auth_client::AuthClient::new(&auth_hostname.value(), auth_port.value());
+    let auth = auth_client::AuthClient::new_tls(&auth_hostname.value(), auth_port.value());
     let token = cli::load_and_check_auth(auth);
 
     let client = if use_tls.value() {
