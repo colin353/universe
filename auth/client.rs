@@ -43,7 +43,6 @@ impl AuthServer for AuthClient {
             return response;
         }
 
-        let start = std::time::Instant::now();
         let mut req = AuthenticateRequest::new();
         req.set_token(token);
         let result = self
@@ -54,7 +53,6 @@ impl AuthServer for AuthClient {
             .wait()
             .expect("rpc")
             .1;
-        println!("auth: request took {} us", start.elapsed().as_micros());
         result
     }
 
