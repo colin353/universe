@@ -2,7 +2,7 @@ extern crate auth_grpc_rust;
 extern crate grpc;
 
 pub use auth_grpc_rust::*;
-use grpc::ClientStubExt;
+use grpc::{ClientStub, ClientStubExt};
 use std::sync::Arc;
 
 pub trait AuthServer: Send + Sync + Clone + 'static {
@@ -22,6 +22,15 @@ impl AuthClient {
             client: Some(Arc::new(
                 AuthenticationServiceClient::new_plain(hostname, port, Default::default()).unwrap(),
             )),
+        }
+    }
+
+    pub fn new_tls(hostname: &str, port: u16) -> Self {
+        let grpc_client = grpc_tls::make_tls_client(hostname, port);
+        Self {
+            client: Some(Arc::new(AuthenticationServiceClient::with_client(
+                Arc::new(grpc_client),
+            ))),
         }
     }
 
