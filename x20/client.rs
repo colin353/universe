@@ -1,7 +1,8 @@
 extern crate grpc;
+extern crate grpc_tls;
 extern crate x20_grpc_rust as x20;
 
-use grpc::ClientStubExt;
+use grpc::{ClientStub, ClientStubExt};
 use std::sync::Arc;
 use x20::X20Service;
 
@@ -17,6 +18,14 @@ impl X20Client {
             client: Arc::new(
                 x20::X20ServiceClient::new_plain(hostname, port, Default::default()).unwrap(),
             ),
+            token: token,
+        }
+    }
+
+    pub fn new_tls(hostname: &str, port: u16, token: String) -> Self {
+        let grpc_client = grpc_tls::make_tls_client(hostname, port);
+        Self {
+            client: Arc::new(x20::X20ServiceClient::with_client(Arc::new(grpc_client))),
             token: token,
         }
     }

@@ -51,7 +51,7 @@ fn main() {
         String::from("x20.colinmerkel.xyz"),
         "The hostname of the x20 service"
     );
-    let x20_port = define_flag!("x20_port", 8009, "The port of the x20 service");
+    let x20_port = define_flag!("x20_port", 8010, "The port of the x20 service");
     let env = define_flag!("env", String::new(), "The environment to use");
 
     let args = parse_flags!(
@@ -74,7 +74,7 @@ fn main() {
     // without errors, since in that scenario we won't be doing auth-required actions like
     // publishing binaries.
     let token = cli::load_auth();
-    let client = x20_client::X20Client::new(&x20_hostname.value(), x20_port.value(), token);
+    let client = x20_client::X20Client::new_tls(&x20_hostname.value(), x20_port.value(), token);
     let base_dir = format!("{}/.x20", std::env::home_dir().unwrap().to_str().unwrap());
     let manager = util::X20Manager::new(client, base_dir);
 

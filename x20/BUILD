@@ -59,6 +59,7 @@ rust_library(
     srcs = ["client.rs"],
     deps = [
         ":x20_grpc_rust",
+        "//util/grpc_tls",
         "@io_bazel_rules_rust//proto/raze:grpc",
     ],
 )

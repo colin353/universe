@@ -61,7 +61,7 @@ fn main() {
     let port = define_flag!("port", 50000, "the port to bind to");
     let x20_hostname = define_flag!(
         "x20_hostname",
-        String::from("x20.colinmerkel.xyz"),
+        String::from("x20"),
         "the hostname of the x20 service"
     );
     let x20_port = define_flag!("x20_port", 8009, "the port of the x20 service");
