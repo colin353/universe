@@ -5,7 +5,6 @@ extern crate native_tls;
 extern crate protobuf;
 extern crate time;
 extern crate tls_api;
-extern crate tls_api_openssl;
 extern crate weld_grpc_rust;
 
 pub use weld_grpc_rust::WeldLocalService;
@@ -56,33 +55,13 @@ impl WeldServerClient {
         }
     }
 
-    pub fn new_tls(
-        _hostname: &str,
-        tls_hostname: &str,
-        username: String,
-        port: u16,
-        root_ca: Vec<u8>,
-        _client_key: Vec<u8>,
-    ) -> Self {
-        // Add the root certificate.
-        let root_ca = tls_api::Certificate::from_der(root_ca);
-        let mut builder = tls_api_openssl::TlsConnector::builder().unwrap();
-        builder
-            .add_root_certificate(root_ca)
-            .expect("add_root_certificate");
-
-        let connector = Arc::new(builder.build().unwrap());
-        let tls_option = httpbis::ClientTlsOption::Tls(tls_hostname.to_owned(), connector);
-
-        let addr = SocketAddr::new("::1".parse().unwrap(), port);
-        let grpc_client =
-            grpc::Client::new_expl(&addr, tls_hostname, tls_option, Default::default()).unwrap();
-
+    pub fn new_tls(hostname: &str, port: u16) -> Self {
+        let grpc_client = grpc_tls::make_tls_client(hostname, port);
         WeldServerClient {
             client: Arc::new(weld_grpc_rust::WeldServiceClient::with_client(Arc::new(
                 grpc_client,
             ))),
-            username: username,
+            username: String::new(),
         }
     }
 
