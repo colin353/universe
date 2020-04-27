@@ -25,3 +25,15 @@ rust_binary(
         "//util/sstable",
     ],
 )
+
+rust_binary(
+    name = "manually_fix_x20",
+    srcs = [
+        "manually_fix_x20.rs",
+    ],
+    edition = "2018",
+    deps = [
+        "//util/recordio",
+        "//x20:x20_grpc_rust",
+    ],
+)

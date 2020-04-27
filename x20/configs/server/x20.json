@@ -6,8 +6,9 @@
     "long_running": true,
     "arguments": {
         "port": 8009,
-        "largetable_hostname":"largetable",
-        "largetable_port":50051
+        "largetable_hostname": "largetable",
+        "largetable_port": 50051,
+        "auth_hostname": "auth"
     },
     "docker_arguments": ["--init"]
 }

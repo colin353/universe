@@ -89,6 +89,7 @@ rust_test(
 
 rust_image(
     name = "x20_server_img",
+    base = "@glibc_base//image",
     binary = ":x20_server",
 )
 
