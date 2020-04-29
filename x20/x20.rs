@@ -1,3 +1,4 @@
+extern crate init;
 extern crate json;
 extern crate rand;
 
@@ -69,6 +70,8 @@ fn main() {
     if args.len() != 1 {
         return usage();
     }
+
+    init::init();
 
     // We may not have valid authentication on initial bootstrap, and that's OK. Just proceed
     // without errors, since in that scenario we won't be doing auth-required actions like

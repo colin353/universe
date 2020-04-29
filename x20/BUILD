@@ -79,6 +79,7 @@ rust_binary(
         "//third_party:rand",
         "//util/cli",
         "//util/flags",
+        "//util/init",
         "//util/recordio",
     ],
 )
@@ -118,6 +119,7 @@ rust_binary(
 
 rust_image(
     name = "x20_webserver_img",
+    base = "@glibc_base//image",
     binary = ":x20_webserver",
 )
 
