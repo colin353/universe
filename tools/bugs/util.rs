@@ -60,6 +60,8 @@ fn serialize_bug(input: &bugs::Bug) -> String {
 }
 
 fn main() {
+    init::init();
+
     let bug_hostname = define_flag!(
         "bug_hostname",
         String::from("bugs.colinmerkel.xyz"),

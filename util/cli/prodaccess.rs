@@ -2,6 +2,8 @@
 extern crate flags;
 
 fn main() {
+    init::init();
+
     let auth_hostname = define_flag!(
         "auth_hostname",
         String::from("auth.colinmerkel.xyz"),

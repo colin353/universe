@@ -357,6 +357,8 @@ impl tui::AppController<AppState, InputEvent> for App {
 }
 
 fn main() {
+    init::init();
+
     let app_width = define_flag!("app_width", 0, "If specified, overrides the terminal width");
     let app_height = define_flag!(
         "app_height",
