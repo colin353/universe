@@ -9,8 +9,10 @@ rust_library(
     srcs = [
         "recordio.rs",
     ],
+    edition = "2018",
     deps = [
         "//third_party:byteorder",
+        "//util/primitive",
         "@io_bazel_rules_rust//proto/raze:protobuf",
     ],
 )

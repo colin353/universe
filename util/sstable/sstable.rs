@@ -1012,16 +1012,14 @@ mod tests {
     #[test]
     fn serialize_i64() {
         let value: Primitive<i64> = Primitive(5);
-        let x: &dyn Serializable = &value;
         let mut k = std::io::Cursor::new(Vec::new());
         {
-            x.write(&mut k).unwrap();
+            value.write(&mut k).unwrap();
         }
 
         let mut z: Primitive<i64> = Primitive(9);
         {
-            let y: &mut dyn Serializable = &mut z;
-            y.read_from_bytes(&k.into_inner()).unwrap();
+            z.read_from_bytes(&k.into_inner()).unwrap();
         }
 
         assert_eq!(z, 5);
@@ -1033,16 +1031,14 @@ mod tests {
         value.set_key(String::from("hello world"));
         value.set_offset(1234);
 
-        let x: &dyn Serializable = &value;
         let mut k = std::io::Cursor::new(Vec::new());
         {
-            x.write(&mut k).unwrap();
+            value.write(&mut k).unwrap();
         }
 
         let mut output = sstable_proto_rust::KeyEntry::new();
         {
-            let y: &mut Serializable = &mut output;
-            y.read_from_bytes(&k.into_inner()).unwrap();
+            output.read_from_bytes(&k.into_inner()).unwrap();
         }
 
         assert_eq!(output.get_key(), "hello world");

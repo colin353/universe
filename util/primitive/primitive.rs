@@ -11,9 +11,10 @@ use protobuf::Message;
 use std::io;
 
 // A serializable object can be converted back and forth from a byte stream.
-pub trait Serializable {
-    fn write(&self, write: &mut std::io::Write) -> io::Result<u64>;
+pub trait Serializable: Sized {
+    fn write(&self, write: &mut dyn std::io::Write) -> io::Result<u64>;
     fn read_from_bytes(&mut self, buffer: &[u8]) -> io::Result<()>;
+    fn from_bytes(buffer: &[u8]) -> io::Result<Self>;
 }
 
 // Wrapper for primitive types, so they can be serialized using a standard
@@ -95,7 +96,7 @@ impl Serializable for Primitive<u64> {
         }
     }
 
-    fn write(&self, w: &mut std::io::Write) -> io::Result<u64> {
+    fn write(&self, w: &mut dyn std::io::Write) -> io::Result<u64> {
         let mut number = primitive_proto_rust::UnsignedNumber::new();
         number.set_number(*self.to_owned());
         match number.write_to_writer(w) {
@@ -103,6 +104,16 @@ impl Serializable for Primitive<u64> {
             Err(_) => Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
                 "Unable to serialize number!",
+            )),
+        }
+    }
+
+    fn from_bytes(buffer: &[u8]) -> io::Result<Self> {
+        match protobuf::parse_from_bytes::<primitive_proto_rust::UnsignedNumber>(buffer) {
+            Ok(number) => Ok(Primitive::from(number.get_number())),
+            Err(_) => Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Unable to deserialize u64",
             )),
         }
     }
@@ -121,7 +132,7 @@ impl Serializable for Primitive<i64> {
         }
     }
 
-    fn write(&self, w: &mut std::io::Write) -> io::Result<u64> {
+    fn write(&self, w: &mut dyn std::io::Write) -> io::Result<u64> {
         let mut number = primitive_proto_rust::Number::new();
         number.set_number(*self.to_owned());
         match number.write_to_writer(w) {
@@ -132,10 +143,20 @@ impl Serializable for Primitive<i64> {
             )),
         }
     }
+
+    fn from_bytes(buffer: &[u8]) -> io::Result<Self> {
+        match protobuf::parse_from_bytes::<primitive_proto_rust::Number>(buffer) {
+            Ok(number) => Ok(Primitive::from(number.get_number())),
+            Err(_) => Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Unable to deserialize i64",
+            )),
+        }
+    }
 }
 
 impl Serializable for Primitive<f64> {
-    fn write(&self, w: &mut std::io::Write) -> io::Result<u64> {
+    fn write(&self, w: &mut dyn std::io::Write) -> io::Result<u64> {
         let mut float = primitive_proto_rust::Float::new();
         float.set_number(*self.to_owned());
         match float.write_to_writer(w) {
@@ -159,10 +180,20 @@ impl Serializable for Primitive<f64> {
             )),
         }
     }
+
+    fn from_bytes(buffer: &[u8]) -> io::Result<Self> {
+        match protobuf::parse_from_bytes::<primitive_proto_rust::Float>(buffer) {
+            Ok(number) => Ok(Primitive::from(number.get_number())),
+            Err(_) => Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Unable to deserialize f64",
+            )),
+        }
+    }
 }
 
 impl Serializable for Primitive<Vec<u8>> {
-    fn write(&self, w: &mut std::io::Write) -> io::Result<u64> {
+    fn write(&self, w: &mut dyn std::io::Write) -> io::Result<u64> {
         w.write_all(self)?;
         Ok(self.len() as u64)
     }
@@ -171,10 +202,14 @@ impl Serializable for Primitive<Vec<u8>> {
         **self = buffer.to_owned();
         Ok(())
     }
+
+    fn from_bytes(buffer: &[u8]) -> io::Result<Self> {
+        Ok(Primitive::from(buffer.to_owned()))
+    }
 }
 
 impl Serializable for Primitive<String> {
-    fn write(&self, w: &mut std::io::Write) -> io::Result<u64> {
+    fn write(&self, w: &mut dyn std::io::Write) -> io::Result<u64> {
         w.write_all(&self.0.as_bytes())?;
         Ok(self.0.len() as u64)
     }
@@ -188,10 +223,21 @@ impl Serializable for Primitive<String> {
         })?;
         Ok(())
     }
+
+    fn from_bytes(buffer: &[u8]) -> io::Result<Self> {
+        String::from_utf8(buffer.to_owned())
+            .map_err(|_| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "Unable to parse string as utf-8.",
+                )
+            })
+            .map(|s| Primitive::from(s))
+    }
 }
 
 impl<T: protobuf::Message> Serializable for T {
-    fn write(&self, w: &mut std::io::Write) -> io::Result<u64> {
+    fn write(&self, w: &mut dyn std::io::Write) -> io::Result<u64> {
         match self.write_to_writer(w) {
             Ok(_) => Ok(self.get_cached_size() as u64),
             Err(_) => Err(std::io::Error::new(
@@ -208,5 +254,18 @@ impl<T: protobuf::Message> Serializable for T {
                 "Unable to deserialize protobuf",
             )
         })
+    }
+
+    fn from_bytes(buffer: &[u8]) -> io::Result<Self> {
+        let mut out = Self::new();
+        if let Err(x) = out.merge_from_bytes(buffer).map_err(|_| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Unable to deserialize protobuf",
+            )
+        }) {
+            return Err(x);
+        }
+        Ok(out)
     }
 }

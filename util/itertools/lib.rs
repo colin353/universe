@@ -73,6 +73,9 @@ where
     fn read_from_bytes(&mut self, buffer: &[u8]) -> std::io::Result<()> {
         Ok(())
     }
+    fn from_bytes(buffer: &[u8]) -> std::io::Result<Self> {
+        unreachable!("should never directly serialize KV types!")
+    }
 }
 
 impl<K, V> Default for KV<K, V>

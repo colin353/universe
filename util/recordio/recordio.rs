@@ -2,9 +2,10 @@ extern crate byteorder;
 extern crate protobuf;
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use primitive::Serializable;
 use std::io::Read;
 
-pub struct RecordIOWriter<T: protobuf::Message, W: std::io::Write + Send + Sync> {
+pub struct RecordIOWriter<T: Serializable, W: std::io::Write + Send + Sync> {
     writer: W,
 
     // We have to explicitly state that the struct uses the type T, or else the rust compiler will
@@ -12,7 +13,7 @@ pub struct RecordIOWriter<T: protobuf::Message, W: std::io::Write + Send + Sync>
     data_type: std::marker::PhantomData<T>,
 }
 
-impl<T: protobuf::Message, W: std::io::Write + Send + Sync> RecordIOWriter<T, W> {
+impl<T: Serializable, W: std::io::Write + Send + Sync> RecordIOWriter<T, W> {
     pub fn new(writer: W) -> Self {
         RecordIOWriter {
             writer: writer,
@@ -22,17 +23,23 @@ impl<T: protobuf::Message, W: std::io::Write + Send + Sync> RecordIOWriter<T, W>
 
     pub fn write(&mut self, record: &T) {
         // First four bytes is the amount of bytes to read.
-        let size = record.compute_size();
+        let mut buffer = Vec::new();
+        record
+            .write(&mut std::io::Cursor::new(&mut buffer))
+            .expect("failed to serialize record");
+
+        let size = buffer.len();
         self.writer
-            .write_u32::<LittleEndian>(size)
+            .write_u32::<LittleEndian>(size as u32)
             .expect("failed to write protobuf size?");
 
-        // Then we have the protobuf bytes themselves.
-        record.write_to_writer(&mut self.writer).unwrap();
+        self.writer
+            .write_all(&buffer)
+            .expect("failed to write the recordio data");
     }
 }
 
-pub struct RecordIOReader<T: protobuf::Message, R: std::io::Read> {
+pub struct RecordIOReader<T: Serializable, R: std::io::Read> {
     reader: R,
 
     // We have to explicitly state that the struct uses the type T, or else the rust compiler will
@@ -40,7 +47,7 @@ pub struct RecordIOReader<T: protobuf::Message, R: std::io::Read> {
     data_type: std::marker::PhantomData<T>,
 }
 
-impl<T: protobuf::Message, R: std::io::Read> RecordIOReader<T, R> {
+impl<T: Serializable, R: std::io::Read> RecordIOReader<T, R> {
     pub fn new(reader: R) -> Self {
         RecordIOReader {
             reader: reader,
@@ -56,7 +63,12 @@ impl<T: protobuf::Message, R: std::io::Read> RecordIOReader<T, R> {
             Err(_) => return None,
         };
 
-        match protobuf::parse_from_reader(&mut (&mut self.reader).take(size as u64)) {
+        let mut bytes = Vec::new();
+        (&mut self.reader)
+            .take(size as u64)
+            .read_to_end(&mut bytes)
+            .expect("failed to read recordio bytes");
+        match T::from_bytes(&bytes) {
             Ok(x) => Some(x),
             Err(_) => {
                 println!("warning: corrupted proto in recordio! quitting early");
@@ -66,17 +78,17 @@ impl<T: protobuf::Message, R: std::io::Read> RecordIOReader<T, R> {
     }
 }
 
-impl<T: protobuf::Message, R: std::io::Read> Iterator for RecordIOReader<T, R> {
+impl<T: Serializable, R: std::io::Read> Iterator for RecordIOReader<T, R> {
     type Item = T;
     fn next(&mut self) -> Option<T> {
         self.read()
     }
 }
 
-pub type RecordIOReaderOwned<T> = RecordIOReader<T, Box<std::io::Read>>;
-pub type RecordIOReaderBorrowed<'a, T> = RecordIOReader<T, &'a std::io::Read>;
-pub type RecordIOWriterOwned<T> = RecordIOWriter<T, Box<std::io::Write + Send + Sync>>;
-pub type RecordIOWriterBorrowed<'a, T> = RecordIOWriter<T, &'a (std::io::Write + Send + Sync)>;
+pub type RecordIOReaderOwned<T> = RecordIOReader<T, Box<dyn std::io::Read>>;
+pub type RecordIOReaderBorrowed<'a, T> = RecordIOReader<T, &'a dyn std::io::Read>;
+pub type RecordIOWriterOwned<T> = RecordIOWriter<T, Box<dyn std::io::Write + Send + Sync>>;
+pub type RecordIOWriterBorrowed<'a, T> = RecordIOWriter<T, &'a (dyn std::io::Write + Send + Sync)>;
 
 #[cfg(test)]
 mod tests {
