@@ -6,8 +6,9 @@
     "environment": "desktop",
     "long_running": true,
     "arguments": {
-        "use_tls": false,
+        "use_tls": true,
         "mount_point": "~/codefs",
-        "weld_hostname": "code.colinmerkel.xyz"
+        "weld_hostname": "code.colinmerkel.xyz",
+        "server_port": 9001
     }
 }

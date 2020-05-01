@@ -12,6 +12,7 @@ rust_binary(
         "//tools/search:search_grpc_rust",
         "//util/cli",
         "//util/flags",
+        "//util/init",
         "//util/tui",
     ],
 )

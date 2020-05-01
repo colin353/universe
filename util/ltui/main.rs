@@ -2,6 +2,7 @@ use std::io::{self, Write};
 
 #[macro_use]
 extern crate flags;
+extern crate init;
 extern crate largetable_client;
 use largetable_client::LargeTableClient;
 
@@ -11,6 +12,8 @@ fn usage() {
 }
 
 fn main() {
+    init::init();
+
     let host = define_flag!(
         "host",
         String::from("localhost"),

@@ -10,7 +10,7 @@ extern crate flags;
 extern crate largetable_client;
 extern crate largetable_test;
 extern crate protobuf;
-extern crate tls_api_openssl;
+extern crate tls_api_stub;
 extern crate weld;
 extern crate weld_repo;
 
@@ -96,24 +96,7 @@ fn main() {
     });
 
     if use_tls.value() {
-        let mut root_ca_contents = Vec::new();
-        File::open(root_ca.value())
-            .unwrap()
-            .read_to_end(&mut root_ca_contents)
-            .unwrap();
-        let mut cert_contents = Vec::new();
-        File::open(cert.value())
-            .unwrap()
-            .read_to_end(&mut cert_contents)
-            .unwrap();
-        let client = weld::WeldServerClient::new_tls(
-            &weld_hostname.value(),
-            &tls_hostname.value(),
-            username.value(),
-            server_port.value(),
-            root_ca_contents,
-            cert_contents,
-        );
+        let client = weld::WeldServerClient::new_tls(&weld_hostname.value(), server_port.value());
         repo.add_remote_server(client);
     } else {
         let client = weld::WeldServerClient::new(
@@ -128,7 +111,7 @@ fn main() {
     let mut handler = client_service::WeldLocalServiceHandler::new(repo.clone());
     handler.set_mount_dir(mount_point.path());
 
-    let mut server = grpc::ServerBuilder::<tls_api_openssl::TlsAcceptor>::new();
+    let mut server = grpc::ServerBuilder::<tls_api_stub::TlsAcceptor>::new();
     server.http.set_port(port.value());
     server.add_service(weld::WeldLocalServiceServer::new_service_def(
         handler.clone(),

@@ -77,6 +77,7 @@ rust_binary(
         "//auth:auth_client",
         "//util/cli",
         "//util/flags",
+        "//util/init",
     ],
 )
 

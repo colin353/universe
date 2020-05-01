@@ -60,6 +60,8 @@ fn serialize_bug(input: &bugs::Bug) -> String {
 }
 
 fn main() {
+    init::init();
+
     let bug_hostname = define_flag!(
         "bug_hostname",
         String::from("bugs.colinmerkel.xyz"),
@@ -75,7 +77,7 @@ fn main() {
 
     let args = parse_flags!(bug_hostname, bug_port, auth_hostname, auth_port);
 
-    let auth = auth_client::AuthClient::new(&auth_hostname.value(), auth_port.value());
+    let auth = auth_client::AuthClient::new_tls(&auth_hostname.value(), auth_port.value());
     let token = cli::load_and_check_auth(auth);
 
     let client = bug_client::BugClient::new_tls(&bug_hostname.value(), bug_port.value(), token);
@@ -94,11 +96,9 @@ fn main() {
             println!("");
         }
 
-        for _ in 0..10 {
-            println!("[WAITING]");
-            for bug in client.get_bugs(bugs::BugStatus::WAITING).unwrap() {
-                println!("b/{} {}", bug.get_id(), bug.get_title());
-            }
+        println!("[WAITING]");
+        for bug in client.get_bugs(bugs::BugStatus::WAITING).unwrap() {
+            println!("b/{} {}", bug.get_id(), bug.get_title());
         }
         return;
     }

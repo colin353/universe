@@ -10,5 +10,6 @@ rust_binary(
     deps = [
         "//largetable:largetable_client",
         "//util/flags",
+        "//util/init",
     ],
 )

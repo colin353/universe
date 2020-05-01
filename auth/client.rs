@@ -2,7 +2,7 @@ extern crate auth_grpc_rust;
 extern crate grpc;
 
 pub use auth_grpc_rust::*;
-use grpc::ClientStubExt;
+use grpc::{ClientStub, ClientStubExt};
 use std::sync::Arc;
 
 pub trait AuthServer: Send + Sync + Clone + 'static {
@@ -25,6 +25,15 @@ impl AuthClient {
         }
     }
 
+    pub fn new_tls(hostname: &str, port: u16) -> Self {
+        let grpc_client = grpc_tls::make_tls_client(hostname, port);
+        Self {
+            client: Some(Arc::new(AuthenticationServiceClient::with_client(
+                Arc::new(grpc_client),
+            ))),
+        }
+    }
+
     pub fn new_fake() -> Self {
         Self { client: None }
     }
@@ -43,7 +52,6 @@ impl AuthServer for AuthClient {
             return response;
         }
 
-        let start = std::time::Instant::now();
         let mut req = AuthenticateRequest::new();
         req.set_token(token);
         let result = self
@@ -54,7 +62,6 @@ impl AuthServer for AuthClient {
             .wait()
             .expect("rpc")
             .1;
-        println!("auth: request took {} us", start.elapsed().as_micros());
         result
     }
 

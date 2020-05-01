@@ -59,6 +59,7 @@ rust_library(
     srcs = ["client.rs"],
     deps = [
         ":x20_grpc_rust",
+        "//util/grpc_tls",
         "@io_bazel_rules_rust//proto/raze:grpc",
     ],
 )
@@ -78,6 +79,7 @@ rust_binary(
         "//third_party:rand",
         "//util/cli",
         "//util/flags",
+        "//util/init",
         "//util/recordio",
     ],
 )
@@ -89,6 +91,7 @@ rust_test(
 
 rust_image(
     name = "x20_server_img",
+    base = "@glibc_base//image",
     binary = ":x20_server",
 )
 
@@ -116,6 +119,7 @@ rust_binary(
 
 rust_image(
     name = "x20_webserver_img",
+    base = "@glibc_base//image",
     binary = ":x20_webserver",
 )
 
