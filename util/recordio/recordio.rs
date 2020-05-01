@@ -55,10 +55,11 @@ impl<T: protobuf::Message, R: std::io::Read> RecordIOReader<T, R> {
             Ok(x) => x,
             Err(_) => return None,
         };
+
         match protobuf::parse_from_reader(&mut (&mut self.reader).take(size as u64)) {
             Ok(x) => Some(x),
             Err(_) => {
-                println!("corrupted recordio!");
+                println!("warning: corrupted proto in recordio! quitting early");
                 None
             }
         }
