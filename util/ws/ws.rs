@@ -117,14 +117,8 @@ pub trait Server: Sync + Send + Clone + 'static {
                             maybe_session_key = extract_key(c, "token");
                         }
                         let (has_cookie, session_key) = match maybe_session_key {
-                            Some(k) => {
-                                println!("has cookie: {}", k);
-                                (true, k)
-                            }
-                            None => {
-                                println!("no cookie found");
-                                (false, random_string())
-                            }
+                            Some(k) => (true, k),
+                            None => (false, random_string()),
                         };
 
                         s.respond_future(req.uri().path().into(), req, &session_key)
