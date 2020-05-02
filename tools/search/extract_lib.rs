@@ -1,3 +1,4 @@
+#![feature(str_strip)]
 use search_proto_rust::*;
 
 use std::path::{Path, PathBuf};
@@ -21,7 +22,7 @@ fn extract_from_dir(
     prefix: usize,
     root_dir: &str,
     output: &mut recordio::RecordIOWriterOwned<File>,
-) {
+) -> (Vec<String>, Vec<String>) {
     let mut children = std::collections::BTreeMap::new();
     for result in std::fs::read_dir(root_dir).unwrap() {
         let result = result.unwrap();
@@ -31,13 +32,25 @@ fn extract_from_dir(
         );
     }
 
-    let mut directories = Vec::new();
+    let mut child_directories = Vec::new();
+    let mut child_files = Vec::new();
 
     for (path, filetype) in children {
         let mut f = File::new();
         if filetype.is_dir() {
             f.set_is_directory(true);
-            directories.push(path.clone());
+            let (files, dirs) = extract_from_dir(prefix, &path, output);
+            for file in files {
+                if let Some(filename) = file.strip_prefix(&path) {
+                    f.mut_child_files().push(filename.to_owned());
+                }
+            }
+            for dir in dirs {
+                if let Some(filename) = dir.strip_prefix(&path) {
+                    f.mut_child_directories().push(filename.to_owned());
+                }
+            }
+            child_directories.push(path.clone());
         } else {
             let contents = match std::fs::read_to_string(&path) {
                 Ok(s) => s,
@@ -48,6 +61,7 @@ fn extract_from_dir(
                 }
             };
             f.set_content(contents);
+            child_files.push(path.clone());
         }
 
         f.set_filename(path[prefix..].to_owned());
@@ -58,7 +72,5 @@ fn extract_from_dir(
         output.write(&f);
     }
 
-    for dir in directories {
-        extract_from_dir(prefix, &dir, output);
-    }
+    (child_files, child_directories)
 }

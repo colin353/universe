@@ -44,6 +44,10 @@ message File {
   bool is_directory = 4;
   bool is_ugly = 5;
   FileType file_type = 6;
+
+  // If it's actually a directory, the filenames of the children
+  repeated string child_directories = 7;
+  repeated string child_files = 8;
 }
 
 message Span {
