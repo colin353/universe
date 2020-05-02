@@ -41,12 +41,12 @@ fn extract_from_dir(
             f.set_is_directory(true);
             let (files, dirs) = extract_from_dir(prefix, &path, output);
             for file in files {
-                if let Some(filename) = file.strip_prefix(&path) {
+                if let Some(filename) = file.strip_prefix(&format!("{}/", path)) {
                     f.mut_child_files().push(filename.to_owned());
                 }
             }
             for dir in dirs {
-                if let Some(filename) = dir.strip_prefix(&path) {
+                if let Some(filename) = dir.strip_prefix(&format!("{}/", path)) {
                     f.mut_child_directories().push(filename.to_owned());
                 }
             }
