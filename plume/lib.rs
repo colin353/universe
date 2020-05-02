@@ -5,6 +5,7 @@
 extern crate itertools;
 extern crate plume_proto_rust;
 extern crate primitive;
+extern crate recordio;
 extern crate shard_lib;
 extern crate sstable;
 
@@ -736,10 +737,22 @@ where
             let mut sink = producer.make_sink(shard.get_outputs());
             {
                 let sink_ref: &mut dyn EmitFn<T2> = &mut *sink;
-                let mut memsource = source.mem_source();
-                let mut source_iter = memsource.iter();
-                while let Some(item) = source_iter.next() {
-                    self.function.do_it(item, sink_ref);
+
+                match input.get_format() {
+                    DataFormat::IN_MEMORY => {
+                        let mut memsource = source.mem_source();
+                        let mut source_iter = memsource.iter();
+                        while let Some(item) = source_iter.next() {
+                            self.function.do_it(item, sink_ref);
+                        }
+                    }
+                    DataFormat::RECORDIO => {
+                        let mut recordio_source = source.recordio_source();
+                        while let Some(item) = recordio_source.next() {
+                            self.function.do_it(&item, sink_ref);
+                        }
+                    }
+                    x => panic!("I don't know how to execute format: {:?}!", x),
                 }
             }
             sink.finish();
@@ -1666,6 +1679,22 @@ where
             })
         }
         output
+    }
+}
+
+impl<T> Source<T>
+where
+    T: PlumeTrait + Default,
+{
+    pub fn recordio_source(&self) -> recordio::RecordIOReaderOwned<T> {
+        let filenames = self.config.get_filenames();
+        assert!(
+            filenames.len() == 1,
+            "I don't know how to read from multiple recordios at once!"
+        );
+        let mut f = std::fs::File::open(&filenames[0]).unwrap();
+
+        recordio::RecordIOReaderOwned::new(Box::new(std::io::BufReader::new(f)))
     }
 }
 

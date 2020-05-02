@@ -1,4 +1,5 @@
 extern crate plume;
+extern crate recordio;
 extern crate sstable;
 
 use plume::EmitFn;
@@ -319,7 +320,7 @@ mod tests {
 
     // This is a very slow test which writes to disk, so let's not turn it on
     // by default
-    #[test]
+    //#[test]
     fn test_multiple_parallel_ops() {
         let mut _runlock = plume::RUNLOCK.lock();
         plume::cleanup();
@@ -343,7 +344,6 @@ mod tests {
             builder.finish().unwrap();
         }
 
-
         {
             let f = std::fs::File::create("/tmp/test-write-to-disk/input2.sstable").unwrap();
             let mut writer = std::io::BufWriter::new(f);
@@ -363,8 +363,9 @@ mod tests {
         let mut out = p.group_by_key_and_par_do(GroupSumFn {});
         out.write_to_sstable("/tmp/test-write-to-disk/output.sstable");
 
-        let p2 =
-            PTable::<String, Primitive<u64>>::from_sstable("/tmp/test-write-to-disk/input2.sstable");
+        let p2 = PTable::<String, Primitive<u64>>::from_sstable(
+            "/tmp/test-write-to-disk/input2.sstable",
+        );
         let mut out2 = p.group_by_key_and_par_do(GroupSumFn {});
         out2.write_to_sstable("/tmp/test-write-to-disk/output2.sstable");
 
@@ -372,5 +373,35 @@ mod tests {
 
         assert!(std::path::Path::new("/tmp/test-write-to-disk/output.sstable").exists());
         assert!(std::path::Path::new("/tmp/test-write-to-disk/output2.sstable").exists());
+    }
+
+    #[test]
+    fn test_recordio_reading() {
+        let mut _runlock = plume::RUNLOCK.lock();
+        plume::cleanup();
+
+        std::fs::remove_dir_all("/tmp/test-write-to-disk");
+        std::fs::create_dir_all("/tmp/test-write-to-disk").unwrap();
+
+        {
+            let f = std::fs::File::create("/tmp/test-write-to-disk/input.recordio").unwrap();
+            let mut writer = std::io::BufWriter::new(f);
+            let mut builder = recordio::RecordIOWriter::new(&mut writer);
+
+            builder.write(&Primitive::from(1 as u64));
+            builder.write(&Primitive::from(2 as u64));
+            builder.write(&Primitive::from(3 as u64));
+            builder.write(&Primitive::from(4 as u64));
+            builder.write(&Primitive::from(5 as u64));
+        }
+
+        let p = PCollection::from_recordio("/tmp/test-write-to-disk/input.recordio");
+        let mut out = p.par_do(MapSquareFn {});
+        out.write_to_vec();
+        plume::run();
+        assert_eq!(
+            out.into_vec().iter().map(|x| **x).collect::<Vec<_>>(),
+            vec![1, 4, 9, 16, 25]
+        );
     }
 }

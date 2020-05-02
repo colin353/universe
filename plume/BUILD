@@ -28,6 +28,7 @@ rust_library(
         "//util/primitive",
         "//util/shard_lib",
         "//util/sstable",
+        "//util/recordio",
     ],
 )
 
@@ -52,5 +53,6 @@ rust_test(
     deps = [
         ":plume",
         "//util/sstable",
+        "//util/recordio",
     ],
 )
