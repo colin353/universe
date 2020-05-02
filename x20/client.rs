@@ -30,17 +30,18 @@ impl X20Client {
         }
     }
 
-    pub fn get_binaries(&self) -> Vec<x20::Binary> {
-        self.client
+    pub fn get_binaries(&self) -> Result<Vec<x20::Binary>, x20::Error> {
+        match self
+            .client
             .get_binaries(
                 std::default::Default::default(),
                 x20::GetBinariesRequest::new(),
             )
             .wait()
-            .expect("rpc")
-            .1
-            .take_binaries()
-            .into_vec()
+        {
+            Ok(mut x) => Ok(x.1.take_binaries().into_vec()),
+            Err(_) => Err(x20::Error::NETWORK),
+        }
     }
 
     pub fn publish_binary(&self, mut req: x20::PublishBinaryRequest) -> x20::PublishBinaryResponse {
@@ -52,16 +53,17 @@ impl X20Client {
             .1
     }
 
-    pub fn get_configs(&self, env: String) -> Vec<x20::Configuration> {
+    pub fn get_configs(&self, env: String) -> Result<Vec<x20::Configuration>, x20::Error> {
         let mut req = x20::GetConfigsRequest::new();
         req.set_environment(env);
-        self.client
+        match self
+            .client
             .get_configs(std::default::Default::default(), req)
             .wait()
-            .expect("rpc")
-            .1
-            .take_configs()
-            .into_vec()
+        {
+            Ok(mut x) => Ok(x.1.take_configs().into_vec()),
+            Err(_) => Err(x20::Error::NETWORK),
+        }
     }
 
     pub fn publish_config(&self, mut req: x20::PublishConfigRequest) -> x20::PublishConfigResponse {

@@ -21,7 +21,7 @@ impl X20Manager {
     }
 
     pub fn list(&self) {
-        let binaries = self.client.get_binaries();
+        let binaries = self.client.get_binaries().expect("couldn't get binaries!");
         println!("binaries: ");
         if binaries.len() == 0 {
             eprintln!("There are no binaries");
@@ -45,7 +45,10 @@ impl X20Manager {
         }
 
         let env = self.read_saved_environment();
-        let configs = self.client.get_configs(env);
+        let configs = self
+            .client
+            .get_configs(env)
+            .expect("couldn't look up configs");
         println!("\nconfigs: ");
         for config in configs {
             println!(" - {} (v{})", config.get_name(), config.get_version(),);
@@ -109,13 +112,13 @@ impl X20Manager {
         output
     }
 
-    pub fn update(&self) -> (Vec<x20::Binary>, Vec<x20::Configuration>) {
+    pub fn update(&self) -> Result<(Vec<x20::Binary>, Vec<x20::Configuration>), x20::Error> {
         let existing_binaries = self.read_saved_binaries();
         let mut new_binaries = Vec::new();
         let mut updated_binaries = Vec::new();
         let mut had_failure = false;
         let mut had_success = false;
-        for binary in self.client.get_binaries() {
+        for binary in self.client.get_binaries()? {
             if let Some(b) = existing_binaries.get(binary.get_name()) {
                 if b.get_version() == binary.get_version() {
                     // No need to update - we already have the latest version
@@ -217,7 +220,7 @@ impl X20Manager {
             .collect();
 
         let env = self.read_saved_environment();
-        let new_cfgs = self.client.get_configs(env);
+        let new_cfgs = self.client.get_configs(env)?;
         let mut new_configs = Vec::new();
 
         for config in &new_cfgs {
@@ -235,7 +238,7 @@ impl X20Manager {
         }
         println!("✔️ Everything is up to date");
 
-        (new_binaries, new_configs)
+        Ok((new_binaries, new_configs))
     }
 
     pub fn publish(
@@ -257,6 +260,7 @@ impl X20Manager {
         let mut binary = match self
             .client
             .get_binaries()
+            .expect("couldn't look up binaries")
             .into_iter()
             .find(|b| b.get_name() == name)
         {
@@ -418,15 +422,16 @@ impl X20Manager {
         loop {
             if last_update_check > 60 {
                 last_update_check = 0;
-                let (bins, cfgs) = self.update();
-                updated_binaries = bins
-                    .into_iter()
-                    .map(|b| (b.get_name().to_string(), b))
-                    .collect();
-                updated_configs = cfgs
-                    .into_iter()
-                    .map(|c| (c.get_name().to_string(), c))
-                    .collect();
+                if let Ok((bins, cfgs)) = self.update() {
+                    updated_binaries = bins
+                        .into_iter()
+                        .map(|b| (b.get_name().to_string(), b))
+                        .collect();
+                    updated_configs = cfgs
+                        .into_iter()
+                        .map(|c| (c.get_name().to_string(), c))
+                        .collect();
+                };
             }
 
             for child in &mut children {

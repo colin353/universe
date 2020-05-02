@@ -30,6 +30,7 @@ impl X20Webserver {
         let url = match self
             .client
             .get_binaries()
+            .expect("couldn't get binaries!")
             .into_iter()
             .find(|b| b.get_name() == "x20")
         {

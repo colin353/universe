@@ -33,6 +33,7 @@ message Argument {
 enum Error {
   NONE = 0;
   AUTHENTICATION = 1;
+  NETWORK = 2;
 }
 
 message GetBinariesRequest {}

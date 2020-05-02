@@ -49,6 +49,7 @@ impl Task for X20QueryTask {
 
         let binaries_to_rebuild: Vec<_> = client
             .get_binaries()
+            .expect("couldn't get binaries!")
             .into_iter()
             .filter(|bin| !bin.get_target().is_empty() && targets.contains(bin.get_target()))
             .map(|mut bin| bin.take_name())
@@ -75,6 +76,7 @@ impl Task for X20QueryTask {
 
         let scripts_to_publish: Vec<_> = client
             .get_binaries()
+            .expect("couldn't get binaries")
             .into_iter()
             .filter(|bin| !bin.get_source().is_empty() && modified_files.contains(bin.get_source()))
             .map(|mut bin| bin.take_name())
@@ -181,6 +183,7 @@ impl Task for X20PublishTask {
 
         let binary = match x20_client
             .get_binaries()
+            .expect("couldn't get binaries")
             .into_iter()
             .filter(|bin| bin.get_name() == &binary_name)
             .next()
@@ -314,6 +317,7 @@ impl Task for X20PublishScriptTask {
 
         let binary = match x20_client
             .get_binaries()
+            .expect("couldn't get binaries!")
             .into_iter()
             .filter(|bin| bin.get_name() == binary_name)
             .next()
