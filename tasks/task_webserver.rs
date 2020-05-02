@@ -58,7 +58,7 @@ impl<C: LargeTableClient + Clone + Send + Sync + 'static> TaskWebServer<C> {
         let page = tmpl::apply(
             INDEX,
             &content!(;
-                "progress" => progress
+                "progress" => progress,
                 "completed" => completed
             ),
         );

@@ -74,7 +74,7 @@ impl ReviewServer {
         let page = tmpl::apply(
             INDEX,
             &content!(;
-                "progress" => changes
+                "progress" => changes,
                 "submitted" => submitted_changes
             ),
         );

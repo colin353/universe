@@ -351,7 +351,7 @@ macro_rules! content {
             $crate::ContentsMap::new(m)
         }
     };
-    ($($key:expr => $value:expr),*; $($key2:expr => $multivalue:expr)* ) => {
+    ($($key:expr => $value:expr),*; $($key2:expr => $multivalue:expr),* ) => {
         {
             let mut m = std::collections::HashMap::<&str, $crate::Contents>::new();
             $( m.insert($key, $value.into()); )*

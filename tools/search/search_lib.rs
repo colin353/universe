@@ -314,7 +314,7 @@ impl Searcher {
         keyword_matchers: Vec<(QueryKeyword, aho_corasick::AhoCorasick)>,
     ) -> Candidate {
         let start = std::time::Instant::now();
-        let file = {
+        let mut file = {
             reader
                 .lock()
                 .unwrap()
@@ -326,6 +326,9 @@ impl Searcher {
         candidate.set_filename(file.get_filename().to_string());
         candidate.set_is_ugly(file.get_is_ugly());
         candidate.set_file_type(file.get_file_type());
+        candidate.set_child_files(file.take_child_files());
+        candidate.set_child_directories(file.take_child_directories());
+        candidate.set_is_directory(file.get_is_directory());
 
         let start = std::time::Instant::now();
         let mut matched_keywords = HashMap::new();

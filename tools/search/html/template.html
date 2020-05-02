@@ -96,6 +96,17 @@
             display: inherit;
             width: fit-content;
         }
+
+        div.child {
+            width: auto;
+            min-width: 200px;
+            display: inline-block;
+            color: grey;
+        }
+
+        a.child {
+            text-decoration: none;
+        }
     </style>
 </head>
 
@@ -124,16 +135,17 @@
 
     const searchInput = document.getElementById("search-input");
     searchInput.addEventListener('keyup', function(e) {
-      if (e.keyCode == 13) {
-        event.preventDefault();
-        window.location.href = '/?q=' + encodeURIComponent(searchInput.value);
-      }
+        if (e.keyCode == 13) {
+            event.preventDefault();
+            window.location.href = '/?q=' + encodeURIComponent(searchInput.value);
+        }
     });
 </script>
 
-<link rel="stylesheet"
-      href="//cdnjs.cloudflare.com/ajax/libs/highlight.js/9.18.1/styles/default.min.css">
+<link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/highlight.js/9.18.1/styles/default.min.css">
 <script src="//cdnjs.cloudflare.com/ajax/libs/highlight.js/9.18.1/highlight.min.js"></script>
-<script>hljs.initHighlightingOnLoad();</script>
+<script>
+    hljs.initHighlightingOnLoad();
+</script>
 
 </html>

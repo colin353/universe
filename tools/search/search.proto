@@ -85,6 +85,11 @@ message Candidate {
   uint32 filename_query_matches = 17;
   bool filename_keywords_matched_in_order = 18;
   float filename_match_coverage = 19;
+
+  repeated string child_files = 20;
+  repeated string child_directories = 21;
+
+  bool is_directory = 22;
 }
 
 enum SymbolType {

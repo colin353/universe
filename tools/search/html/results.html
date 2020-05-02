@@ -1,8 +1,26 @@
 <div class='content'>
-  {{results[]}}
-  <a href='{{filename}}?q={{query}}#L{{jump_to_line}}' class='invisible-link'>
-  <p>{{filename}}</p>
-  <pre><code>{{snippet[]}}{{snippet}}
-{{/snippet}}</code></pre></a>
-  {{/results}}
+    {{results[]}}
+    <a href='{{filename}}?q={{query}}#L{{jump_to_line}}' class='invisible-link'>
+        <p>{{filename}}</p>
+        {{is_directory == false}}
+        <pre>
+        <code>{{snippet[]}}  {{snippet}}
+{{/snippet}}</code></pre>
+        {{/is_directory}}
+        {{is_directory == true}}
+        <div>
+            {{child_directories[]}}
+            <a class="child" href='/{{filename}}/{{child}}?q={{query}}'>
+                <div class="child">{{child}}/</div>
+            </a>
+            {{/child_directories}}
+            {{child_files[]}}
+            <a class="child" href='/{{filename}}/{{child}}?q={{query}}'>
+                <div class="child">{{child}}</div>
+            </a>
+            {{/child_files}}
+        </div>
+        {{/is_directory}}
+    </a>
+    {{/results}}
 </div>
