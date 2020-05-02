@@ -125,7 +125,7 @@ rust_library(
     edition = "2018",
     deps = [
         ":search_proto_rust",
-        "//util/sstable",
+        "//util/recordio",
     ],
 )
 

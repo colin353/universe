@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 pub fn extract_code(root_dir: &Path, output_filename: &str) {
     let f = std::fs::File::create(output_filename).unwrap();
     let mut w = std::io::BufWriter::new(f);
-    let mut builder = sstable::SSTableBuilder::<File>::new(&mut w);
+    let mut builder = recordio::RecordIOWriterOwned::new(Box::new(w));
 
     let prefix = root_dir.to_owned().into_os_string().into_string().unwrap();
 
@@ -14,21 +14,30 @@ pub fn extract_code(root_dir: &Path, output_filename: &str) {
         prefix_len += 1;
     }
 
-    extract_from_dir(prefix_len, &root_dir, &mut builder);
-    builder.finish();
+    extract_from_dir(prefix_len, &root_dir.to_str().unwrap(), &mut builder);
 }
 
-fn extract_from_dir(prefix: usize, root_dir: &Path, output: &mut sstable::SSTableBuilder<File>) {
+fn extract_from_dir(
+    prefix: usize,
+    root_dir: &str,
+    output: &mut recordio::RecordIOWriterOwned<File>,
+) {
     let mut children = std::collections::BTreeMap::new();
     for result in std::fs::read_dir(root_dir).unwrap() {
         let result = result.unwrap();
-        children.insert(result.path(), result.file_type().unwrap());
+        children.insert(
+            result.path().into_os_string().into_string().unwrap(),
+            result.file_type().unwrap(),
+        );
     }
+
+    let mut directories = Vec::new();
 
     for (path, filetype) in children {
         let mut f = File::new();
         if filetype.is_dir() {
             f.set_is_directory(true);
+            directories.push(path.clone());
         } else {
             let contents = match std::fs::read_to_string(&path) {
                 Ok(s) => s,
@@ -41,13 +50,15 @@ fn extract_from_dir(prefix: usize, root_dir: &Path, output: &mut sstable::SSTabl
             f.set_content(contents);
         }
 
-        f.set_filename(path.clone().into_os_string().into_string().unwrap()[prefix..].to_owned());
+        f.set_filename(path[prefix..].to_owned());
         let filename = f.get_filename().to_owned();
         let is_dir = f.get_is_directory();
-        output.write_ordered(&filename, f);
 
-        if is_dir {
-            extract_from_dir(prefix, &path, output);
-        }
+        let depth = filename.matches("/").count();
+        output.write(&f);
+    }
+
+    for dir in directories {
+        extract_from_dir(prefix, &dir, output);
     }
 }

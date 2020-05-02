@@ -1,4 +1,4 @@
-use plume::{EmitFn, PTable, Primitive, Stream, StreamingIterator, KV};
+use plume::{EmitFn, PCollection, Primitive, Stream, StreamingIterator, KV};
 use search_proto_rust::*;
 
 use std::collections::hash_map::DefaultHasher;
@@ -6,11 +6,11 @@ use std::hash::{Hash, Hasher};
 
 pub struct ExtractDefinitionsFn {}
 impl plume::DoFn for ExtractDefinitionsFn {
-    type Input = KV<String, File>;
+    type Input = File;
     type Output = KV<String, SymbolDefinition>;
 
-    fn do_it(&self, input: &KV<String, File>, emit: &mut dyn EmitFn<Self::Output>) {
-        for definition in language_specific::extract_definitions(input.value()) {
+    fn do_it(&self, input: &File, emit: &mut dyn EmitFn<Self::Output>) {
+        for definition in language_specific::extract_definitions(input) {
             let mut normalized_symbol = definition.get_symbol().to_lowercase();
             normalized_symbol.retain(|c| c != '_' && c != '-');
             emit.emit(KV::new(normalized_symbol, definition));
@@ -41,10 +41,10 @@ impl plume::DoStreamFn for AggregateDefinitionsFn {
 
 pub struct ProcessFilesFn {}
 impl plume::DoFn for ProcessFilesFn {
-    type Input = KV<String, File>;
+    type Input = File;
     type Output = KV<String, File>;
-    fn do_it(&self, input: &KV<String, File>, emit: &mut dyn EmitFn<Self::Output>) {
-        let mut file = input.value().clone();
+    fn do_it(&self, input: &File, emit: &mut dyn EmitFn<Self::Output>) {
+        let mut file = input.clone();
         file.set_file_type(language_specific::get_filetype(file.get_filename()));
 
         // Some machine-generated files have insanely long lines. Usually humans
@@ -55,28 +55,28 @@ impl plume::DoFn for ProcessFilesFn {
             file.set_is_ugly(true);
         }
 
-        emit.emit(KV::new(input.key().to_owned(), file));
+        emit.emit(KV::new(file.get_filename().to_owned(), file));
     }
 }
 
 pub struct ExtractCandidatesFn {}
 impl plume::DoFn for ExtractCandidatesFn {
-    type Input = KV<String, File>;
+    type Input = File;
     type Output = KV<String, File>;
-    fn do_it(&self, input: &KV<String, File>, emit: &mut dyn EmitFn<Self::Output>) {
-        let mut file = input.value().clone();
+    fn do_it(&self, input: &File, emit: &mut dyn EmitFn<Self::Output>) {
+        let mut file = input.clone();
         file.set_file_type(language_specific::get_filetype(file.get_filename()));
 
         // Some machine-generated files have insanely long lines. Usually humans
         // don't want to read files like that.
-        let lines = input.value().get_content().lines().count();
-        let chars = input.value().get_content().len();
+        let lines = file.get_content().lines().count();
+        let chars = file.get_content().len();
         if chars > 200 * lines {
             file.set_is_ugly(true);
         }
 
         emit.emit(KV::new(
-            search_utils::hash_filename(input.key()).to_string(),
+            search_utils::hash_filename(file.get_filename()).to_string(),
             file,
         ));
     }
@@ -84,11 +84,11 @@ impl plume::DoFn for ExtractCandidatesFn {
 
 pub struct ExtractTrigramsFn {}
 impl plume::DoFn for ExtractTrigramsFn {
-    type Input = KV<String, File>;
+    type Input = File;
     type Output = KV<String, Primitive<u64>>;
-    fn do_it(&self, input: &KV<String, File>, emit: &mut dyn EmitFn<Self::Output>) {
-        let file = input.value();
-        let file_id = Primitive::from(search_utils::hash_filename(input.key()));
+    fn do_it(&self, input: &File, emit: &mut dyn EmitFn<Self::Output>) {
+        let file = input;
+        let file_id = Primitive::from(search_utils::hash_filename(file.get_filename()));
 
         // Only extract trigrams for files < 1MB or else it basically matches
         // everything and is useless
@@ -160,7 +160,7 @@ mod tests {
         dk.set_filename("dk.rs".into());
         dk.set_content("let donkey_kong = 5;".into());
 
-        let code = PTable::from_table(vec![KV::new(String::from("dk.rs"), dk)]);
+        let code = PCollection::from_vec(vec![dk]);
 
         let trigrams = code.par_do(ExtractTrigramsFn {});
         let mut index = trigrams.group_by_key_and_par_do(AggregateTrigramsFn {});
@@ -191,10 +191,7 @@ mod tests {
         mario.set_filename("mario.rs".into());
         mario.set_content("let mario = donkey_kong * 5;".into());
 
-        let code = PTable::from_table(vec![
-            KV::new(String::from("dk.rs"), dk),
-            KV::new(String::from("mario.rs"), mario),
-        ]);
+        let code = PCollection::from_vec(vec![dk, mario]);
 
         let definitions = code.par_do(ExtractDefinitionsFn {});
         let mut index = definitions.group_by_key_and_par_do(AggregateDefinitionsFn {});

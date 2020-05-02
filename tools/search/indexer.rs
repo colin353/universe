@@ -5,7 +5,7 @@ use indexer_lib::{
     AggregateDefinitionsFn, AggregateTrigramsFn, ExtractCandidatesFn, ExtractDefinitionsFn,
     ExtractTrigramsFn, ProcessFilesFn,
 };
-use plume::{EmitFn, PTable, Stream, StreamingIterator, KV};
+use plume::{EmitFn, PCollection, Stream, StreamingIterator, KV};
 
 fn fail(message: &str) -> ! {
     eprintln!("{}", message);
@@ -14,10 +14,10 @@ fn fail(message: &str) -> ! {
 
 fn main() {
     let input_dir = define_flag!("input_dir", String::new(), "The directory to read from");
-    let input_sstable = define_flag!(
-        "input_sstable",
+    let input_recordio = define_flag!(
+        "input_recordio",
         String::new(),
-        "The code sstable to read from. If provided, won't generate one"
+        "The code recordio to read from. If provided, won't generate one"
     );
     let output_dir = define_flag!(
         "output_dir",
@@ -25,7 +25,7 @@ fn main() {
         "The directory to write the index to"
     );
 
-    parse_flags!(input_dir, output_dir, input_sstable);
+    parse_flags!(input_dir, output_dir, input_recordio);
 
     if output_dir.path().is_empty() {
         fail("You must specify an --output to write to!");
@@ -38,35 +38,35 @@ fn main() {
     };
 
     // Extract the codebase into a code sstable
-    let code_sstable = if input_sstable.path().is_empty() {
-        let code_sstable = format!("{}/code.sstable", output_dir.path());
-        extract_lib::extract_code(&starting_dir, &code_sstable);
-        code_sstable
+    let code_recordio = if input_recordio.path().is_empty() {
+        let code_recordio = format!("{}/code.recordio", output_dir.path());
+        extract_lib::extract_code(&starting_dir, &code_recordio);
+        code_recordio
     } else {
-        input_sstable.path()
+        input_recordio.path()
     };
 
     // Interpret filetypes and process file data
-    let code = PTable::from_sstable(&code_sstable);
+    let code = PCollection::from_recordio(&code_recordio);
     let files = code.par_do(ProcessFilesFn {});
     let files_sstable = format!("{}/files.sstable", output_dir.path());
     files.write_to_sstable(&files_sstable);
 
     // Extract file info by file_id
-    let code = PTable::from_sstable(&code_sstable);
+    let code = PCollection::from_recordio(&code_recordio);
     let files = code.par_do(ExtractCandidatesFn {});
     let files_sstable = format!("{}/candidates.sstable", output_dir.path());
     files.write_to_sstable(&files_sstable);
 
     // Extract trigrams
-    let code = PTable::from_sstable(&code_sstable);
+    let code = PCollection::from_recordio(&code_recordio);
     let trigrams = code.par_do(ExtractTrigramsFn {});
     let trigram_matches = trigrams.group_by_key_and_par_do(AggregateTrigramsFn {});
     let trigrams_sstable = format!("{}/trigrams.sstable", output_dir.path());
     trigram_matches.write_to_sstable(&trigrams_sstable);
 
     // Extract definitions
-    let code = PTable::from_sstable(&code_sstable);
+    let code = PCollection::from_recordio(&code_recordio);
     let keywords = code.par_do(ExtractDefinitionsFn {});
     let mut index = keywords.group_by_key_and_par_do(AggregateDefinitionsFn {});
 
