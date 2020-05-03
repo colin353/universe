@@ -1,4 +1,10 @@
-<div style="height: 800px;" id="editor" data-type="{{status}}" data-filename="{{filename}}" data-content="{{content}}" style="width:100%;height:1024px;"></div>
+<style>
+    .content {
+        width: 100% !important;
+    }
+</style>
+
+<div style="height: 100%;" id="editor" data-type="{{status}}" data-filename="{{filename}}" data-content="{{content}}" style="width:100%;height:1024px;"></div>
 
 <script>
     var require = {
@@ -35,9 +41,10 @@
             readOnly: true,
             value: content,
             language: language,
-            wordWrap: "bounded",
             theme: "vs",
-            wordWrapCols: 80,
+            minimap: {
+                enabled: false
+            }
         });
         if (window.location.hash.startsWith("#L")) {
             const line = parseInt(window.location.hash.substring(2));

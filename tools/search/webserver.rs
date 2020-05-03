@@ -79,20 +79,26 @@ where
             None => return self.not_found(path, req),
         };
 
-        let sidebar = match path.rmatch_indices("/").next() {
-            Some((idx, _)) => match self.searcher.get_document(&path[1..idx]) {
+        let sidebar = match path[1..].rmatch_indices("/").next() {
+            Some((idx, _)) => match self.searcher.get_document(&path[1..idx + 1]) {
                 Some(f) => tmpl::apply(
                     SIDEBAR,
                     &content!(
-                            "parent_dir" => &path[1..idx],
+                            "parent_dir" => &path[1..idx+1],
                             "current_filename" => &path[idx+1..];
-                            "sibling_directories" => f.get_child_directories().iter().map(|s| content!("child" => s, "selected" => s == &path[idx+1..])).collect(),
-                            "sibling_files" => f.get_child_files().iter().map(|s| content!("child" => s, "selected" => s == &path[idx+1..])).collect()
+                            "sibling_directories" => f.get_child_directories().iter().map(|s| content!("child" => s, "selected" => s == &path[idx+2..])).collect(),
+                            "sibling_files" => f.get_child_files().iter().map(|s| content!("child" => s, "selected" => s == &path[idx+2..])).collect()
                     ),
                 ),
-                None => String::new(),
+                None => {
+                    println!("no document for for {}", &path[0..idx + 1]);
+                    String::new()
+                }
             },
-            None => String::new(),
+            None => {
+                println!("no match for {}", &path[1..]);
+                String::new()
+            }
         };
 
         let details = if file.get_is_directory() {

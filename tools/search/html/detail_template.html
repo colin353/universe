@@ -3,23 +3,47 @@
         display: flex;
         flex-direction: row;
         position: relative;
+        height: calc(100% - 20px);
     }
 
     .sidebar {
         position: relative;
         min-width: 200px;
+        padding-top: 10px;
     }
 
     .detail {
         position: relative;
         flex: 1;
+        padding-top: 10px;
+    }
+
+    .filename {
+        background-color: #EEE;
+        padding-bottom: 10px;
+        padding-top: 10px;
+        padding-left: 20px;
+    }
+
+    .sidebar {
+        margin-left: 10px;
+        position: relative;
+        min-width: 220px;
+        border-right: 1px solid #EEE;
+        margin-right: 20px;
     }
 </style>
 
 <div class='content'>
-    <p>{{filename}}</p>
+    <div class="filename">{{filename}}</div>
     <div class="content-container">
+        {{sidebar != ""}}
         <div class="sidebar">{{sidebar}}</div>
+        {{/sidebar}}
+
+        {{sidebar == ""}}
+        <div style="width: 20px"></div>
+        {{/sidebar}}
         <div class="detail">{{detail}}</div>
     </div>
 </div>

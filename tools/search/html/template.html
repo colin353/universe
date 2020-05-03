@@ -9,11 +9,17 @@
     <style type="text/css">
         @import url(https://fonts.googleapis.com/css?family=Roboto+Mono);
 
+        html {
+            height: 100%;
+        }
+
         body {
             -webkit-font-smoothing: antialiased;
             -moz-osx-font-smoothing: grayscale;
             color: rgba(0, 0, 0, 0.87);
             font-family: 'Roboto Mono', sans-serif;
+            height: 100%;
+            margin: 0;
         }
 
         .page {
@@ -78,6 +84,7 @@
             width: 1024px;
             margin-left: auto;
             margin-right: auto;
+            height: calc(100% - 100px);
         }
 
         a.invisible-link {
@@ -107,6 +114,10 @@
         a.child {
             color: black;
             text-decoration: none;
+        }
+
+        .hljs {
+            background: white !important;
         }
     </style>
 </head>
@@ -143,8 +154,8 @@
     });
 </script>
 
-<link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/highlight.js/9.18.1/styles/default.min.css">
-<script src="//cdnjs.cloudflare.com/ajax/libs/highlight.js/9.18.1/highlight.min.js"></script>
+<link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/highlight.js/10.0.2/styles/default.min.css">
+<script src="//cdnjs.cloudflare.com/ajax/libs/highlight.js/10.0.2/highlight.min.js"></script>
 <script>
     hljs.initHighlightingOnLoad();
 </script>

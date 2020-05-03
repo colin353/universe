@@ -1,14 +1,28 @@
+<style>
+    .result-filename {
+        background-color: #EEE;
+        margin-top: 5px;
+        margin-bottom: 5px;
+        padding-top: 5px;
+        padding-bottom: 5px;
+        padding-left: 10px;
+    }
+
+    .directory-results {
+        margin-left: 10px;
+    }
+</style>
+
 <div class='content'>
     {{results[]}}
     <a href='{{filename}}?q={{query}}#L{{jump_to_line}}' class='invisible-link'>
-        <p>{{filename}}</p>
+        <div class='result-filename'>{{filename}}</div>
         {{is_directory == false}}
-        <pre>
-        <code>{{snippet[]}}  {{snippet}}
+        <pre><code style="overflow: hidden">{{snippet[]}}  {{snippet}}
 {{/snippet}}</code></pre>
         {{/is_directory}}
         {{is_directory == true}}
-        <div>
+        <div class="directory-results">
             {{child_directories[]}}
             <a class="child" href='/{{filename}}/{{child}}?q={{query}}'>
                 <div class="child">{{child}}/</div>
