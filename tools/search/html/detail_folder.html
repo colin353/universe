@@ -1,0 +1,12 @@
+<div style="height: 800px;" id="editor" data-type="{{status}}" data-filename="{{filename}}" data-content="{{content}}" style="width:100%;height:1024px;">
+    {{child_directories[]}}
+    <a class="child" href='/{{filename}}/{{child}}?q={{query}}'>
+        <div class="child">{{child}}/</div>
+    </a>
+    {{/child_directories}}
+    {{child_files[]}}
+    <a class="child" href='/{{filename}}/{{child}}?q={{query}}'>
+        <div class="child">{{child}}</div>
+    </a>
+    {{/child_files}}
+</div>

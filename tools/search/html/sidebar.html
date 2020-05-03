@@ -1,0 +1,19 @@
+<style>
+    .sidebar-file {}
+
+    .sidebar-file.selected {
+        font-weight: bold;
+    }
+</style>
+
+{{sibling_directories[]}}
+<a class="child {{selected == true}}selected{{/selected}}" href='/{{parent_dir}}/{{child}}?q={{query}}'>
+    <div class="sidebar-file {{selected}}selected{{/selected}}">{{child}}/</div>
+</a>
+{{/sibling_directories}}
+
+{{sibling_files[]}}
+<a class="child" href='/{{parent_dir}}/{{child}}?q={{query}}'>
+    <div class="sidebar-file {{selected==true}}selected{{/selected}}">{{child}}</div>
+</a>
+{{/sibling_files}}

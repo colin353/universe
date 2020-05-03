@@ -4,8 +4,11 @@ use crate::render;
 use ws::{Body, Request, Response, Server};
 
 static TEMPLATE: &str = include_str!("html/template.html");
+static SIDEBAR: &str = include_str!("html/sidebar.html");
 static INDEX: &str = include_str!("html/index.html");
 static DETAIL: &str = include_str!("html/detail.html");
+static DETAIL_FOLDER: &str = include_str!("html/detail_folder.html");
+static DETAIL_TEMPLATE: &str = include_str!("html/detail_template.html");
 static RESULTS: &str = include_str!("html/results.html");
 
 #[derive(Clone)]
@@ -75,7 +78,38 @@ where
             Some(f) => f,
             None => return self.not_found(path, req),
         };
-        let page = tmpl::apply(DETAIL, &render::file(&file));
+
+        let sidebar = match path.rmatch_indices("/").next() {
+            Some((idx, _)) => match self.searcher.get_document(&path[1..idx]) {
+                Some(f) => tmpl::apply(
+                    SIDEBAR,
+                    &content!(
+                            "parent_dir" => &path[1..idx],
+                            "current_filename" => &path[idx+1..];
+                            "sibling_directories" => f.get_child_directories().iter().map(|s| content!("child" => s, "selected" => s == &path[idx+1..])).collect(),
+                            "sibling_files" => f.get_child_files().iter().map(|s| content!("child" => s, "selected" => s == &path[idx+1..])).collect()
+                    ),
+                ),
+                None => String::new(),
+            },
+            None => String::new(),
+        };
+
+        let details = if file.get_is_directory() {
+            tmpl::apply(DETAIL_FOLDER, &render::file(&file))
+        } else {
+            tmpl::apply(DETAIL, &render::file(&file))
+        };
+
+        let page = tmpl::apply(
+            DETAIL_TEMPLATE,
+            &content!(
+                "filename" => file.get_filename(),
+                "sidebar" => sidebar,
+                "detail" => details
+            ),
+        );
+
         Response::new(Body::from(self.wrap_template(true, query, page)))
     }
 

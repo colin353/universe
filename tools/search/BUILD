@@ -32,8 +32,11 @@ rust_binary(
     ],
     data = [
         "html/detail.html",
+        "html/detail_folder.html",
+        "html/detail_template.html",
         "html/index.html",
         "html/results.html",
+        "html/sidebar.html",
         "html/template.html",
     ],
     edition = "2018",

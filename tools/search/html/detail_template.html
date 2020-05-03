@@ -1,0 +1,25 @@
+<style>
+    .content-container {
+        display: flex;
+        flex-direction: row;
+        position: relative;
+    }
+
+    .sidebar {
+        position: relative;
+        min-width: 200px;
+    }
+
+    .detail {
+        position: relative;
+        flex: 1;
+    }
+</style>
+
+<div class='content'>
+    <p>{{filename}}</p>
+    <div class="content-container">
+        <div class="sidebar">{{sidebar}}</div>
+        <div class="detail">{{detail}}</div>
+    </div>
+</div>

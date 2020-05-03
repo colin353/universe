@@ -1,5 +1,3 @@
-<div class='content'>
-<p>{{filename}}</p>
 <div style="height: 800px;" id="editor" data-type="{{status}}" data-filename="{{filename}}" data-content="{{content}}" style="width:100%;height:1024px;"></div>
 
 <script>
@@ -42,10 +40,12 @@
             wordWrapCols: 80,
         });
         if (window.location.hash.startsWith("#L")) {
-          const line = parseInt(window.location.hash.substring(2));
-          editor.setPosition({column: 1, lineNumber: line});
-          editor.revealLineInCenter(line + 10);
+            const line = parseInt(window.location.hash.substring(2));
+            editor.setPosition({
+                column: 1,
+                lineNumber: line
+            });
+            editor.revealLineInCenter(line + 10);
         }
-  });
+    });
 </script>
-</div>
