@@ -96,6 +96,12 @@ impl Searcher {
                 keyword.set_is_definition(true);
             }
 
+            // Support prefix search
+            if keyword.get_keyword().starts_with("in:") {
+                keyword.set_keyword(keyword.get_keyword()[3..].to_owned());
+                keyword.set_is_prefix(true);
+            }
+
             out.mut_keywords().push(keyword);
         }
 
@@ -116,7 +122,13 @@ impl Searcher {
         query: &Query,
         candidates: &mut HashMap<u64, Candidate>,
     ) {
-        for (index, keyword) in query.get_keywords().iter().enumerate() {
+        for (index, keyword) in query
+            .get_keywords()
+            .iter()
+            .enumerate()
+            // Prefix requirements should not match on definitions
+            .filter(|(_, k)| !k.get_is_prefix())
+        {
             let mut matches = match self
                 .definitions
                 .lock()
@@ -172,6 +184,14 @@ impl Searcher {
             let mut filename_coverage = 0;
             for (index, (keyword, re)) in keyword_matchers.iter().enumerate() {
                 if let Some(m) = re.find(filename) {
+                    if keyword.get_is_definition() {
+                        continue;
+                    }
+
+                    if keyword.get_is_prefix() && m.start() != 0 {
+                        continue;
+                    }
+
                     if m.end() < match_position {
                         matched_in_order = false;
                     }
@@ -218,7 +238,12 @@ impl Searcher {
         query: &Query,
         candidates: &mut HashMap<u64, Candidate>,
     ) {
-        for (index, keyword) in query.get_keywords().iter().enumerate() {
+        for (index, keyword) in query
+            .get_keywords()
+            .iter()
+            .enumerate()
+            .filter(|(_, k)| !k.get_is_prefix())
+        {
             let mut or_set: Option<HashSet<u64>> = None;
             for trigram in search_utils::trigrams(&keyword.get_keyword().to_lowercase()) {
                 let mut matches = HashSet::new();

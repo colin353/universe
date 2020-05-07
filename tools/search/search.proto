@@ -15,6 +15,9 @@ message QueryKeyword {
 
   // If it is a search for a specific definition
   bool is_definition = 2;
+
+  // If it's a required filename prefix
+  bool is_prefix = 3;
 }
 
 message Query {
