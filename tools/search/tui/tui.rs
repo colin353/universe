@@ -383,6 +383,7 @@ fn main() {
         true,
         "Whether to use TLS when connecting to the server"
     );
+    let disable_auth = define_flag!("disable_auth", false, "Whether or not to disable auth");
     parse_flags!(
         app_width,
         app_height,
@@ -391,11 +392,17 @@ fn main() {
         port,
         auth_hostname,
         auth_port,
-        use_tls
+        use_tls,
+        disable_auth
     );
 
     let auth = auth_client::AuthClient::new_tls(&auth_hostname.value(), auth_port.value());
-    let token = cli::load_and_check_auth(auth);
+
+    let token = if disable_auth.value() {
+        String::new()
+    } else {
+        cli::load_and_check_auth(auth)
+    };
 
     let client = if use_tls.value() {
         search_client::SearchClient::new_tls(&host.value(), port.value(), token)
