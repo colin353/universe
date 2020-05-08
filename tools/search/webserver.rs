@@ -107,12 +107,29 @@ where
             tmpl::apply(DETAIL, &render::file(&file))
         };
 
+        let mut filename_components = Vec::new();
+        let mut prev_idx = 0;
+        for (idx, component) in file.get_filename().match_indices("/") {
+            filename_components.push(content!(
+                    "path" => file.get_filename()[0..idx].to_string(),
+                    "section" => file.get_filename()[prev_idx..idx].to_string()
+            ));
+            prev_idx = idx;
+        }
+        filename_components.push(content!(
+                "path" => file.get_filename().to_string(),
+                "section" => file.get_filename()[prev_idx..].to_string()
+        ));
+
         let page = tmpl::apply(
             DETAIL_TEMPLATE,
             &content!(
                 "filename" => file.get_filename(),
                 "sidebar" => sidebar,
-                "detail" => details
+                "detail" => details;
+
+                // Extract the filename into clickable components
+                "filename_components" => filename_components
             ),
         );
 

@@ -35,7 +35,8 @@
 </style>
 
 <div class='content'>
-    <div class="filename">{{filename}}</div>
+    <div class="filename">{{filename_components[]}}<a class="invisible-link" href="/{{path}}">{{section}}</a>{{/filename_components}}</div>
+
     <div class="content-container">
         {{sidebar != ""}}
         <div class="sidebar">{{sidebar}}</div>

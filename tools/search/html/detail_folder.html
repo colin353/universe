@@ -1,4 +1,4 @@
-<div style="height: 800px;" id="editor" data-type="{{status}}" data-filename="{{filename}}" data-content="{{content}}" style="width:100%;height:1024px;">
+<divdiv style="height: 800px;" id="editor" data-type="{{status}}" data-filename="{{filename}}" data-content="{{content}}" style="width:100%;height:1024px;">
     {{child_directories[]}}
     <a class="child" href='/{{filename}}/{{child}}?q={{query}}'>
         <div class="child">{{child}}/</div>
@@ -9,4 +9,17 @@
         <div class="child">{{child}}</div>
     </a>
     {{/child_files}}
-</div>
+
+    <p>Search inside</p>
+    <input id="search-input-inside" class="search-input-small" style="margin-top: 0" type=text value="" />
+    </div>
+
+    <script>
+        const searchInsideInput = document.getElementById("search-input-inside");
+        searchInsideInput.addEventListener('keyup', function(e) {
+            if (e.keyCode == 13) {
+                event.preventDefault();
+                window.location.href = '/?q=' + encodeURIComponent("in:{{filename}} " + searchInsideInput.value);
+            }
+        });
+    </script>

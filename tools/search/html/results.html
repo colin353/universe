@@ -11,6 +11,14 @@
     .directory-results {
         margin-left: 10px;
     }
+
+    .no-results {
+        width: 250px;
+        display: block;
+        margin-left: auto;
+        margin-right: auto;
+        margin-top: 100px;
+    }
 </style>
 
 <div class='content'>
@@ -36,5 +44,11 @@
         </div>
         {{/is_directory}}
     </a>
+    {{/results}}
+
+    {{results == 0}}
+    <div class="no-results">
+        <p>No results!</p>
+    </div>
     {{/results}}
 </div>
