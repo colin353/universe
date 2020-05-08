@@ -238,12 +238,20 @@ impl Searcher {
         query: &Query,
         candidates: &mut HashMap<u64, Candidate>,
     ) {
+        let mut short_keyword_mask: u32 = 0;
+
         for (index, keyword) in query
             .get_keywords()
             .iter()
             .enumerate()
             .filter(|(_, k)| !k.get_is_prefix())
         {
+            // We use a trigram index. If this keyword has fewer than 3 chars, just assume
+            // any candidate might match it.
+            if keyword.get_keyword().len() < 3 {
+                short_keyword_mask = update_mask(short_keyword_mask, index);
+            }
+
             let mut or_set: Option<HashSet<u64>> = None;
             for trigram in search_utils::trigrams(&keyword.get_keyword().to_lowercase()) {
                 let mut matches = HashSet::new();
@@ -274,6 +282,13 @@ impl Searcher {
                     ));
                 }
             }
+        }
+
+        // Make sure that all short keywords are marked as "possible matches" in all candidates.
+        for (_, candidate) in candidates.iter_mut() {
+            candidate.set_keyword_possible_match_mask(
+                candidate.get_keyword_possible_match_mask() | short_keyword_mask,
+            );
         }
     }
 
