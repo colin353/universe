@@ -8,6 +8,7 @@ enum FileType {
   JAVASCRIPT = 4;
   HTML = 5;
   BAZEL = 6;
+  PYTHON = 7;
 }
 
 message QueryKeyword {
