@@ -67,6 +67,44 @@
             }
         });
 
+        editor.addAction({
+            // An unique identifier of the contributed action.
+            id: 'search',
+
+            // A label of the action that will be presented to the user.
+            label: 'Search for this token',
+
+            contextMenuGroupId: 'navigation',
+            contextMenuOrder: 1.5,
+
+            run: function(ed) {
+                const selection = ed.getSelection()
+                const word = ed.getModel().getWordAtPosition(ed.getPosition()).word
+                const url = window.location.protocol + "//" + window.location.host + "?q=" + word
+                window.open(url, '_blank');
+                return null;
+            }
+        });
+
+        editor.addAction({
+            // An unique identifier of the contributed action.
+            id: 'search',
+
+            // A label of the action that will be presented to the user.
+            label: 'Search for this token\'s definition',
+
+            contextMenuGroupId: 'navigation',
+            contextMenuOrder: 1.5,
+
+            run: function(ed) {
+                const selection = ed.getSelection()
+                const word = ed.getModel().getWordAtPosition(ed.getPosition()).word
+                const url = window.location.protocol + "//" + window.location.host + "?q=def:" + word
+                window.open(url, '_blank');
+                return null;
+            }
+        });
+
         if (window.location.hash.startsWith("#L")) {
             const line = parseInt(window.location.hash.substring(2));
             editor.setPosition({
