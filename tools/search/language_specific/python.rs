@@ -88,6 +88,12 @@ pub fn extract_definitions(file: &File) -> Vec<SymbolDefinition> {
     results
 }
 
+pub fn annotate_file(file: &mut File) {
+    if file.get_filename().contains("/__tests__") || file.get_filename().contains("/tests") {
+        file.set_is_test(true);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

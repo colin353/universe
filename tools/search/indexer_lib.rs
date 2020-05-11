@@ -47,6 +47,9 @@ impl plume::DoFn for ProcessFilesFn {
         let mut file = input.clone();
         file.set_file_type(language_specific::get_filetype(file.get_filename()));
 
+        // Add any other language-specific file annotations
+        language_specific::annotate_file(&mut file);
+
         // Some machine-generated files have insanely long lines. Usually humans
         // don't want to read files like that.
         let lines = file.get_content().lines().count();
@@ -66,6 +69,9 @@ impl plume::DoFn for ExtractCandidatesFn {
     fn do_it(&self, input: &File, emit: &mut dyn EmitFn<Self::Output>) {
         let mut file = input.clone();
         file.set_file_type(language_specific::get_filetype(file.get_filename()));
+
+        // Add any other language-specific file annotations
+        language_specific::annotate_file(&mut file);
 
         // Some machine-generated files have insanely long lines. Usually humans
         // don't want to read files like that.

@@ -52,6 +52,9 @@ message File {
   // If it's actually a directory, the filenames of the children
   repeated string child_directories = 7;
   repeated string child_files = 8;
+
+  // If the file only contains tests
+  bool is_test = 9;
 }
 
 message Span {
@@ -94,6 +97,7 @@ message Candidate {
   repeated string child_directories = 21;
 
   bool is_directory = 22;
+  bool is_test = 23;
 }
 
 enum SymbolType {

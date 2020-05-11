@@ -7,6 +7,7 @@ rust_library(
     name = "language_specific",
     srcs = [
         "default.rs",
+        "javascript.rs",
         "lib.rs",
         "proto.rs",
         "python.rs",

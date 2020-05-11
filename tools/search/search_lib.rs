@@ -363,6 +363,7 @@ impl Searcher {
                 .unwrap()
         };
 
+        candidate.set_is_test(file.get_is_test());
         candidate.set_filename(file.get_filename().to_string());
         candidate.set_is_ugly(file.get_is_ugly());
         candidate.set_file_type(file.get_file_type());
@@ -481,6 +482,10 @@ impl Searcher {
             score /= 3.0;
         }
 
+        if candidate.get_is_test() {
+            score /= 2.0;
+        }
+
         // Definition scoring
         // TODO: adjust score based on symbol type
         let mut definition_score = 0;
@@ -523,7 +528,7 @@ impl Searcher {
                 "{}. (score={}) {}",
                 idx + 1,
                 candidate.get_score(),
-                candidate.get_filename()
+                candidate.get_filename(),
             );
         }
     }

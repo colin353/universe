@@ -4,6 +4,7 @@ extern crate lazy_static;
 use search_proto_rust::*;
 
 mod default;
+mod javascript;
 mod proto;
 mod python;
 mod rust;
@@ -18,7 +19,7 @@ pub fn get_filetype(filename: &str) -> FileType {
     if filename.ends_with(".proto") {
         return FileType::PROTO;
     }
-    if filename.ends_with(".js") {
+    if filename.ends_with(".js") || filename.ends_with(".ts") {
         return FileType::JAVASCRIPT;
     }
     if filename.ends_with("BUILD") || filename == "WORKSPACE" {
@@ -28,6 +29,15 @@ pub fn get_filetype(filename: &str) -> FileType {
         return FileType::PYTHON;
     }
     FileType::UNKNOWN
+}
+
+pub fn annotate_file(file: &mut File) {
+    match get_filetype(file.get_filename()) {
+        FileType::RUST => rust::annotate_file(file),
+        FileType::PYTHON => python::annotate_file(file),
+        FileType::JAVASCRIPT => javascript::annotate_file(file),
+        _ => (),
+    }
 }
 
 pub fn extract_keywords(file: &File) -> Vec<ExtractedKeyword> {
