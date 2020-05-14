@@ -372,6 +372,150 @@ impl X20Manager {
         println!("✔️ published");
     }
 
+    fn build_docker(&self, mut binary: x20::Binary) {
+        let status = std::process::Command::new("bazel")
+            .arg("run")
+            .arg("-c")
+            .arg("opt")
+            .arg(binary.get_target())
+            .status()
+            .expect("failed to build image!");
+
+        if !status.success() {
+            eprintln!("❌Failed to build {}", binary.get_target());
+            std::process::exit(1);
+        }
+
+        // Build the binary under echo to get the path to the binary
+        let output = std::process::Command::new("bazel")
+            .arg("run")
+            .arg("--run_under=echo")
+            .arg("-c")
+            .arg("opt")
+            .arg(binary.get_target())
+            .output()
+            .expect("failed to build image!");
+
+        if !output.status.success() {
+            eprintln!("❌Failed to build {}", binary.get_target());
+            std::process::exit(1);
+        }
+
+        let path = String::from_utf8(output.stdout).expect("couldn't parse output!");
+        let tag = std::fs::read_to_string(format!("{}.digest", path.trim()))
+            .expect("couldn't get digest!");
+
+        // Set the docker image tag
+        binary.set_docker_img_tag(tag.trim().to_owned());
+
+        let mut req = x20::PublishBinaryRequest::new();
+        req.set_binary(binary);
+        let response = self.client.publish_binary(req);
+        if response.get_error() != x20::Error::NONE {
+            eprintln!("❌could not publish binary: {:?}", response.get_error());
+            std::process::exit(1);
+        }
+
+        eprintln!("✔️ published");
+    }
+
+    pub fn build(&self, name: String) {
+        let mut binary = match self
+            .client
+            .get_binaries()
+            .expect("couldn't look up binaries")
+            .into_iter()
+            .find(|b| b.get_name() == name)
+        {
+            Some(b) => b,
+            None => {
+                eprintln!("❌Binary named {} does not exist!", name);
+                std::process::exit(1);
+            }
+        };
+
+        if binary.get_target().is_empty() {
+            eprintln!(
+                "❌Binary named {} does have a corresponding bazel target!",
+                name
+            );
+            std::process::exit(1);
+        }
+
+        if !binary.get_docker_img().is_empty() {
+            return self.build_docker(binary);
+        }
+
+        // First, build the binary
+        let status = std::process::Command::new("bazel")
+            .arg("build")
+            .arg("-c")
+            .arg("opt")
+            .arg(binary.get_target())
+            .status()
+            .expect("failed to build!");
+
+        if !status.success() {
+            eprintln!("❌Failed to build {}", binary.get_target());
+            std::process::exit(1);
+        }
+
+        // Next, run the bianry under echo to get the path to the binary
+        let output = std::process::Command::new("bazel")
+            .arg("run")
+            .arg("-c")
+            .arg("opt")
+            .arg("--run_under=echo")
+            .arg(binary.get_target())
+            .output()
+            .expect("failed to run under!");
+
+        let path = String::from_utf8(output.stdout).expect("couldn't parse output!");
+        let name = format!("{:x}{:x}", rand::random::<u64>(), rand::random::<u64>());
+
+        // Upload the binary to the cloud bucket
+        let output = match std::process::Command::new("gsutil")
+            .arg("cp")
+            .arg(path.trim())
+            .arg(format!("gs://x20-binaries/{}", name))
+            .output()
+        {
+            Ok(o) => o,
+            Err(e) => {
+                println!(
+                    "failed to start gsutil copy. do you have gsutil installed? {:?}",
+                    e
+                );
+                return;
+            }
+        };
+
+        let output_stderr = std::str::from_utf8(&output.stderr)
+            .unwrap()
+            .trim()
+            .to_owned();
+        if !output.status.success() {
+            eprintln!("Failed to upload binary:\n\n {}", output_stderr);
+            return;
+        }
+
+        // Set the downloadable URL
+        binary.set_url(format!(
+            "https://storage.googleapis.com/x20-binaries/{}",
+            name
+        ));
+
+        let mut req = x20::PublishBinaryRequest::new();
+        req.set_binary(binary);
+        let response = self.client.publish_binary(req);
+        if response.get_error() != x20::Error::NONE {
+            eprintln!("❌could not publish binary: {:?}", response.get_error());
+            std::process::exit(1);
+        }
+
+        println!("✔️ published");
+    }
+
     // Start up all the configs associated with the configs
     pub fn start(&self) {
         let env = self.read_saved_environment();

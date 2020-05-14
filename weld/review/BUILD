@@ -56,7 +56,7 @@ pkg_tar(
 
 container_image(
     name = "review_base_img",
-    base = "@cc_image_base//image",
+    base = "@glibc_base//image",
     tars = [":static_files"],
 )
 

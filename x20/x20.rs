@@ -96,6 +96,7 @@ fn main() {
                 create.value(),
             );
         }
+        "build" => manager.build(name.value()),
         "update" => {
             manager.update();
         }
