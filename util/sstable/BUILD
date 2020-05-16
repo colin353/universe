@@ -1,6 +1,7 @@
 package(default_visibility = ["//visibility:public"])
 
 load("@io_bazel_rules_rust//rust:rust.bzl", "rust_library")
+load("@io_bazel_rules_rust//rust:rust.bzl", "rust_binary")
 load("@io_bazel_rules_rust//rust:rust.bzl", "rust_test")
 load("@io_bazel_rules_rust//proto:proto.bzl", "rust_proto_library")
 
@@ -26,6 +27,19 @@ rust_library(
         "//util/primitive",
         "//util/shard_lib",
         "@io_bazel_rules_rust//proto/raze:protobuf",
+    ],
+)
+
+rust_binary(
+    name = "sstable_perf",
+    srcs = [
+        "perf.rs",
+    ],
+    edition = "2018",
+    deps = [
+        ":sstable",
+        "//third_party:rand",
+        "//tools/search:search_proto_rust",
     ],
 )
 
