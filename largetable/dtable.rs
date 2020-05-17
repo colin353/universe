@@ -9,23 +9,38 @@ use largetable_proto_rust::Record;
 use sstable;
 
 use std::io;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Mutex;
 
 pub struct DTable {
-    table: sstable::SSTableReader<Record>,
+    tables: Vec<Mutex<sstable::SSTableReader<Record>>>,
+    next_table: AtomicUsize,
 }
 
 impl DTable {
     pub fn new(reader: Box<sstable::SeekableRead>) -> io::Result<DTable> {
         Ok(DTable {
-            table: sstable::SSTableReader::new(reader)?,
+            tables: vec![Mutex::new(sstable::SSTableReader::new(reader)?)],
+            next_table: AtomicUsize::new(0),
         })
     }
 
-    pub fn read(&mut self, row: &str, col: &str, timestamp: u64) -> Option<Record> {
+    pub fn add_readers(&mut self, readers: Vec<Box<sstable::SeekableRead>>) {
+        for reader in readers {
+            self.tables
+                .push(Mutex::new(sstable::SSTableReader::new(reader).unwrap()));
+        }
+    }
+
+    pub fn read(&self, row: &str, col: &str, timestamp: u64) -> Option<Record> {
         let key_spec = keyserializer::get_keyspec(row, col);
 
-        let specd_reader =
-            sstable::SpecdSSTableReader::from_reader(&mut self.table, key_spec.as_str());
+        let mut table = self.tables
+            [self.next_table.fetch_add(1, Ordering::Relaxed) % self.tables.len()]
+        .lock()
+        .unwrap();
+
+        let specd_reader = sstable::SpecdSSTableReader::from_reader(&mut table, key_spec.as_str());
         let mut target_value = Record::new();
         let mut found = false;
         for (_, value) in specd_reader {
@@ -47,7 +62,12 @@ impl DTable {
     pub fn get_shard_hint(&self, key_spec: &str, min_key: &str, max_key: &str) -> Vec<String> {
         // The SSTable gives shard hints with string keys, but we want to return column keys. So
         // we'll remap the string keys into column keys.
-        self.table
+        let table = self.tables
+            [self.next_table.fetch_add(1, Ordering::Relaxed) % self.tables.len()]
+        .lock()
+        .unwrap();
+
+        table
             .suggest_shards(key_spec, min_key, max_key)
             .iter()
             .map(|s| keyserializer::deserialize_col(s).to_owned())
@@ -55,7 +75,7 @@ impl DTable {
     }
 
     pub fn read_range(
-        &mut self,
+        &self,
         row: &str,
         col_spec: &str,
         min_col: &str,
@@ -71,8 +91,13 @@ impl DTable {
             String::from("")
         };
 
+        let mut table = self.tables
+            [self.next_table.fetch_add(1, Ordering::Relaxed) % self.tables.len()]
+        .lock()
+        .unwrap();
+
         let specd_reader = sstable::SpecdSSTableReader::from_reader_with_scope(
-            &mut self.table,
+            &mut table,
             key_spec.as_str(),
             min_key.as_str(),
             max_key.as_str(),

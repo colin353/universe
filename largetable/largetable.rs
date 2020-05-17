@@ -133,7 +133,7 @@ impl<'a> LargeTable {
     pub fn read(&self, row: &str, col: &str, timestamp: u64) -> Option<Record> {
         let mut records: Vec<Record> = Vec::new();
         for dt in self.dtables.iter() {
-            match dt.write().unwrap().read(row, col, timestamp) {
+            match dt.read().unwrap().read(row, col, timestamp) {
                 Some(x) => {
                     records.push(x);
                 }
@@ -192,7 +192,7 @@ impl<'a> LargeTable {
         // Get records from each dtable.
         for dt in self.dtables.iter() {
             data.push(VecDeque::from(
-                dt.write()
+                dt.read()
                     .unwrap()
                     .read_range(row, col_spec, min_col, max_col, limit, timestamp),
             ))
@@ -298,6 +298,12 @@ impl<'a> LargeTable {
     pub fn add_dtable(&mut self, reader: Box<sstable::SeekableRead>) {
         self.dtables
             .push(RwLock::new(dtable::DTable::new(reader).unwrap()));
+    }
+
+    pub fn add_pooled_dtable(&mut self, mut readers: Vec<Box<sstable::SeekableRead>>) {
+        let mut dt = dtable::DTable::new(readers.pop().unwrap()).unwrap();
+        dt.add_readers(readers);
+        self.dtables.push(RwLock::new(dt));
     }
 
     pub fn clear_dtables(&mut self) {

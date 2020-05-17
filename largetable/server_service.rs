@@ -22,6 +22,7 @@ use std::sync::{Arc, Mutex, RwLock};
 const DTABLE_EXT: &'static str = "sstable";
 const JOURNAL_EXT: &'static str = "recordio";
 const COMPACTION_POLICIES: &'static str = "__META__POLICIES__";
+const BUFFER_POOL_SIZE: usize = 16;
 const BUFFER_SIZE: usize = 64000;
 
 #[derive(Clone)]
@@ -70,8 +71,13 @@ impl LargeTableServiceHandler {
                         .lock()
                         .unwrap()
                         .push(path.to_str().unwrap().to_owned());
-                    let f = BufReader::with_capacity(BUFFER_SIZE, fs::File::open(path).unwrap());
-                    lt.add_dtable(Box::new(f));
+                    let mut bufs: Vec<Box<dyn sstable::SeekableRead>> = Vec::new();
+                    for _ in 0..BUFFER_POOL_SIZE {
+                        let f =
+                            BufReader::with_capacity(BUFFER_SIZE, fs::File::open(&path).unwrap());
+                        bufs.push(Box::new(f));
+                    }
+                    lt.add_pooled_dtable(bufs);
                 }
                 Err(e) => panic!("{:?}", e),
             }
@@ -168,13 +174,16 @@ impl LargeTableServiceHandler {
             // simultaneously drop the mtable.
             {
                 let filename = self.get_current_filename(DTABLE_EXT);
-                let f = BufReader::with_capacity(
-                    BUFFER_SIZE,
-                    fs::File::open(filename.clone()).unwrap(),
-                );
-                self.dtables.lock().unwrap().push(filename);
+                self.dtables.lock().unwrap().push(filename.clone());
+
                 let mut lt = self.largetable.write().unwrap();
-                lt.add_dtable(Box::new(f));
+                let mut bufs: Vec<Box<dyn sstable::SeekableRead>> = Vec::new();
+                for _ in 0..BUFFER_POOL_SIZE {
+                    let f =
+                        BufReader::with_capacity(BUFFER_SIZE, fs::File::open(&filename).unwrap());
+                    bufs.push(Box::new(f));
+                }
+                lt.add_pooled_dtable(bufs);
                 lt.drop_mtables();
             }
 
@@ -225,10 +234,16 @@ impl LargeTableServiceHandler {
         {
             // Replace the old dtables with the new compacted one
             *self.dtables.lock().unwrap() = vec![filename.clone()];
-            let reader = BufReader::new(fs::File::open(filename).unwrap());
             let mut lt = self.largetable.write().unwrap();
             lt.clear_dtables();
-            lt.add_dtable(Box::new(reader));
+            let mut bufs: Vec<Box<dyn sstable::SeekableRead>> = Vec::new();
+            for _ in 0..BUFFER_POOL_SIZE {
+                bufs.push(Box::new(BufReader::with_capacity(
+                    BUFFER_SIZE,
+                    fs::File::open(&filename).unwrap(),
+                )));
+            }
+            lt.add_pooled_dtable(bufs);
         }
 
         // Delete the old dtable files

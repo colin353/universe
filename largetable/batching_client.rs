@@ -41,6 +41,7 @@ impl<T: protobuf::Message + Clone, C: largetable_client::LargeTableClient>
 
     pub fn write(&self, row: &str, col: &str, message: T) {
         let timestamp = get_timestamp_usec();
+        println!("write: {:?} @ {}", message, timestamp);
         if let Some(cache) = self.cache.read().unwrap().back() {
             let mut writeable_cache = cache.write().unwrap();
 
