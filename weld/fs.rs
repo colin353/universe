@@ -917,9 +917,7 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
 
         let to_skip = if offset == 0 { offset } else { offset + 1 } as usize;
         for (i, entry) in entries.into_iter().enumerate().skip(to_skip) {
-            if reply.add(entry.inode, i as i64, entry.filetype, entry.name) {
-                break;
-            };
+            reply.add(entry.inode, i as i64, entry.filetype, entry.name);
         }
         reply.ok();
     }
