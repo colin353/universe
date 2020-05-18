@@ -48,6 +48,7 @@ rust_library(
         "//third_party:futures",
         "//third_party:glob",
         "//third_party:time",
+        "//util/itertools",
         "//util/recordio",
         "//util/sstable",
         "@io_bazel_rules_rust//proto/raze:protobuf",

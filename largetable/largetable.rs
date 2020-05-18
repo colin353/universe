@@ -1,4 +1,5 @@
 use dtable;
+use itertools::{MinHeap, KV};
 use keyserializer;
 use largetable_proto_rust::Record;
 use mtable;
@@ -200,10 +201,10 @@ impl<'a> LargeTable {
 
         // Merge the records together. First, fill the BTreeMap with
         // a record from each dataset.
-        let mut map = BTreeMap::<String, (usize, Record)>::new();
+        let mut heap = MinHeap::<KV<String, (usize, Record)>>::new();
         for i in 0..data.len() {
             match data[i].pop_front() {
-                Some(x) => map.insert(keyserializer::key_from_record(&x), (i, x)),
+                Some(x) => heap.push(KV::new(keyserializer::key_from_record(&x), (i, x))),
                 None => continue,
             };
         }
@@ -215,11 +216,12 @@ impl<'a> LargeTable {
         let mut found_record = false;
         loop {
             let (key, index, record) = {
-                let (key, (index, record)) = match map.iter().next() {
+                let kv = match heap.pop() {
                     Some(x) => x,
                     None => break,
                 };
-                (key.to_owned(), index.to_owned(), record.to_owned())
+                let KV(key, value) = kv;
+                (key, value.0, value.1)
             };
 
             // If the record is a deletion, omit it from the read_range.
@@ -236,12 +238,9 @@ impl<'a> LargeTable {
             prev_col = record.get_col().to_owned();
             prev_record = record;
 
-            // Delete the key from the map.
-            map.remove(&key).unwrap();
-
             // Pop off the record from the list it came from.
             match data[index].pop_front() {
-                Some(x) => map.insert(keyserializer::key_from_record(&x), (index, x)),
+                Some(x) => heap.push(KV::new(keyserializer::key_from_record(&x), (index, x))),
                 None => continue,
             };
         }
@@ -642,5 +641,27 @@ mod tests {
         assert_eq!(result.get_row(), "fake_serialized");
         assert_eq!(result.get_col(), "abcdef");
         assert_eq!(result.get_timestamp(), 12345);
+    }
+
+    #[test]
+    fn identical_records_in_dtables() {
+        let mut l = LargeTable::new();
+        write_record(&mut l, "a", "apple", 1000);
+        write_record(&mut l, "a", "alternate", 1000);
+
+        // Write this to a DTable.
+        let mut f = std::io::Cursor::new(Vec::new());
+        l.write_to_disk(&mut f, 0);
+        l.add_dtable(Box::new(f));
+
+        write_record(&mut l, "a", "apple", 1000);
+        write_record(&mut l, "a", "secret", 1000);
+
+        // Read it out again.
+        let out = l.read_range("a", "", "", "", 100, 1234);
+        //assert_eq!(out.len(), 3);
+        assert_eq!(out[0], make_record("a", "alternate", 1000));
+        assert_eq!(out[1], make_record("a", "apple", 1000));
+        assert_eq!(out[2], make_record("a", "secret", 1000));
     }
 }

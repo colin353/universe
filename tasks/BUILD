@@ -124,6 +124,7 @@ rust_library(
 
 rust_image(
     name = "task_img",
+    base = "@glibc_base//image",
     binary = ":tasks",
 )
 

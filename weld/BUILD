@@ -197,6 +197,7 @@ rust_binary(
 rust_image(
     name = "weld_server_img",
     srcs = ["server.rs"],
+    base = "@glibc_base//image",
     deps = [
         ":weld",
         ":weld_repo",

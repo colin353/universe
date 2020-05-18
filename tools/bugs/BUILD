@@ -83,6 +83,7 @@ rust_binary(
 
 rust_image(
     name = "bug_server_img",
+    base = "@glibc_base//image",
     binary = ":bug_server",
 )
 

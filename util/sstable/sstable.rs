@@ -203,7 +203,7 @@ impl<'a, T: Serializable + Default> SSTableBuilder<'a, T> {
         readers: &mut [SSTableReader<T>],
     ) -> io::Result<()> {
         let mut builder = SSTableBuilder::<T>::new(dtable);
-        let mut map = BTreeMap::<String, (usize, Vec<u8>)>::new();
+        let mut heap = MinHeap::<KV<String, (usize, Vec<u8>)>>::new();
 
         // First, we'll construct a BTreeMap using our keys. This will allow us to efficiently
         // insert while keeping a sorted list.
@@ -214,26 +214,26 @@ impl<'a, T: Serializable + Default> SSTableBuilder<'a, T> {
                 Err(e) => return Err(e),
             };
 
-            map.insert(
+            heap.push(KV::new(
                 data.get_key().to_owned(),
                 (index as usize, data.take_value()),
-            );
+            ));
         }
 
         loop {
-            let (key, index) = {
+            let index = {
                 // Now we'll pop off the lowest key and write it into the output sstable. Then we'll
                 // refresh the key by reading from the sstable the key originated from.
-                let (key, &(index, ref value)) = match map.iter().next() {
+                //let (key, &(index, ref value)) = match heap.pop() {
+                let kv = match heap.pop() {
                     Some(x) => x,
                     None => break,
                 };
 
-                builder.write_raw(key, &value)?;
+                builder.write_raw(kv.key(), &kv.value().1)?;
 
-                (key.to_owned(), index)
+                kv.value().0
             };
-            map.remove(key.as_str()).unwrap();
 
             let mut data = match readers[index].read_next_key() {
                 Ok(Some(x)) => x,
@@ -241,10 +241,10 @@ impl<'a, T: Serializable + Default> SSTableBuilder<'a, T> {
                 Err(e) => return Err(e),
             };
 
-            map.insert(
+            heap.push(KV::new(
                 data.get_key().to_owned(),
                 (index as usize, data.take_value()),
-            );
+            ));
         }
 
         builder.finish()?;
@@ -1658,5 +1658,39 @@ mod tests {
         assert_eq!(iter.next(), Some(&KV::new("a".into(), Primitive(5))));
         assert_eq!(iter.peek(), Some(&KV::new("apple".into(), Primitive(5))));
         assert_eq!(iter.next(), Some(&KV::new("apple".into(), Primitive(5))));
+    }
+
+    #[test]
+    fn merge_two_sstables_advanced() {
+        let mut a = std::io::Cursor::new(Vec::new());
+        let mut b = std::io::Cursor::new(Vec::new());
+        let mut c = std::io::Cursor::new(Vec::new());
+        {
+            let mut t = SSTableBuilder::<Primitive<i64>>::new(&mut a);
+            t.write_ordered("a", Primitive(1)).unwrap();
+            t.write_ordered("b", Primitive(3)).unwrap();
+            t.finish().unwrap();
+        }
+        {
+            let mut t = SSTableBuilder::<Primitive<i64>>::new(&mut b);
+            t.write_ordered("a", Primitive(0)).unwrap();
+            t.write_ordered("secret", Primitive(2)).unwrap();
+            t.finish().unwrap();
+        }
+        a.seek(std::io::SeekFrom::Start(0)).unwrap();
+        b.seek(std::io::SeekFrom::Start(0)).unwrap();
+        {
+            let r1 = SSTableReader::<Primitive<i64>>::new(Box::new(a)).unwrap();
+            let r2 = SSTableReader::<Primitive<i64>>::new(Box::new(b)).unwrap();
+            SSTableBuilder::from_sstables(&mut c, &mut [r1, r2]).unwrap();
+        }
+        c.seek(std::io::SeekFrom::Start(0)).unwrap();
+        {
+            let mut merged = SSTableReader::<Primitive<i64>>::new(Box::new(c)).unwrap();
+            assert_eq!(merged.read_next_key().unwrap().unwrap().get_key(), "a");
+            assert_eq!(merged.read_next_key().unwrap().unwrap().get_key(), "a");
+            assert_eq!(merged.read_next_key().unwrap().unwrap().get_key(), "b");
+            assert_eq!(merged.read_next_key().unwrap().unwrap().get_key(), "secret");
+        }
     }
 }

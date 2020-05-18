@@ -1,3 +1,4 @@
+extern crate itertools;
 extern crate keyserializer;
 extern crate largetable_proto_rust;
 extern crate protobuf;

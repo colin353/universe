@@ -20,6 +20,7 @@ use std::path;
 use std::sync::{Arc, Mutex, RwLock};
 
 const DTABLE_EXT: &'static str = "sstable";
+const DTABLE_TEMPORARY_EXT: &'static str = "sstable-temporary";
 const JOURNAL_EXT: &'static str = "recordio";
 const COMPACTION_POLICIES: &'static str = "__META__POLICIES__";
 const BUFFER_POOL_SIZE: usize = 16;
@@ -106,7 +107,8 @@ impl LargeTableServiceHandler {
 
     pub fn add_journal(&mut self) {
         // First, open the file as writable and dump the mtable to it.
-        let (filename, f) = self.get_new_filehandle(JOURNAL_EXT);
+        let filename = self.get_new_filename(JOURNAL_EXT);
+        let f = std::fs::File::create(&filename).unwrap();
         self.journals.lock().unwrap().push(filename);
         self.largetable.write().unwrap().add_journal(Box::new(f));
     }
@@ -129,9 +131,9 @@ impl LargeTableServiceHandler {
         self.filename_format(*self.next_file_number.lock().unwrap(), filetype)
     }
 
-    // get_new_filehandle finds a fresh filehandle to use. It keeps incrementing the file
+    // get_new_filename finds a fresh filename to use. It keeps incrementing the file
     // counter until it finds a file which doesn't exist yet, and uses that.
-    fn get_new_filehandle(&mut self, filetype: &str) -> (String, fs::File) {
+    fn get_new_filename(&mut self, filetype: &str) -> String {
         // First, check if the file exists.
         let mut filename: String;
         loop {
@@ -143,7 +145,7 @@ impl LargeTableServiceHandler {
             }
         }
         println!("create file: '{}'", filename);
-        (filename.clone(), fs::File::create(filename).unwrap())
+        filename
     }
 
     // check_memory checks the current memory usage and dumps the mtable to disk if necessary.
@@ -164,7 +166,8 @@ impl LargeTableServiceHandler {
 
             // Open the file as writable and dump the mtable to it.
             {
-                let (_, mut f) = self.get_new_filehandle(DTABLE_EXT);
+                let filename = self.get_new_filename(DTABLE_EXT);
+                let mut f = fs::File::create(filename).unwrap();
                 let lt = self.largetable.read().unwrap();
                 lt.write_to_disk(&mut f, 1);
                 f.flush().unwrap();
@@ -220,16 +223,23 @@ impl LargeTableServiceHandler {
             })
             .collect();
 
-        let (filename, mut f) = self.get_new_filehandle(DTABLE_EXT);
+        // First allocate a temporary filename. We don't want to use the sstable filename
+        // in case we get a crash during compaction.
+        let tmp_filename = self.get_new_filename(DTABLE_TEMPORARY_EXT);
+        let mut f = std::fs::File::create(&tmp_filename).unwrap();
 
         println!(
             "compacting {:?} --> {}",
             self.dtables.lock().unwrap(),
-            filename
+            tmp_filename
         );
 
         let mut builder = sstable::SSTableBuilder::new(&mut f);
         compaction::compact(policies, tables, get_timestamp_usec(), &mut builder);
+
+        // Now that compaction is done, rename the temporary file to a new filename.
+        let filename = self.get_new_filename(DTABLE_EXT);
+        std::fs::rename(&tmp_filename, &filename).unwrap();
 
         {
             // Replace the old dtables with the new compacted one
