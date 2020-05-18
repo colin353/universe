@@ -915,9 +915,16 @@ impl<C: largetable_client::LargeTableClient> WeldFS<C> {
             Origin::Change(id) => self.readdir_space(id, &path),
         });
 
-        let to_skip = if offset == 0 { offset } else { offset + 1 } as usize;
-        for (i, entry) in entries.into_iter().enumerate().skip(to_skip) {
-            reply.add(entry.inode, i as i64, entry.filetype, entry.name);
+        for (i, entry) in entries.into_iter().enumerate() {
+            let inode_offset = (i + 1) as i64;
+            if inode_offset <= offset {
+                continue;
+            }
+
+            // If reply.add returns true, it means the buffer is full, so quit
+            if reply.add(entry.inode, inode_offset, entry.filetype, entry.name) {
+                break;
+            }
         }
         reply.ok();
     }
