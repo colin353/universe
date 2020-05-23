@@ -16,10 +16,14 @@
 <script src="/static/vs/loader.js"></script>
 <script src="/static/vs/editor/editor.main.nls.js"></script>
 <script src="/static/vs/editor/editor.main.js"></script>
+<script src="/static/extras.js"></script>
 <script>
     require(["vs/editor/editor.main"], function() {
         var editorElement = document.getElementById("editor");
         var changeType = editorElement.getAttribute("data-type");
+
+        // from extras.js
+        window.registerProtobuf(monaco);
 
         const language_map = {
             'css': 'css',
@@ -32,6 +36,7 @@
             'cc': 'c',
             'c': 'c',
             'cpp': 'c',
+            'proto': 'protobuf',
         };
         const extension = editorElement.getAttribute("data-filename").split(".").pop();
         const language = language_map[extension] || 'text/plain';
