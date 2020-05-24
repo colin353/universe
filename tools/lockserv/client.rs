@@ -4,6 +4,7 @@ use lockserv_grpc_rust::*;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
+#[derive(Debug, PartialEq, Eq)]
 pub enum Error {
     Locked,
     Network,

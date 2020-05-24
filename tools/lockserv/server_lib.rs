@@ -2,7 +2,7 @@ use lockserv_grpc_rust::*;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
-const DEFAULT_TIMEOUT: u64 = 30;
+const DEFAULT_TIMEOUT: u64 = 30_000_000;
 const MAX_TIMEOUT: u64 = 60;
 
 const XORSTATE: u64 = 0x2545F4914F6CDD1D;
@@ -86,8 +86,11 @@ impl LockServiceHandler {
         if req.get_set_content() {
             cell.content = req.take_content();
         }
+
         if req.get_timeout() == 0 || req.get_timeout() > MAX_TIMEOUT {
-            req.set_timeout(DEFAULT_TIMEOUT);
+            cell.timeout = DEFAULT_TIMEOUT;
+        } else {
+            cell.timeout = req.get_timeout() * 1_000_000;
         }
 
         response.set_generation(cell.get_generation());

@@ -59,3 +59,13 @@ rust_test(
     crate = ":server_lib",
     edition = "2018",
 )
+
+rust_test(
+    name = "client_test",
+    srcs = ["client_test.rs"],
+    edition = "2018",
+    deps = [
+        ":lockserv_client",
+        ":lockserv_grpc_rust",
+    ],
+)

@@ -28,6 +28,9 @@ message ReadResponse {
   bool locked = 2;
 }
 
+// Used for testing
+message DataMessage { string data = 1; }
+
 service LockService {
   rpc Acquire(AcquireRequest) returns (AcquireResponse);
   rpc Read(ReadRequest) returns (ReadResponse);

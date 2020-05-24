@@ -13,6 +13,7 @@ fn main() {
     server.add_service(lockserv_grpc_rust::LockServiceServer::new_service_def(
         handler,
     ));
+    let _server = server.build().expect("server");
 
     loop {
         std::thread::park();
