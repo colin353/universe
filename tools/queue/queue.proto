@@ -18,6 +18,8 @@ enum Status {
   CONTINUE = 6;
 }
 
+message QueueWindowLimit { uint64 limit = 1; }
+
 message Message {
   uint64 id = 1;
   repeated Artifact arguments = 2;
@@ -31,12 +33,15 @@ message Message {
   uint64 failures = 7;
   string reason = 8;
 
-  uint64 start_time = 9;
-  uint64 end_time = 10;
-  string info_url = 11;
+  uint64 enqueued_time = 9;
+  uint64 start_time = 10;
+  uint64 end_time = 11;
+  string info_url = 12;
 
-  repeated uint64 blocked_by = 12;
-  uint64 blocks = 13;
+  repeated uint64 blocked_by = 13;
+  uint64 blocks = 14;
+
+  string queue = 15;
 }
 
 message EnqueueRequest {
