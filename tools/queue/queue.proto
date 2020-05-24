@@ -1,0 +1,60 @@
+syntax = "proto3";
+
+message Artifact {
+  string name = 1;
+  int64 value_int = 2;
+  float value_float = 3;
+  string value_string = 4;
+  bool value_bool = 5;
+}
+
+enum Status {
+  CREATED = 0;
+  STARTED = 1;
+  SUCCESS = 2;
+  FAILURE = 3;
+  BLOCKED = 4;
+  RETRY = 5;
+  CONTINUE = 6;
+}
+
+message Message {
+  uint64 id = 1;
+  repeated Artifact arguments = 2;
+  bytes protobuf = 3;
+
+  Status status = 4;
+
+  repeated Artifact results = 5;
+  bytes protobuf_results = 6;
+
+  uint64 failures = 7;
+  string reason = 8;
+
+  uint64 start_time = 9;
+  uint64 end_time = 10;
+  string info_url = 11;
+
+  repeated uint64 blocked_by = 12;
+  uint64 blocks = 13;
+}
+
+message EnqueueRequest {
+  string queue = 1;
+  Message msg = 2;
+}
+message EnqueueResponse {}
+
+message ConsumeRequest { string queue = 1; }
+message ConsumeResponse {
+  bool message_available = 1;
+  Message msg = 2;
+}
+
+message UpdateResponse {}
+
+service QueueService {
+  rpc Enqueue(EnqueueRequest) returns (EnqueueResponse);
+  rpc Update(Message) returns (UpdateResponse);
+  rpc Consume(ConsumeRequest) returns (ConsumeResponse);
+}
