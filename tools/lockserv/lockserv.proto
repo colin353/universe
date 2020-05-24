@@ -1,0 +1,34 @@
+syntax = "proto3";
+
+message AcquireRequest {
+  string path = 1;
+  bytes content = 2;
+  uint64 timeout = 3;
+
+  // If the lock is already held, must provide the previous
+  // generation number in order to defend the lock.
+  uint64 generation = 4;
+
+  // Whether or not to set the content when acquiring.
+  bool set_content = 5;
+
+  // Whether or not to yield the lock
+  bool should_yield = 6;
+}
+
+message AcquireResponse {
+  bool success = 1;
+  uint64 generation = 2;
+  bytes content = 3;
+}
+
+message ReadRequest { string path = 1; }
+message ReadResponse {
+  bytes content = 1;
+  bool locked = 2;
+}
+
+service LockService {
+  rpc Acquire(AcquireRequest) returns (AcquireResponse);
+  rpc Read(ReadRequest) returns (ReadResponse);
+}
