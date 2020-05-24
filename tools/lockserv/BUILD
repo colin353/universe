@@ -29,6 +29,20 @@ rust_library(
     ],
 )
 
+rust_binary(
+    name = "lockserv",
+    srcs = ["server.rs"],
+    edition = "2018",
+    deps = [
+        ":lockserv_grpc_rust",
+        ":server_lib",
+        "//util/flags",
+        "@io_bazel_rules_rust//proto/raze:grpc",
+        "@io_bazel_rules_rust//proto/raze:protobuf",
+        "@io_bazel_rules_rust//proto/raze:tls_api_stub",
+    ],
+)
+
 rust_test(
     name = "lockserv_test",
     crate = ":server_lib",

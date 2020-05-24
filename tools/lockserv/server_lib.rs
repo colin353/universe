@@ -111,6 +111,24 @@ impl LockServiceHandler {
     }
 }
 
+impl lockserv_grpc_rust::LockService for LockServiceHandler {
+    fn acquire(
+        &self,
+        _m: grpc::RequestOptions,
+        req: AcquireRequest,
+    ) -> grpc::SingleResponse<AcquireResponse> {
+        grpc::SingleResponse::completed(self.acquire(req))
+    }
+
+    fn read(
+        &self,
+        _m: grpc::RequestOptions,
+        req: ReadRequest,
+    ) -> grpc::SingleResponse<ReadResponse> {
+        grpc::SingleResponse::completed(self.read(req))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
