@@ -29,6 +29,17 @@ rust_library(
     ],
 )
 
+rust_library(
+    name = "lockserv_client",
+    srcs = ["client.rs"],
+    edition = "2018",
+    deps = [
+        ":lockserv_grpc_rust",
+        "@io_bazel_rules_rust//proto/raze:grpc",
+        "@io_bazel_rules_rust//proto/raze:protobuf",
+    ],
+)
+
 rust_binary(
     name = "lockserv",
     srcs = ["server.rs"],
