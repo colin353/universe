@@ -1,7 +1,15 @@
 use largetable_client::LargeTableClient;
+use queue_client::message_to_lockserv_path;
 use queue_grpc_rust::*;
 
+use std::collections::HashSet;
+use std::iter::FromIterator;
+use std::sync::{Arc, RwLock};
+
+const QUEUE: &'static str = "queues";
 const QUEUES: &'static str = "queues";
+const MESSAGE_IDS: &'static str = "queue-ids";
+const MAX_RETRIES: u64 = 3;
 
 fn get_timestamp_usec() -> u64 {
     let now = std::time::SystemTime::now();
@@ -9,16 +17,20 @@ fn get_timestamp_usec() -> u64 {
     (since_epoch.as_secs() as u64) * 1_000_000 + (since_epoch.subsec_nanos() / 1000) as u64
 }
 
-fn get_queue_rowname(queue: &str) -> String {
+fn get_queues_rowname(queue: &str) -> String {
     format!("{}/{}", QUEUES, queue)
 }
 
+fn get_queue_rowname(queue: &str) -> String {
+    format!("{}/{}", QUEUE, queue)
+}
+
 fn get_message_rowname() -> String {
-    format!("{}/m", QUEUES)
+    format!("{}/m", QUEUE)
 }
 
 fn get_queue_window_rowname(queue: &str) -> String {
-    format!("{}/limit", QUEUES)
+    format!("{}/limit", QUEUE)
 }
 
 fn get_colname(id: u64) -> String {
@@ -29,26 +41,79 @@ fn is_consumable_status(s: Status) -> bool {
     s == Status::CREATED || s == Status::RETRY || s == Status::CONTINUE
 }
 
+fn is_bumpable_status(s: Status) -> bool {
+    s == Status::STARTED || s == Status::BLOCKED
+}
+
+fn is_complete_status(s: Status) -> bool {
+    s == Status::SUCCESS || s == Status::FAILURE
+}
+
 #[derive(Clone)]
 pub struct QueueServiceHandler<C: LargeTableClient + Clone + Send + Sync + 'static> {
     database: C,
+    lockserv_client: Option<lockserv_client::LockservClient>,
+    queues: Arc<RwLock<HashSet<String>>>,
 }
 
 impl<C: LargeTableClient + Clone + Send + Sync + 'static> QueueServiceHandler<C> {
-    pub fn new(database: C) -> Self {
+    pub fn new(database: C, lockserv_client: lockserv_client::LockservClient) -> Self {
         // Set up compaction policy
         let mut policy = largetable_client::CompactionPolicy::new();
-        policy.set_row(QUEUES.to_owned());
+        policy.set_row(QUEUE.to_owned());
         policy.set_scope(String::new());
         policy.set_history(1);
         database.set_compaction_policy(policy);
 
-        Self { database: database }
+        let iter = largetable_client::LargeTableScopedIterator::<Message, C>::new(
+            &database,
+            QUEUES.to_string(),
+            String::new(),
+            String::new(),
+            String::new(),
+            0,
+        )
+        .map(|(k, _)| k);
+
+        let queues = HashSet::from_iter(iter);
+
+        for queue in queues.iter() {
+            println!("Loaded queue: {}", queue);
+        }
+
+        Self {
+            database,
+            queues: Arc::new(RwLock::new(queues)),
+            lockserv_client: Some(lockserv_client),
+        }
+    }
+
+    pub fn new_fake(database: C) -> Self {
+        Self {
+            database,
+            queues: Arc::new(RwLock::new(HashSet::new())),
+            lockserv_client: None,
+        }
+    }
+
+    pub fn maybe_create_queue(&self, queue: &str) {
+        if self.queues.read().unwrap().contains(queue) {
+            return;
+        }
+
+        // Update the cache
+        {
+            let mut queues = self.queues.write().unwrap();
+            queues.insert(queue.to_string());
+        }
+
+        // Create the queue
+        self.database.write(QUEUES, queue, 0, Vec::new());
     }
 
     pub fn enqueue(&self, mut req: EnqueueRequest) -> EnqueueResponse {
         // First, reserve an ID for this task
-        let id = self.database.reserve_id(QUEUES, req.get_queue());
+        let id = self.database.reserve_id(MESSAGE_IDS, "");
 
         let mut message = req.take_msg();
         message.set_id(id);
@@ -56,17 +121,7 @@ impl<C: LargeTableClient + Clone + Send + Sync + 'static> QueueServiceHandler<C>
         message.set_queue(req.get_queue().to_owned());
         message.set_enqueued_time(get_timestamp_usec());
 
-        // Write it into the queue
-        self.database.write_proto(
-            &get_queue_rowname(req.get_queue()),
-            &get_colname(id),
-            0,
-            &message,
-        );
-
-        // Also write to the message index
-        self.database
-            .write_proto(&get_message_rowname(), &get_colname(id), 0, &message);
+        self.update(message);
 
         EnqueueResponse::new()
     }
@@ -113,6 +168,11 @@ impl<C: LargeTableClient + Clone + Send + Sync + 'static> QueueServiceHandler<C>
         UpdateResponse::new()
     }
 
+    pub fn read(&self, id: u64) -> Option<Message> {
+        self.database
+            .read_proto(&get_message_rowname(), &get_colname(id), 0)
+    }
+
     pub fn consume(&self, req: ConsumeRequest) -> ConsumeResponse {
         let limit = self.get_queue_limit(req.get_queue());
 
@@ -138,6 +198,104 @@ impl<C: LargeTableClient + Clone + Send + Sync + 'static> QueueServiceHandler<C>
         }
 
         response
+    }
+
+    // This method watches for changes that were started but timed out, and
+    // puts them back onto the queue.
+    pub fn bump(&self) {
+        let mut queues: Vec<_> = largetable_client::LargeTableScopedIterator::<Message, C>::new(
+            &self.database,
+            QUEUES.to_string(),
+            String::new(),
+            String::new(),
+            String::new(),
+            0,
+        )
+        .map(|(k, _)| k)
+        .collect();
+
+        for queue in queues {
+            self.bump_queue(queue);
+        }
+    }
+
+    pub fn bump_queue(&self, queue: String) {
+        let limit = self.get_queue_limit(&queue);
+        let mut eligible_messages: Vec<_> =
+            largetable_client::LargeTableScopedIterator::<Message, C>::new(
+                &self.database,
+                get_queue_rowname(&queue),
+                String::new(),
+                get_colname(limit),
+                String::new(),
+                0,
+            )
+            .map(|(_, m)| m)
+            .filter(|m| is_bumpable_status(m.get_status()))
+            .collect();
+
+        for message in eligible_messages {
+            if let Err(_) = self
+                .lockserv_client
+                .as_ref()
+                .unwrap()
+                .acquire(message_to_lockserv_path(&message))
+            {
+                continue;
+            }
+
+            // Reload the message from the database now that we got the lock
+            let mut message = match self.read(message.get_id()) {
+                Some(m) => m,
+                None => continue,
+            };
+
+            if message.get_status() == Status::STARTED {
+                println!(
+                    "message {} started but failed, retrying...",
+                    message.get_id()
+                );
+                // We should never be able to acquire a lock on a started process, so
+                // it must have failed.
+                message.set_failures(message.get_failures() + 1);
+
+                if message.get_failures() >= MAX_RETRIES {
+                    message.set_status(Status::FAILURE);
+                    message.set_reason(String::from("reached max retries"));
+                } else {
+                    message.set_status(Status::RETRY);
+                }
+
+                self.update(message);
+            } else if message.get_status() == Status::BLOCKED {
+                // Check if blocked messages are unblocked yet, and return them to
+                // the queue with CONTINUE status if they're unblocked.
+                let mut blocked = false;
+                let mut error = false;
+                for blocking_id in message.get_blocked_by() {
+                    let m = match self.read(*blocking_id) {
+                        Some(m) => m,
+                        None => {
+                            error = true;
+                            break;
+                        }
+                    };
+                    if !is_complete_status(m.get_status()) {
+                        blocked = true;
+                        break;
+                    }
+                }
+
+                if error {
+                    message.set_status(Status::FAILURE);
+                    message.set_reason(String::from("blocked by unknown message!"));
+                    self.update(message);
+                } else if !blocked {
+                    message.set_status(Status::CONTINUE);
+                    self.update(message);
+                }
+            }
+        }
     }
 }
 
@@ -176,7 +334,7 @@ mod tests {
 
     fn make_handler() -> QueueServiceHandler<largetable_test::LargeTableMockClient> {
         let database = largetable_test::LargeTableMockClient::new();
-        QueueServiceHandler::new(database)
+        QueueServiceHandler::new_fake(database)
     }
 
     #[test]

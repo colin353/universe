@@ -26,6 +26,9 @@ impl Consumer for TestConsumer {
 
     fn consume(&self, message: &Message) -> ConsumeResult {
         println!("got: {:?}", message);
+
+        panic!("fail early");
+
         ConsumeResult::Success(Vec::new())
     }
 }

@@ -53,8 +53,8 @@ impl QueueClient {
     }
 }
 
-pub fn message_to_lockserv_path(id: u64) -> String {
-    format!("/ls/queue/{}", id)
+pub fn message_to_lockserv_path(m: &Message) -> String {
+    format!("/ls/queue/{}/{}", m.get_queue(), m.get_id())
 }
 
 pub enum ConsumeResult {
@@ -75,7 +75,7 @@ pub trait Consumer {
                 // First, attempt to acquire a lock on the message and mark it as started.
                 if let Err(_) = self
                     .get_lockserv_client()
-                    .acquire(message_to_lockserv_path(m.get_id()))
+                    .acquire(message_to_lockserv_path(&m))
                 {
                     continue;
                 }
@@ -98,7 +98,7 @@ pub trait Consumer {
                 // Re-assert lock ownership before writing completion status
                 if let Err(_) = self
                     .get_lockserv_client()
-                    .reacquire(message_to_lockserv_path(m.get_id()))
+                    .reacquire(message_to_lockserv_path(&m))
                 {
                     continue;
                 }
