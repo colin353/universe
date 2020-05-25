@@ -1,9 +1,33 @@
 use lockserv_client::*;
 use queue_client::*;
 
-fn task(msg: &Message) -> Result<(), ()> {
-    println!("got: {:?}", msg);
-    Ok(())
+struct TestConsumer {
+    queue_client: QueueClient,
+    lockserv_client: LockservClient,
+}
+
+impl TestConsumer {
+    fn new(queue_client: QueueClient, lockserv_client: LockservClient) -> Self {
+        Self {
+            queue_client,
+            lockserv_client,
+        }
+    }
+}
+
+impl Consumer for TestConsumer {
+    fn get_queue_client(&self) -> &QueueClient {
+        &self.queue_client
+    }
+
+    fn get_lockserv_client(&self) -> &LockservClient {
+        &self.lockserv_client
+    }
+
+    fn consume(&self, message: &Message) -> ConsumeResult {
+        println!("got: {:?}", message);
+        ConsumeResult::Success(Vec::new())
+    }
 }
 
 fn main() {
@@ -18,6 +42,6 @@ fn main() {
     let q = QueueClient::new("127.0.0.1", 5554);
     let ls = LockservClient::new("127.0.0.1", 5555);
 
-    let consumer = QueueConsumer::new(q, ls);
-    consumer.consume(String::from("/asdf"), task);
+    let consumer = TestConsumer::new(q, ls);
+    consumer.start(String::from("/asdf"));
 }

@@ -57,51 +57,75 @@ pub fn message_to_lockserv_path(id: u64) -> String {
     format!("/ls/queue/{}", id)
 }
 
-#[derive(Clone)]
-pub struct QueueConsumer {
-    queue_client: QueueClient,
-    lockserv_client: lockserv_client::LockservClient,
+pub enum ConsumeResult {
+    Success(Vec<Artifact>),
+    Failure(Vec<Artifact>),
+    Blocked(Vec<Artifact>, Vec<u64>),
 }
 
-impl QueueConsumer {
-    pub fn new(
-        queue_client: QueueClient,
-        lockserv_client: lockserv_client::LockservClient,
-    ) -> Self {
-        Self {
-            queue_client,
-            lockserv_client,
-        }
-    }
+pub trait Consumer {
+    fn consume(&self, message: &Message) -> ConsumeResult;
 
-    pub fn consume<F: Fn(&Message) -> Result<(), ()>>(&self, queue: String, consumer: F) {
+    fn get_queue_client(&self) -> &QueueClient;
+    fn get_lockserv_client(&self) -> &lockserv_client::LockservClient;
+
+    fn start(&self, queue: String) {
         loop {
-            if let Some(mut m) = self.queue_client.consume(queue.clone()) {
+            if let Some(mut m) = self.get_queue_client().consume(queue.clone()) {
                 // First, attempt to acquire a lock on the message and mark it as started.
                 if let Err(_) = self
-                    .lockserv_client
+                    .get_lockserv_client()
                     .acquire(message_to_lockserv_path(m.get_id()))
                 {
                     continue;
                 }
                 m.set_status(Status::STARTED);
-                self.queue_client.update(m.clone());
+                self.get_queue_client().update(m.clone());
 
-                let result = (consumer)(&m);
+                // Run potentially long-running consume task.
+                let panic_result =
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.consume(&m)));
+
+                if let Err(_) = panic_result {
+                    // There was a panic. Just continue consuming. Queue service will
+                    // retry this task if necessary.
+                    println!("caught panic!");
+                    continue;
+                }
+
+                let result = panic_result.unwrap();
 
                 // Re-assert lock ownership before writing completion status
                 if let Err(_) = self
-                    .lockserv_client
+                    .get_lockserv_client()
                     .reacquire(message_to_lockserv_path(m.get_id()))
                 {
                     continue;
                 }
 
-                m.set_status(match result {
-                    Ok(_) => Status::SUCCESS,
-                    Err(_) => Status::FAILURE,
-                });
-                self.queue_client.update(m.clone());
+                match result {
+                    ConsumeResult::Success(results) => {
+                        m.set_status(Status::SUCCESS);
+                        for result in results {
+                            m.mut_results().push(result);
+                        }
+                    }
+                    ConsumeResult::Failure(results) => {
+                        m.set_status(Status::FAILURE);
+                        for result in results {
+                            m.mut_results().push(result);
+                        }
+                    }
+                    ConsumeResult::Blocked(results, blocked_by) => {
+                        m.set_status(Status::BLOCKED);
+                        for result in results {
+                            m.mut_results().push(result);
+                        }
+                        m.set_blocked_by(blocked_by);
+                    }
+                };
+
+                self.get_queue_client().update(m.clone());
             }
 
             std::thread::sleep(std::time::Duration::from_secs(1));
