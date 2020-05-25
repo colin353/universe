@@ -31,11 +31,48 @@ rust_library(
     ],
 )
 
+rust_library(
+    name = "queue_client",
+    srcs = ["client.rs"],
+    edition = "2018",
+    deps = [
+        ":queue_grpc_rust",
+        "//tools/lockserv:lockserv_client",
+        "@io_bazel_rules_rust//proto/raze:grpc",
+        "@io_bazel_rules_rust//proto/raze:protobuf",
+    ],
+)
+
 rust_test(
     name = "queue_test",
     crate = ":server_lib",
     edition = "2018",
     deps = [
         "//largetable:largetable_test",
+    ],
+)
+
+rust_binary(
+    name = "example",
+    srcs = ["example.rs"],
+    edition = "2018",
+    deps = [
+        ":queue_client",
+        "//tools/lockserv:lockserv_client",
+    ],
+)
+
+rust_binary(
+    name = "queue",
+    srcs = ["server.rs"],
+    edition = "2018",
+    deps = [
+        ":queue_grpc_rust",
+        ":server_lib",
+        "//largetable:largetable_client",
+        "//util/flags",
+        "@io_bazel_rules_rust//proto/raze:grpc",
+        "@io_bazel_rules_rust//proto/raze:protobuf",
+        "@io_bazel_rules_rust//proto/raze:tls_api_stub",
     ],
 )
