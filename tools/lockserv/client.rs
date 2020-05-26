@@ -2,7 +2,7 @@ use grpc::ClientStubExt;
 use lockserv_grpc_rust::*;
 
 use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex};
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Error {
@@ -13,9 +13,10 @@ pub enum Error {
 #[derive(Clone)]
 pub struct LockservClient {
     client: Arc<LockServiceClient>,
+    locks: Arc<Mutex<HashMap<String, Lock>>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Lock {
     path: String,
     generation: u64,
@@ -38,6 +39,7 @@ impl LockservClient {
             client: Arc::new(
                 LockServiceClient::new_plain(hostname, port, Default::default()).unwrap(),
             ),
+            locks: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -130,5 +132,36 @@ impl LockservClient {
         message.merge_from_bytes(response.get_content()).unwrap();
 
         (message, response.get_locked())
+    }
+
+    pub fn put_lock(&self, lock: Lock) {
+        self.locks.lock().unwrap().insert(lock.path.clone(), lock);
+    }
+
+    pub fn take_lock(&self, path: &str) -> Option<Lock> {
+        self.locks.lock().unwrap().remove(path)
+    }
+
+    // Runs forever, defending the locks added to the lock mutex
+    pub fn defend(&self) {
+        loop {
+            std::thread::sleep(std::time::Duration::from_secs(15));
+
+            let mut to_remove = Vec::new();
+
+            {
+                let mut locks = self.locks.lock().unwrap();
+                for lock in locks.values_mut() {
+                    let l = lock.clone();
+                    *lock = match self.reacquire(l) {
+                        Ok(l) => l,
+                        Err(_) => {
+                            to_remove.push(lock.path.clone());
+                            continue;
+                        }
+                    };
+                }
+            }
+        }
     }
 }

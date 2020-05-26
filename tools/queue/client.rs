@@ -70,6 +70,11 @@ pub trait Consumer {
     fn get_lockserv_client(&self) -> &lockserv_client::LockservClient;
 
     fn start(&self, queue: String) {
+        let renewer_client = self.get_lockserv_client().clone();
+        std::thread::spawn(move || {
+            renewer_client.defend();
+        });
+
         loop {
             if let Some(mut m) = self.get_queue_client().consume(queue.clone()) {
                 // First, attempt to acquire a lock on the message and mark it as started.
@@ -83,6 +88,7 @@ pub trait Consumer {
 
                 m.set_status(Status::STARTED);
                 self.get_queue_client().update(m.clone());
+                self.get_lockserv_client().put_lock(lock);
 
                 // Run potentially long-running consume task.
                 let panic_result =
@@ -94,6 +100,18 @@ pub trait Consumer {
                     println!("caught panic!");
                     continue;
                 }
+
+                // Let's grab the lock from the renewal thread
+                let lock = match self
+                    .get_lockserv_client()
+                    .take_lock(&message_to_lockserv_path(&m))
+                {
+                    Some(l) => l,
+                    None => {
+                        println!("lock renewal thread failed!");
+                        continue;
+                    }
+                };
 
                 let result = panic_result.unwrap();
 

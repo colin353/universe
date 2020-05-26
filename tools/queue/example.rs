@@ -26,9 +26,8 @@ impl Consumer for TestConsumer {
 
     fn consume(&self, message: &Message) -> ConsumeResult {
         println!("got: {:?}", message);
-
-        panic!("fail early");
-
+        std::thread::sleep(std::time::Duration::from_secs(40));
+        println!("done!");
         ConsumeResult::Success(Vec::new())
     }
 }
