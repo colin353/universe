@@ -70,12 +70,30 @@ rust_binary(
     edition = "2018",
     deps = [
         ":queue_grpc_rust",
+        ":queue_webserver",
         ":server_lib",
+        "//auth:auth_client",
         "//largetable:largetable_client",
         "//tools/lockserv:lockserv_client",
         "//util/flags",
+        "//util/ws",
         "@io_bazel_rules_rust//proto/raze:grpc",
         "@io_bazel_rules_rust//proto/raze:protobuf",
         "@io_bazel_rules_rust//proto/raze:tls_api_stub",
+    ],
+)
+
+rust_library(
+    name = "queue_webserver",
+    srcs = [
+        "webserver.rs",
+    ],
+    edition = "2018",
+    deps = [
+        ":queue_grpc_rust",
+        "//auth:auth_client",
+        "//largetable:largetable_client",
+        "//util/tmpl",
+        "//util/ws",
     ],
 )
