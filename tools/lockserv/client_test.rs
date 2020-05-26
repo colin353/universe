@@ -7,40 +7,43 @@ fn test_connect() {
     let c1 = LockservClient::new("127.0.0.1", 5555);
     let result = c1.acquire(String::from("/my_test"));
     assert!(result.is_ok());
-    let generation = result.unwrap().get_generation();
+    let lock = result.unwrap();
 
     // Attempt to acquire from another connection
     let c2 = LockservClient::new("127.0.0.1", 5555);
     let result = c2.acquire(String::from("/my_test"));
-    assert_eq!(result, Err(Error::Locked));
+    assert_eq!(result.unwrap_err(), Error::Locked);
 
     // Re-acquire the lock from first conn, should work
-    let result = c1.reacquire(String::from("/my_test"));
+    let result = c1.reacquire(lock);
     assert!(result.is_ok());
-    let generation = result.unwrap().get_generation();
+    let lock = result.unwrap();
 
     // Yield the lock
-    c1.yield_lock(String::from("/my_test"));
+    c1.yield_lock(lock);
 
     // Try connecting from other connection, should work
     let result = c2.acquire(String::from("/my_test"));
     assert!(result.is_ok());
 
     // Yield that lock to clean up the state
-    c2.yield_lock(String::from("/my_test"));
+    c2.yield_lock(result.unwrap());
 }
 
 //#[test]
 fn test_read_write() {
     let c = LockservClient::new("127.0.0.1", 5555);
+
+    let lock = c.acquire(String::from("/data")).unwrap();
+
     let mut msg = DataMessage::new();
     msg.set_data(String::from("hello world"));
-    c.write(String::from("/data"), msg);
+    let lock = c.write(lock, msg).unwrap();
 
     let (out, locked): (DataMessage, bool) = c.read(String::from("/data"));
     assert_eq!(out.get_data(), "hello world");
     assert_eq!(locked, true);
 
     // Yield that lock to clean up the state
-    c.yield_lock(String::from("/data"));
+    c.yield_lock(lock);
 }

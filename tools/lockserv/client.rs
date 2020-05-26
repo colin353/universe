@@ -13,7 +13,23 @@ pub enum Error {
 #[derive(Clone)]
 pub struct LockservClient {
     client: Arc<LockServiceClient>,
-    map: Arc<RwLock<HashMap<String, u64>>>,
+}
+
+#[derive(Debug)]
+pub struct Lock {
+    path: String,
+    generation: u64,
+    content: Vec<u8>,
+}
+
+impl Lock {
+    pub fn new(path: String, generation: u64, content: Vec<u8>) -> Self {
+        Self {
+            path,
+            generation,
+            content,
+        }
+    }
 }
 
 impl LockservClient {
@@ -22,59 +38,54 @@ impl LockservClient {
             client: Arc::new(
                 LockServiceClient::new_plain(hostname, port, Default::default()).unwrap(),
             ),
-            map: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
-    pub fn acquire(&self, path: String) -> Result<AcquireResponse, Error> {
+    pub fn acquire(&self, path: String) -> Result<Lock, Error> {
         let mut req = AcquireRequest::new();
         req.set_path(path.clone());
-        let response = match self.client.acquire(Default::default(), req).wait() {
+        let mut response = match self.client.acquire(Default::default(), req).wait() {
             Ok(r) => r.1,
             Err(_) => return Err(Error::Network),
         };
 
         if response.get_success() {
-            let mut m = self.map.write().unwrap();
-            let g = m.entry(path).or_insert(0);
-            *g = response.get_generation();
-            return Ok(response);
+            return Ok(Lock::new(
+                path,
+                response.get_generation(),
+                response.take_content(),
+            ));
         }
 
         Err(Error::Locked)
     }
 
-    pub fn reacquire(&self, path: String) -> Result<AcquireResponse, Error> {
+    pub fn reacquire(&self, lock: Lock) -> Result<Lock, Error> {
         let mut req = AcquireRequest::new();
-        req.set_path(path.clone());
+        req.set_path(lock.path.clone());
+        req.set_generation(lock.generation);
 
-        if let Some(x) = self.map.read().unwrap().get(req.get_path()) {
-            req.set_generation(*x);
-        }
-
-        let response = match self.client.acquire(Default::default(), req).wait() {
+        let mut response = match self.client.acquire(Default::default(), req).wait() {
             Ok(r) => r.1,
             Err(_) => return Err(Error::Network),
         };
 
         if response.get_success() {
-            let mut m = self.map.write().unwrap();
-            let g = m.entry(path).or_insert(0);
-            *g = response.get_generation();
-            return Ok(response);
+            return Ok(Lock::new(
+                lock.path,
+                response.get_generation(),
+                response.take_content(),
+            ));
         }
 
         Err(Error::Locked)
     }
 
-    pub fn yield_lock(&self, path: String) {
+    pub fn yield_lock(&self, lock: Lock) {
         let mut req = AcquireRequest::new();
-        req.set_path(path.clone());
+        req.set_generation(lock.generation);
+        req.set_path(lock.path);
         req.set_should_yield(true);
-
-        if let Some(x) = self.map.read().unwrap().get(req.get_path()) {
-            req.set_generation(*x);
-        }
 
         let response = self
             .client
@@ -82,40 +93,29 @@ impl LockservClient {
             .wait()
             .unwrap()
             .1;
-
-        if response.get_success() {
-            self.map.write().unwrap().remove(&path);
-        }
     }
 
-    pub fn write<T: protobuf::Message>(
-        &self,
-        path: String,
-        message: T,
-    ) -> Result<AcquireResponse, Error> {
+    pub fn write<T: protobuf::Message>(&self, lock: Lock, message: T) -> Result<Lock, Error> {
         let mut req = AcquireRequest::new();
-        req.set_path(path.clone());
+        req.set_path(lock.path.clone());
+        req.set_generation(lock.generation);
         req.set_set_content(true);
 
         let mut bytes = Vec::new();
         message.write_to_vec(&mut bytes).unwrap();
         req.set_content(bytes);
 
-        if let Some(x) = self.map.read().unwrap().get(req.get_path()) {
-            req.set_generation(*x);
-        }
-
-        let response = match self.client.acquire(Default::default(), req).wait() {
+        let mut response = match self.client.acquire(Default::default(), req).wait() {
             Ok(r) => r.1,
             Err(_) => return Err(Error::Network),
         };
 
         if response.get_success() {
-            let mut m = self.map.write().unwrap();
-            let g = m.entry(path).or_insert(0);
-            *g = response.get_generation();
-
-            return Ok(response);
+            return Ok(Lock::new(
+                lock.path,
+                response.get_generation(),
+                response.take_content(),
+            ));
         }
 
         Err(Error::Locked)

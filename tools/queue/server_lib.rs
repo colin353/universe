@@ -29,7 +29,7 @@ fn get_message_rowname() -> String {
     format!("{}/m", QUEUE)
 }
 
-fn get_queue_window_rowname(queue: &str) -> String {
+fn get_queue_window_rowname() -> String {
     format!("{}/limit", QUEUE)
 }
 
@@ -131,7 +131,7 @@ impl<C: LargeTableClient + Clone + Send + Sync + 'static> QueueServiceHandler<C>
         // the queue window.
         match self
             .database
-            .read_proto::<QueueWindowLimit>(&get_queue_window_rowname(queue), "", 0)
+            .read_proto::<QueueWindowLimit>(&get_queue_window_rowname(), queue, 0)
         {
             Some(l) => l.get_limit(),
             None => 0,
@@ -157,8 +157,8 @@ impl<C: LargeTableClient + Clone + Send + Sync + 'static> QueueServiceHandler<C>
                 let mut new_limit = QueueWindowLimit::new();
                 new_limit.set_limit(msg.get_id());
                 self.database.write_proto(
-                    &get_queue_window_rowname(msg.get_queue()),
-                    "",
+                    &get_queue_window_rowname(),
+                    msg.get_queue(),
                     0,
                     &new_limit,
                 );
@@ -203,7 +203,7 @@ impl<C: LargeTableClient + Clone + Send + Sync + 'static> QueueServiceHandler<C>
     // This method watches for changes that were started but timed out, and
     // puts them back onto the queue.
     pub fn bump(&self) {
-        let mut queues: Vec<_> = largetable_client::LargeTableScopedIterator::<Message, C>::new(
+        let queues: Vec<_> = largetable_client::LargeTableScopedIterator::<Message, C>::new(
             &self.database,
             QUEUES.to_string(),
             String::new(),
@@ -221,7 +221,7 @@ impl<C: LargeTableClient + Clone + Send + Sync + 'static> QueueServiceHandler<C>
 
     pub fn bump_queue(&self, queue: String) {
         let limit = self.get_queue_limit(&queue);
-        let mut eligible_messages: Vec<_> =
+        let eligible_messages: Vec<_> =
             largetable_client::LargeTableScopedIterator::<Message, C>::new(
                 &self.database,
                 get_queue_rowname(&queue),
@@ -235,14 +235,15 @@ impl<C: LargeTableClient + Clone + Send + Sync + 'static> QueueServiceHandler<C>
             .collect();
 
         for message in eligible_messages {
-            if let Err(_) = self
+            let lock = match self
                 .lockserv_client
                 .as_ref()
                 .unwrap()
                 .acquire(message_to_lockserv_path(&message))
             {
-                continue;
-            }
+                Ok(l) => l,
+                Err(_) => continue,
+            };
 
             // Reload the message from the database now that we got the lock
             let mut message = match self.read(message.get_id()) {
@@ -295,6 +296,8 @@ impl<C: LargeTableClient + Clone + Send + Sync + 'static> QueueServiceHandler<C>
                     self.update(message);
                 }
             }
+
+            self.lockserv_client.as_ref().unwrap().yield_lock(lock);
         }
     }
 }

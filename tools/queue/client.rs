@@ -73,12 +73,14 @@ pub trait Consumer {
         loop {
             if let Some(mut m) = self.get_queue_client().consume(queue.clone()) {
                 // First, attempt to acquire a lock on the message and mark it as started.
-                if let Err(_) = self
+                let lock = match self
                     .get_lockserv_client()
                     .acquire(message_to_lockserv_path(&m))
                 {
-                    continue;
-                }
+                    Ok(l) => l,
+                    Err(_) => continue,
+                };
+
                 m.set_status(Status::STARTED);
                 self.get_queue_client().update(m.clone());
 
@@ -96,12 +98,10 @@ pub trait Consumer {
                 let result = panic_result.unwrap();
 
                 // Re-assert lock ownership before writing completion status
-                if let Err(_) = self
-                    .get_lockserv_client()
-                    .reacquire(message_to_lockserv_path(&m))
-                {
-                    continue;
-                }
+                let lock = match self.get_lockserv_client().reacquire(lock) {
+                    Ok(l) => l,
+                    Err(_) => continue,
+                };
 
                 match result {
                     ConsumeResult::Success(results) => {
@@ -124,8 +124,9 @@ pub trait Consumer {
                         m.set_blocked_by(blocked_by);
                     }
                 };
-
                 self.get_queue_client().update(m.clone());
+
+                self.get_lockserv_client().yield_lock(lock);
             }
 
             std::thread::sleep(std::time::Duration::from_secs(1));
