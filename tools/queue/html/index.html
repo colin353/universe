@@ -1,0 +1,16 @@
+<div class="content">
+    <b>queues</b>
+    {{queues == 0}}
+    <p>No tasks in progress</p>
+    {{/queues}}
+
+    {{queues != 0}}
+    <table class='task-list'>
+        {{queues[]}}
+        <tr onclick="window.location.href='/queue/{{name}}'">
+            <td class='name'>{{name}}</td>
+        </tr>
+        {{/queues}}
+    </table>
+    {{/queues}}
+</div>

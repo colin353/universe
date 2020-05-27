@@ -42,6 +42,7 @@ message Message {
   uint64 blocks = 14;
 
   string queue = 15;
+  string name = 16;
 }
 
 message EnqueueRequest {

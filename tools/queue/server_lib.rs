@@ -6,34 +6,34 @@ use std::collections::HashSet;
 use std::iter::FromIterator;
 use std::sync::{Arc, RwLock};
 
-const QUEUE: &'static str = "queues";
-const QUEUES: &'static str = "queues";
-const MESSAGE_IDS: &'static str = "queue-ids";
-const MAX_RETRIES: u64 = 3;
+pub const QUEUE: &'static str = "queues";
+pub const QUEUES: &'static str = "queues";
+pub const MESSAGE_IDS: &'static str = "queue-ids";
+pub const MAX_RETRIES: u64 = 3;
 
-fn get_timestamp_usec() -> u64 {
+pub fn get_timestamp_usec() -> u64 {
     let now = std::time::SystemTime::now();
     let since_epoch = now.duration_since(std::time::UNIX_EPOCH).unwrap();
     (since_epoch.as_secs() as u64) * 1_000_000 + (since_epoch.subsec_nanos() / 1000) as u64
 }
 
-fn get_queues_rowname(queue: &str) -> String {
+pub fn get_queues_rowname(queue: &str) -> String {
     format!("{}/{}", QUEUES, queue)
 }
 
-fn get_queue_rowname(queue: &str) -> String {
+pub fn get_queue_rowname(queue: &str) -> String {
     format!("{}/{}", QUEUE, queue)
 }
 
-fn get_message_rowname() -> String {
+pub fn get_message_rowname() -> String {
     format!("{}/m", QUEUE)
 }
 
-fn get_queue_window_rowname() -> String {
+pub fn get_queue_window_rowname() -> String {
     format!("{}/limit", QUEUE)
 }
 
-fn get_colname(id: u64) -> String {
+pub fn get_colname(id: u64) -> String {
     format!("{:016x}", id)
 }
 
@@ -45,7 +45,7 @@ fn is_bumpable_status(s: Status) -> bool {
     s == Status::STARTED || s == Status::BLOCKED
 }
 
-fn is_complete_status(s: Status) -> bool {
+pub fn is_complete_status(s: Status) -> bool {
     s == Status::SUCCESS || s == Status::FAILURE
 }
 
@@ -112,6 +112,8 @@ impl<C: LargeTableClient + Clone + Send + Sync + 'static> QueueServiceHandler<C>
     }
 
     pub fn enqueue(&self, mut req: EnqueueRequest) -> EnqueueResponse {
+        self.maybe_create_queue(req.get_queue());
+
         // First, reserve an ID for this task
         let id = self.database.reserve_id(MESSAGE_IDS, "");
 

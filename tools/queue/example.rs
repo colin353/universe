@@ -26,7 +26,7 @@ impl Consumer for TestConsumer {
 
     fn consume(&self, message: &Message) -> ConsumeResult {
         println!("got: {:?}", message);
-        std::thread::sleep(std::time::Duration::from_secs(40));
+        std::thread::sleep(std::time::Duration::from_secs(10));
         println!("done!");
         ConsumeResult::Success(Vec::new())
     }
@@ -36,7 +36,7 @@ fn main() {
     std::thread::spawn(|| {
         let q = QueueClient::new("127.0.0.1", 5554);
         loop {
-            q.enqueue(String::from("/asdf"), &Artifact::new());
+            q.enqueue(String::from("builds"), &Artifact::new());
             std::thread::sleep(std::time::Duration::from_secs(5));
         }
     });
@@ -45,5 +45,5 @@ fn main() {
     let ls = LockservClient::new("127.0.0.1", 5555);
 
     let consumer = TestConsumer::new(q, ls);
-    consumer.start(String::from("/asdf"));
+    consumer.start(String::from("builds"));
 }

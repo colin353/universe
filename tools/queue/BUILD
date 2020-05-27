@@ -70,8 +70,8 @@ rust_binary(
     edition = "2018",
     deps = [
         ":queue_grpc_rust",
-        ":queue_webserver",
         ":server_lib",
+        ":webserver",
         "//auth:auth_client",
         "//largetable:largetable_client",
         "//tools/lockserv:lockserv_client",
@@ -84,13 +84,21 @@ rust_binary(
 )
 
 rust_library(
-    name = "queue_webserver",
+    name = "webserver",
     srcs = [
+        "render.rs",
         "webserver.rs",
+    ],
+    data = [
+        "html/detail.html",
+        "html/index.html",
+        "html/queue.html",
+        "html/template.html",
     ],
     edition = "2018",
     deps = [
         ":queue_grpc_rust",
+        ":server_lib",
         "//auth:auth_client",
         "//largetable:largetable_client",
         "//util/tmpl",

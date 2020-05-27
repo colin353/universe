@@ -71,5 +71,5 @@ fn main() {
     });
 
     println!("start webserver");
-    queue_webserver::QueueWebServer::new(database, auth, base_url.value()).serve(web_port.value());
+    webserver::QueueWebServer::new(database, auth, base_url.value()).serve(web_port.value());
 }
