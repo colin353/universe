@@ -26,9 +26,13 @@ impl Consumer for TestConsumer {
 
     fn consume(&self, message: &Message) -> ConsumeResult {
         println!("got: {:?}", message);
-        std::thread::sleep(std::time::Duration::from_secs(10));
+        std::thread::sleep(std::time::Duration::from_secs(1));
         println!("done!");
-        ConsumeResult::Success(Vec::new())
+
+        let mut output = ArtifactsBuilder::new();
+        output.add_string("build_path", "/tmp/sha256/klog.jar".to_string());
+
+        ConsumeResult::Success(output.build())
     }
 }
 
@@ -36,7 +40,15 @@ fn main() {
     std::thread::spawn(|| {
         let q = QueueClient::new("127.0.0.1", 5554);
         loop {
-            q.enqueue(String::from("builds"), &Artifact::new());
+            let mut msg = Message::new();
+            msg.set_name("build r/123".to_string());
+
+            let mut args = ArtifactsBuilder::new();
+            args.add_string("path", "/var/log/syslog.0.dmesg".to_string());
+            args.add_int("log_level", 5);
+            *msg.mut_arguments() = protobuf::RepeatedField::from_vec(args.build());
+
+            q.enqueue(String::from("builds"), msg);
             std::thread::sleep(std::time::Duration::from_secs(5));
         }
     });

@@ -8,6 +8,12 @@ pub struct QueueClient {
     client: Arc<QueueServiceClient>,
 }
 
+pub fn get_timestamp_usec() -> u64 {
+    let now = std::time::SystemTime::now();
+    let since_epoch = now.duration_since(std::time::UNIX_EPOCH).unwrap();
+    (since_epoch.as_secs() as u64) * 1_000_000 + (since_epoch.subsec_nanos() / 1000) as u64
+}
+
 impl QueueClient {
     pub fn new(hostname: &str, port: u16) -> Self {
         Self {
@@ -17,7 +23,16 @@ impl QueueClient {
         }
     }
 
-    pub fn enqueue<T: protobuf::Message>(&self, queue: String, message: &T) {
+    pub fn enqueue(&self, queue: String, msg: Message) {
+        let mut req = EnqueueRequest::new();
+        req.set_queue(queue);
+
+        *req.mut_msg() = msg;
+
+        self.client.enqueue(Default::default(), req).wait().unwrap();
+    }
+
+    pub fn enqueue_proto<T: protobuf::Message>(&self, queue: String, message: &T) {
         let mut req = EnqueueRequest::new();
         req.set_queue(queue);
 
@@ -35,7 +50,7 @@ impl QueueClient {
             .unwrap();
     }
 
-    pub fn consume(&self, queue: String) -> Option<Message> {
+    pub fn consume(&self, queue: String) -> Vec<Message> {
         let mut req = ConsumeRequest::new();
         req.set_queue(queue);
 
@@ -45,11 +60,8 @@ impl QueueClient {
             .wait()
             .unwrap()
             .1;
-        if response.get_message_available() {
-            return Some(response.take_msg());
-        }
 
-        None
+        response.take_messages().into_vec()
     }
 }
 
@@ -60,7 +72,7 @@ pub fn message_to_lockserv_path(m: &Message) -> String {
 pub enum ConsumeResult {
     Success(Vec<Artifact>),
     Failure(Vec<Artifact>),
-    Blocked(Vec<Artifact>, Vec<u64>),
+    Blocked(Vec<Artifact>, Vec<BlockingMessage>),
 }
 
 pub trait Consumer {
@@ -76,7 +88,7 @@ pub trait Consumer {
         });
 
         loop {
-            if let Some(mut m) = self.get_queue_client().consume(queue.clone()) {
+            for mut m in self.get_queue_client().consume(queue.clone()) {
                 // First, attempt to acquire a lock on the message and mark it as started.
                 let lock = match self
                     .get_lockserv_client()
@@ -87,6 +99,7 @@ pub trait Consumer {
                 };
 
                 m.set_status(Status::STARTED);
+                m.set_start_time(get_timestamp_usec());
                 self.get_queue_client().update(m.clone());
                 self.get_lockserv_client().put_lock(lock);
 
@@ -124,12 +137,14 @@ pub trait Consumer {
                 match result {
                     ConsumeResult::Success(results) => {
                         m.set_status(Status::SUCCESS);
+                        m.set_end_time(get_timestamp_usec());
                         for result in results {
                             m.mut_results().push(result);
                         }
                     }
                     ConsumeResult::Failure(results) => {
                         m.set_status(Status::FAILURE);
+                        m.set_end_time(get_timestamp_usec());
                         for result in results {
                             m.mut_results().push(result);
                         }
@@ -139,7 +154,9 @@ pub trait Consumer {
                         for result in results {
                             m.mut_results().push(result);
                         }
-                        m.set_blocked_by(blocked_by);
+                        for blocking in blocked_by {
+                            m.mut_blocked_by().push(blocking);
+                        }
                     }
                 };
                 self.get_queue_client().update(m.clone());
@@ -149,5 +166,47 @@ pub trait Consumer {
 
             std::thread::sleep(std::time::Duration::from_secs(1));
         }
+    }
+}
+
+pub struct ArtifactsBuilder {
+    args: Vec<Artifact>,
+}
+
+impl ArtifactsBuilder {
+    pub fn new() -> Self {
+        Self { args: Vec::new() }
+    }
+
+    pub fn add_string(&mut self, name: &str, value: String) {
+        let mut a = Artifact::new();
+        a.set_name(name.to_owned());
+        a.set_value_string(value);
+        self.args.push(a)
+    }
+
+    pub fn add_int(&mut self, name: &str, value: i64) {
+        let mut a = Artifact::new();
+        a.set_name(name.to_owned());
+        a.set_value_int(value);
+        self.args.push(a)
+    }
+
+    pub fn add_float(&mut self, name: &str, value: f32) {
+        let mut a = Artifact::new();
+        a.set_name(name.to_owned());
+        a.set_value_float(value);
+        self.args.push(a)
+    }
+
+    pub fn add_bool(&mut self, name: &str, value: bool) {
+        let mut a = Artifact::new();
+        a.set_name(name.to_owned());
+        a.set_value_bool(value);
+        self.args.push(a)
+    }
+
+    pub fn build(self) -> Vec<Artifact> {
+        self.args
     }
 }

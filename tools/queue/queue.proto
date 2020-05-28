@@ -20,6 +20,11 @@ enum Status {
 
 message QueueWindowLimit { uint64 limit = 1; }
 
+message BlockingMessage {
+  uint64 id = 1;
+  string queue = 2;
+}
+
 message Message {
   uint64 id = 1;
   repeated Artifact arguments = 2;
@@ -38,7 +43,7 @@ message Message {
   uint64 end_time = 11;
   string info_url = 12;
 
-  repeated uint64 blocked_by = 13;
+  repeated BlockingMessage blocked_by = 13;
   uint64 blocks = 14;
 
   string queue = 15;
@@ -52,10 +57,7 @@ message EnqueueRequest {
 message EnqueueResponse {}
 
 message ConsumeRequest { string queue = 1; }
-message ConsumeResponse {
-  bool message_available = 1;
-  Message msg = 2;
-}
+message ConsumeResponse { repeated Message messages = 1; }
 
 message UpdateResponse {}
 

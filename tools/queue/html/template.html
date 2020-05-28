@@ -72,7 +72,7 @@
         }
 
         table.task-list td.name {
-            width: 100px;
+            width: 200px;
         }
 
         table.task-list td.status {
@@ -97,6 +97,22 @@
             font-weight: normal;
         }
 
+        .status-badge.BLOCKED {
+            background-color: #92C4A9;
+        }
+
+        .status-badge.CREATED {
+            background-color: #CBCBCB;
+        }
+
+        .status-badge.RETRY {
+            background-color: #EE98A7;
+        }
+
+        .status-badge.STARTED {
+            background-color: #fd9644;
+        }
+
         .status-badge.SUCCESS {
             background-color: #20bf6b;
         }
@@ -109,7 +125,7 @@
 
 <body>
     <div class="header">
-        <h2 style="margin-right: 20px; flex: 1"><a class="invisible-link" href="/">tasks</a></h2>
+        <h2 style="margin-right: 20px; flex: 1"><a class="invisible-link" href="/">queue</a></h2>
         <input class="search-input" type=text placeholder="search" />
     </div>
     {{content}}

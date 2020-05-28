@@ -40,11 +40,20 @@ impl<C: LargeTableClient + Clone + Send + Sync + 'static> QueueWebServer<C> {
     }
 
     fn queue(&self, queue: &str) -> Response {
+        let limit = match self.database.read_proto::<QueueWindowLimit>(
+            &server_lib::get_queue_window_rowname(),
+            queue,
+            0,
+        ) {
+            Some(l) if l.get_limit() > 20 => (l.get_limit() - 20),
+            _ => 0,
+        };
+
         let mut messages: Vec<_> = largetable_client::LargeTableScopedIterator::<Message, C>::new(
             &self.database,
             server_lib::get_queue_rowname(queue),
             String::new(),
-            String::new(),
+            server_lib::get_colname(limit),
             String::new(),
             0,
         )
@@ -55,12 +64,31 @@ impl<C: LargeTableClient + Clone + Send + Sync + 'static> QueueWebServer<C> {
         let content = tmpl::apply(
             QUEUE,
             &content!(
-                ;
-                "progress" => messages.iter().filter(|x| !server_lib::is_complete_status(x.get_status())).map(|x| render::message(x)).collect(),
-                "completed" => messages.iter().filter(|x| server_lib::is_complete_status(x.get_status())).map(|x| render::message(x)).collect()
+                "queue_name" => queue;
+                "progress" => messages.iter().rev().filter(|x| !server_lib::is_complete_status(x.get_status())).map(|x| render::message(x)).collect(),
+                "completed" => messages.iter().rev().filter(|x| server_lib::is_complete_status(x.get_status())).map(|x| render::message(x)).collect()
             ),
         );
 
+        Response::new(Body::from(self.wrap_template(content)))
+    }
+
+    fn message(&self, queue: &str, id: &str) -> Response {
+        let id = match id.parse::<u64>() {
+            Ok(id) => id,
+            Err(_) => return self.not_found(),
+        };
+
+        let msg = match self.database.read_proto(
+            &server_lib::get_queue_rowname(queue),
+            &server_lib::get_colname(id),
+            0,
+        ) {
+            Some(t) => t,
+            None => return self.not_found(),
+        };
+
+        let content = tmpl::apply(DETAIL, &render::message(&msg));
         Response::new(Body::from(self.wrap_template(content)))
     }
 
@@ -86,6 +114,10 @@ impl<C: LargeTableClient + Clone + Send + Sync + 'static> QueueWebServer<C> {
 
         Response::new(Body::from(self.wrap_template(content)))
     }
+
+    fn not_found(&self) -> Response {
+        Response::new(Body::from(format!("404 not found")))
+    }
 }
 
 impl<C: LargeTableClient + Send + Sync + Clone + 'static> Server for QueueWebServer<C> {
@@ -103,6 +135,8 @@ impl<C: LargeTableClient + Send + Sync + Clone + 'static> Server for QueueWebSer
         let components: Vec<_> = path.split("/").collect();
         if components.len() == 3 && components[1] == "queue" {
             return self.queue(components[2]);
+        } else if components.len() == 4 && components[1] == "queue" {
+            return self.message(components[2], components[3]);
         }
 
         return self.index(path, req);

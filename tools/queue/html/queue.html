@@ -7,7 +7,7 @@
     {{progress != 0}}
     <table class='task-list'>
         {{progress[]}}
-        <tr onclick="window.location.href='/{{id}}'">
+        <tr onclick="window.location.href='/queue/{{queue_name}}/{{id}}'">
             <td class='id'><a class='invisible-link' href="/{{id}}">#{{id}}</a></td>
             <td class='name'>{{name}}</td>
             <td class='status'>
@@ -27,7 +27,7 @@
     {{completed != 0}}
     <table class='task-list'>
         {{completed[]}}
-        <tr onclick="window.location.href='/{{id}}'">
+        <tr onclick="window.location.href='/queue/{{queue_name}}/{{id}}'">
             <td class='id'><a class='invisible-link' href="/{{id}}">#{{id}}</a></td>
             <td class='name'>{{name}}</td>
             <td class='status'>

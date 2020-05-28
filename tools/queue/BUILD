@@ -61,6 +61,7 @@ rust_binary(
     deps = [
         ":queue_client",
         "//tools/lockserv:lockserv_client",
+        "@io_bazel_rules_rust//proto/raze:protobuf",
     ],
 )
 

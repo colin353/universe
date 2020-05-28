@@ -8,10 +8,14 @@
     {{/reason}}
 
     <p>
-        {{end_time == 0}}started
+        {{start_time == 0}}queued
+        <span class='time-interval' time-interval="{{time_in_queue}}"></span>
+        ago
+        {{/start_time}}
+        {{start_time != 0}}{{end_time == 0}}started
         <span class='time-interval' time-interval="{{elapsed_time}}"></span>
         ago
-        {{/end_time}}
+        {{/end_time}}{{/start_time}}
         {{end_time != 0}}took
         <span class='time-interval' time-interval="{{elapsed_time}}"></span>
         {{/end_time}}

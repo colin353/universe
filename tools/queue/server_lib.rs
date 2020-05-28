@@ -25,10 +25,6 @@ pub fn get_queue_rowname(queue: &str) -> String {
     format!("{}/{}", QUEUE, queue)
 }
 
-pub fn get_message_rowname() -> String {
-    format!("{}/m", QUEUE)
-}
-
 pub fn get_queue_window_rowname() -> String {
     format!("{}/limit", QUEUE)
 }
@@ -115,7 +111,7 @@ impl<C: LargeTableClient + Clone + Send + Sync + 'static> QueueServiceHandler<C>
         self.maybe_create_queue(req.get_queue());
 
         // First, reserve an ID for this task
-        let id = self.database.reserve_id(MESSAGE_IDS, "");
+        let id = self.database.reserve_id(MESSAGE_IDS, req.get_queue());
 
         let mut message = req.take_msg();
         message.set_id(id);
@@ -141,17 +137,12 @@ impl<C: LargeTableClient + Clone + Send + Sync + 'static> QueueServiceHandler<C>
     }
 
     pub fn update(&self, msg: Message) -> UpdateResponse {
-        // Update inside the active queue
         self.database.write_proto(
             &get_queue_rowname(msg.get_queue()),
             &get_colname(msg.get_id()),
             0,
             &msg,
         );
-
-        // Also update id-indexed row
-        self.database
-            .write_proto(&get_message_rowname(), &get_colname(msg.get_id()), 0, &msg);
 
         if msg.get_status() == Status::SUCCESS || msg.get_status() == Status::FAILURE {
             let limit = self.get_queue_limit(msg.get_queue());
@@ -170,33 +161,44 @@ impl<C: LargeTableClient + Clone + Send + Sync + 'static> QueueServiceHandler<C>
         UpdateResponse::new()
     }
 
-    pub fn read(&self, id: u64) -> Option<Message> {
+    pub fn read(&self, queue: &str, id: u64) -> Option<Message> {
         self.database
-            .read_proto(&get_message_rowname(), &get_colname(id), 0)
+            .read_proto(&get_queue_rowname(queue), &get_colname(id), 0)
     }
 
     pub fn consume(&self, req: ConsumeRequest) -> ConsumeResponse {
         let limit = self.get_queue_limit(req.get_queue());
 
-        let mut eligible_messages: Vec<_> =
-            largetable_client::LargeTableScopedIterator::<Message, C>::new(
-                &self.database,
-                get_queue_rowname(req.get_queue()),
-                String::new(),
-                get_colname(limit),
-                String::new(),
-                0,
-            )
-            .map(|(_, m)| m)
-            .filter(|m| is_consumable_status(m.get_status()))
-            .take(5)
-            .collect();
+        let mut iter = largetable_client::LargeTableScopedIterator::<Message, C>::new(
+            &self.database,
+            get_queue_rowname(req.get_queue()),
+            String::new(),
+            get_colname(limit),
+            String::new(),
+            0,
+        )
+        .map(|(_, m)| m);
 
+        let mut limit_bump = 0;
         let mut response = ConsumeResponse::new();
-        if eligible_messages.len() > 0 {
-            // TODO: maybe randomly choose one of the 5 oldest?
-            response.set_msg(eligible_messages.swap_remove(0));
-            response.set_message_available(true);
+        for msg in iter {
+            if is_complete_status(msg.get_status()) {
+                limit_bump += 1;
+            }
+            if is_consumable_status(msg.get_status()) {
+                response.mut_messages().push(msg);
+                if response.get_messages().len() > 10 {
+                    break;
+                }
+            }
+        }
+
+        // Possibly update the bump limit
+        if limit_bump > 0 {
+            let mut new_limit = QueueWindowLimit::new();
+            new_limit.set_limit(limit + limit_bump);
+            self.database
+                .write_proto(&get_queue_window_rowname(), req.get_queue(), 0, &new_limit);
         }
 
         response
@@ -248,7 +250,7 @@ impl<C: LargeTableClient + Clone + Send + Sync + 'static> QueueServiceHandler<C>
             };
 
             // Reload the message from the database now that we got the lock
-            let mut message = match self.read(message.get_id()) {
+            let mut message = match self.read(&queue, message.get_id()) {
                 Some(m) => m,
                 None => continue,
             };
@@ -275,8 +277,8 @@ impl<C: LargeTableClient + Clone + Send + Sync + 'static> QueueServiceHandler<C>
                 // the queue with CONTINUE status if they're unblocked.
                 let mut blocked = false;
                 let mut error = false;
-                for blocking_id in message.get_blocked_by() {
-                    let m = match self.read(*blocking_id) {
+                for blocker in message.get_blocked_by() {
+                    let m = match self.read(blocker.get_queue(), blocker.get_id()) {
                         Some(m) => m,
                         None => {
                             error = true;
@@ -352,17 +354,17 @@ mod tests {
         let mut req = ConsumeRequest::new();
         req.set_queue(String::from("test"));
         let mut response = q.consume(req);
-        assert_eq!(response.get_message_available(), true);
+        assert_eq!(response.get_messages().len(), 1);
 
         // Now let's update it to be in progress
-        let mut msg = response.take_msg();
+        let mut msg = &mut response.mut_messages()[0];
         msg.set_status(Status::STARTED);
-        q.update(msg);
+        q.update(msg.clone());
 
         // There shouldn't be any more messages available
         let mut req = ConsumeRequest::new();
         req.set_queue(String::from("test"));
         let response = q.consume(req);
-        assert_eq!(response.get_message_available(), false);
+        assert_eq!(response.get_messages().len(), 0);
     }
 }
