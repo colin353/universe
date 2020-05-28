@@ -79,7 +79,7 @@ impl<C: LargeTableClient + Clone + Send + Sync + 'static> QueueWebServer<C> {
             Err(_) => return self.not_found(),
         };
 
-        let msg = match self.database.read_proto(
+        let msg: Message = match self.database.read_proto(
             &server_lib::get_queue_rowname(queue),
             &server_lib::get_colname(id),
             0,
@@ -88,7 +88,38 @@ impl<C: LargeTableClient + Clone + Send + Sync + 'static> QueueWebServer<C> {
             None => return self.not_found(),
         };
 
-        let content = tmpl::apply(DETAIL, &render::message(&msg));
+        // Annotate the parent message
+        let blocks = if msg.get_blocks().get_id() > 0 {
+            match self.database.read_proto(
+                &server_lib::get_queue_rowname(msg.get_blocks().get_queue()),
+                &server_lib::get_colname(msg.get_blocks().get_id()),
+                0,
+            ) {
+                Some(x) => render::message(&x),
+                None => content!(),
+            }
+        } else {
+            content!()
+        };
+
+        let content = tmpl::apply(
+            DETAIL,
+            &content!(
+                "message" => render::message(&msg),
+                "has_parent" => msg.get_blocks().get_id() > 0,
+                "blocks" => blocks;
+                "subtasks" => msg.get_blocked_by().iter().filter_map(|b| {
+                    match self.database.read_proto(
+                        &server_lib::get_queue_rowname(b.get_queue()),
+                        &server_lib::get_colname(b.get_id()),
+                        0,
+                    ) {
+                        Some(x) => Some(render::message(&x)),
+                        None => None
+                    }
+                }).collect()
+            ),
+        );
         Response::new(Body::from(self.wrap_template(content)))
     }
 

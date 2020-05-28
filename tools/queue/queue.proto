@@ -44,7 +44,7 @@ message Message {
   string info_url = 12;
 
   repeated BlockingMessage blocked_by = 13;
-  uint64 blocks = 14;
+  BlockingMessage blocks = 14;
 
   string queue = 15;
   string name = 16;
@@ -54,7 +54,7 @@ message EnqueueRequest {
   string queue = 1;
   Message msg = 2;
 }
-message EnqueueResponse {}
+message EnqueueResponse { uint64 id = 1; }
 
 message ConsumeRequest { string queue = 1; }
 message ConsumeResponse { repeated Message messages = 1; }

@@ -73,10 +73,6 @@ impl<C: LargeTableClient + Clone + Send + Sync + 'static> QueueServiceHandler<C>
 
         let queues = HashSet::from_iter(iter);
 
-        for queue in queues.iter() {
-            println!("Loaded queue: {}", queue);
-        }
-
         Self {
             database,
             queues: Arc::new(RwLock::new(queues)),
@@ -121,7 +117,9 @@ impl<C: LargeTableClient + Clone + Send + Sync + 'static> QueueServiceHandler<C>
 
         self.update(message);
 
-        EnqueueResponse::new()
+        let mut response = EnqueueResponse::new();
+        response.set_id(id);
+        response
     }
 
     fn get_queue_limit(&self, queue: &str) -> u64 {
@@ -144,20 +142,6 @@ impl<C: LargeTableClient + Clone + Send + Sync + 'static> QueueServiceHandler<C>
             &msg,
         );
 
-        if msg.get_status() == Status::SUCCESS || msg.get_status() == Status::FAILURE {
-            let limit = self.get_queue_limit(msg.get_queue());
-            if msg.get_id() == limit + 1 {
-                let mut new_limit = QueueWindowLimit::new();
-                new_limit.set_limit(msg.get_id());
-                self.database.write_proto(
-                    &get_queue_window_rowname(),
-                    msg.get_queue(),
-                    0,
-                    &new_limit,
-                );
-            }
-        }
-
         UpdateResponse::new()
     }
 
@@ -168,7 +152,6 @@ impl<C: LargeTableClient + Clone + Send + Sync + 'static> QueueServiceHandler<C>
 
     pub fn consume(&self, req: ConsumeRequest) -> ConsumeResponse {
         let limit = self.get_queue_limit(req.get_queue());
-
         let mut iter = largetable_client::LargeTableScopedIterator::<Message, C>::new(
             &self.database,
             get_queue_rowname(req.get_queue()),
@@ -180,11 +163,15 @@ impl<C: LargeTableClient + Clone + Send + Sync + 'static> QueueServiceHandler<C>
         .map(|(_, m)| m);
 
         let mut limit_bump = 0;
+        let mut all_complete = true;
         let mut response = ConsumeResponse::new();
         for msg in iter {
-            if is_complete_status(msg.get_status()) {
+            if all_complete && is_complete_status(msg.get_status()) {
                 limit_bump += 1;
+            } else {
+                all_complete = false;
             }
+
             if is_consumable_status(msg.get_status()) {
                 response.mut_messages().push(msg);
                 if response.get_messages().len() > 10 {

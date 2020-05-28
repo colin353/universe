@@ -1,42 +1,59 @@
 <div class="content">
-    <h3>{{name}}
-        <div class='status-badge {{status}}'>{{status}}</div>
+    <h3>{{message.name}}
+        <div class='status-badge {{message.status}}'>{{message.status}}</div>
     </h3>
 
-    {{reason != ""}}
-    <p>reason: {{reason}}</p>
-    {{/reason}}
+    {{message.failures != 0}}
+    <p style="color:#eb3b5a">Failed {{message.failures}} time{{message.failures != 1}}s{{/message.failures}}!</p>
+    {{/message.failures}}
+
+    {{message.reason != ""}}
+    <p>reason: {{message.reason}}</p>
+    {{/message.reason}}
 
     <p>
-        {{start_time == 0}}queued
-        <span class='time-interval' time-interval="{{time_in_queue}}"></span>
+        {{message.start_time == 0}}queued
+        <span class='time-interval' time-interval="{{message.time_in_queue}}"></span>
         ago
-        {{/start_time}}
-        {{start_time != 0}}{{end_time == 0}}started
-        <span class='time-interval' time-interval="{{elapsed_time}}"></span>
+        {{/message.start_time}}
+        {{message.start_time != 0}}{{message.end_time == 0}}started
+        <span class='time-interval' time-interval="{{message.elapsed_time}}"></span>
         ago
-        {{/end_time}}{{/start_time}}
-        {{end_time != 0}}took
-        <span class='time-interval' time-interval="{{elapsed_time}}"></span>
-        {{/end_time}}
+        {{/message.end_time}}{{/message.start_time}}
+        {{message.end_time != 0}}took
+        <span class='time-interval' time-interval="{{message.elapsed_time}}"></span>
+        {{/message.end_time}}
     </p>
 
-    {{arguments != 0}}
+    {{has_parent == true}}
+    <b>blocks</b>
+    <table class='task-list'>
+        <tr onclick=" window.location.href='/queue/{{blocks.queue}}/{{blocks.id}}'">
+            <td class='id'><a class='invisible-link' href="/queue/{{blocks.queue}}/{{blocks.id}}">#{{blocks.id}}</a></td>
+            <td class='name'>{{blocks.name}}</td>
+            <td class='status'>
+                <div class='status-badge {{blocks.status}}'>{{blocks.status}}</div>
+            </td>
+        </tr>
+    </table>
+    {{/has_parent}}
+
+    {{message.arguments != 0}}
     <b>arguments</b>
     <table class='task-list'>
-        {{arguments[]}}
+        {{message.arguments[]}}
         <tr>
-            <td style="width: 200px;">{{name}}</td>
-            <td>{{value}}</td>
-        </tr> {{/arguments}}
-    </table> {{/arguments}}
+            <td style="width: 200px;">{{message.name}}</td>
+            <td>{{message.value}}</td>
+        </tr> {{/message.arguments}}
+    </table> {{/message.arguments}}
 
     {{subtasks != 0}}
     <b>subtasks</b>
     <table class='task-list'>
         {{subtasks[]}}
-        <tr onclick=" window.location.href='/{{id}}'">
-            <td class='id'><a class='invisible-link' href="/{{id}}">#{{id}}</a></td>
+        <tr onclick=" window.location.href='/queue/{{queue}}/{{id}}'">
+            <td class='id'><a class='invisible-link' href="/queue/{{queue}}/{{id}}">#{{id}}</a></td>
             <td class='name'>{{name}}</td>
             <td class='status'>
                 <div class='status-badge {{status}}'>{{status}}</div>
@@ -46,19 +63,19 @@
     </table>
     {{/subtasks}}
 
-    {{artifacts != 0}} <b>artifacts</b>
+    {{message.artifacts != 0}} <b>artifacts</b>
     <table class='task-list'>
-        {{artifacts[]}}
+        {{message.artifacts[]}}
         <tr>
             <td style="width: 200px;">{{name}}</td>
             <td>{{value}}</td>
         </tr>
-        {{/artifacts}}
+        {{/message.artifacts}}
     </table>
-    {{/artifacts}}
+    {{/message.artifacts}}
 
-    {{big_artifacts[]}}
+    {{message.big_artifacts[]}}
     <b>{{name}}</b>
     <pre class="log-block">{{value}}</pre>
-    {{/big_artifacts}}
+    {{/message.big_artifacts}}
 </div>

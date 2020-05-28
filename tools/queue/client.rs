@@ -23,16 +23,22 @@ impl QueueClient {
         }
     }
 
-    pub fn enqueue(&self, queue: String, msg: Message) {
+    pub fn enqueue(&self, queue: String, msg: Message) -> u64 {
         let mut req = EnqueueRequest::new();
         req.set_queue(queue);
 
         *req.mut_msg() = msg;
 
-        self.client.enqueue(Default::default(), req).wait().unwrap();
+        let response = self
+            .client
+            .enqueue(Default::default(), req)
+            .wait()
+            .unwrap()
+            .1;
+        response.get_id()
     }
 
-    pub fn enqueue_proto<T: protobuf::Message>(&self, queue: String, message: &T) {
+    pub fn enqueue_proto<T: protobuf::Message>(&self, queue: String, message: &T) -> u64 {
         let mut req = EnqueueRequest::new();
         req.set_queue(queue);
 
@@ -40,7 +46,13 @@ impl QueueClient {
         message.write_to_vec(&mut data);
         req.mut_msg().set_protobuf(data);
 
-        self.client.enqueue(Default::default(), req).wait().unwrap();
+        let response = self
+            .client
+            .enqueue(Default::default(), req)
+            .wait()
+            .unwrap()
+            .1;
+        response.get_id()
     }
 
     pub fn update(&self, message: Message) {
@@ -78,6 +90,10 @@ pub enum ConsumeResult {
 pub trait Consumer {
     fn consume(&self, message: &Message) -> ConsumeResult;
 
+    fn resume(&self, message: &Message) -> ConsumeResult {
+        self.consume(message)
+    }
+
     fn get_queue_client(&self) -> &QueueClient;
     fn get_lockserv_client(&self) -> &lockserv_client::LockservClient;
 
@@ -98,14 +114,23 @@ pub trait Consumer {
                     Err(_) => continue,
                 };
 
+                let did_resume = m.get_status() == Status::CONTINUE;
+                if !did_resume {
+                    m.set_start_time(get_timestamp_usec());
+                }
                 m.set_status(Status::STARTED);
-                m.set_start_time(get_timestamp_usec());
+
                 self.get_queue_client().update(m.clone());
                 self.get_lockserv_client().put_lock(lock);
 
                 // Run potentially long-running consume task.
-                let panic_result =
-                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.consume(&m)));
+                let panic_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    if did_resume {
+                        self.resume(&m)
+                    } else {
+                        self.consume(&m)
+                    }
+                }));
 
                 if let Err(_) = panic_result {
                     // There was a panic. Just continue consuming. Queue service will

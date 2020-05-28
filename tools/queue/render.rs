@@ -51,6 +51,8 @@ pub fn message(s: &Message) -> tmpl::ContentsMap {
         "end_time" => s.get_end_time(),
         "elapsed_time" => elapsed_time,
         "time_in_queue" => time_in_queue,
+        "queue" => s.get_queue(),
+        "failures" => s.get_failures(),
         "reason" => s.get_reason();
         "arguments" => s.get_arguments().iter().map(|a| artifact(a)).collect(),
         "artifacts" => s.get_results().iter().filter(|a| !is_big_artifact(&a)).map(|a| artifact(a)).collect(),
