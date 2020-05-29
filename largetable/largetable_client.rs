@@ -85,6 +85,8 @@ pub trait LargeTableClient {
 
         self.write(row, col, timestamp, message_bytes)
     }
+
+    fn wait_for_connection(&self) {}
 }
 
 pub struct LargeTableRemoteClient {
@@ -266,6 +268,22 @@ impl LargeTableClient for LargeTableRemoteClient {
         req.set_data(data);
         req.set_timestamp(timestamp);
         self.client.write(self.opts(), req).wait().expect("rpc").1
+    }
+
+    fn wait_for_connection(&self) {
+        let mut req = largetable_grpc_rust::ReadRequest::new();
+        req.set_row(String::new());
+        req.set_column(String::new());
+        req.set_timestamp(1);
+
+        for _ in 0..10 {
+            if let Ok(_) =  self.client.read(self.opts(), req.clone()).wait() {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_secs(1));
+        }
+
+        panic!("Couldn't connect to largetable!");
     }
 
     fn delete(&self, row: &str, col: &str) -> largetable_grpc_rust::DeleteResponse {

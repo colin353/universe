@@ -13,6 +13,7 @@ extern crate weld_repo;
 
 extern crate weld_server_lib;
 
+use largetable_client::LargeTableClient;
 use std::fs::File;
 use std::io::Read;
 use tls_api::TlsAcceptorBuilder;
@@ -85,6 +86,10 @@ fn main() {
             &largetable_hostname.value(),
             largetable_port.value(),
         );
+
+        // During startup it is possible for largetable not to be started yet.
+        // Wait a while for the connection to start up.
+        database.wait_for_connection();
         let handler = weld_server_lib::WeldServiceHandler::new(database);
 
         server.add_service(weld::WeldServiceServer::new_service_def(handler));
