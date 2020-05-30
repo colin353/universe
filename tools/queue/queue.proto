@@ -60,10 +60,19 @@ message ConsumeRequest { string queue = 1; }
 message ConsumeResponse { repeated Message messages = 1; }
 
 message UpdateResponse {}
+message ReadRequest {
+  string queue = 1;
+  uint64 id = 2;
+}
+message ReadResponse {
+  bool found = 1;
+  Message msg = 2;
+}
 
 service QueueService {
   rpc Enqueue(EnqueueRequest) returns (EnqueueResponse);
   rpc Update(Message) returns (UpdateResponse);
+  rpc Read(ReadRequest) returns (ReadResponse);
   rpc Consume(ConsumeRequest) returns (ConsumeResponse);
   rpc ConsumeStream(ConsumeRequest) returns (stream ConsumeResponse);
 }

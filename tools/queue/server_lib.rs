@@ -395,6 +395,24 @@ impl<C: LargeTableClient + Clone + Send + Sync + 'static> queue_grpc_rust::Queue
         grpc::SingleResponse::completed(self.consume(req))
     }
 
+    fn read(
+        &self,
+        _m: grpc::RequestOptions,
+        req: ReadRequest,
+    ) -> grpc::SingleResponse<ReadResponse> {
+        let mut response = ReadResponse::new();
+        let maybe_message = self.read(&req.get_queue(), req.get_id());
+        match maybe_message {
+            Some(m) => {
+                response.set_found(true);
+                *response.mut_msg() = m;
+            }
+            None => (),
+        };
+
+        grpc::SingleResponse::completed(response)
+    }
+
     fn consume_stream(
         &self,
         _m: grpc::RequestOptions,

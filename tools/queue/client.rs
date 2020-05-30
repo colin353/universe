@@ -38,6 +38,20 @@ impl QueueClient {
         response.get_id()
     }
 
+    pub fn read(&self, queue: String, id: u64) -> Option<Message> {
+        let mut req = ReadRequest::new();
+        req.set_queue(queue);
+        req.set_id(id);
+
+        let mut response = self.client.read(Default::default(), req).wait().unwrap().1;
+
+        if response.get_found() {
+            Some(response.take_msg())
+        } else {
+            None
+        }
+    }
+
     pub fn enqueue_proto<T: protobuf::Message>(&self, queue: String, message: &T) -> u64 {
         let mut req = EnqueueRequest::new();
         req.set_queue(queue);
