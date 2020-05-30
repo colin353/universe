@@ -7,6 +7,7 @@ extern crate time;
 
 #[macro_use]
 extern crate flags;
+extern crate client_service;
 extern crate largetable_client;
 extern crate largetable_test;
 extern crate protobuf;
@@ -14,7 +15,6 @@ extern crate tls_api_stub;
 extern crate weld;
 extern crate weld_repo;
 
-mod client_service;
 mod fs;
 mod parallel_fs;
 

@@ -83,18 +83,16 @@ impl LockservClient {
         Err(Error::Locked)
     }
 
-    pub fn yield_lock(&self, lock: Lock) {
+    pub fn yield_lock(&self, lock: Lock) -> Result<(), Error> {
         let mut req = AcquireRequest::new();
         req.set_generation(lock.generation);
         req.set_path(lock.path);
         req.set_should_yield(true);
 
-        let response = self
-            .client
-            .acquire(Default::default(), req)
-            .wait()
-            .unwrap()
-            .1;
+        match self.client.acquire(Default::default(), req).wait() {
+            Ok(_) => Ok(()),
+            Err(_) => Err(Error::Network),
+        }
     }
 
     pub fn write<T: protobuf::Message>(&self, lock: Lock, message: T) -> Result<Lock, Error> {
@@ -123,15 +121,18 @@ impl LockservClient {
         Err(Error::Locked)
     }
 
-    pub fn read<T: protobuf::Message>(&self, path: String) -> (T, bool) {
+    pub fn read<T: protobuf::Message>(&self, path: String) -> Result<(T, bool), Error> {
         let mut req = ReadRequest::new();
         req.set_path(path);
 
-        let response = self.client.read(Default::default(), req).wait().unwrap().1;
+        let response = match self.client.read(Default::default(), req).wait() {
+            Ok(r) => r.1,
+            Err(_) => return Err(Error::Network),
+        };
         let mut message = T::new();
         message.merge_from_bytes(response.get_content()).unwrap();
 
-        (message, response.get_locked())
+        Ok((message, response.get_locked()))
     }
 
     pub fn put_lock(&self, lock: Lock) {

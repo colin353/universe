@@ -40,7 +40,7 @@ fn test_read_write() {
     msg.set_data(String::from("hello world"));
     let lock = c.write(lock, msg).unwrap();
 
-    let (out, locked): (DataMessage, bool) = c.read(String::from("/data"));
+    let (out, locked): (DataMessage, bool) = c.read(String::from("/data")).unwrap();
     assert_eq!(out.get_data(), "hello world");
     assert_eq!(locked, true);
 

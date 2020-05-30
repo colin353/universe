@@ -85,15 +85,34 @@ rust_test(
     crate = ":repo_test_lib",
 )
 
+rust_library(
+    name = "client_service",
+    srcs = ["client_service.rs"],
+    edition = "2018",
+    deps = [
+        ":weld",
+        ":weld_repo",
+        "//largetable:largetable_client",
+        "//third_party:fuse",
+        "//third_party:libc",
+        "//third_party:rand",
+        "//third_party:time",
+        "@io_bazel_rules_rust//proto/raze:grpc",
+        "@io_bazel_rules_rust//proto/raze:protobuf",
+        "@io_bazel_rules_rust//proto/raze:tls_api",
+        "@io_bazel_rules_rust//proto/raze:tls_api_stub",
+    ],
+)
+
 rust_binary(
     name = "weld_client",
     srcs = [
-        "client_service.rs",
         "fs.rs",
         "parallel_fs.rs",
         "weld_client.rs",
     ],
     deps = [
+        ":client_service",
         ":weld",
         ":weld_repo",
         "//largetable:batching_client",
@@ -116,12 +135,13 @@ rust_binary(
 rust_binary(
     name = "weld_client_for_build",
     srcs = [
-        "client_service.rs",
         "fs.rs",
         "parallel_fs.rs",
         "weld_client_for_build.rs",
     ],
     deps = [
+        ":build_consumer",
+        ":client_service",
         ":weld",
         ":weld_repo",
         "//largetable:batching_client",
@@ -132,6 +152,8 @@ rust_binary(
         "//third_party:rand",
         "//third_party:time",
         "//third_party:tls_api_openssl",
+        "//tools/lockserv:lockserv_client",
+        "//tools/queue:queue_client",
         "//util/flags",
         "//util/pool",
         "@io_bazel_rules_rust//proto/raze:grpc",
@@ -230,6 +252,20 @@ rust_library(
         ":weld",
         ":weld_server_lib",
         "//largetable:largetable_test",
+    ],
+)
+
+rust_library(
+    name = "build_consumer",
+    srcs = ["build_consumer.rs"],
+    edition = "2018",
+    deps = [
+        ":client_service",
+        ":weld",
+        ":weld_server_lib",
+        "//largetable:largetable_client",
+        "//tools/lockserv:lockserv_client",
+        "//tools/queue:queue_client",
     ],
 )
 

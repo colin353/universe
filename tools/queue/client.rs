@@ -55,23 +55,21 @@ impl QueueClient {
         response.get_id()
     }
 
-    pub fn update(&self, message: Message) {
-        self.client
-            .update(Default::default(), message)
-            .wait()
-            .unwrap();
+    pub fn update(&self, message: Message) -> Result<(), ()> {
+        match self.client.update(Default::default(), message).wait() {
+            Ok(_) => Ok(()),
+            Err(_) => Err(()),
+        }
     }
 
     pub fn consume(&self, queue: String) -> Vec<Message> {
         let mut req = ConsumeRequest::new();
         req.set_queue(queue);
 
-        let mut response = self
-            .client
-            .consume(Default::default(), req.clone())
-            .wait()
-            .unwrap()
-            .1;
+        let mut response = match self.client.consume(Default::default(), req.clone()).wait() {
+            Ok(r) => r.1,
+            Err(_) => return Vec::new(),
+        };
 
         response.take_messages().into_vec()
     }
@@ -80,12 +78,14 @@ impl QueueClient {
         let mut req = ConsumeRequest::new();
         req.set_queue(queue);
 
-        let iter = self
+        let iter = match self
             .client
             .consume_stream(Default::default(), req.clone())
             .wait()
-            .unwrap()
-            .1;
+        {
+            Ok(r) => r.1,
+            Err(_) => return Vec::new(),
+        };
 
         for result in iter {
             match result {
@@ -98,13 +98,49 @@ impl QueueClient {
     }
 }
 
+pub fn get_string_arg<'a>(name: &str, m: &'a Message) -> Option<&'a str> {
+    for arg in m.get_arguments() {
+        if arg.get_name() == name {
+            return Some(arg.get_value_string());
+        }
+    }
+    None
+}
+
+pub fn get_int_arg<'a>(name: &str, m: &'a Message) -> Option<i64> {
+    for arg in m.get_arguments() {
+        if arg.get_name() == name {
+            return Some(arg.get_value_int());
+        }
+    }
+    None
+}
+
+pub fn get_bool_arg<'a>(name: &str, m: &'a Message) -> Option<bool> {
+    for arg in m.get_arguments() {
+        if arg.get_name() == name {
+            return Some(arg.get_value_bool());
+        }
+    }
+    None
+}
+
+pub fn get_float_arg<'a>(name: &str, m: &'a Message) -> Option<f32> {
+    for arg in m.get_arguments() {
+        if arg.get_name() == name {
+            return Some(arg.get_value_float());
+        }
+    }
+    None
+}
+
 pub fn message_to_lockserv_path(m: &Message) -> String {
     format!("/ls/queue/{}/{}", m.get_queue(), m.get_id())
 }
 
 pub enum ConsumeResult {
     Success(Vec<Artifact>),
-    Failure(Vec<Artifact>),
+    Failure(String, Vec<Artifact>),
     Blocked(Vec<Artifact>, Vec<BlockingMessage>),
 }
 
@@ -141,7 +177,9 @@ pub trait Consumer {
                 }
                 m.set_status(Status::STARTED);
 
-                self.get_queue_client().update(m.clone());
+                if let Err(_) = self.get_queue_client().update(m.clone()) {
+                    continue;
+                }
                 self.get_lockserv_client().put_lock(lock);
 
                 // Run potentially long-running consume task.
@@ -188,7 +226,10 @@ pub trait Consumer {
                             m.mut_results().push(result);
                         }
                     }
-                    ConsumeResult::Failure(results) => {
+                    ConsumeResult::Failure(reason, results) => {
+                        if !reason.is_empty() {
+                            m.set_reason(reason);
+                        }
                         m.set_status(Status::FAILURE);
                         m.set_end_time(get_timestamp_usec());
                         for result in results {
@@ -205,7 +246,9 @@ pub trait Consumer {
                         }
                     }
                 };
-                self.get_queue_client().update(m.clone());
+                if let Err(_) = self.get_queue_client().update(m.clone()) {
+                    continue;
+                };
 
                 self.get_lockserv_client().yield_lock(lock);
 

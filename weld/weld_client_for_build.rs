@@ -7,17 +7,21 @@ extern crate time;
 
 #[macro_use]
 extern crate flags;
+extern crate build_consumer;
+extern crate client_service;
 extern crate largetable_client;
 extern crate largetable_test;
+extern crate lockserv_client;
 extern crate protobuf;
+extern crate queue_client;
 extern crate tls_api_openssl;
 extern crate weld;
 extern crate weld_repo;
 
-mod client_service;
 mod fs;
 mod parallel_fs;
 
+use queue_client::Consumer;
 use std::sync::Arc;
 
 fn main() {
@@ -38,7 +42,29 @@ fn main() {
         "the hostname for the remote weld service"
     );
     let server_port = define_flag!("server_port", 8001, "the port to connect to");
-    parse_flags!(mount_point, mount, weld_hostname, port, server_port);
+    let lockserv_hostname = define_flag!(
+        "lockserv_hostname",
+        String::from("lockserv"),
+        "the hostname of the lock service"
+    );
+    let lockserv_port = define_flag!("lockserv_port", 5555, "the hostname of the lock service");
+    let queue_hostname = define_flag!(
+        "queue_hostname",
+        String::from("queue"),
+        "the hostname of the queue service"
+    );
+    let queue_port = define_flag!("queue_port", 5554, "the port of the queue service");
+    parse_flags!(
+        mount_point,
+        mount,
+        weld_hostname,
+        port,
+        server_port,
+        lockserv_hostname,
+        lockserv_port,
+        queue_hostname,
+        queue_port
+    );
 
     let db = largetable_test::LargeTableMockClient::new();
     let batching_client = Arc::new(batching_client::LargeTableBatchingClient::new_with_cache(
@@ -88,5 +114,9 @@ fn main() {
         ::fuse::mount(filesystem, &mount_point.value(), &options).unwrap();
     }
 
-    std::thread::park();
+    let lockserv_client =
+        lockserv_client::LockservClient::new(&lockserv_hostname.value(), lockserv_port.value());
+    let queue_client = queue_client::QueueClient::new(&queue_hostname.value(), queue_port.value());
+    let consumer = build_consumer::BuildConsumer::new(handler, queue_client, lockserv_client);
+    consumer.start(String::from("builds"));
 }
