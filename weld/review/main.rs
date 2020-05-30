@@ -1,6 +1,7 @@
 #[macro_use]
 extern crate flags;
 extern crate auth_client;
+extern crate queue_client;
 extern crate server;
 extern crate task_client;
 extern crate weld;
@@ -58,6 +59,13 @@ fn main() {
     );
     let task_port = define_flag!("task_port", 7777, "the port of the task service");
 
+    let queue_hostname = define_flag!(
+        "queue_hostname",
+        String::from("queue"),
+        "the hostname of the queue service"
+    );
+    let queue_port = define_flag!("queue_port", 5554, "the port of the queue service");
+
     parse_flags!(
         server_hostname,
         server_port,
@@ -71,7 +79,9 @@ fn main() {
         static_files,
         base_url,
         task_hostname,
-        task_port
+        task_port,
+        queue_hostname,
+        queue_port
     );
 
     let client = weld::WeldServerClient::new(
@@ -81,7 +91,15 @@ fn main() {
     );
 
     let task = task_client::TaskRemoteClient::new(task_hostname.value(), task_port.value());
+    let queue = queue_client::QueueClient::new(&queue_hostname.value(), queue_port.value());
     let auth = auth_client::AuthClient::new(&auth_hostname.value(), auth_port.value());
-    server::ReviewServer::new(client, static_files.value(), base_url.value(), auth, task)
-        .serve(port.value());
+    server::ReviewServer::new(
+        client,
+        static_files.value(),
+        base_url.value(),
+        auth,
+        task,
+        queue,
+    )
+    .serve(port.value());
 }

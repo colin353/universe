@@ -14,6 +14,7 @@ rust_binary(
     deps = [
         "//auth:auth_client",
         "//tasks:task_client",
+        "//tools/queue:queue_client",
         "//util/flags",
         "//util/tmpl",
         "//util/ws",
@@ -39,6 +40,7 @@ rust_library(
         "//auth:auth_client",
         "//tasks:task_client",
         "//third_party:base64",
+        "//tools/queue:queue_client",
         "//util/flags",
         "//util/tmpl",
         "//util/ws",
@@ -67,6 +69,7 @@ rust_image(
     deps = [
         "//auth:auth_client",
         "//tasks:task_client",
+        "//tools/queue:queue_client",
         "//util/flags",
         "//util/tmpl",
         "//util/ws",

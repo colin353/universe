@@ -100,6 +100,15 @@ fn main() {
     // Mount filesystem.
     let filesystem = parallel_fs::WeldParallelFs::new(repo);
 
+    let lockserv_client =
+        lockserv_client::LockservClient::new(&lockserv_hostname.value(), lockserv_port.value());
+    let queue_client = queue_client::QueueClient::new(&queue_hostname.value(), queue_port.value());
+    let consumer = build_consumer::BuildConsumer::new(handler, queue_client, lockserv_client);
+
+    std::thread::spawn(move || {
+        consumer.start(String::from("builds"));
+    });
+
     if mount.value() {
         let options = [
             "-o",
@@ -114,9 +123,7 @@ fn main() {
         ::fuse::mount(filesystem, &mount_point.value(), &options).unwrap();
     }
 
-    let lockserv_client =
-        lockserv_client::LockservClient::new(&lockserv_hostname.value(), lockserv_port.value());
-    let queue_client = queue_client::QueueClient::new(&queue_hostname.value(), queue_port.value());
-    let consumer = build_consumer::BuildConsumer::new(handler, queue_client, lockserv_client);
-    consumer.start(String::from("builds"));
+    loop {
+        std::thread::park();
+    }
 }

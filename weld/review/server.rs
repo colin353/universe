@@ -1,9 +1,11 @@
 #[macro_use]
 extern crate tmpl;
 extern crate auth_client;
+extern crate queue_client;
 extern crate task_client;
 extern crate weld;
 extern crate ws;
+
 use ws::{Body, Request, Response, Server};
 
 use auth_client::AuthServer;
@@ -24,6 +26,7 @@ pub struct ReviewServer {
     base_url: String,
     auth: auth_client::AuthClient,
     task_client: task_client::TaskRemoteClient,
+    queue_client: queue_client::QueueClient,
 }
 
 impl ReviewServer {
@@ -33,13 +36,15 @@ impl ReviewServer {
         base_url: String,
         auth: auth_client::AuthClient,
         task_client: task_client::TaskRemoteClient,
+        queue_client: queue_client::QueueClient,
     ) -> Self {
         Self {
-            client: client,
-            static_dir: static_dir,
-            base_url: base_url,
-            auth: auth,
-            task_client: task_client,
+            client,
+            static_dir,
+            base_url,
+            auth,
+            task_client,
+            queue_client,
         }
     }
 
@@ -185,17 +190,32 @@ impl ReviewServer {
     }
 
     fn start_task(&self, path: String, req: Request) -> Response {
-        if path.starts_with("/api/tasks/build/") || path.starts_with("/api/tasks/submit/") {
+        if path.starts_with("/api/tasks/build/") {
             let mut path_iter = path.rsplit("/");
             let change_id: i64 = match path_iter.next() {
                 Some(c) => c.parse().unwrap_or(0),
                 None => return Response::new(Body::from("no such change")),
             };
-            let method = if path.starts_with("/api/tasks/build/") {
-                String::from("presubmit")
-            } else {
-                String::from("try_submit")
+
+            let mut args = queue_client::ArtifactsBuilder::new();
+            args.add_string("method", "query".to_string());
+            args.add_int("change", change_id);
+
+            let mut msg = queue_client::Message::new();
+            for arg in args.build() {
+                msg.mut_arguments().push(arg);
+            }
+            msg.set_name(format!("query c/{}", change_id));
+            self.queue_client.enqueue("submit".to_string(), msg);
+        }
+
+        if path.starts_with("/api/tasks/submit/") {
+            let mut path_iter = path.rsplit("/");
+            let change_id: i64 = match path_iter.next() {
+                Some(c) => c.parse().unwrap_or(0),
+                None => return Response::new(Body::from("no such change")),
             };
+            let method = String::from("try_submit");
 
             let mut args = task_client::ArgumentsBuilder::new();
             args.add_int("change_id", change_id);

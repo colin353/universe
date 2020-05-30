@@ -43,10 +43,11 @@
     <table class='task-list'>
         {{message.arguments[]}}
         <tr>
-            <td style="width: 200px;">{{message.name}}</td>
-            <td>{{message.value}}</td>
+            <td style="width: 200px;">{{name}}</td>
+            <td>{{value}}</td>
         </tr> {{/message.arguments}}
-    </table> {{/message.arguments}}
+    </table>
+    {{/message.arguments}}
 
     {{subtasks != 0}}
     <b>subtasks</b>
