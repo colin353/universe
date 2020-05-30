@@ -28,6 +28,7 @@ rust_library(
         "//largetable:largetable_client",
         "//largetable:largetable_test",
         "//tools/lockserv:lockserv_client",
+        "@io_bazel_rules_rust//proto/raze:futures",
         "@io_bazel_rules_rust//proto/raze:grpc",
         "@io_bazel_rules_rust//proto/raze:protobuf",
     ],

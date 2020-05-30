@@ -3,10 +3,10 @@ load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 # Add a comment into the WORKSPACE
 http_archive(
     name = "io_bazel_rules_rust",
-    sha256 = "9dbd17cff52a352c33bea887ad6400f1be7afdc271eecd096252be591dcef9cc",
-    strip_prefix = "rules_rust-09a96b7a98fae21b4516cfb4e2c2ec5e49fe8ab6",
+    sha256 = "7023405fae42481740f1abfd81d6d08b8940a07362236f2f33de6630ae70891a",
+    strip_prefix = "rules_rust-e1532faa5fbeb2a1adc6c3f597a9ee1a1d07661c",
     urls = [
-        "https://github.com/colin353/rules_rust/archive/09a96b7a98fae21b4516cfb4e2c2ec5e49fe8ab6.tar.gz",
+        "https://github.com/colin353/rules_rust/archive/e1532faa5fbeb2a1adc6c3f597a9ee1a1d07661c.tar.gz",
     ],
 )
 

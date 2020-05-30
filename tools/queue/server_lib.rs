@@ -2,9 +2,13 @@ use largetable_client::LargeTableClient;
 use queue_client::message_to_lockserv_path;
 use queue_grpc_rust::*;
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::iter::FromIterator;
 use std::sync::{Arc, RwLock};
+
+use futures::stream::Stream;
+use futures::sync::mpsc;
+use futures::sync::mpsc::UnboundedSender;
 
 pub const QUEUE: &'static str = "queues";
 pub const QUEUES: &'static str = "queues";
@@ -45,11 +49,74 @@ pub fn is_complete_status(s: Status) -> bool {
     s == Status::SUCCESS || s == Status::FAILURE
 }
 
+pub struct MessageRouter {
+    listeners: RwLock<HashMap<String, Vec<UnboundedSender<Message>>>>,
+}
+
+impl MessageRouter {
+    pub fn new() -> Self {
+        Self {
+            listeners: RwLock::new(HashMap::new()),
+        }
+    }
+
+    fn subscribe(&self, queue: String, stream: UnboundedSender<Message>) {
+        let mut l = self.listeners.write().unwrap();
+        match l.get_mut(&queue) {
+            Some(streams) => streams.push(stream),
+            None => {
+                l.insert(queue, vec![stream]);
+            }
+        };
+    }
+
+    fn put(&self, queue: &str, message: &Message) {
+        let mut closed_streams = Vec::new();
+        {
+            let l = self.listeners.read().unwrap();
+            let streams = match l.get(queue) {
+                Some(streams) => streams,
+                None => return,
+            };
+
+            for (index, stream) in streams.iter().enumerate() {
+                if let Err(_) = stream.unbounded_send(message.clone()) {
+                    closed_streams.push(index);
+                }
+            }
+        }
+
+        if closed_streams.len() > 0 {
+            let mut l = self.listeners.write().unwrap();
+            let streams = match l.get_mut(queue) {
+                Some(streams) => streams,
+                None => return,
+            };
+
+            // We need to recalculate the closed stream indices because we released the lock, and
+            // somebody else might have modified the stream list in the meantime.
+            closed_streams.clear();
+            for (index, stream) in streams.iter().enumerate() {
+                if stream.is_closed() {
+                    closed_streams.push(index);
+                }
+            }
+
+            // There's probably a way better way to do this, but I'm trying to remove a bunch of
+            // closed streams from the streams array.
+            for (num_removed, stream_index) in closed_streams.iter().enumerate() {
+                streams.swap_remove(stream_index - num_removed);
+            }
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct QueueServiceHandler<C: LargeTableClient + Clone + Send + Sync + 'static> {
     database: C,
     lockserv_client: Option<lockserv_client::LockservClient>,
     queues: Arc<RwLock<HashSet<String>>>,
+    router: Arc<MessageRouter>,
 }
 
 impl<C: LargeTableClient + Clone + Send + Sync + 'static> QueueServiceHandler<C> {
@@ -77,6 +144,7 @@ impl<C: LargeTableClient + Clone + Send + Sync + 'static> QueueServiceHandler<C>
             database,
             queues: Arc::new(RwLock::new(queues)),
             lockserv_client: Some(lockserv_client),
+            router: Arc::new(MessageRouter::new()),
         }
     }
 
@@ -85,6 +153,7 @@ impl<C: LargeTableClient + Clone + Send + Sync + 'static> QueueServiceHandler<C>
             database,
             queues: Arc::new(RwLock::new(HashSet::new())),
             lockserv_client: None,
+            router: Arc::new(MessageRouter::new()),
         }
     }
 
@@ -115,7 +184,8 @@ impl<C: LargeTableClient + Clone + Send + Sync + 'static> QueueServiceHandler<C>
         message.set_queue(req.get_queue().to_owned());
         message.set_enqueued_time(get_timestamp_usec());
 
-        self.update(message);
+        self.update(message.clone());
+        self.router.put(req.get_queue(), &message);
 
         let mut response = EnqueueResponse::new();
         response.set_id(id);
@@ -258,7 +328,11 @@ impl<C: LargeTableClient + Clone + Send + Sync + 'static> QueueServiceHandler<C>
                     message.set_status(Status::RETRY);
                 }
 
-                self.update(message);
+                self.update(message.clone());
+
+                if is_consumable_status(message.get_status()) {
+                    self.router.put(&queue, &message);
+                }
             } else if message.get_status() == Status::BLOCKED {
                 // Check if blocked messages are unblocked yet, and return them to
                 // the queue with CONTINUE status if they're unblocked.
@@ -284,7 +358,8 @@ impl<C: LargeTableClient + Clone + Send + Sync + 'static> QueueServiceHandler<C>
                     self.update(message);
                 } else if !blocked {
                     message.set_status(Status::CONTINUE);
-                    self.update(message);
+                    self.update(message.clone());
+                    self.router.put(&queue, &message);
                 }
             }
 
@@ -318,6 +393,25 @@ impl<C: LargeTableClient + Clone + Send + Sync + 'static> queue_grpc_rust::Queue
         req: ConsumeRequest,
     ) -> grpc::SingleResponse<ConsumeResponse> {
         grpc::SingleResponse::completed(self.consume(req))
+    }
+
+    fn consume_stream(
+        &self,
+        _m: grpc::RequestOptions,
+        req: ConsumeRequest,
+    ) -> grpc::StreamingResponse<ConsumeResponse> {
+        let (tx, rx) = mpsc::unbounded();
+        self.router.subscribe(req.get_queue().to_owned(), tx);
+
+        grpc::StreamingResponse::no_metadata(
+            futures::stream::iter_ok(vec![self.consume(req)])
+                .chain(rx.map(|m| {
+                    let mut resp = ConsumeResponse::new();
+                    resp.mut_messages().push(m);
+                    resp
+                }))
+                .map_err(|_| grpc::Error::Other("stream error")),
+        )
     }
 }
 

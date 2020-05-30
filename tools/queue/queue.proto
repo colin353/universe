@@ -65,4 +65,5 @@ service QueueService {
   rpc Enqueue(EnqueueRequest) returns (EnqueueResponse);
   rpc Update(Message) returns (UpdateResponse);
   rpc Consume(ConsumeRequest) returns (ConsumeResponse);
+  rpc ConsumeStream(ConsumeRequest) returns (stream ConsumeResponse);
 }

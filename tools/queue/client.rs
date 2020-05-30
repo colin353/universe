@@ -75,6 +75,27 @@ impl QueueClient {
 
         response.take_messages().into_vec()
     }
+
+    pub fn consume_stream(&self, queue: String) -> Vec<Message> {
+        let mut req = ConsumeRequest::new();
+        req.set_queue(queue);
+
+        let iter = self
+            .client
+            .consume_stream(Default::default(), req.clone())
+            .wait()
+            .unwrap()
+            .1;
+
+        for result in iter {
+            match result {
+                Ok(mut r) => return r.take_messages().into_vec(),
+                Err(_) => break,
+            }
+        }
+
+        Vec::new()
+    }
 }
 
 pub fn message_to_lockserv_path(m: &Message) -> String {
@@ -104,7 +125,7 @@ pub trait Consumer {
         });
 
         loop {
-            for mut m in self.get_queue_client().consume(queue.clone()) {
+            for mut m in self.get_queue_client().consume_stream(queue.clone()) {
                 // First, attempt to acquire a lock on the message and mark it as started.
                 let lock = match self
                     .get_lockserv_client()
@@ -187,6 +208,8 @@ pub trait Consumer {
                 self.get_queue_client().update(m.clone());
 
                 self.get_lockserv_client().yield_lock(lock);
+
+                break;
             }
 
             std::thread::sleep(std::time::Duration::from_secs(1));
