@@ -107,3 +107,17 @@ rust_library(
         "//util/ws",
     ],
 )
+
+rust_image(
+    name = "queue_img",
+    base = "@glibc_base//image",
+    binary = ":queue",
+)
+
+docker_push(
+    name = "queue_img_push",
+    image = ":queue_img",
+    registry = "us.gcr.io",
+    repository = "mushu-194218/queue",
+    tag = "dev",
+)

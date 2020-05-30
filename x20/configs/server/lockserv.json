@@ -1,0 +1,11 @@
+{
+    "name": "lockserv",
+    "binary_name": "lockserv",
+    "priority": 25,
+    "environment": "server",
+    "long_running": true,
+    "arguments": {
+        "port": "5555"
+    },
+    "docker_arguments": ["--init"]
+}

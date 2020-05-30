@@ -69,3 +69,17 @@ rust_test(
         ":lockserv_grpc_rust",
     ],
 )
+
+rust_image(
+    name = "lockserv_img",
+    base = "@glibc_base//image",
+    binary = ":lockserv",
+)
+
+docker_push(
+    name = "lockserv_img_push",
+    image = ":lockserv_img",
+    registry = "us.gcr.io",
+    repository = "mushu-194218/lockserv",
+    tag = "dev",
+)

@@ -1,11 +1,12 @@
 #[macro_use]
 extern crate flags;
 
+use largetable_client::LargeTableClient;
 use ws::Server;
 
 fn main() {
-    let grpc_port = define_flag!("port", 5554, "The gRPC port to bind to");
-    let web_port = define_flag!("port", 5553, "The webserver port to bind to");
+    let grpc_port = define_flag!("grpc_port", 5554, "The gRPC port to bind to");
+    let web_port = define_flag!("web_port", 5553, "The webserver port to bind to");
     let largetable_hostname = define_flag!(
         "largetable_hostname",
         String::from("127.0.0.1"),
@@ -33,6 +34,11 @@ fn main() {
         String::from("http://tasks.local.colinmerkel.xyz:5553"),
         "the base URL of the queue webservice"
     );
+    let use_tls = define_flag!(
+        "use_tls",
+        false,
+        "whether or not to use TLS when connecting to auth"
+    );
 
     parse_flags!(
         grpc_port,
@@ -43,7 +49,8 @@ fn main() {
         lockserv_port,
         auth_hostname,
         auth_port,
-        base_url
+        base_url,
+        use_tls
     );
 
     let ls =
@@ -53,6 +60,8 @@ fn main() {
         &largetable_hostname.value(),
         largetable_port.value(),
     );
+    database.wait_for_connection();
+
     let handler = server_lib::QueueServiceHandler::new(database.clone(), ls);
 
     let mut server = grpc::ServerBuilder::<tls_api_stub::TlsAcceptor>::new();
@@ -63,13 +72,16 @@ fn main() {
     ));
     let _server = server.build().expect("server");
 
-    let auth = auth_client::AuthClient::new_tls(&auth_hostname.value(), auth_port.value());
+    let auth = if use_tls.value() {
+        auth_client::AuthClient::new_tls(&auth_hostname.value(), auth_port.value())
+    } else {
+        auth_client::AuthClient::new(&auth_hostname.value(), auth_port.value())
+    };
 
     std::thread::spawn(move || loop {
         handler.bump();
         std::thread::sleep(std::time::Duration::from_secs(2));
     });
 
-    println!("start webserver");
     webserver::QueueWebServer::new(database, auth, base_url.value()).serve(web_port.value());
 }

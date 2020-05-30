@@ -1,0 +1,17 @@
+{
+    "name": "queue",
+    "binary_name": "queue",
+    "priority": 150,
+    "environment": "server",
+    "long_running": true,
+    "arguments": {
+        "largetable_hostname": "largetable",
+        "largetable_port": "50051",
+        "lockserv_hostname": "lockserv",
+        "lockserv_port": "5555",
+        "auth_hostname": "auth",
+        "auth_port": "8888",
+        "base_url": "https://queue.colinmerkel.xyz/"
+    },
+    "docker_arguments": ["--init"]
+}
