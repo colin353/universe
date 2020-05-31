@@ -108,10 +108,16 @@ fn main() {
         queue_client.clone(),
         lockserv_client.clone(),
     );
-    let submit_consumer = build_consumer::SubmitConsumer::new(queue_client, lockserv_client);
+    let presubmit_consumer =
+        build_consumer::PresubmitConsumer::new(queue_client.clone(), lockserv_client.clone());
+    let submit_consumer =
+        build_consumer::SubmitConsumer::new(handler, queue_client, lockserv_client);
 
     std::thread::spawn(move || {
         build_consumer.start(String::from("builds"));
+    });
+    std::thread::spawn(move || {
+        presubmit_consumer.start(String::from("presubmit"));
     });
     std::thread::spawn(move || {
         submit_consumer.start(String::from("submit"));

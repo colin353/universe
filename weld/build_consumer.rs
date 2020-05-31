@@ -142,12 +142,12 @@ impl<C: LargeTableClient> Consumer for BuildConsumer<C> {
     }
 }
 
-pub struct SubmitConsumer {
+pub struct PresubmitConsumer {
     queue_client: QueueClient,
     lockserv_client: LockservClient,
 }
 
-impl SubmitConsumer {
+impl PresubmitConsumer {
     pub fn new(queue_client: QueueClient, lockserv_client: LockservClient) -> Self {
         Self {
             queue_client,
@@ -156,7 +156,7 @@ impl SubmitConsumer {
     }
 }
 
-impl Consumer for SubmitConsumer {
+impl Consumer for PresubmitConsumer {
     fn get_queue_client(&self) -> &QueueClient {
         &self.queue_client
     }
@@ -258,7 +258,7 @@ impl Consumer for SubmitConsumer {
                     m.mut_arguments().push(arg);
                 }
                 m.mut_blocks().set_id(message.get_id());
-                m.mut_blocks().set_queue(build_target.to_string());
+                m.mut_blocks().set_queue(message.get_queue().to_string());
 
                 let id = self.get_queue_client().enqueue(String::from("builds"), m);
 
@@ -292,5 +292,123 @@ impl Consumer for SubmitConsumer {
 
             ConsumeResult::Success(outputs.build())
         }
+    }
+}
+
+pub struct SubmitConsumer<C: LargeTableClient> {
+    queue_client: QueueClient,
+    lockserv_client: LockservClient,
+    weld: WeldLocalServiceHandler<C>,
+}
+
+impl<C: LargeTableClient> SubmitConsumer<C> {
+    pub fn new(
+        weld: WeldLocalServiceHandler<C>,
+        queue_client: QueueClient,
+        lockserv_client: LockservClient,
+    ) -> Self {
+        Self {
+            weld,
+            queue_client,
+            lockserv_client,
+        }
+    }
+}
+
+impl<C: LargeTableClient> Consumer for SubmitConsumer<C> {
+    fn get_queue_client(&self) -> &QueueClient {
+        &self.queue_client
+    }
+
+    fn get_lockserv_client(&self) -> &LockservClient {
+        &self.lockserv_client
+    }
+
+    fn consume(&self, message: &Message) -> ConsumeResult {
+        // First, run presubmit tests
+        let mut outputs = ArtifactsBuilder::new();
+        let change_id = match get_int_arg("change", &message) {
+            Some(0) => {
+                return ConsumeResult::Failure(
+                    String::from("no `change` provided"),
+                    outputs.build(),
+                )
+            }
+            Some(id) => id as i64,
+            None => {
+                return ConsumeResult::Failure(
+                    String::from("must specify argument `change`!"),
+                    outputs.build(),
+                )
+            }
+        };
+
+        let mut args = ArtifactsBuilder::new();
+        args.add_int("change", change_id);
+
+        let mut m = Message::new();
+        m.set_name(format!("submit c/{}", change_id));
+        for arg in args.build() {
+            m.mut_arguments().push(arg);
+        }
+        m.mut_blocks().set_id(message.get_id());
+        m.mut_blocks().set_queue(message.get_queue().to_string());
+
+        let id = self
+            .get_queue_client()
+            .enqueue(String::from("presubmit"), m);
+
+        let mut b = BlockingMessage::new();
+        b.set_queue(String::from("builds"));
+        b.set_id(id);
+
+        ConsumeResult::Blocked(outputs.build(), vec![b])
+    }
+
+    fn resume(&self, message: &Message) -> ConsumeResult {
+        let mut outputs = ArtifactsBuilder::new();
+
+        // Check that presubmit has passed
+        for blocker in message.get_blocked_by() {
+            let m = match self
+                .get_queue_client()
+                .read(blocker.get_queue().to_string(), blocker.get_id())
+            {
+                Some(m) => m,
+                None => {
+                    return ConsumeResult::Failure(
+                        String::from("must specify argument `change`!"),
+                        outputs.build(),
+                    )
+                }
+            };
+
+            if m.get_status() != Status::SUCCESS {
+                return ConsumeResult::Failure(String::from("build failed"), outputs.build());
+            }
+        }
+
+        // Then run the actual submit task
+        let change_id = get_int_arg("change", &message).unwrap();
+        let mut req = weld::ApplyPatchRequest::new();
+        req.set_change_id(change_id as u64);
+        let mut response = self.weld.apply_patch(req);
+
+        if !response.get_success() {
+            return ConsumeResult::Failure(response.take_reason(), outputs.build());
+        }
+
+        let mut req = weld::Change::new();
+        req.set_id(change_id as u64);
+        let mut response = self.weld.submit(req);
+
+        if response.get_status() != weld::SubmitStatus::OK {
+            return ConsumeResult::Failure(
+                format!("submit failed: {:?}", response.get_status()),
+                outputs.build(),
+            );
+        }
+
+        ConsumeResult::Success(outputs.build())
     }
 }
