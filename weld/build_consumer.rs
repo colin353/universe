@@ -2,8 +2,8 @@ use client_service::WeldLocalServiceHandler;
 use largetable_client::LargeTableClient;
 use lockserv_client::LockservClient;
 use queue_client::{
-    get_bool_arg, get_int_arg, get_string_arg, ArtifactsBuilder, ConsumeResult, Consumer, Message,
-    QueueClient,
+    get_bool_arg, get_int_arg, get_string_arg, ArtifactsBuilder, BlockingMessage, ConsumeResult,
+    Consumer, Message, QueueClient, Status,
 };
 use weld::{RunBuildQueryRequest, RunBuildRequest};
 
@@ -138,6 +138,159 @@ impl<C: LargeTableClient> Consumer for BuildConsumer<C> {
                 String::from("must provide `method` argument"),
                 outputs.build(),
             ),
+        }
+    }
+}
+
+pub struct SubmitConsumer {
+    queue_client: QueueClient,
+    lockserv_client: LockservClient,
+}
+
+impl SubmitConsumer {
+    pub fn new(queue_client: QueueClient, lockserv_client: LockservClient) -> Self {
+        Self {
+            queue_client,
+            lockserv_client,
+        }
+    }
+}
+
+impl Consumer for SubmitConsumer {
+    fn get_queue_client(&self) -> &QueueClient {
+        &self.queue_client
+    }
+
+    fn get_lockserv_client(&self) -> &LockservClient {
+        &self.lockserv_client
+    }
+
+    fn consume(&self, message: &Message) -> ConsumeResult {
+        // First stage: schedule query
+        let mut outputs = ArtifactsBuilder::new();
+
+        let change_id = match get_int_arg("change", &message) {
+            Some(0) => {
+                return ConsumeResult::Failure(
+                    String::from("no `change` provided"),
+                    outputs.build(),
+                )
+            }
+            Some(id) => id as i64,
+            None => {
+                return ConsumeResult::Failure(
+                    String::from("must specify argument `change`!"),
+                    outputs.build(),
+                )
+            }
+        };
+
+        let mut msg = Message::new();
+        msg.set_name(format!("query c/{}", change_id));
+        let mut args = ArtifactsBuilder::new();
+        args.add_string("method", String::from("query"));
+        args.add_int("change", change_id);
+
+        for arg in args.build() {
+            msg.mut_arguments().push(arg);
+        }
+        msg.mut_blocks().set_id(message.get_id());
+        msg.mut_blocks().set_queue(message.get_queue().to_string());
+
+        let id = self.get_queue_client().enqueue(String::from("builds"), msg);
+
+        let mut blocker = BlockingMessage::new();
+        blocker.set_id(id);
+        blocker.set_queue(String::from("builds"));
+
+        ConsumeResult::Blocked(outputs.build(), vec![blocker])
+    }
+
+    fn resume(&self, message: &Message) -> ConsumeResult {
+        let mut outputs = ArtifactsBuilder::new();
+        if message.get_blocked_by().len() == 1 {
+            // We're coming back from a query, and need to schedule builds of targets/deps
+            let id = message.get_blocked_by()[0].get_id();
+            let queue = message.get_blocked_by()[0].get_queue();
+
+            let m = match self.get_queue_client().read(queue.to_string(), id) {
+                Some(m) => m,
+                None => {
+                    return ConsumeResult::Failure(
+                        String::from("unable to read blocking task"),
+                        outputs.build(),
+                    )
+                }
+            };
+
+            if m.get_status() != Status::SUCCESS {
+                return ConsumeResult::Failure(String::from("query task failed!"), outputs.build());
+            }
+
+            let mut blockers = Vec::new();
+            for target in m
+                .get_results()
+                .iter()
+                .filter(|r| r.get_name() == "dependency" || r.get_name() == "target")
+            {
+                let build_target = target.get_value_string();
+
+                // Docker image targets are not productive to build, so skip those.
+                if build_target.ends_with("_img")
+                    || build_target.ends_with("_img_push")
+                    || build_target.ends_with("_img_binary")
+                {
+                    continue;
+                }
+
+                outputs.add_string(target.get_name(), build_target.to_string());
+
+                let mut args = ArtifactsBuilder::new();
+
+                let change_id = get_int_arg("change", &message).unwrap();
+                args.add_int("change", change_id);
+                args.add_string("method", "build".to_string());
+                args.add_string("target", build_target.to_string());
+
+                let mut m = Message::new();
+                m.set_name(format!("build + test {}", build_target));
+                for arg in args.build() {
+                    m.mut_arguments().push(arg);
+                }
+                m.mut_blocks().set_id(message.get_id());
+                m.mut_blocks().set_queue(build_target.to_string());
+
+                let id = self.get_queue_client().enqueue(String::from("builds"), m);
+
+                let mut b = BlockingMessage::new();
+                b.set_queue(String::from("builds"));
+                b.set_id(id);
+                blockers.push(b);
+            }
+
+            ConsumeResult::Blocked(outputs.build(), blockers)
+        } else {
+            // All builds are done, so we just need to check for success.
+            for blocker in message.get_blocked_by() {
+                let m = match self
+                    .get_queue_client()
+                    .read(blocker.get_queue().to_string(), blocker.get_id())
+                {
+                    Some(m) => m,
+                    None => {
+                        return ConsumeResult::Failure(
+                            String::from("must specify argument `change`!"),
+                            outputs.build(),
+                        )
+                    }
+                };
+
+                if m.get_status() != Status::SUCCESS {
+                    return ConsumeResult::Failure(String::from("build failed"), outputs.build());
+                }
+            }
+
+            ConsumeResult::Success(outputs.build())
         }
     }
 }

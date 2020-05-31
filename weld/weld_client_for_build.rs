@@ -103,10 +103,18 @@ fn main() {
     let lockserv_client =
         lockserv_client::LockservClient::new(&lockserv_hostname.value(), lockserv_port.value());
     let queue_client = queue_client::QueueClient::new(&queue_hostname.value(), queue_port.value());
-    let consumer = build_consumer::BuildConsumer::new(handler, queue_client, lockserv_client);
+    let build_consumer = build_consumer::BuildConsumer::new(
+        handler.clone(),
+        queue_client.clone(),
+        lockserv_client.clone(),
+    );
+    let submit_consumer = build_consumer::SubmitConsumer::new(queue_client, lockserv_client);
 
     std::thread::spawn(move || {
-        consumer.start(String::from("builds"));
+        build_consumer.start(String::from("builds"));
+    });
+    std::thread::spawn(move || {
+        submit_consumer.start(String::from("submit"));
     });
 
     if mount.value() {
