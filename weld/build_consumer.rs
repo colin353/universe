@@ -388,7 +388,7 @@ impl<C: LargeTableClient> Consumer for SubmitConsumer<C> {
             }
         }
 
-        // Then run the actual submit task
+        // Then apply the patch to the backup git server
         let change_id = get_int_arg("change", &message).unwrap();
         let mut req = weld::ApplyPatchRequest::new();
         req.set_change_id(change_id as u64);
@@ -398,6 +398,7 @@ impl<C: LargeTableClient> Consumer for SubmitConsumer<C> {
             return ConsumeResult::Failure(response.take_reason(), outputs.build());
         }
 
+        // And finally merge the actual change
         let mut req = weld::Change::new();
         req.set_id(change_id as u64);
         let mut response = self.weld.submit(req);
