@@ -5,7 +5,7 @@ use queue_client::{
     get_bool_arg, get_int_arg, get_string_arg, ArtifactsBuilder, BlockingMessage, ConsumeResult,
     Consumer, Message, QueueClient, Status,
 };
-use weld::{RunBuildQueryRequest, RunBuildRequest};
+use weld::{RunBuildQueryRequest, RunBuildRequest, WeldServer};
 
 pub struct BuildConsumer<C: LargeTableClient> {
     queue_client: QueueClient,
@@ -298,17 +298,20 @@ impl Consumer for PresubmitConsumer {
 pub struct SubmitConsumer<C: LargeTableClient> {
     queue_client: QueueClient,
     lockserv_client: LockservClient,
-    weld: WeldLocalServiceHandler<C>,
+    weld_client: WeldLocalServiceHandler<C>,
+    weld_server: weld::WeldServerClient,
 }
 
 impl<C: LargeTableClient> SubmitConsumer<C> {
     pub fn new(
-        weld: WeldLocalServiceHandler<C>,
+        weld_client: WeldLocalServiceHandler<C>,
+        weld_server: weld::WeldServerClient,
         queue_client: QueueClient,
         lockserv_client: LockservClient,
     ) -> Self {
         Self {
-            weld,
+            weld_server,
+            weld_client,
             queue_client,
             lockserv_client,
         }
@@ -343,6 +346,26 @@ impl<C: LargeTableClient> Consumer for SubmitConsumer<C> {
             }
         };
 
+        // First, double check that the change is valid and synced
+        let mut c = weld::Change::new();
+        c.set_id(change_id as u64);
+        let change = self.weld_server.get_change(c);
+        if !change.get_found() {
+            return ConsumeResult::Failure(
+                format!("change {} does not exist!", change_id),
+                outputs.build(),
+            );
+        }
+
+        let most_recent_change = self.weld_server.get_latest_change();
+        if change.get_based_index() != most_recent_change.get_submitted_id() {
+            return ConsumeResult::Failure(
+                "change out of date, requires sync".to_string(),
+                outputs.build(),
+            );
+        }
+
+        // OK, we are good to submit, so
         let mut args = ArtifactsBuilder::new();
         args.add_int("change", change_id);
 
@@ -359,7 +382,7 @@ impl<C: LargeTableClient> Consumer for SubmitConsumer<C> {
             .enqueue(String::from("presubmit"), m);
 
         let mut b = BlockingMessage::new();
-        b.set_queue(String::from("builds"));
+        b.set_queue(String::from("presubmit"));
         b.set_id(id);
 
         ConsumeResult::Blocked(outputs.build(), vec![b])
@@ -392,7 +415,7 @@ impl<C: LargeTableClient> Consumer for SubmitConsumer<C> {
         let change_id = get_int_arg("change", &message).unwrap();
         let mut req = weld::ApplyPatchRequest::new();
         req.set_change_id(change_id as u64);
-        let mut response = self.weld.apply_patch(req);
+        let mut response = self.weld_client.apply_patch(req);
 
         if !response.get_success() {
             return ConsumeResult::Failure(response.take_reason(), outputs.build());
@@ -401,7 +424,7 @@ impl<C: LargeTableClient> Consumer for SubmitConsumer<C> {
         // And finally merge the actual change
         let mut req = weld::Change::new();
         req.set_id(change_id as u64);
-        let mut response = self.weld.submit(req);
+        let mut response = self.weld_client.submit(req);
 
         if response.get_status() != weld::SubmitStatus::OK {
             return ConsumeResult::Failure(

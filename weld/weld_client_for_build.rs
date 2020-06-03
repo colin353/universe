@@ -82,7 +82,7 @@ fn main() {
 
     let client =
         weld::WeldServerClient::new(&weld_hostname.value(), String::new(), server_port.value());
-    repo.add_remote_server(client);
+    repo.add_remote_server(client.clone());
 
     // Start gRPC service.
     let mut handler = client_service::WeldLocalServiceHandler::new(repo.clone());
@@ -111,7 +111,7 @@ fn main() {
     let presubmit_consumer =
         build_consumer::PresubmitConsumer::new(queue_client.clone(), lockserv_client.clone());
     let submit_consumer =
-        build_consumer::SubmitConsumer::new(handler, queue_client, lockserv_client);
+        build_consumer::SubmitConsumer::new(handler, client, queue_client, lockserv_client);
 
     std::thread::spawn(move || {
         build_consumer.start(String::from("builds"));
