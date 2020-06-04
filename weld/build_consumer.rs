@@ -422,9 +422,9 @@ impl<C: LargeTableClient> Consumer for SubmitConsumer<C> {
         }
 
         // And finally merge the actual change
-        let mut req = weld::Change::new();
-        req.set_id(change_id as u64);
-        let mut response = self.weld_client.submit(req);
+        let mut change = weld::Change::new();
+        change.set_remote_id(change_id as u64);
+        let mut response = self.weld_client.submit(change);
 
         if response.get_status() != weld::SubmitStatus::OK {
             return ConsumeResult::Failure(

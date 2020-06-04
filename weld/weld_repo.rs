@@ -877,6 +877,14 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
         response
     }
 
+    pub fn submit_remote(&self, id: u64) -> weld::SubmitResponse {
+        let mut change = weld::Change::new();
+        change.set_id(id);
+        change.set_is_based_locally(true);
+
+        self.remote_server.as_ref().unwrap().submit(change)
+    }
+
     pub fn submit(&self, id: u64) -> weld::SubmitResponse {
         let mut change = match self.get_change(id) {
             Some(c) => c,
@@ -889,11 +897,7 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
         // Since this is going to the remote server, we need to reframe the change into the remote
         // server's frame. That means converting the is_based_locally to true and setting the
         // remote_id to the real id.
-        let remote_id = change.get_remote_id();
-        change.set_id(remote_id);
-        change.set_is_based_locally(true);
-
-        let response = self.remote_server.as_ref().unwrap().submit(change);
+        let response = self.submit_remote(change.get_remote_id());
 
         if response.get_id() != 0 {
             // The submit was successful. Delete the client.

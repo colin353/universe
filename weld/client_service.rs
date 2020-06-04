@@ -93,14 +93,19 @@ impl<C: LargeTableClient> WeldLocalServiceHandler<C> {
     }
 
     pub fn submit(&self, change: weld::Change) -> weld::SubmitResponse {
-        let id = match change.get_id() {
-            0 => match self.repo.lookup_friendly_name(change.get_friendly_name()) {
+        if change.get_id() == 0 {
+            if change.get_remote_id() != 0 {
+                return self.repo.submit_remote(change.get_remote_id());
+            }
+
+            let id = match self.repo.lookup_friendly_name(change.get_friendly_name()) {
                 Some(x) => x,
                 None => return weld::SubmitResponse::new(),
-            },
-            x => x,
-        };
-        self.repo.submit(id)
+            };
+            return self.repo.submit(id);
+        }
+
+        self.repo.submit(change.get_id())
     }
 
     pub fn get_patch(&self, change: weld::Change) -> weld::Patch {
