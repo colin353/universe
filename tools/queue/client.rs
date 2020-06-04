@@ -16,23 +16,21 @@ pub fn get_timestamp_usec() -> u64 {
 
 impl QueueClient {
     pub fn new(hostname: &str, port: u16) -> Self {
-        Self {
-            client: Arc::new(
-                QueueServiceClient::new_plain(hostname, port, Default::default()).unwrap(),
-            ),
-        }
-    }
-
-    pub fn wait_for_connection(&self) {
-        let mut req = ReadRequest::new();
-        for _ in 0..10 {
-            if let Ok(_) = self.client.read(Default::default(), req.clone()).wait() {
-                return;
+        let mut retries = 0;
+        let client = loop {
+            if let Ok(c) = QueueServiceClient::new_plain(hostname, port, Default::default()) {
+                break c;
             }
             std::thread::sleep(std::time::Duration::from_secs(5));
-        }
+            retries += 1;
+            if retries > 10 {
+                panic!("couldn't connect to queue service!");
+            }
+        };
 
-        panic!("Couldn't connect to queue service!");
+        Self {
+            client: Arc::new(client),
+        }
     }
 
     pub fn enqueue(&self, queue: String, msg: Message) -> u64 {
@@ -181,9 +179,6 @@ pub trait Consumer {
     fn get_lockserv_client(&self) -> &lockserv_client::LockservClient;
 
     fn start(&self, queue: String) {
-        // Wait for the queue server to start
-        self.get_queue_client().wait_for_connection();
-
         let renewer_client = self.get_lockserv_client().clone();
         std::thread::spawn(move || {
             renewer_client.defend();
