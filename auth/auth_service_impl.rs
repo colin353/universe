@@ -223,7 +223,6 @@ impl AuthWebServer {
         let client = hyper::client::Client::builder().build::<_, hyper::Body>(https);
         let tokens = self.tokens.clone();
         let email_whitelist = self.email_whitelist.clone();
-
         Box::new(
             client
                 .request(req)

@@ -23,6 +23,18 @@ impl QueueClient {
         }
     }
 
+    pub fn wait_for_connection(&self) {
+        let mut req = ReadRequest::new();
+        for _ in 0..10 {
+            if let Ok(_) = self.client.read(Default::default(), req.clone()).wait() {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_secs(5));
+        }
+
+        panic!("Couldn't connect to queue service!");
+    }
+
     pub fn enqueue(&self, queue: String, msg: Message) -> u64 {
         let mut req = EnqueueRequest::new();
         req.set_queue(queue);
