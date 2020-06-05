@@ -205,7 +205,7 @@ impl ReviewServer {
             for arg in args.build() {
                 msg.mut_arguments().push(arg);
             }
-            msg.set_name(format!("query c/{}", change_id));
+            msg.set_name(format!("submit c/{}", change_id));
             self.queue_client.enqueue("submit".to_string(), msg);
         }
 

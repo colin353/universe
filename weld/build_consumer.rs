@@ -369,7 +369,7 @@ impl<C: LargeTableClient> Consumer for SubmitConsumer<C> {
         args.add_int("change", change_id);
 
         let mut m = Message::new();
-        m.set_name(format!("submit c/{}", change_id));
+        m.set_name(format!("presubmit for c/{}", change_id));
         for arg in args.build() {
             m.mut_arguments().push(arg);
         }
