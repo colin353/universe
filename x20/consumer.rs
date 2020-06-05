@@ -69,6 +69,7 @@ impl<C: LargeTableClient + Clone> Consumer for X20Consumer<C> {
                     m.set_name(format!("build + publish {}", target));
 
                     let mut args = ArtifactsBuilder::new();
+                    args.add_string("method", String::from("build"));
                     args.add_string("target", target.to_string());
                     args.add_int("change", change_id);
                     args.add_bool("upload", true);
