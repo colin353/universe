@@ -1,7 +1,7 @@
 {
     "name": "queue",
     "binary_name": "queue",
-    "priority": 150,
+    "priority": 75,
     "environment": "server",
     "long_running": true,
     "arguments": {

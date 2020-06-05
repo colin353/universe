@@ -267,7 +267,11 @@ impl Consumer for PresubmitConsumer {
                 blockers.push(b);
             }
 
-            ConsumeResult::Blocked(outputs.build(), blockers)
+            if blockers.len() > 0 {
+                ConsumeResult::Blocked(outputs.build(), blockers)
+            } else {
+                ConsumeResult::Success(outputs.build())
+            }
         } else {
             // All builds are done, so we just need to check for success.
             for blocker in message.get_blocked_by() {
