@@ -391,6 +391,8 @@ impl<C: LargeTableClient> Consumer for SubmitConsumer<C> {
     fn resume(&self, message: &Message) -> ConsumeResult {
         let mut outputs = ArtifactsBuilder::new();
 
+        let mut targets = std::collections::HashSet::new();
+
         // Check that presubmit has passed
         for blocker in message.get_blocked_by() {
             let m = match self
@@ -408,6 +410,12 @@ impl<C: LargeTableClient> Consumer for SubmitConsumer<C> {
 
             if m.get_status() != Status::SUCCESS {
                 return ConsumeResult::Failure(String::from("build failed"), outputs.build());
+            }
+
+            for result in m.get_results() {
+                if result.get_name() == "target" || result.get_name() == "dependency" {
+                    targets.insert(result.get_value_string().to_string());
+                }
             }
         }
 
@@ -432,6 +440,19 @@ impl<C: LargeTableClient> Consumer for SubmitConsumer<C> {
                 outputs.build(),
             );
         }
+
+        // Submit is a success, so let's also schedule a publish task to deploy
+        // these binaries
+        let mut args = ArtifactsBuilder::new();
+        args.add_int("change", change_id);
+        for target in targets.into_iter() {
+            args.add_string("target", target);
+        }
+
+        let mut m = Message::new();
+        m.set_name(format!("publish c/{}", change_id));
+        *m.mut_arguments() = args.build_rf();
+        self.get_queue_client().enqueue(String::from("publish"), m);
 
         ConsumeResult::Success(outputs.build())
     }
