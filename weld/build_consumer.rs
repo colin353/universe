@@ -234,6 +234,7 @@ impl Consumer for PresubmitConsumer {
                 .filter(|r| r.get_name() == "dependency" || r.get_name() == "target")
             {
                 let build_target = target.get_value_string();
+                outputs.add_string(target.get_name(), build_target.to_string());
 
                 // Docker image targets are not productive to build, so skip those.
                 if build_target.ends_with("_img")
@@ -242,8 +243,6 @@ impl Consumer for PresubmitConsumer {
                 {
                     continue;
                 }
-
-                outputs.add_string(target.get_name(), build_target.to_string());
 
                 let mut args = ArtifactsBuilder::new();
 
