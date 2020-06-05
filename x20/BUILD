@@ -43,11 +43,15 @@ rust_binary(
     srcs = [
         "server.rs",
     ],
+    edition = "2018",
     deps = [
+        ":consumer",
         ":x20_grpc_rust",
         ":x20_server_lib",
         "//auth:auth_client",
         "//largetable:largetable_client",
+        "//tools/lockserv:lockserv_client",
+        "//tools/queue:queue_client",
         "//util/flags",
         "@io_bazel_rules_rust//proto/raze:grpc",
         "@io_bazel_rules_rust//proto/raze:tls_api_stub",
@@ -61,6 +65,19 @@ rust_library(
         ":x20_grpc_rust",
         "//util/grpc_tls",
         "@io_bazel_rules_rust//proto/raze:grpc",
+    ],
+)
+
+rust_library(
+    name = "consumer",
+    srcs = ["consumer.rs"],
+    edition = "2018",
+    deps = [
+        ":x20_grpc_rust",
+        ":x20_server_lib",
+        "//largetable:largetable_client",
+        "//tools/lockserv:lockserv_client",
+        "//tools/queue:queue_client",
     ],
 )
 

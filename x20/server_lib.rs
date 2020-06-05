@@ -29,7 +29,7 @@ impl<C: LargeTableClient + Clone> X20ServiceHandler<C> {
         }
     }
 
-    fn get_binaries(&self) -> x20::GetBinariesResponse {
+    pub fn get_binaries(&self) -> x20::GetBinariesResponse {
         let bin_iter = largetable_client::LargeTableScopedIterator::new(
             &self.database,
             String::from(BINARIES),
@@ -49,8 +49,12 @@ impl<C: LargeTableClient + Clone> X20ServiceHandler<C> {
         self.auth.authenticate(token.to_owned()).get_success()
     }
 
-    fn publish_binary(&self, mut req: x20::PublishBinaryRequest) -> x20::PublishBinaryResponse {
-        if !self.authenticate(req.get_token()) {
+    pub fn publish_binary(
+        &self,
+        mut req: x20::PublishBinaryRequest,
+        require_auth: bool,
+    ) -> x20::PublishBinaryResponse {
+        if require_auth && !self.authenticate(req.get_token()) {
             let mut response = x20::PublishBinaryResponse::new();
             response.set_error(x20::Error::AUTHENTICATION);
             return response;
@@ -74,7 +78,7 @@ impl<C: LargeTableClient + Clone> X20ServiceHandler<C> {
         x20::PublishBinaryResponse::new()
     }
 
-    fn get_configs(&self, req: x20::GetConfigsRequest) -> x20::GetConfigsResponse {
+    pub fn get_configs(&self, req: x20::GetConfigsRequest) -> x20::GetConfigsResponse {
         let configs_iter = largetable_client::LargeTableScopedIterator::new(
             &self.database,
             config_rowname(req.get_environment()),
@@ -90,7 +94,7 @@ impl<C: LargeTableClient + Clone> X20ServiceHandler<C> {
         response
     }
 
-    fn publish_config(&self, mut req: x20::PublishConfigRequest) -> x20::PublishConfigResponse {
+    pub fn publish_config(&self, mut req: x20::PublishConfigRequest) -> x20::PublishConfigResponse {
         if !self.authenticate(req.get_token()) {
             let mut response = x20::PublishConfigResponse::new();
             response.set_error(x20::Error::AUTHENTICATION);
@@ -129,7 +133,7 @@ impl<C: LargeTableClient + Clone> x20::X20Service for X20ServiceHandler<C> {
         _: grpc::RequestOptions,
         req: x20::PublishBinaryRequest,
     ) -> grpc::SingleResponse<x20::PublishBinaryResponse> {
-        grpc::SingleResponse::completed(self.publish_binary(req))
+        grpc::SingleResponse::completed(self.publish_binary(req, true))
     }
 
     fn get_configs(
@@ -167,7 +171,7 @@ mod tests {
         req.mut_binary().set_url(String::from("http://google.com"));
         req.mut_binary().set_target(String::from("//vim:vim"));
 
-        handler.publish_binary(req);
+        handler.publish_binary(req, true);
 
         // Should be able to read that back
         let response = handler.get_binaries();

@@ -321,6 +321,10 @@ impl ArtifactsBuilder {
         self.args.push(a)
     }
 
+    pub fn build_rf(self) -> protobuf::RepeatedField<Artifact> {
+        protobuf::RepeatedField::from_vec(self.build())
+    }
+
     pub fn build(self) -> Vec<Artifact> {
         self.args
     }
