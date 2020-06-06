@@ -117,10 +117,15 @@ pub struct QueueServiceHandler<C: LargeTableClient + Clone + Send + Sync + 'stat
     lockserv_client: Option<lockserv_client::LockservClient>,
     queues: Arc<RwLock<HashSet<String>>>,
     router: Arc<MessageRouter>,
+    base_url: String,
 }
 
 impl<C: LargeTableClient + Clone + Send + Sync + 'static> QueueServiceHandler<C> {
-    pub fn new(database: C, lockserv_client: lockserv_client::LockservClient) -> Self {
+    pub fn new(
+        database: C,
+        lockserv_client: lockserv_client::LockservClient,
+        base_url: String,
+    ) -> Self {
         // Set up compaction policy
         let mut policy = largetable_client::CompactionPolicy::new();
         policy.set_row(QUEUE.to_owned());
@@ -145,6 +150,7 @@ impl<C: LargeTableClient + Clone + Send + Sync + 'static> QueueServiceHandler<C>
             queues: Arc::new(RwLock::new(queues)),
             lockserv_client: Some(lockserv_client),
             router: Arc::new(MessageRouter::new()),
+            base_url,
         }
     }
 
@@ -154,6 +160,7 @@ impl<C: LargeTableClient + Clone + Send + Sync + 'static> QueueServiceHandler<C>
             queues: Arc::new(RwLock::new(HashSet::new())),
             lockserv_client: None,
             router: Arc::new(MessageRouter::new()),
+            base_url: String::new(),
         }
     }
 
@@ -218,6 +225,10 @@ impl<C: LargeTableClient + Clone + Send + Sync + 'static> QueueServiceHandler<C>
     pub fn read(&self, queue: &str, id: u64) -> Option<Message> {
         self.database
             .read_proto(&get_queue_rowname(queue), &get_colname(id), 0)
+            .map(|mut m: Message| {
+                m.set_info_url(format!("{}/queue/{}/{}", self.base_url, queue, id));
+                m
+            })
     }
 
     pub fn consume(&self, req: ConsumeRequest) -> ConsumeResponse {

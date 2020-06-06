@@ -62,7 +62,7 @@ fn main() {
     );
     database.wait_for_connection();
 
-    let handler = server_lib::QueueServiceHandler::new(database.clone(), ls);
+    let handler = server_lib::QueueServiceHandler::new(database.clone(), ls, base_url.value());
 
     let mut server = grpc::ServerBuilder::<tls_api_stub::TlsAcceptor>::new();
     server.http.set_port(grpc_port.value());
