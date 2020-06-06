@@ -4,7 +4,10 @@
 <head>
     <meta charset="UTF-8">
     <link rel="stylesheet" type="text/css" href="/static/style.css">
-    <title>{{title}}</title>
+    <title>
+        {{subtitle == ""}}queue{{/subtitle}}
+        {{subtitle != ""}}queue - {{subtitle}}{{/subtitle}}
+    </title>
 
     <style type="text/css">
         @import url(https://fonts.googleapis.com/css?family=Roboto+Mono);
@@ -97,6 +100,17 @@
             font-weight: normal;
         }
 
+        .queue-block {
+            height: 44px;
+            text-align: center;
+            padding-top: 20px;
+            display: inline-block;
+            width: 200px;
+            margin: 5px;
+            border: 1px solid black;
+            cursor: pointer;
+        }
+
         .status-badge.BLOCKED {
             background-color: #92C4A9;
         }
@@ -125,7 +139,10 @@
 
 <body>
     <div class="header">
-        <h2 style="margin-right: 20px; flex: 1"><a class="invisible-link" href="/">queue</a></h2>
+        <h2 style="margin-right: 20px; flex: 1"><a class="invisible-link" href="/">
+                {{subtitle == ""}}queue{{/subtitle}}
+                {{subtitle != ""}}queue - {{subtitle}}{{/subtitle}}
+            </a></h2>
         <input class="search-input" type=text placeholder="search" />
     </div>
     {{content}}

@@ -29,11 +29,12 @@ impl<C: LargeTableClient + Clone + Send + Sync + 'static> QueueWebServer<C> {
         }
     }
 
-    fn wrap_template(&self, content: String) -> String {
+    fn wrap_template(&self, content: String, subtitle: &str) -> String {
         tmpl::apply(
             TEMPLATE,
             &content!(
-                "title" => "tasks",
+                "title" => "queue",
+                "subtitle" => subtitle,
                 "content" => content
             ),
         )
@@ -70,7 +71,7 @@ impl<C: LargeTableClient + Clone + Send + Sync + 'static> QueueWebServer<C> {
             ),
         );
 
-        Response::new(Body::from(self.wrap_template(content)))
+        Response::new(Body::from(self.wrap_template(content, queue)))
     }
 
     fn message(&self, queue: &str, id: &str) -> Response {
@@ -120,7 +121,7 @@ impl<C: LargeTableClient + Clone + Send + Sync + 'static> QueueWebServer<C> {
                 }).collect()
             ),
         );
-        Response::new(Body::from(self.wrap_template(content)))
+        Response::new(Body::from(self.wrap_template(content, queue)))
     }
 
     fn index(&self, _path: String, _req: Request) -> Response {
@@ -143,7 +144,7 @@ impl<C: LargeTableClient + Clone + Send + Sync + 'static> QueueWebServer<C> {
             ),
         );
 
-        Response::new(Body::from(self.wrap_template(content)))
+        Response::new(Body::from(self.wrap_template(content, "")))
     }
 
     fn not_found(&self) -> Response {

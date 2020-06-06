@@ -5,12 +5,12 @@
     {{/queues}}
 
     {{queues != 0}}
-    <table class='task-list'>
+    <div class='queue-block-container'>
         {{queues[]}}
-        <tr onclick="window.location.href='/queue/{{name}}'">
-            <td class='name'>{{name}}</td>
-        </tr>
+        <div onclick="window.location.href='/queue/{{name}}'" class='queue-block'>
+            {{name}}
+        </div>
         {{/queues}}
-    </table>
+    </div>
     {{/queues}}
 </div>
