@@ -290,7 +290,8 @@ impl<C: LargeTableClient> WeldLocalServiceHandler<C> {
             let output = match cmd
                 .arg(req.get_target())
                 .current_dir(format!(
-                    "{}/unsubmitted/{}",
+                    "{}/{}/{}",
+                    base_dir,
                     self.mount_dir,
                     req.get_change_id()
                 ))
@@ -345,8 +346,9 @@ impl<C: LargeTableClient> WeldLocalServiceHandler<C> {
                 let ext = split_target[1];
 
                 let tag = match std::fs::read_to_string(format!(
-                    "{}/unsubmitted/{}/bazel-bin/{}/{}.digest",
+                    "{}/{}/{}/bazel-bin/{}/{}.digest",
                     self.mount_dir,
+                    base_dir,
                     req.get_change_id(),
                     path,
                     ext
