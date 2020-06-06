@@ -173,7 +173,10 @@ message GetChangeRequest {
   bool filled = 2;
 }
 
-message RunBuildQueryRequest { uint64 change_id = 1; }
+message RunBuildQueryRequest {
+  uint64 change_id = 1;
+  bool is_submitted = 2;
+}
 message RunBuildQueryResponse {
   bool success = 1;
   repeated string targets = 2;

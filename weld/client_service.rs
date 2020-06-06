@@ -186,7 +186,8 @@ impl<C: LargeTableClient> WeldLocalServiceHandler<C> {
             .arg("--test_output=errors")
             .arg(req.get_target())
             .current_dir(format!(
-                "{}/unsubmitted/{}",
+                "{}/{}/{}",
+                base_dir,
                 self.mount_dir,
                 req.get_change_id()
             ))
@@ -415,6 +416,12 @@ impl<C: LargeTableClient> WeldLocalServiceHandler<C> {
             }
         };
 
+        let base_dir = if req.get_is_submitted() {
+            "remote"
+        } else {
+            "unsubmitted"
+        };
+
         let mut c = weld::Change::new();
         c.set_id(req.get_change_id());
         let change = remote_server.get_change(c);
@@ -459,7 +466,8 @@ impl<C: LargeTableClient> WeldLocalServiceHandler<C> {
                 .arg("query")
                 .arg(changed_file)
                 .current_dir(format!(
-                    "{}/unsubmitted/{}",
+                    "{}/{}/{}",
+                    base_dir,
                     self.mount_dir,
                     req.get_change_id()
                 ))
@@ -495,8 +503,9 @@ impl<C: LargeTableClient> WeldLocalServiceHandler<C> {
                 .arg("query")
                 .arg(format!("attr('srcs', {}, //...)", file))
                 .current_dir(format!(
-                    "{}/unsubmitted/{}",
+                    "{}/{}/{}",
                     self.mount_dir,
+                    base_dir,
                     req.get_change_id()
                 ))
                 .output()
@@ -531,8 +540,9 @@ impl<C: LargeTableClient> WeldLocalServiceHandler<C> {
                 .arg("query")
                 .arg(format!("rdeps(//..., {})", target))
                 .current_dir(format!(
-                    "{}/unsubmitted/{}",
+                    "{}/{}/{}",
                     self.mount_dir,
+                    base_dir,
                     req.get_change_id()
                 ))
                 .output()
