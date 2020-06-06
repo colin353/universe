@@ -71,6 +71,7 @@ impl<C: LargeTableClient> Consumer for BuildConsumer<C> {
             Some("build") => {
                 let mut req = RunBuildRequest::new();
                 req.set_change_id(change_id);
+                req.set_is_submitted(get_bool_arg("is_submitted", &message).unwrap_or(false));
 
                 let target = match get_string_arg("target", &message) {
                     Some(t) => t,

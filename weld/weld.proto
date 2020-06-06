@@ -180,6 +180,7 @@ message RunBuildRequest {
   bool optimized = 3;
   bool upload = 4;
   bool is_docker_img_push = 5;
+  bool is_submitted = 6;
 }
 message RunBuildResponse {
   bool success = 1;

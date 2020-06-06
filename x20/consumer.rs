@@ -74,6 +74,7 @@ impl<C: LargeTableClient + Clone> Consumer for X20Consumer<C> {
                     args.add_int("change", change_id);
                     args.add_bool("upload", true);
                     args.add_bool("optimized", true);
+                    args.add_bool("is_submitted", true);
                     *m.mut_arguments() = args.build_rf();
 
                     let id = self.get_queue_client().enqueue(String::from("builds"), m);

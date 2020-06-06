@@ -142,11 +142,18 @@ impl<C: LargeTableClient> WeldLocalServiceHandler<C> {
             cmd.arg("-c").arg("opt");
         }
 
+        let base_dir = if req.get_is_submitted() {
+            "remote"
+        } else {
+            "unsubmitted"
+        };
+
         let output = match cmd
             .arg(req.get_target())
             .current_dir(format!(
-                "{}/unsubmitted/{}",
+                "{}/{}/{}",
                 self.mount_dir,
+                base_dir,
                 req.get_change_id()
             ))
             .output()
