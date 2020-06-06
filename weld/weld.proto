@@ -75,6 +75,12 @@ message Change {
   repeated File staged_files = 15;
 
   string task_id = 16;
+  repeated TaskId associated_tasks = 17;
+}
+
+message TaskId {
+  string queue = 1;
+  uint64 id = 2;
 }
 
 message SnapshotLogEntry {

@@ -113,14 +113,18 @@ impl ReviewServer {
 
         let mut content = render::change(&change);
 
-        if !change.get_task_id().is_empty() {
-            if let Some(response) = self.task_client.get_status(change.get_task_id().to_owned()) {
-                content.insert(
-                    "tasks",
-                    tmpl::ContentsMultiMap::from(render::get_task_pills(&response)),
-                )
+        let mut task_statuses = Vec::new();
+        for task in change.get_associated_tasks() {
+            if let Some(response) = self
+                .queue_client
+                .read(task.get_queue().to_string(), task.get_id())
+            {
+                task_statuses.push(render::get_task_pills(&response));
             }
         }
+        // Reverse the order, so that the most recent ones show up first.
+        task_statuses.reverse();
+        content.insert("tasks", tmpl::ContentsMultiMap::from(task_statuses));
 
         let body = tmpl::apply(MODIFIED_FILES, &content);
         content.insert("body", body);
@@ -138,15 +142,6 @@ impl ReviewServer {
             .iter()
             .filter_map(|c| c.get_snapshots().iter().map(|x| x.get_snapshot_id()).max())
             .max();
-
-        if !change.get_task_id().is_empty() {
-            if let Some(response) = self.task_client.get_status(change.get_task_id().to_owned()) {
-                content.insert(
-                    "tasks",
-                    tmpl::ContentsMultiMap::from(render::get_task_pills(&response)),
-                )
-            }
-        }
 
         let last_snapshot_id = match maybe_last_snapshot {
             Some(x) => x,
@@ -179,6 +174,17 @@ impl ReviewServer {
         content.insert("id", change.get_id());
         let diff_view = tmpl::apply(DIFF_VIEW, &content);
 
+        let mut task_statuses = Vec::new();
+        for task in change.get_associated_tasks() {
+            if let Some(response) = self
+                .queue_client
+                .read(task.get_queue().to_string(), task.get_id())
+            {
+                task_statuses.push(render::get_task_pills(&response));
+            }
+        }
+        content.insert("tasks", tmpl::ContentsMultiMap::from(task_statuses));
+
         let mut content = render::change(&change);
         content.insert("body", diff_view);
         let page = tmpl::apply(CHANGE, &content);
@@ -198,15 +204,23 @@ impl ReviewServer {
             };
 
             let mut args = queue_client::ArtifactsBuilder::new();
-            args.add_string("method", "query".to_string());
             args.add_int("change", change_id);
 
             let mut msg = queue_client::Message::new();
             for arg in args.build() {
                 msg.mut_arguments().push(arg);
             }
-            msg.set_name(format!("submit c/{}", change_id));
-            self.queue_client.enqueue("submit".to_string(), msg);
+            msg.set_name(format!("presubmit c/{}", change_id));
+            let id = self.queue_client.enqueue("presubmit".to_string(), msg);
+            let mut task = weld::TaskId::new();
+            task.set_id(id);
+            task.set_queue("presubmit".to_string());
+
+            // Remember the task we scheduled
+            let mut c = weld::Change::new();
+            c.set_id(change_id as u64);
+            c.mut_associated_tasks().push(task);
+            self.client.update_change_metadata(c);
         }
 
         if path.starts_with("/api/tasks/submit/") {
@@ -215,16 +229,24 @@ impl ReviewServer {
                 Some(c) => c.parse().unwrap_or(0),
                 None => return Response::new(Body::from("no such change")),
             };
-            let method = String::from("try_submit");
 
-            let mut args = task_client::ArgumentsBuilder::new();
-            args.add_int("change_id", change_id);
+            let mut args = queue_client::ArtifactsBuilder::new();
+            args.add_int("change", change_id);
 
-            let mut response = self.task_client.create_task(method, args.build());
+            let mut msg = queue_client::Message::new();
+            for arg in args.build() {
+                msg.mut_arguments().push(arg);
+            }
+            msg.set_name(format!("submit c/{}", change_id));
+            let id = self.queue_client.enqueue("submit".to_string(), msg);
+            let mut task = weld::TaskId::new();
+            task.set_id(id);
+            task.set_queue("submit".to_string());
 
+            // Remember the task we scheduled
             let mut c = weld::Change::new();
             c.set_id(change_id as u64);
-            c.set_task_id(response.take_task_id());
+            c.mut_associated_tasks().push(task);
             self.client.update_change_metadata(c);
         }
 

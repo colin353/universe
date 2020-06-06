@@ -96,18 +96,10 @@ pub fn change(c: &weld::Change) -> tmpl::ContentsMap {
     )
 }
 
-pub fn get_task_pills(c: &task_client::TaskStatus) -> Vec<tmpl::ContentsMap> {
-    if c.get_subtasks().len() == 0 {
-        return vec![content!(
-            "name" => c.get_name(),
-            "status" => format!("{:?}", c.get_status()),
-            "info_url" => c.get_info_url()
-        )];
-    }
-
-    c.get_subtasks()
-        .iter()
-        .map(|x| get_task_pills(x))
-        .flatten()
-        .collect()
+pub fn get_task_pills(c: &queue_client::Message) -> tmpl::ContentsMap {
+    return content!(
+        "name" => c.get_name(),
+        "status" => format!("{:?}", c.get_status()),
+        "info_url" => c.get_info_url()
+    );
 }

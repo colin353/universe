@@ -319,6 +319,11 @@ impl<C: LargeTableClient> WeldServiceHandler<C> {
         if req.get_reviewers().len() > 0 {
             ch.set_reviewers(req.take_reviewers());
         }
+        if req.get_associated_tasks().len() > 0 {
+            for task in req.take_associated_tasks().into_iter() {
+                ch.mut_associated_tasks().push(task);
+            }
+        }
 
         self.repo.update_change(&ch);
         ch
