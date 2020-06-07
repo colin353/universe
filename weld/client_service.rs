@@ -187,8 +187,8 @@ impl<C: LargeTableClient> WeldLocalServiceHandler<C> {
             .arg(req.get_target())
             .current_dir(format!(
                 "{}/{}/{}",
-                base_dir,
                 self.mount_dir,
+                base_dir,
                 req.get_change_id()
             ))
             .output()
@@ -467,8 +467,8 @@ impl<C: LargeTableClient> WeldLocalServiceHandler<C> {
                 .arg(changed_file)
                 .current_dir(format!(
                     "{}/{}/{}",
-                    base_dir,
                     self.mount_dir,
+                    base_dir,
                     req.get_change_id()
                 ))
                 .output()
