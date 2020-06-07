@@ -53,6 +53,7 @@ pub fn extract_definitions(file: &File) -> Vec<SymbolDefinition> {
         FileType::RUST => rust::extract_definitions(file),
         FileType::PROTO => proto::extract_definitions(file),
         FileType::PYTHON => python::extract_definitions(file),
+        FileType::JAVASCRIPT => javascript::extract_definitions(file),
         _ => default::extract_definitions(file),
     }
 }
