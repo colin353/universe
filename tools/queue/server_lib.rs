@@ -226,7 +226,7 @@ impl<C: LargeTableClient + Clone + Send + Sync + 'static> QueueServiceHandler<C>
         self.database
             .read_proto(&get_queue_rowname(queue), &get_colname(id), 0)
             .map(|mut m: Message| {
-                m.set_info_url(format!("{}/queue/{}/{}", self.base_url, queue, id));
+                m.set_info_url(format!("{}queue/{}/{}", self.base_url, queue, id));
                 m
             })
     }
