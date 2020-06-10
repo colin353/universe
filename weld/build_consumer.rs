@@ -445,6 +445,9 @@ impl<C: LargeTableClient> Consumer for SubmitConsumer<C> {
             );
         }
 
+        // Update to use the submitted change ID
+        let change_id = response.get_id() as i64;
+
         // Submit is a success, so let's also schedule a publish task to deploy
         // these binaries
         let mut args = ArtifactsBuilder::new();
