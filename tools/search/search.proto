@@ -19,6 +19,8 @@ message QueryKeyword {
 
   // If it's a required filename prefix
   bool is_prefix = 3;
+
+  bool is_language = 4;
 }
 
 message Query {
@@ -126,6 +128,9 @@ message SearchRequest {
 message SearchResponse {
   repeated Candidate candidates = 1;
   Error error = 2;
+
+  repeated string languages = 3;
+  repeated string prefixes = 4;
 }
 
 service SearchService { rpc Search(SearchRequest) returns (SearchResponse); }

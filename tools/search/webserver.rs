@@ -49,17 +49,17 @@ where
     }
 
     fn results(&self, keywords: &str, path: String, req: Request) -> Response {
-        let candidates = self.searcher.search(keywords);
+        let mut results = self.searcher.search(keywords);
 
-        if candidates.len() == 1 {
+        if results.get_candidates().len() == 1 {
             // Only one search result! Skip right to the detail page.
             let mut response = Response::new(Body::from(""));
             self.redirect(
                 &format!(
                     "/{}?q={}#L{}",
-                    candidates[0].get_filename(),
+                    results.get_candidates()[0].get_filename(),
                     ws_utils::urlencode(keywords),
-                    candidates[0].get_jump_to_line() + 1,
+                    results.get_candidates()[0].get_jump_to_line() + 1,
                 ),
                 &mut response,
             );
@@ -68,7 +68,12 @@ where
 
         let page = tmpl::apply(
             RESULTS,
-            &content!("query" => keywords; "results" => candidates.iter().map(|r| render::result(r)).collect()),
+            &content!(
+                "query" => keywords;
+                "results" => results.get_candidates().iter().map(|r| render::result(r)).collect(),
+                "languages" => results.take_languages().iter().map(|x| content!("name" => x)).collect(),
+                "prefixes" => results.take_prefixes().iter().map(|x| content!("name" => x)).collect()
+            ),
         );
         Response::new(Body::from(self.wrap_template(true, keywords, page)))
     }

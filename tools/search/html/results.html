@@ -19,9 +19,57 @@
         margin-right: auto;
         margin-top: 100px;
     }
+
+    .refine-section {
+        display: flex;
+    }
+
+    .refine {
+        display: flex;
+        font-size: 13px;
+        flex: 1;
+    }
+
+    .refine-header {
+        color: grey;
+        width: 120px;
+        padding-top: 10px;
+    }
+
+    .refine-option {
+        border: 1px solid black;
+        margin: 5px;
+        border-radius: 3px;
+        padding: 5px;
+    }
 </style>
 
 <div class='content'>
+    <div class="refine-section">
+
+        {{languages != 0}}
+        <div class="refine">
+            <div class="refine-header">languages</div>
+            {{languages[]}}
+            <a class='invisible-link' href="/?q=lang:{{name}}%20{{query}}">
+                <div class="refine-option language-{{name}}">{{name}}</div>
+            </a>
+            {{/languages}}
+        </div>
+        {{/languages}}
+
+        {{prefixes != 0}}
+        <div class="refine">
+            <div class="refine-header">prefixes</div>
+            {{prefixes[]}}
+            <a class='invisible-link' href="/?q=in:{{name}}%20{{query}}">
+                <div class="refine-option prefix-{{name}}">{{name}}</div>
+            </a>
+            {{/prefixes}}
+        </div>
+        {{/prefixes}}
+    </div>
+
     {{results[]}}
     <a href='{{filename}}?q={{query}}#L{{jump_to_line}}' class='invisible-link'>
         <div class='result-filename'>{{filename}}</div>

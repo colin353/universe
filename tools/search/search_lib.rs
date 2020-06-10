@@ -58,18 +58,22 @@ impl Searcher {
         }
     }
 
-    pub fn search(&self, keywords: &str) -> Vec<Candidate> {
+    pub fn search(&self, keywords: &str) -> SearchResponse {
+        let mut response = SearchResponse::new();
         let query = self.parse_query(keywords);
         let start = std::time::Instant::now();
         let mut candidates = self.get_candidates(&query);
         self.initial_rank(&query, &mut candidates);
+        self.extract_metadata(&mut response, &candidates);
         self.cutoff(&mut candidates, self.candidates_to_expand);
         self.expand_candidates(&query, &mut candidates);
         self.final_rank(&query, &mut candidates);
         self.cutoff(&mut candidates, self.candidates_to_return);
         self.render_results(&candidates);
         println!("total search: {} ms", start.elapsed().as_millis());
-        return candidates;
+
+        *response.mut_candidates() = protobuf::RepeatedField::from_vec(candidates);
+        response
     }
 
     pub fn get_document(&self, filename: &str) -> Option<File> {
@@ -102,6 +106,12 @@ impl Searcher {
                 keyword.set_is_prefix(true);
             }
 
+            // Language search
+            if keyword.get_keyword().starts_with("lang:") {
+                keyword.set_keyword(keyword.get_keyword()[5..].to_owned());
+                keyword.set_is_language(true);
+            }
+
             out.mut_keywords().push(keyword);
         }
 
@@ -127,7 +137,7 @@ impl Searcher {
             .iter()
             .enumerate()
             // Prefix requirements should not match on definitions
-            .filter(|(_, k)| !k.get_is_prefix())
+            .filter(|(_, k)| !k.get_is_prefix() && !k.get_is_language())
         {
             let mut matches = match self
                 .definitions
@@ -182,12 +192,20 @@ impl Searcher {
             let mut num_matches = 0;
             let mut matched_in_order = true;
             let mut filename_coverage = 0;
-            for (index, (keyword, re)) in keyword_matchers.iter().enumerate() {
-                if let Some(m) = re.find(filename) {
-                    if keyword.get_is_definition() {
-                        continue;
-                    }
 
+            let language = format!("{:?}", file.get_file_type());
+
+            for (index, (keyword, re)) in keyword_matchers.iter().enumerate() {
+                if keyword.get_is_language() && keyword.get_keyword().to_uppercase() == language {
+                    match_mask = update_mask(match_mask, index);
+                    continue;
+                }
+
+                if keyword.get_is_definition() || keyword.get_is_language() {
+                    continue;
+                }
+
+                if let Some(m) = re.find(filename) {
                     if keyword.get_is_prefix() && m.start() != 0 {
                         continue;
                     }
@@ -244,7 +262,7 @@ impl Searcher {
             .get_keywords()
             .iter()
             .enumerate()
-            .filter(|(_, k)| !k.get_is_prefix())
+            .filter(|(_, k)| !k.get_is_prefix() && !k.get_is_language())
         {
             // We use a trigram index. If this keyword has fewer than 3 chars, just assume
             // any candidate might match it.
@@ -415,6 +433,40 @@ impl Searcher {
         }
 
         candidate
+    }
+
+    fn extract_metadata(&self, response: &mut SearchResponse, candidates: &Vec<Candidate>) {
+        let mut languages = HashMap::new();
+        let mut prefixes = HashMap::new();
+        for candidate in candidates {
+            if candidate.get_file_type() != FileType::UNKNOWN {
+                *languages.entry(candidate.get_file_type()).or_insert(0) += 1;
+            }
+
+            if let Some(p) = candidate.get_filename().split("/").next() {
+                *prefixes.entry(p).or_insert(0) += 1;
+            }
+        }
+
+        let mut languages: Vec<_> = languages.iter().collect();
+        languages.sort_by_key(|(k, v)| *v);
+        for language in languages.iter().rev().map(|(k, v)| k).take(5) {
+            response
+                .mut_languages()
+                .push(format!("{:?}", language).to_lowercase());
+        }
+        if response.mut_languages().len() == 1 {
+            response.mut_languages().clear();
+        }
+
+        let mut prefixes: Vec<_> = prefixes.iter().collect();
+        prefixes.sort_by_key(|(k, v)| *v);
+        for prefix in prefixes.iter().rev().map(|(k, v)| k).take(5) {
+            response.mut_prefixes().push(prefix.to_string());
+        }
+        if response.mut_prefixes().len() == 1 {
+            response.mut_prefixes().clear();
+        }
     }
 
     fn cutoff(&self, candidates: &mut Vec<Candidate>, num_candidates: usize) {

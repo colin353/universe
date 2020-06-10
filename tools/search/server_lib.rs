@@ -36,10 +36,7 @@ impl SearchService for SearchServiceHandler {
             return grpc::SingleResponse::completed(response);
         }
 
-        let mut response = SearchResponse::new();
-        for result in self.searcher.search(req.get_query()) {
-            response.mut_candidates().push(result);
-        }
+        let mut response = self.searcher.search(req.get_query());
         grpc::SingleResponse::completed(response)
     }
 }

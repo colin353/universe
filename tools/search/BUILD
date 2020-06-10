@@ -119,6 +119,7 @@ rust_library(
         "//util/itertools",
         "//util/pool",
         "//util/sstable",
+        "@io_bazel_rules_rust//proto/raze:protobuf",
     ],
 )
 
