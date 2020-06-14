@@ -67,6 +67,24 @@ rust_binary(
     ],
 )
 
+rust_library(
+    name = "gcp",
+    srcs = ["gcp.rs"],
+    edition = "2018",
+    deps = [
+        "//third_party:futures",
+        "//third_party:hyper",
+        "//third_party:hyper_tls",
+        "//third_party:json",
+        "//third_party:tokio",
+    ],
+)
+
+rust_test(
+    name = "gcp_test",
+    crate = ":gcp",
+)
+
 rust_image(
     name = "auth_server_img",
     srcs = [
