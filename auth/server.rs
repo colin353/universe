@@ -35,6 +35,11 @@ fn main() {
         String::from("colinmerkel.xyz"),
         "the domain setting to use for cookies"
     );
+    let gcp_token_location = define_flag!(
+        "gcp_token_location",
+        String::from("/gcp-access.json"),
+        "the location of the gcp access json file"
+    );
     let secret_key = define_flag!("secret_key", String::new(), "the shared secret key string");
 
     parse_flags!(
@@ -45,7 +50,8 @@ fn main() {
         cookie_domain,
         oauth_client_id,
         oauth_client_secret,
-        secret_key
+        secret_key,
+        gcp_token_location
     );
 
     let email_whitelist = std::collections::HashSet::from_iter(
@@ -56,12 +62,16 @@ fn main() {
     server.http.set_port(grpc_port.value());
     server.http.set_cpu_pool_threads(2);
 
+    let default_access_token =
+        std::fs::read_to_string(gcp_token_location.value()).unwrap_or_default();
+
     let tokens = Arc::new(RwLock::new(HashMap::new()));
     let handler = auth_service_impl::AuthServiceHandler::new(
         hostname.value(),
         oauth_client_id.value(),
         tokens.clone(),
         secret_key.value(),
+        default_access_token,
     );
 
     server.add_service(auth_grpc_rust::AuthenticationServiceServer::new_service_def(handler));

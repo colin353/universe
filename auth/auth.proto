@@ -12,7 +12,15 @@ message AuthenticateResponse {
   bool success = 2;
 }
 
+message GCPTokenRequest { string token = 1; }
+message GCPTokenResponse {
+  bool success = 1;
+  string gcp_token = 2;
+  uint64 expiry = 3;
+}
+
 service AuthenticationService {
   rpc Login(LoginRequest) returns (LoginChallenge);
+  rpc GetGCPToken(GCPTokenRequest) returns (GCPTokenResponse);
   rpc Authenticate(AuthenticateRequest) returns (AuthenticateResponse);
 }

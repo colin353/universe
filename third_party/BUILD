@@ -37,7 +37,7 @@ alias(
 
 alias(
     name = "futures",
-    actual = "//third_party/vendor/futures-0.1.25:futures",
+    actual = "@io_bazel_rules_rust//proto/raze:futures",
 )
 
 alias(

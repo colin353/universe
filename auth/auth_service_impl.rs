@@ -47,6 +47,7 @@ pub struct AuthServiceHandler {
     oauth_client_id: String,
     tokens: Arc<RwLock<HashMap<String, LoginRecord>>>,
     secret_key: String,
+    default_access_json: String,
 }
 impl AuthServiceHandler {
     pub fn new(
@@ -54,12 +55,14 @@ impl AuthServiceHandler {
         oauth_client_id: String,
         tokens: Arc<RwLock<HashMap<String, LoginRecord>>>,
         secret_key: String,
+        default_access_json: String,
     ) -> Self {
         Self {
-            hostname: hostname,
-            tokens: tokens,
-            oauth_client_id: oauth_client_id,
-            secret_key: secret_key,
+            hostname,
+            tokens,
+            oauth_client_id,
+            secret_key,
+            default_access_json,
         }
     }
 }
@@ -110,6 +113,41 @@ impl auth_grpc_rust::AuthenticationService for AuthServiceHandler {
             }
         }
         grpc::SingleResponse::completed(response)
+    }
+
+    fn get_gcp_token(
+        &self,
+        _m: grpc::RequestOptions,
+        req: auth_grpc_rust::GCPTokenRequest,
+    ) -> grpc::SingleResponse<auth_grpc_rust::GCPTokenResponse> {
+        let mut response = auth_grpc_rust::GCPTokenResponse::new();
+
+        let mut authenticated = false;
+        if req.get_token() == &self.secret_key {
+            authenticated = true;
+        } else if let Some(t) = self.tokens.read().unwrap().get(req.get_token()) {
+            if t.is_valid() {
+                authenticated = true;
+            }
+        }
+
+        if !authenticated {
+            return grpc::SingleResponse::completed(response);
+        }
+
+        let f = gcp::get_token(
+            &self.default_access_json,
+            &["https://www.googleapis.com/auth/devstorage.read_write"],
+        )
+        .and_then(move |(token, expiry)| {
+            response.set_success(true);
+            response.set_gcp_token(token);
+            response.set_expiry(expiry);
+            future::ok(response)
+        })
+        .map_err(|s| grpc::Error::Other("bad token lookup"));
+
+        grpc::SingleResponse::no_metadata(Box::new(f))
     }
 }
 
