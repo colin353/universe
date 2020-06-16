@@ -44,8 +44,10 @@ rust_library(
 rust_library(
     name = "auth_client",
     srcs = ["client.rs"],
+    edition = "2018",
     deps = [
         ":auth_grpc_rust",
+        "//util/cache",
         "//util/grpc_tls",
         "@io_bazel_rules_rust//proto/raze:grpc",
     ],
