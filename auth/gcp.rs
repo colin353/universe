@@ -15,6 +15,13 @@ fn get_timestamp() -> u64 {
     since_epoch.as_secs()
 }
 
+pub fn get_token_sync(access_json: &str, scopes: &[&str]) -> (String, u64) {
+    let mut runtime = tokio::runtime::Runtime::new().unwrap();
+    let output = runtime.block_on(get_token(&access_json, scopes));
+
+    output.unwrap()
+}
+
 pub fn get_token(
     access_json: &str,
     scopes: &[&str],
@@ -91,7 +98,7 @@ mod tests {
     use tokio;
 
     use super::*;
-    //#[test]
+    #[test]
     fn test_get_token() {
         let access = std::fs::read_to_string("/home/colin/security/bazel-access.json").unwrap();
 

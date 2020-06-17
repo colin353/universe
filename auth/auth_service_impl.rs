@@ -135,19 +135,16 @@ impl auth_grpc_rust::AuthenticationService for AuthServiceHandler {
             return grpc::SingleResponse::completed(response);
         }
 
-        let f = gcp::get_token(
+        let (token, expiry) = gcp::get_token_sync(
             &self.default_access_json,
             &["https://www.googleapis.com/auth/devstorage.read_write"],
-        )
-        .and_then(move |(token, expiry)| {
-            response.set_success(true);
-            response.set_gcp_token(token);
-            response.set_expiry(expiry);
-            future::ok(response)
-        })
-        .map_err(|s| grpc::Error::Other("bad token lookup"));
+        );
 
-        grpc::SingleResponse::no_metadata(Box::new(f))
+        response.set_success(true);
+        response.set_gcp_token(token);
+        response.set_expiry(expiry);
+
+        grpc::SingleResponse::completed(response)
     }
 }
 
