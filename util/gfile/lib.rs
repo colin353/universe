@@ -60,20 +60,24 @@ impl GFile {
                 Ok(GFile::LocalFile(f))
             }
             GPath::RemotePath(bucket, object) => {
-                let f = GoogleCloudFile::open(token, bucket, object)?;
+                let c = auth_client::get_global_client().unwrap();
+                let response = c.get_gcp_token(c.token.clone());
+                let f = GoogleCloudFile::open(response.get_gcp_token(), bucket, object)?;
                 Ok(GFile::RemoteFile(f))
             }
         }
     }
 
-    pub fn create<P: AsRef<Path>>(token: &str, path: P) -> std::io::Result<GFile> {
+    pub fn create<P: AsRef<Path>>(path: P) -> std::io::Result<GFile> {
         match GPath::from_path(path.as_ref()) {
             GPath::LocalPath(p) => {
                 let f = std::fs::File::create(path)?;
                 Ok(GFile::LocalFile(f))
             }
             GPath::RemotePath(bucket, object) => {
-                let f = GoogleCloudFile::create(token, bucket, object)?;
+                let c = auth_client::get_global_client().unwrap();
+                let response = c.get_gcp_token(c.token.clone());
+                let f = GoogleCloudFile::create(response.get_gcp_token(), bucket, object)?;
                 Ok(GFile::RemoteFile(f))
             }
         }
@@ -288,14 +292,12 @@ mod tests {
 
     //#[test]
     fn test_get_token() {
-        let access = std::fs::read_to_string("/home/colin/.x20/auth_token").unwrap();
         let access = String::from("abcdef");
         let client = auth_client::AuthClient::new("127.0.0.1", 8888);
-        let response = client.get_gcp_token(access);
+        client.global_init(access);
 
         {
-            let mut f =
-                GFile::create(response.get_gcp_token(), "/cns/colossus/my_new_test.txt").unwrap();
+            let mut f = GFile::create("/cns/colossus/my_crazy_test.txt").unwrap();
             f.write(&[1, 2, 3, 4, 5, 6, 7]).unwrap();
         }
     }

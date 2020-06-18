@@ -1,10 +1,17 @@
 extern crate auth_grpc_rust;
 extern crate grpc;
 
+#[macro_use]
+extern crate lazy_static;
+
 pub use auth_grpc_rust::*;
 use cache::Cache;
 use grpc::{ClientStub, ClientStubExt};
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
+
+lazy_static! {
+    static ref GLOBAL_CLIENT: RwLock<Option<AuthClient>> = { RwLock::new(None) };
+}
 
 pub fn get_timestamp() -> u64 {
     let now = std::time::SystemTime::now();
@@ -21,9 +28,17 @@ pub trait AuthServer: Send + Sync + Clone + 'static {
 
 #[derive(Clone)]
 pub struct AuthClient {
+    pub token: String,
     client: Option<Arc<AuthenticationServiceClient>>,
     auth_cache: Arc<cache::Cache<String, AuthenticateResponse>>,
     gcp_cache: Arc<cache::Cache<String, GCPTokenResponse>>,
+}
+
+pub fn get_global_client() -> Option<AuthClient> {
+    match &*(GLOBAL_CLIENT.read().unwrap()) {
+        Some(c) => Some(c.clone()),
+        None => None,
+    }
 }
 
 impl AuthClient {
@@ -34,8 +49,18 @@ impl AuthClient {
             )),
             auth_cache: Arc::new(Cache::new(4096)),
             gcp_cache: Arc::new(Cache::new(4096)),
+            token: String::new(),
         }
     }
+
+    pub fn global_init(&self, token: String) {
+        let mut c = self.clone();
+        c.token = token;
+        let mut gc = GLOBAL_CLIENT.write().unwrap();
+        *gc = Some(c);
+    }
+
+    pub fn upgrade_auth_to_gcloud_token(&self) {}
 
     pub fn new_tls(hostname: &str, port: u16) -> Self {
         let grpc_client = grpc_tls::make_tls_client(hostname, port);
@@ -45,6 +70,7 @@ impl AuthClient {
             ))),
             auth_cache: Arc::new(Cache::new(4096)),
             gcp_cache: Arc::new(Cache::new(4096)),
+            token: String::new(),
         }
     }
 
@@ -53,6 +79,7 @@ impl AuthClient {
             client: None,
             auth_cache: Arc::new(Cache::new(16)),
             gcp_cache: Arc::new(Cache::new(16)),
+            token: String::new(),
         }
     }
 
