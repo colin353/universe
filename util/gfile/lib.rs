@@ -5,6 +5,8 @@ use futures::stream::Stream;
 use std::fs::File;
 use std::path::Path;
 
+use std::io::Read;
+use std::io::Seek;
 use std::io::Write;
 
 const STORAGE_API: &'static str = "https://storage.googleapis.com/storage/v1/b";
@@ -17,13 +19,22 @@ pub enum GFile {
     RemoteFile(GoogleCloudFile),
 }
 
+#[derive(PartialEq)]
+pub enum Mode {
+    Read,
+    Write,
+}
+
 pub struct GoogleCloudFile {
     bucket: String,
     object: String,
     token: String,
     resumable_url: Option<String>,
     buf: Vec<u8>,
-    bytes_written: u64,
+    size: u64,
+    index: u64,
+    mode: Mode,
+    buf_start_index: u64,
 }
 
 #[derive(Debug, PartialEq)]
@@ -53,7 +64,7 @@ impl<'a> GPath<'a> {
 }
 
 impl GFile {
-    pub fn open<P: AsRef<Path>>(token: &str, path: P) -> std::io::Result<GFile> {
+    pub fn open<P: AsRef<Path>>(path: P) -> std::io::Result<GFile> {
         match GPath::from_path(path.as_ref()) {
             GPath::LocalPath(p) => {
                 let f = std::fs::File::open(path)?;
@@ -123,13 +134,19 @@ impl GoogleCloudFile {
             }
         };
 
+        let parsed = json::parse(&output).unwrap();
+        let size: u64 = parsed["size"].as_str().unwrap().parse().unwrap();
+
         Ok(Self {
             token: token.to_string(),
             bucket: bucket.to_string(),
             object: object.to_string(),
             resumable_url: None,
             buf: Vec::new(),
-            bytes_written: 0,
+            size: size,
+            index: 0,
+            mode: Mode::Read,
+            buf_start_index: 0,
         })
     }
 
@@ -172,8 +189,76 @@ impl GoogleCloudFile {
             object: object.to_string(),
             resumable_url: Some(output),
             buf: Vec::new(),
-            bytes_written: 0,
+            size: 0,
+            index: 0,
+            mode: Mode::Write,
+            buf_start_index: 0,
         })
+    }
+
+    fn refill_buffer(&mut self, index: u64) -> std::io::Result<()> {
+        let start = if self.index + BUFFER_SIZE as u64 > self.size {
+            let overhang: i64 = (self.index as i64) + (BUFFER_SIZE as i64) - self.size as i64;
+            std::cmp::max(0, (index as i64) - overhang) as u64
+        } else {
+            index
+        };
+
+        let content_range = format!(
+            "bytes={}-{}",
+            start,
+            std::cmp::min(self.index + BUFFER_SIZE as u64, self.size)
+        );
+
+        let req = hyper::Request::get(format!(
+            "{}/{}/o/{}?alt=media",
+            STORAGE_API, self.bucket, self.object
+        ))
+        .header(
+            hyper::header::AUTHORIZATION,
+            format!("Bearer {}", self.token),
+        )
+        .header(hyper::header::RANGE, content_range)
+        .body(hyper::Body::from(String::new()))
+        .unwrap();
+
+        let https = hyper_tls::HttpsConnector::new(1).unwrap();
+        let client = hyper::client::Client::builder().build::<_, hyper::Body>(https);
+
+        let f = Box::new(
+            client
+                .request(req)
+                .map_err(|_| ())
+                .and_then(|res| {
+                    if res.status().is_success() {
+                        future::ok(res.into_body().concat2().map_err(|_| ()))
+                    } else {
+                        future::err(())
+                    }
+                })
+                .and_then(|res| res)
+                .and_then(move |response| {
+                    let response = response.into_bytes().to_vec();
+                    future::ok(response)
+                }),
+        );
+
+        let mut runtime = tokio::runtime::Runtime::new().unwrap();
+        let output = match runtime.block_on(f) {
+            Ok(m) => m,
+            Err(_) => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "file does not exist",
+                ))
+            }
+        };
+
+        std::mem::replace(&mut self.buf, output);
+        self.index = index;
+        self.buf_start_index = start;
+
+        Ok(())
     }
 
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
@@ -188,16 +273,11 @@ impl GoogleCloudFile {
     }
 
     fn flush(&mut self, finished: bool) -> std::io::Result<()> {
-        let end_range = self.bytes_written + self.buf.len() as u64;
+        let end_range = self.size + self.buf.len() as u64;
         let content_range = if finished {
-            format!(
-                "bytes {}-{}/{}",
-                self.bytes_written,
-                end_range - 1,
-                end_range
-            )
+            format!("bytes {}-{}/{}", self.size, end_range - 1, end_range)
         } else {
-            format!("bytes {}-{}/*", self.bytes_written, end_range - 1)
+            format!("bytes {}-{}/*", self.size, end_range - 1)
         };
 
         let req = hyper::Request::post(self.resumable_url.as_ref().unwrap())
@@ -239,10 +319,53 @@ impl GoogleCloudFile {
             }
         };
 
-        self.bytes_written += self.buf.len() as u64;
+        self.size += self.buf.len() as u64;
         self.buf.clear();
 
         Ok(())
+    }
+
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        // Fill in the write buffer from the cached data.
+        let mut buf_index = 0;
+        loop {
+            if self.index == self.size {
+                return Ok(buf_index);
+            }
+
+            while self.index >= self.buf_start_index
+                && self.index - self.buf_start_index < self.buf.len() as u64
+                && buf_index < buf.len()
+            {
+                buf[buf_index] = self.buf[(self.index - self.buf_start_index) as usize];
+                self.index += 1;
+                buf_index += 1;
+            }
+
+            // If we've filled the write buffer, quit.
+            if buf_index == buf.len() {
+                return Ok(buf.len());
+            }
+
+            if self.index == self.size {
+                return Ok(buf_index);
+            }
+
+            // We haven't filled the write buffer and we've exhausted the cached data.
+            // So let's request more data.
+            self.refill_buffer(self.index)?;
+        }
+    }
+
+    pub fn seek(&mut self, pos: std::io::SeekFrom) -> std::io::Result<u64> {
+        let new_pos = match pos {
+            std::io::SeekFrom::Start(pos) => pos as i64,
+            std::io::SeekFrom::End(pos) => (self.size as i64) + pos,
+            std::io::SeekFrom::Current(pos) => (self.index as i64) + pos,
+        };
+
+        self.index = std::cmp::max(0, std::cmp::min(self.size as i64, new_pos)) as u64;
+        Ok(self.index)
     }
 }
 
@@ -264,10 +387,32 @@ impl std::io::Write for GFile {
     }
 }
 
+impl std::io::Seek for GFile {
+    fn seek(&mut self, pos: std::io::SeekFrom) -> std::io::Result<u64> {
+        match self {
+            GFile::LocalFile(f) => f.seek(pos),
+            GFile::RemoteFile(f) => f.seek(pos),
+        }
+    }
+}
+
+impl std::io::Read for GFile {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        match self {
+            GFile::LocalFile(f) => f.read(buf),
+            GFile::RemoteFile(f) => f.read(buf),
+        }
+    }
+}
+
 impl Drop for GFile {
     fn drop(&mut self) {
         match self {
-            GFile::RemoteFile(f) => f.flush(true).unwrap(),
+            GFile::RemoteFile(f) => {
+                if f.mode == Mode::Write {
+                    f.flush(true).unwrap()
+                }
+            }
             _ => return,
         };
     }
@@ -275,8 +420,9 @@ impl Drop for GFile {
 
 #[cfg(test)]
 mod tests {
-    #[macro_use]
     use super::*;
+    extern crate primitive;
+    extern crate sstable;
 
     #[test]
     fn test_get_path() {
@@ -295,10 +441,42 @@ mod tests {
         let access = String::from("abcdef");
         let client = auth_client::AuthClient::new("127.0.0.1", 8888);
         client.global_init(access);
-
         {
-            let mut f = GFile::create("/cns/colossus/my_crazy_test.txt").unwrap();
-            f.write(&[1, 2, 3, 4, 5, 6, 7]).unwrap();
+            let mut f = GFile::open("/cns/colossus/my_crazy_test.txt").unwrap();
+            let mut buf = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+            let result = f.read(&mut buf);
+            assert_eq!(result.unwrap(), 7);
+            assert_eq!(&buf, &[1, 2, 3, 4, 5, 6, 7, 0, 0, 0]);
+        }
+    }
+
+    //#[test]
+    fn test_write_sstable() {
+        let access = String::from("abcdef");
+        let client = auth_client::AuthClient::new("127.0.0.1", 8888);
+        client.global_init(access);
+        {
+            let mut f = GFile::create("/cns/colossus/data.sstable").unwrap();
+            let mut t = sstable::SSTableBuilder::new(&mut f);
+            t.write_ordered("abcdef", primitive::Primitive::from(0 as u64));
+            t.finish().unwrap();
+        }
+    }
+
+    //#[test]
+    fn test_read_sstable() {
+        let access = String::from("abcdef");
+        let client = auth_client::AuthClient::new("127.0.0.1", 8888);
+        client.global_init(access);
+        {
+            let mut f = GFile::open("/cns/colossus/data.sstable").unwrap();
+            let mut t =
+                sstable::SSTableReader::<primitive::Primitive<u64>>::new(Box::new(f)).unwrap();
+            let output = t.collect::<Vec<_>>();
+            assert_eq!(
+                output,
+                vec![(String::from("abcdef"), primitive::Primitive::from(0 as u64))]
+            );
         }
     }
 }
