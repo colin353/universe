@@ -57,7 +57,10 @@ impl<'a> GPath<'a> {
             Some(b) => b,
             None => return GPath::LocalPath(p),
         };
-        let object = &path_str[6 + bucket.len()..];
+        let mut object = &path_str[5 + bucket.len()..];
+        if object.starts_with("/") {
+            object = &object[1..];
+        }
 
         GPath::<'a>::RemotePath(bucket, object)
     }
@@ -97,6 +100,19 @@ impl GFile {
                 let response = c.get_gcp_token(c.token.clone());
                 let f = GoogleCloudFile::create(response.get_gcp_token(), bucket, object)?;
                 Ok(GFile::RemoteFile(f))
+            }
+        }
+    }
+
+    pub fn read_dir<P: AsRef<Path>>(path: P) -> std::io::Result<Vec<String>> {
+        match GPath::from_path(path.as_ref()) {
+            GPath::LocalPath(p) => Ok(std::fs::read_dir(p)?
+                .map(|e| e.unwrap().path().to_str().unwrap().to_string())
+                .collect()),
+            GPath::RemotePath(bucket, object) => {
+                let c = auth_client::get_global_client().unwrap();
+                let response = c.get_gcp_token(c.token.clone());
+                GoogleCloudFile::read_dir(response.get_gcp_token(), bucket, object)
             }
         }
     }
@@ -374,6 +390,57 @@ impl GoogleCloudFile {
         self.index = std::cmp::max(0, std::cmp::min(self.size as i64, new_pos)) as u64;
         Ok(self.index)
     }
+
+    pub fn read_dir(token: &str, bucket: &str, prefix: &str) -> std::io::Result<Vec<String>> {
+        let req = hyper::Request::get(format!("{}/{}/o?prefix={}", STORAGE_API, bucket, prefix))
+            .header(hyper::header::AUTHORIZATION, format!("Bearer {}", token))
+            .body(hyper::Body::from(String::new()))
+            .unwrap();
+
+        let https = hyper_tls::HttpsConnector::new(1).unwrap();
+        let client = hyper::client::Client::builder().build::<_, hyper::Body>(https);
+
+        let f = Box::new(
+            client
+                .request(req)
+                .map_err(|_| ())
+                .and_then(|res| {
+                    if res.status() == hyper::StatusCode::OK {
+                        future::ok(res.into_body().concat2().map_err(|_| ()))
+                    } else {
+                        future::err(())
+                    }
+                })
+                .and_then(|res| res)
+                .and_then(move |response| {
+                    let response = String::from_utf8(response.into_bytes().to_vec()).unwrap();
+                    future::ok(response)
+                }),
+        );
+
+        let mut runtime = tokio::runtime::Runtime::new().unwrap();
+        let output = match runtime.block_on(f) {
+            Ok(m) => m,
+            Err(_) => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "file does not exist",
+                ))
+            }
+        };
+
+        let parsed = json::parse(&output).unwrap();
+        let mut output = Vec::new();
+        for item in parsed["items"].members() {
+            output.push(format!(
+                "/cns/{}/{}",
+                bucket,
+                item["name"].as_str().unwrap()
+            ));
+        }
+
+        Ok(output)
+    }
 }
 
 impl std::io::Write for GFile {
@@ -484,6 +551,28 @@ mod tests {
                 output,
                 vec![(String::from("abcdef"), primitive::Primitive::from(0 as u64))]
             );
+        }
+    }
+
+    //#[test]
+    fn test_list_directory() {
+        let access = String::from("abcdef");
+        let client = auth_client::AuthClient::new("127.0.0.1", 8888);
+        client.global_init(access);
+        {
+            let mut list = GFile::read_dir("/cns/colossus").unwrap();
+            assert_eq!(list, vec![String::from("/cns/colossus/data.sstable")]);
+        }
+    }
+
+    //#[test]
+    fn test_list_directory_2() {
+        let access = String::from("abcdef");
+        let client = auth_client::AuthClient::new("127.0.0.1", 8888);
+        client.global_init(access);
+        {
+            let mut list = GFile::read_dir("/tmp/data").unwrap();
+            assert_eq!(list, vec![String::from("/tmp/data/LargetableReadLog")]);
         }
     }
 }
