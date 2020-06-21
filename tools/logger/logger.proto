@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+enum Log {
+  UNKNOWN = 0;
+  LARGETABLE_READS = 1;
+}
+
+message EventId {
+  uint64 timestamp = 1;
+  bytes ip_address = 2;
+  uint64 pid = 3;
+}
+
+message EventMessage {
+  EventId event_id = 1;
+  bytes msg = 2;
+}
+
+message LogRequest {
+  Log log = 1;
+  repeated EventMessage messages = 2;
+}
+message LogResponse {}
+
+service LoggerService { rpc Log(LogRequest) returns (LogResponse); }
