@@ -22,4 +22,14 @@ message LogRequest {
 }
 message LogResponse {}
 
-service LoggerService { rpc Log(LogRequest) returns (LogResponse); }
+message GetLogsRequest {
+  Log log = 1;
+  uint64 start_time = 2;
+  uint64 end_time = 3;
+}
+message GetLogsResponse { repeated EventMessage messages = 1; }
+
+service LoggerService {
+  rpc Log(LogRequest) returns (LogResponse);
+  rpc GetLogs(GetLogsRequest) returns (GetLogsResponse);
+}

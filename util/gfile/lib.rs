@@ -82,6 +82,13 @@ impl GFile {
     pub fn create<P: AsRef<Path>>(path: P) -> std::io::Result<GFile> {
         match GPath::from_path(path.as_ref()) {
             GPath::LocalPath(p) => {
+                // Recursively recreate parent directories if they don't already exist.
+                // This matches the behaviour of google cloud when you create a file
+                match p.parent() {
+                    Some(p) => std::fs::create_dir_all(p)?,
+                    None => (),
+                };
+
                 let f = std::fs::File::create(path)?;
                 Ok(GFile::LocalFile(f))
             }

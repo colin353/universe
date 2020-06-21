@@ -29,6 +29,14 @@ rust_library(
     edition = "2018",
     deps = [
         ":logger_grpc_rust",
+        "//third_party:rand",
+        "//third_party:time",
+        "//util/gfile",
         "//util/recordio",
     ],
+)
+
+rust_test(
+    name = "server_test",
+    crate = ":server_lib",
 )
