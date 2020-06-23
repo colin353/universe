@@ -28,8 +28,20 @@ rust_library(
     srcs = ["server_lib.rs"],
     edition = "2018",
     deps = [
+        ":logger_client",
         ":logger_grpc_rust",
         "//third_party:rand",
+        "//util/gfile",
+        "//util/recordio",
+    ],
+)
+
+rust_library(
+    name = "logger_client",
+    srcs = ["client.rs"],
+    edition = "2018",
+    deps = [
+        ":logger_grpc_rust",
         "//third_party:time",
         "//util/gfile",
         "//util/recordio",

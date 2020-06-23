@@ -4,46 +4,14 @@ use rand::Rng;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, RwLock};
 
+use logger_client::{
+    get_date_dir, get_log_dir, get_log_name, get_logs_with_root_dir, get_timestamp,
+};
+
 #[derive(Clone)]
 pub struct LoggerServiceHandler {
     data_dir: String,
     writers: Arc<RwLock<HashMap<Log, Mutex<recordio::RecordIOWriterOwned<EventMessage>>>>>,
-}
-
-pub fn get_timestamp() -> u64 {
-    let now = std::time::SystemTime::now();
-    let since_epoch = now.duration_since(std::time::UNIX_EPOCH).unwrap();
-    since_epoch.as_secs() as u64
-}
-
-pub fn get_date_dir(timestamp: u64) -> String {
-    let mut epoch = time::empty_tm();
-    epoch.tm_mday = 1;
-    epoch.tm_year = 70;
-    let epoch = epoch + time::Duration::seconds(timestamp as i64);
-
-    format!(
-        "{}/{:02}/{:02}",
-        epoch.tm_year + 1900,
-        epoch.tm_mon + 1,
-        epoch.tm_mday
-    )
-}
-
-pub fn get_log_dir(root_dir: &str, log: Log, timestamp: u64) -> String {
-    format!(
-        "{}/{}/{}",
-        root_dir,
-        get_log_name(log),
-        get_date_dir(timestamp)
-    )
-}
-
-pub fn get_log_name(log: Log) -> &'static str {
-    match log {
-        Log::UNKNOWN => "unknown",
-        Log::LARGETABLE_READS => "LargetableReadLog",
-    }
 }
 
 pub fn random_filename() -> String {
@@ -125,11 +93,23 @@ mod tests {
         req.set_log(Log::LARGETABLE_READS);
 
         let mut em = EventMessage::new();
-        em.mut_event_id().set_timestamp(1234);
+        em.mut_event_id().set_timestamp(get_timestamp() * 1_000_000);
         em.mut_event_id().set_ip_address(vec![1, 2, 3, 4]);
 
         req.mut_messages().push(em.clone());
         req.mut_messages().push(em);
         l.log(req);
+    }
+
+    //#[test]
+    fn test_get_logs() {
+        let logs = get_logs_with_root_dir(
+            "/tmp/data",
+            Log::LARGETABLE_READS,
+            get_timestamp() - 172800,
+            get_timestamp(),
+        );
+        assert_eq!(logs, Vec::new());
+        assert_eq!(logs.len(), 1);
     }
 }
