@@ -8,7 +8,7 @@ enum Log {
 message EventId {
   uint64 timestamp = 1;
   bytes ip_address = 2;
-  uint64 pid = 3;
+  uint32 pid = 3;
 }
 
 message EventMessage {

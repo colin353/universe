@@ -1,9 +1,25 @@
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, RwLock};
+
+use grpc::ClientStubExt;
 use logger_grpc_rust::*;
+
+#[derive(Clone)]
+pub struct LoggerClient {
+    client: Arc<LoggerServiceClient>,
+    logcache: Arc<RwLock<HashMap<Log, Mutex<Vec<EventMessage>>>>>,
+}
 
 pub fn get_timestamp() -> u64 {
     let now = std::time::SystemTime::now();
     let since_epoch = now.duration_since(std::time::UNIX_EPOCH).unwrap();
     since_epoch.as_secs() as u64
+}
+
+pub fn get_timestamp_usec() -> u64 {
+    let now = std::time::SystemTime::now();
+    let since_epoch = now.duration_since(std::time::UNIX_EPOCH).unwrap();
+    (since_epoch.as_secs() as u64) * 1_000_000 + (since_epoch.subsec_nanos() / 1000) as u64
 }
 
 pub fn get_date_dir(timestamp: u64) -> String {
@@ -80,7 +96,7 @@ pub fn get_logs_with_root_dir(
         println!("open file: {}", file);
         let f = gfile::GFile::open(file).unwrap();
         let mut buf = std::io::BufReader::new(f);
-        let mut reader = recordio::RecordIOReader::<EventMessage, _>::new(&mut buf);
+        let reader = recordio::RecordIOReader::<EventMessage, _>::new(&mut buf);
         for record in reader {
             let timestamp_seconds = record.get_event_id().get_timestamp() / 1_000_000;
             if timestamp_seconds < start_timestamp || timestamp_seconds > end_timestamp {
@@ -93,4 +109,66 @@ pub fn get_logs_with_root_dir(
 
     output.sort_unstable_by_key(|e| e.get_event_id().get_timestamp());
     output
+}
+
+impl LoggerClient {
+    pub fn new(hostname: &str, port: u16) -> Self {
+        Self {
+            client: Arc::new(
+                LoggerServiceClient::new_plain(hostname, port, Default::default()).unwrap(),
+            ),
+            logcache: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
+
+    pub fn log<T: protobuf::Message>(&self, log: Log, input: &T) {
+        let mut m = EventMessage::new();
+        input.write_to_writer(m.mut_msg()).unwrap();
+        {
+            let eid = m.mut_event_id();
+            eid.set_timestamp(get_timestamp_usec());
+            eid.set_pid(std::process::id());
+        }
+
+        match self.logcache.read().unwrap().get(&log) {
+            Some(l) => {
+                l.lock().unwrap().push(m);
+            }
+            None => {
+                let logs = vec![m];
+                self.logcache.write().unwrap().insert(log, Mutex::new(logs));
+            }
+        }
+    }
+
+    pub fn start_logging(&self) {
+        loop {
+            std::thread::sleep(std::time::Duration::from_secs(60));
+
+            // Iterate over available keys
+            let keys: Vec<_> = self.logcache.read().unwrap().keys().map(|k| *k).collect();
+            for key in keys {
+                let data = match self.logcache.read().unwrap().get(&key) {
+                    Some(logs) => {
+                        let mut data = logs.lock().unwrap();
+                        Some(std::mem::replace(&mut *data, Vec::new()))
+                    }
+                    None => None,
+                };
+
+                match data {
+                    Some(logs) => {
+                        let mut req = LogRequest::new();
+                        req.set_log(key);
+                        *req.mut_messages() = protobuf::RepeatedField::from_vec(logs);
+                        match self.client.log(Default::default(), req).wait() {
+                            Ok(_) => (),
+                            Err(_) => eprintln!("Failed to log some messages! Logs lost!"),
+                        };
+                    }
+                    None => (),
+                }
+            }
+        }
+    }
 }

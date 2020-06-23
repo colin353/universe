@@ -45,6 +45,8 @@ rust_library(
         "//third_party:time",
         "//util/gfile",
         "//util/recordio",
+        "@io_bazel_rules_rust//proto/raze:grpc",
+        "@io_bazel_rules_rust//proto/raze:protobuf",
     ],
 )
 
