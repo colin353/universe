@@ -37,8 +37,7 @@ impl LoggerServiceHandler {
             random_filename()
         );
         let f = gfile::GFile::create(filename).unwrap();
-        let buf = std::io::BufWriter::new(f);
-        let w = recordio::RecordIOWriterOwned::new(Box::new(buf));
+        let w = recordio::RecordIOWriterOwned::new(Box::new(f));
         self.writers.write().unwrap().insert(log, Mutex::new(w));
     }
 
@@ -67,6 +66,20 @@ impl LoggerServiceHandler {
 
     pub fn get_logs(&self, req: GetLogsRequest) -> GetLogsResponse {
         GetLogsResponse::new()
+    }
+}
+
+impl logger_grpc_rust::LoggerService for LoggerServiceHandler {
+    fn log(&self, _m: grpc::RequestOptions, req: LogRequest) -> grpc::SingleResponse<LogResponse> {
+        grpc::SingleResponse::completed(self.log(req))
+    }
+
+    fn get_logs(
+        &self,
+        _m: grpc::RequestOptions,
+        req: GetLogsRequest,
+    ) -> grpc::SingleResponse<GetLogsResponse> {
+        grpc::SingleResponse::completed(self.get_logs(req))
     }
 }
 

@@ -5,14 +5,14 @@ extern crate protobuf;
 extern crate time;
 #[macro_use]
 extern crate flags;
-extern crate largetable;
-extern crate tls_api;
-extern crate tls_api_stub;
-
 extern crate compaction;
+extern crate largetable;
 extern crate largetable_grpc_rust;
 extern crate largetable_proto_rust;
+extern crate logger_client;
 extern crate sstable;
+extern crate tls_api;
+extern crate tls_api_stub;
 mod server_service;
 
 #[cfg(test)]
@@ -32,10 +32,35 @@ fn main() {
         String::from("./data"),
         "The directory where data is stored and loaded from."
     );
-    parse_flags!(port, data_directory, memory_limit);
+    let logger_hostname = define_flag!(
+        "logger_hostname",
+        String::from(""),
+        "The hostname of the logger service. If empty, just log to stdout"
+    );
+    let logger_port = define_flag!("logger_port", 3232, "Port of the logger service");
+    parse_flags!(
+        port,
+        data_directory,
+        memory_limit,
+        logger_hostname,
+        logger_port
+    );
 
-    let mut handler =
-        server_service::LargeTableServiceHandler::new(memory_limit.value(), data_directory.path());
+    let logger = if logger_hostname.value().is_empty() {
+        logger_client::LoggerClient::new_stdout()
+    } else {
+        logger_client::LoggerClient::new(&logger_hostname.value(), logger_port.value())
+    };
+
+    let mut handler = server_service::LargeTableServiceHandler::new(
+        memory_limit.value(),
+        data_directory.path(),
+        logger.clone(),
+    );
+
+    std::thread::spawn(move || {
+        logger.start_logging();
+    });
 
     let mut server = grpc::ServerBuilder::<tls_api_stub::TlsAcceptor>::new();
     server.http.set_port(port.value());

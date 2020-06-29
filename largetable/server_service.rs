@@ -34,6 +34,7 @@ pub struct LargeTableServiceHandler {
     next_file_number: Arc<Mutex<u64>>,
     journals: Arc<Mutex<Vec<String>>>,
     dtables: Arc<Mutex<Vec<String>>>,
+    logger: logger_client::LoggerClient,
 
     // The server may have some startup business to complete before
     // it can respond to requests. However, it should still accept the
@@ -44,7 +45,11 @@ pub struct LargeTableServiceHandler {
 }
 
 impl LargeTableServiceHandler {
-    pub fn new(memory_limit: u64, data_directory: String) -> LargeTableServiceHandler {
+    pub fn new(
+        memory_limit: u64,
+        data_directory: String,
+        logger: logger_client::LoggerClient,
+    ) -> Self {
         LargeTableServiceHandler {
             largetable: Arc::new(RwLock::new(largetable::LargeTable::new())),
             memory_limit,
@@ -53,6 +58,7 @@ impl LargeTableServiceHandler {
             journals: Arc::new(Mutex::new(Vec::new())),
             dtables: Arc::new(Mutex::new(Vec::new())),
             ready: Arc::new(RwLock::new(false)),
+            logger: logger,
         }
     }
 
@@ -282,6 +288,7 @@ impl largetable_grpc_rust::LargeTableService for LargeTableServiceHandler {
         _m: grpc::RequestOptions,
         req: largetable_grpc_rust::ReadRequest,
     ) -> grpc::SingleResponse<largetable_grpc_rust::ReadResponse> {
+        let start = std::time::Instant::now();
         self.wait_until_ready();
 
         let timestamp = match req.get_timestamp() {
@@ -312,6 +319,13 @@ impl largetable_grpc_rust::LargeTableService for LargeTableServiceHandler {
                 }
             };
 
+        let mut pl = logger_client::LargetablePerfLog::new();
+        pl.set_row(req.get_row().to_string());
+        pl.set_records(if response.get_found() { 1 } else { 0 });
+        pl.set_request_duration_micros(start.elapsed().as_micros() as u64);
+        pl.set_kind(logger_client::ReadKind::READ);
+        self.logger.log(logger_client::Log::LARGETABLE_READS, &pl);
+
         grpc::SingleResponse::completed(response)
     }
 
@@ -320,6 +334,7 @@ impl largetable_grpc_rust::LargeTableService for LargeTableServiceHandler {
         _m: grpc::RequestOptions,
         req: largetable_grpc_rust::ReadRangeRequest,
     ) -> grpc::SingleResponse<largetable_grpc_rust::ReadRangeResponse> {
+        let start = std::time::Instant::now();
         self.wait_until_ready();
 
         let time_usec = if req.get_timestamp() > 0 {
@@ -349,6 +364,13 @@ impl largetable_grpc_rust::LargeTableService for LargeTableServiceHandler {
 
             response.mut_records().push(r);
         }
+
+        let mut pl = logger_client::LargetablePerfLog::new();
+        pl.set_row(req.get_row().to_string());
+        pl.set_records(response.get_records().len() as u64);
+        pl.set_request_duration_micros(start.elapsed().as_micros() as u64);
+        pl.set_kind(logger_client::ReadKind::READ_RANGE);
+        self.logger.log(logger_client::Log::LARGETABLE_READS, &pl);
 
         grpc::SingleResponse::completed(response)
     }

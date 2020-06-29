@@ -9,6 +9,16 @@ load("@io_bazel_rules_docker//rust:image.bzl", "rust_image")
 load("@io_bazel_rules_docker//docker:docker.bzl", "docker_push")
 
 proto_library(
+    name = "log_types_proto",
+    srcs = ["log_types.proto"],
+)
+
+rust_proto_library(
+    name = "log_types_proto_rust",
+    deps = [":log_types_proto"],
+)
+
+proto_library(
     name = "logger_proto",
     srcs = ["logger.proto"],
 )
@@ -23,6 +33,19 @@ rust_grpc_library(
     deps = [":logger_proto"],
 )
 
+rust_binary(
+    name = "logger",
+    srcs = ["server.rs"],
+    edition = "2018",
+    deps = [
+        ":logger_grpc_rust",
+        ":server_lib",
+        "//util/flags",
+        "@io_bazel_rules_rust//proto/raze:grpc",
+        "@io_bazel_rules_rust//proto/raze:tls_api_stub",
+    ],
+)
+
 rust_library(
     name = "server_lib",
     srcs = ["server_lib.rs"],
@@ -33,6 +56,7 @@ rust_library(
         "//third_party:rand",
         "//util/gfile",
         "//util/recordio",
+        "@io_bazel_rules_rust//proto/raze:grpc",
     ],
 )
 
@@ -41,6 +65,7 @@ rust_library(
     srcs = ["client.rs"],
     edition = "2018",
     deps = [
+        ":log_types_proto_rust",
         ":logger_grpc_rust",
         "//third_party:time",
         "//util/gfile",

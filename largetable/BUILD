@@ -89,6 +89,7 @@ rust_binary(
         "//third_party:futures",
         "//third_party:glob",
         "//third_party:time",
+        "//tools/logger:logger_client",
         "//util/flags",
         "//util/sstable",
         "@io_bazel_rules_rust//proto/raze:grpc",

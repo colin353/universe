@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+enum ReadKind {
+  READ = 0;
+  READ_RANGE = 1;
+}
+
+message LargetablePerfLog {
+  uint64 request_duration_micros = 1;
+  string row = 2;
+  uint64 records = 3;
+  ReadKind kind = 4;
+}

@@ -2,11 +2,15 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, RwLock};
 
 use grpc::ClientStubExt;
+
+pub use log_types_proto_rust::*;
 use logger_grpc_rust::*;
+
+pub use logger_grpc_rust::Log;
 
 #[derive(Clone)]
 pub struct LoggerClient {
-    client: Arc<LoggerServiceClient>,
+    client: Option<Arc<LoggerServiceClient>>,
     logcache: Arc<RwLock<HashMap<Log, Mutex<Vec<EventMessage>>>>>,
 }
 
@@ -93,7 +97,6 @@ pub fn get_logs_with_root_dir(
 
     let mut output = Vec::new();
     for file in files_to_read {
-        println!("open file: {}", file);
         let f = gfile::GFile::open(file).unwrap();
         let mut buf = std::io::BufReader::new(f);
         let reader = recordio::RecordIOReader::<EventMessage, _>::new(&mut buf);
@@ -114,14 +117,26 @@ pub fn get_logs_with_root_dir(
 impl LoggerClient {
     pub fn new(hostname: &str, port: u16) -> Self {
         Self {
-            client: Arc::new(
+            client: Some(Arc::new(
                 LoggerServiceClient::new_plain(hostname, port, Default::default()).unwrap(),
-            ),
+            )),
+            logcache: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
+
+    pub fn new_stdout() -> Self {
+        Self {
+            client: None,
             logcache: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
     pub fn log<T: protobuf::Message>(&self, log: Log, input: &T) {
+        if self.client.is_none() {
+            println!("{:?}\t{:?}", log, input);
+            return;
+        }
+
         let mut m = EventMessage::new();
         input.write_to_writer(m.mut_msg()).unwrap();
         {
@@ -133,17 +148,22 @@ impl LoggerClient {
         match self.logcache.read().unwrap().get(&log) {
             Some(l) => {
                 l.lock().unwrap().push(m);
+                return;
             }
-            None => {
-                let logs = vec![m];
-                self.logcache.write().unwrap().insert(log, Mutex::new(logs));
-            }
-        }
+            None => {}
+        };
+        let logs = vec![m];
+        self.logcache.write().unwrap().insert(log, Mutex::new(logs));
     }
 
     pub fn start_logging(&self) {
+        if self.client.is_none() {
+            return;
+        }
+
         loop {
-            std::thread::sleep(std::time::Duration::from_secs(60));
+            std::thread::sleep(std::time::Duration::from_secs(5));
+            println!("saving logs");
 
             // Iterate over available keys
             let keys: Vec<_> = self.logcache.read().unwrap().keys().map(|k| *k).collect();
@@ -161,7 +181,13 @@ impl LoggerClient {
                         let mut req = LogRequest::new();
                         req.set_log(key);
                         *req.mut_messages() = protobuf::RepeatedField::from_vec(logs);
-                        match self.client.log(Default::default(), req).wait() {
+                        match self
+                            .client
+                            .as_ref()
+                            .unwrap()
+                            .log(Default::default(), req)
+                            .wait()
+                        {
                             Ok(_) => (),
                             Err(_) => eprintln!("Failed to log some messages! Logs lost!"),
                         };
