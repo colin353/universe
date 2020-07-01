@@ -1,6 +1,7 @@
 use logger_grpc_rust::*;
 use rand::Rng;
 
+use itertools::{MinHeap, KV};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, RwLock};
 
@@ -11,7 +12,8 @@ use logger_client::{
 #[derive(Clone)]
 pub struct LoggerServiceHandler {
     data_dir: String,
-    writers: Arc<RwLock<HashMap<Log, Mutex<recordio::RecordIOWriterOwned<EventMessage>>>>>,
+    cns_data_dir: String,
+    writers: Arc<RwLock<HashMap<Log, Mutex<(recordio::RecordIOWriterOwned<EventMessage>, u64)>>>>,
 }
 
 pub fn random_filename() -> String {
@@ -26,19 +28,24 @@ impl LoggerServiceHandler {
         Self {
             writers: Arc::new(RwLock::new(HashMap::new())),
             data_dir,
+            cns_data_dir: String::from("/cns/colossus/logs"),
         }
     }
 
     // Create a writer for this log if it doesn't already exist
     pub fn make_writer(&self, log: Log) {
+        let t = get_timestamp();
         let filename = format!(
             "{}/{}.recordio",
-            get_log_dir(&self.data_dir, log, get_timestamp()),
+            get_log_dir(&self.data_dir, log, t),
             random_filename()
         );
         let f = gfile::GFile::create(filename).unwrap();
         let w = recordio::RecordIOWriterOwned::new(Box::new(f));
-        self.writers.write().unwrap().insert(log, Mutex::new(w));
+        self.writers
+            .write()
+            .unwrap()
+            .insert(log, Mutex::new((w, t)));
     }
 
     pub fn log(&self, mut req: LogRequest) -> LogResponse {
@@ -48,7 +55,7 @@ impl LoggerServiceHandler {
                 match _w.get(&req.get_log()) {
                     Some(logger) => {
                         for event in req.take_messages().into_iter() {
-                            logger.lock().unwrap().write(&event);
+                            logger.lock().unwrap().0.write(&event);
                         }
                         return LogResponse::new();
                     }
@@ -66,6 +73,120 @@ impl LoggerServiceHandler {
 
     pub fn get_logs(&self, req: GetLogsRequest) -> GetLogsResponse {
         GetLogsResponse::new()
+    }
+
+    pub fn reorganize(&self) {
+        // Check whether any of the logs have expired
+        let mut expired_logs = Vec::new();
+        let t = get_timestamp();
+        let date_dir = get_date_dir(t);
+        {
+            let map = self.writers.read().unwrap();
+            for (l, m) in map.iter() {
+                let creation = m.lock().unwrap().1;
+                if t - creation > 3600 || date_dir != get_date_dir(creation) {
+                    expired_logs.push(l.clone());
+                }
+            }
+        }
+
+        for log in expired_logs {
+            self.make_writer(log);
+        }
+
+        let logs = match gfile::GFile::read_dir(&self.data_dir) {
+            Ok(d) => d,
+            Err(_) => {
+                eprintln!("Couldn't read data directory!");
+                return;
+            }
+        };
+
+        let mut logs_to_move = HashMap::new();
+        for log in logs {
+            let mut log_name_split = log[self.data_dir.len() + 1..].split("/");
+            let log_name = match log_name_split.next() {
+                Some(x) => x,
+                None => continue,
+            };
+
+            let year = match log_name_split.next() {
+                Some(x) => x,
+                None => continue,
+            };
+            let month = match log_name_split.next() {
+                Some(x) => x,
+                None => continue,
+            };
+            let day = match log_name_split.next() {
+                Some(x) => x,
+                None => continue,
+            };
+
+            if log.starts_with(&format!("{}/{}/{}", self.data_dir, log_name, date_dir)) {
+                continue;
+            }
+
+            let mut l = logs_to_move
+                .entry((log_name.to_string(), format!("{}/{}/{}", year, month, day)))
+                .or_insert(Vec::new());
+            l.push(log.clone());
+        }
+
+        for ((log_name, date_dir), logs) in logs_to_move {
+            self.aggregate_logs(&log_name, &date_dir, logs);
+        }
+    }
+
+    pub fn aggregate_logs(&self, log_name: &str, date_dir: &str, files: Vec<String>) {
+        let mut readers: Vec<_> = files
+            .iter()
+            .map(|f| {
+                let file = gfile::GFile::open(f).unwrap();
+                let mut f = std::io::BufReader::new(file);
+                recordio::RecordIOReaderOwned::<EventMessage>::new(Box::new(f))
+            })
+            .collect();
+
+        let mut heap = MinHeap::new();
+        for (idx, reader) in readers.iter_mut().enumerate() {
+            for _ in 0..100 {
+                let record = match reader.read() {
+                    Some(r) => r,
+                    None => break,
+                };
+                heap.push(KV::new(
+                    record.get_event_id().get_timestamp(),
+                    (record, idx),
+                ));
+            }
+        }
+
+        let output = gfile::GFile::create(format!(
+            "{}/{}/{}/logs.recordio",
+            self.cns_data_dir, log_name, date_dir
+        ))
+        .unwrap();
+        let mut writer = recordio::RecordIOWriterOwned::new(Box::new(output));
+        while let Some(KV(_, (record, idx))) = heap.pop() {
+            writer.write(&record);
+
+            let record = match readers[idx].read() {
+                Some(r) => r,
+                None => continue,
+            };
+            heap.push(KV::new(
+                record.get_event_id().get_timestamp(),
+                (record, idx),
+            ));
+        }
+
+        // Delete the log files
+        let dir_to_delete = format!("{}/{}/{}", self.data_dir, log_name, date_dir);
+        match std::fs::remove_dir_all(&dir_to_delete) {
+            Ok(_) => (),
+            Err(e) => eprintln!("failed to delete dir: `{}`: {:?}", dir_to_delete, e),
+        };
     }
 }
 

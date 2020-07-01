@@ -40,6 +40,7 @@ rust_binary(
     deps = [
         ":logger_grpc_rust",
         ":server_lib",
+        "//auth:auth_client",
         "//util/flags",
         "@io_bazel_rules_rust//proto/raze:grpc",
         "@io_bazel_rules_rust//proto/raze:tls_api_stub",
@@ -55,6 +56,7 @@ rust_library(
         ":logger_grpc_rust",
         "//third_party:rand",
         "//util/gfile",
+        "//util/itertools",
         "//util/recordio",
         "@io_bazel_rules_rust//proto/raze:grpc",
     ],
