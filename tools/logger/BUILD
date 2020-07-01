@@ -81,3 +81,17 @@ rust_test(
     name = "server_test",
     crate = ":server_lib",
 )
+
+rust_image(
+    name = "logger_img",
+    base = "@glibc_base//image",
+    binary = ":logger",
+)
+
+docker_push(
+    name = "logger_img_push",
+    image = ":logger_img",
+    registry = "us.gcr.io",
+    repository = "mushu-194218/logger",
+    tag = "dev",
+)
