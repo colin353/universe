@@ -106,9 +106,35 @@ impl GFile {
 
     pub fn read_dir<P: AsRef<Path>>(path: P) -> std::io::Result<Vec<String>> {
         match GPath::from_path(path.as_ref()) {
-            GPath::LocalPath(p) => Ok(std::fs::read_dir(p)?
-                .map(|e| e.unwrap().path().to_str().unwrap().to_string())
-                .collect()),
+            GPath::LocalPath(p) => {
+                let mut output = Vec::new();
+                let mut dirs = vec![p.to_owned()];
+                let mut steps = 0;
+                while let Some(dir) = dirs.pop() {
+                    steps += 1;
+                    for entry in std::fs::read_dir(dir.to_owned())? {
+                        let entry = entry?;
+
+                        if entry.path() == dir {
+                            continue;
+                        }
+
+                        if entry.metadata()?.is_dir() {
+                            dirs.push(entry.path().to_owned());
+                        } else {
+                            output.push(entry.path().to_str().unwrap().to_string());
+                        }
+                    }
+
+                    // No idea if this is needed, but in case some kind of loop occurs
+                    // by following symlinks, just quit early.
+                    if steps > 1024 {
+                        break;
+                    }
+                }
+
+                Ok(output)
+            }
             GPath::RemotePath(bucket, object) => {
                 let c = auth_client::get_global_client().unwrap();
                 let response = c.get_gcp_token(c.token.clone());
@@ -508,6 +534,11 @@ mod tests {
             GPath::from_path("/home/colinmerkel/tmp.txt".as_ref()),
             GPath::LocalPath("/home/colinmerkel/tmp.txt".as_ref()),
         );
+    }
+
+    //#[test]
+    fn test_list_dirs() {
+        assert_eq!(GFile::read_dir("/tmp/data").unwrap(), vec![String::new()]);
     }
 
     //#[test]
