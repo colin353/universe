@@ -40,8 +40,10 @@ rust_binary(
     deps = [
         ":logger_grpc_rust",
         ":server_lib",
+        ":webserver",
         "//auth:auth_client",
         "//util/flags",
+        "//util/ws",
         "@io_bazel_rules_rust//proto/raze:grpc",
         "@io_bazel_rules_rust//proto/raze:tls_api_stub",
     ],
@@ -74,6 +76,22 @@ rust_library(
         "//util/recordio",
         "@io_bazel_rules_rust//proto/raze:grpc",
         "@io_bazel_rules_rust//proto/raze:protobuf",
+    ],
+)
+
+rust_library(
+    name = "webserver",
+    srcs = ["webserver.rs"],
+    edition = "2018",
+    deps = [
+        ":log_types_proto_rust",
+        ":logger_client",
+        ":logger_grpc_rust",
+        ":server_lib",
+        "//auth:auth_client",
+        "//third_party:time",
+        "//util/tmpl",
+        "//util/ws",
     ],
 )
 
