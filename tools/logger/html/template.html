@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" type="text/css" href="/static/style.css">
+    <title>
+        logs
+    </title>
+
+    <style type="text/css">
+        @import url(https://fonts.googleapis.com/css?family=Roboto+Mono);
+
+        body {
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            color: rgba(0, 0, 0, 0.87);
+            font-family: 'Roboto Mono', sans-serif;
+        }
+
+        .page {
+            display: block;
+        }
+
+        .form-field .title {
+            text-transform: uppercase;
+            font-size: 0.6em;
+        }
+
+        .form-field .contents {
+            height: 1.25em;
+        }
+
+        .form-field {
+            padding: 4px;
+            border: 0.5px solid rgba(0, 0, 0, 0.2);
+        }
+
+        .small-heading {
+            text-transform: uppercase;
+            font-size: 0.6em;
+        }
+
+        .header {
+            width: 1024px;
+            display: flex;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .search-input {
+            height: 20px;
+            margin-top: 20px;
+        }
+
+        .content {
+            width: 1024px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        a.invisible-link {
+            color: black;
+            text-decoration: none;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="header">
+        <h2 style="margin-right: 20px; flex: 1"><a class="invisible-link" href="/">
+                logs
+            </a></h2>
+        <input class="search-input" type=text placeholder="search" />
+    </div>
+    {{content}}
+</body>
+
+<script>
+    let elements = document.getElementsByClassName("timestamp");
+    for (var i = 0; i < elements.length; i++) {
+        const el = elements[i];
+        const t = el.getAttribute("data-timestamp");
+        const options = {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+        }
+        el.innerHTML = (new Date(parseInt(t) / 1000)).toLocaleDateString("en-US", options);
+    };
+
+    function humanTime(t) {
+        if (t < 1) {
+            return "less than a second"
+        } else if (t < 2) {
+            return "one second";
+        } else if (t < 60) {
+            return Math.round(t) + " seconds"
+        } else if (t < 60 * 60) {
+            return Math.round(t / 60) + " minutes"
+        } else if (t < 60 * 60 * 24) {
+            return Math.round(t / (60 * 60)) + " hours"
+        } else if (t < 60 * 60 * 24 * 7) {
+            return Math.round(t / (60 * 60 * 24)) + " days"
+        } else if (t < 60 * 60 * 24 * 7 * 4) {
+            return Math.round(t / (60 * 60 * 24 * 7)) + " weeks"
+        } else if (t < 60 * 60 * 24 * 365) {
+            return Math.round(t / (60 * 60 * 24 * 7 * 4)) + " months"
+        } else {
+            return Math.round(t / (60 * 60 * 24 * 365)) + " years"
+        }
+    }
+
+    elements = document.getElementsByClassName("time-interval");
+    for (var i = 0; i < elements.length; i++) {
+        const el = elements[i];
+        const t = parseInt(el.getAttribute("time-interval")) / 1000000;
+        el.innerHTML = humanTime(t);
+    };
+</script>
+
+
+</html>

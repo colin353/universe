@@ -72,7 +72,15 @@ impl LoggerServiceHandler {
     }
 
     pub fn get_logs(&self, req: GetLogsRequest) -> GetLogsResponse {
-        GetLogsResponse::new()
+        let mut logs = get_logs_with_root_dir(
+            &self.data_dir,
+            req.get_log(),
+            req.get_start_time(),
+            req.get_end_time(),
+        );
+        let mut resp = GetLogsResponse::new();
+        resp.set_messages(protobuf::RepeatedField::from_vec(logs));
+        resp
     }
 
     pub fn reorganize(&self) {

@@ -61,6 +61,7 @@ rust_library(
         "//util/itertools",
         "//util/recordio",
         "@io_bazel_rules_rust//proto/raze:grpc",
+        "@io_bazel_rules_rust//proto/raze:protobuf",
     ],
 )
 
@@ -82,8 +83,13 @@ rust_library(
 rust_library(
     name = "webserver",
     srcs = ["webserver.rs"],
+    data = [
+        "html/table.html",
+        "html/template.html",
+    ],
     edition = "2018",
     deps = [
+        ":log_processing",
         ":log_types_proto_rust",
         ":logger_client",
         ":logger_grpc_rust",
@@ -92,6 +98,18 @@ rust_library(
         "//third_party:time",
         "//util/tmpl",
         "//util/ws",
+    ],
+)
+
+rust_library(
+    name = "log_processing",
+    srcs = ["log_processing.rs"],
+    edition = "2018",
+    deps = [
+        ":log_types_proto_rust",
+        ":logger_grpc_rust",
+        "//third_party:lazy_static",
+        "@io_bazel_rules_rust//proto/raze:protobuf",
     ],
 )
 
