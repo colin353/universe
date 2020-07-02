@@ -432,15 +432,31 @@ impl<C: LargeTableClient + Clone + Send + Sync + 'static> queue_grpc_rust::Queue
         let (tx, rx) = mpsc::unbounded();
         self.router.subscribe(req.get_queue().to_owned(), tx);
 
-        grpc::StreamingResponse::no_metadata(
-            futures::stream::iter_ok(vec![self.consume(req)])
-                .chain(rx.map(|m| {
+        let initial_response = self.consume(req);
+        let stream: Box<
+            dyn futures::Stream<Item = ConsumeResponse, Error = grpc::Error> + Send + 'static,
+        > = if initial_response.get_messages().len() > 0 {
+            Box::new(
+                futures::stream::iter_ok(vec![initial_response])
+                    .chain(rx.map(|m| {
+                        let mut resp = ConsumeResponse::new();
+                        resp.mut_messages().push(m);
+                        resp
+                    }))
+                    .map_err(|_| grpc::Error::Other("stream error")),
+            )
+        } else {
+            Box::new(
+                rx.map(|m| {
                     let mut resp = ConsumeResponse::new();
                     resp.mut_messages().push(m);
                     resp
-                }))
+                })
                 .map_err(|_| grpc::Error::Other("stream error")),
-        )
+            )
+        };
+
+        grpc::StreamingResponse::no_metadata(stream.map_err(|_| grpc::Error::Other("stream error")))
     }
 }
 

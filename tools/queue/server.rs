@@ -80,7 +80,7 @@ fn main() {
 
     std::thread::spawn(move || loop {
         handler.bump();
-        std::thread::sleep(std::time::Duration::from_secs(2));
+        std::thread::sleep(std::time::Duration::from_secs(10));
     });
 
     webserver::QueueWebServer::new(database, auth, base_url.value()).serve(web_port.value());
