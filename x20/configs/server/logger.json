@@ -1,0 +1,15 @@
+{
+    "name": "logger",
+    "binary_name": "logger",
+    "priority": 150,
+    "environment": "server",
+    "long_running": true,
+    "arguments": {
+        "data_dir": "/data",
+        "secret_key": "SECRETS::secret_key"
+    },
+    "docker_arguments": [
+        "--mount", "type=bind,source=/mnt/stateful_partition/logs,target=/data",
+        "--init"
+    ]
+}
