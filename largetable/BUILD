@@ -104,6 +104,7 @@ rust_image(
     srcs = [
         "largetable_server.rs",
     ],
+    base = "@glibc_base//image",
     data = ["server_service.rs"],
     deps = [
         ":compaction",
