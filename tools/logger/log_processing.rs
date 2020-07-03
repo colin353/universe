@@ -16,7 +16,7 @@ use protobuf::Message;
 use std::collections::HashMap;
 
 type FilterFn = fn(&HashMap<String, String>, &EventMessage) -> bool;
-type ExtractorFn = fn(&HashMap<String, String>, &EventMessage) -> String;
+type ExtractorFn = fn(&HashMap<String, String>, &EventMessage) -> (u64, String);
 
 pub fn string_to_log(name: &str) -> Log {
     match name {
@@ -34,8 +34,12 @@ lazy_static! {
     };
     pub static ref EXTRACTORS: HashMap<String, Vec<(&'static str, ExtractorFn)>> = {
         let mut h = HashMap::new();
+        let l: ExtractorFn = latencyExtractor;
         let e: ExtractorFn = textExtractor::<LargetablePerfLog>;
-        h.insert(format!("{:?}", Log::LARGETABLE_READS), vec![("text", e)]);
+        h.insert(
+            format!("{:?}", Log::LARGETABLE_READS),
+            vec![("text", e), ("latency", l)],
+        );
         h
     };
 }
@@ -62,17 +66,29 @@ pub fn latencyFilter(s: &HashMap<String, String>, log: &EventMessage) -> bool {
     true
 }
 
+pub fn latencyExtractor(_: &HashMap<String, String>, log: &EventMessage) -> (u64, String) {
+    let mut extracted_msg = LargetablePerfLog::new();
+    extracted_msg.merge_from_bytes(log.get_msg()).unwrap();
+    (
+        log.get_event_id().get_timestamp(),
+        format!("{}", extracted_msg.get_request_duration_micros()),
+    )
+}
+
 pub fn textExtractor<T: protobuf::Message>(
     _: &HashMap<String, String>,
     log: &EventMessage,
-) -> String {
+) -> (u64, String) {
     let mut handled_msg = T::new();
     handled_msg.merge_from_bytes(log.get_msg()).unwrap();
     let msg = format!("{:?}", handled_msg);
-    format!(
-        "<tr><td class='timestamp' data-timestamp={}>{}</td><td>{:?}</td></tr>\n",
+    (
         log.get_event_id().get_timestamp(),
-        log.get_event_id().get_timestamp(),
-        msg
+        format!(
+            "<tr><td class='timestamp' data-timestamp={}>{}</td><td>{:?}</td></tr>\n",
+            log.get_event_id().get_timestamp(),
+            log.get_event_id().get_timestamp(),
+            msg
+        ),
     )
 }

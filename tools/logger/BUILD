@@ -84,6 +84,9 @@ rust_library(
     name = "webserver",
     srcs = ["webserver.rs"],
     data = [
+        "html/edit.html",
+        "html/graph.html",
+        "html/json.html",
         "html/table.html",
         "html/template.html",
     ],

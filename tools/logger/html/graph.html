@@ -1,0 +1,103 @@
+<script src="https://cdn.jsdelivr.net/gh/leeoniya/uPlot/dist/uPlot.iife.min.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/leeoniya/uPlot/dist/uPlot.min.css">
+<script>
+    var plotConfig = {
+        title: "Latency",
+        lines: [{
+            log: "LARGETABLE_READS",
+            filters: [],
+            args: {},
+            extractor: "latency",
+        }],
+        aggregator: 'average',
+        intervals: 100,
+    }
+
+    try {
+        plotConfig = JSON.parse(atob(location.hash.substr(1)));
+    } catch (e) {
+        console.warn("couldn't parse hash: ", e)
+    }
+
+
+    function aggregate(kind, data) {
+        if (kind == 'sum') {
+            return data.reduce((a, b) => a + b, 0);
+        } else if (kind == 'average') {
+            const sum = data.reduce((a, b) => a + b, 0);
+            return sum / data.length;
+        } else if (kind == 'count') {
+            return data.length
+        }
+    }
+
+    function getData() {
+        let promises = [];
+        for (const line of plotConfig.lines) {
+            const data = []
+            promises.push(fetch("/" + line.log + "/json/" + line.extractor).then((r) => r.json()).then((d) => {
+                line.data = d
+            }))
+        }
+
+        return Promise.all(promises)
+    }
+
+    function plot(data) {
+        let opts = {
+            title: plotConfig.title,
+            id: "chart1",
+            class: "my-chart",
+            width: 1024,
+            height: 400,
+            series: [{},
+                {
+                    // initial toggled state (optional)
+                    show: true,
+                    spanGaps: false,
+                }
+            ],
+        };
+
+        let uplot = new uPlot(opts, data, document.body);
+    }
+
+    getData().then(() => {
+        let min = Number.MAX_SAFE_INTEGER;
+        let max = 0;
+        for (const line of plotConfig.lines) {
+            for (const record of line.data.data) {
+                if (record[0] < min) min = record[0];
+                if (record[0] > max) max = record[0];
+            }
+        }
+
+        const intervalWidth = (max - min) / plotConfig.intervals;
+        const timeIntervals = []
+        for (var i = 0; i < plotConfig.intervals; i++) {
+            timeIntervals.push((min + intervalWidth * i + (intervalWidth) / 2) / 1000000)
+        }
+        output = [timeIntervals]
+
+        for (const line of plotConfig.lines) {
+            const groupedData = {}
+            for (var i = 0; i <= plotConfig.intervals; i++) {
+                groupedData[i] = []
+            }
+            for (const record of line.data.data) {
+                let interval = Math.floor((record[0] - min) / intervalWidth);
+                groupedData[interval].push(record[1])
+            }
+
+            aggregatedData = []
+            for (var i = 0; i < plotConfig.intervals; i++) {
+                aggregatedData.push(aggregate(plotConfig.aggregator, groupedData[i]))
+            }
+
+            output.push(aggregatedData)
+        }
+
+        window.processedData = output
+        return output
+    }).then((data) => plot(data));
+</script>

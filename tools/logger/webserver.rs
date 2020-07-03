@@ -11,6 +11,9 @@ use std::collections::HashMap;
 
 static TEMPLATE: &str = include_str!("html/template.html");
 static TABLE: &str = include_str!("html/table.html");
+static JSON: &str = include_str!("html/json.html");
+static GRAPH: &str = include_str!("html/graph.html");
+static EDIT: &str = include_str!("html/edit.html");
 
 #[derive(Clone)]
 pub struct LoggerWebServer {
@@ -39,6 +42,14 @@ impl LoggerWebServer {
                 "content" => content
             ),
         )
+    }
+
+    fn graph(&self) -> Response {
+        Response::new(Body::from(GRAPH.to_string()))
+    }
+
+    fn edit(&self) -> Response {
+        Response::new(Body::from(EDIT.to_string()))
     }
 
     fn index(
@@ -102,7 +113,7 @@ impl LoggerWebServer {
         };
 
         let args = HashMap::new();
-        let output: Vec<String> = response
+        let output: Vec<(u64, String)> = response
             .get_messages()
             .iter()
             .filter(|x| {
@@ -114,16 +125,24 @@ impl LoggerWebServer {
                 true
             })
             .map(|m| extractor(&args, m))
-            .take(4096)
+            .take(16384)
             .collect();
 
         let body = match renderer {
             "table" => tmpl::apply(
                 TABLE,
                 &content!(
-                    "data" => output.join("")
+                    "data" => output.into_iter().map(|(_, d)| d).collect::<Vec<_>>().join("")
                 ),
             ),
+            "json" => {
+                return Response::new(Body::from(tmpl::apply(
+                    JSON,
+                    &content!(
+                        "data" => output.iter().map(|(t, d)| format!("[{}, {}]", t, d)).collect::<Vec<_>>().join(",")
+                    ),
+                )))
+            }
             _ => {
                 return Response::new(Body::from(format!("unknown renderer: {}", renderer)));
             }
@@ -148,10 +167,19 @@ impl Server for LoggerWebServer {
         let mut path_split = path.split("/");
         path_split.next(); // drop leading /
 
-        let log_name = match path_split.next() {
+        let first_component = match path_split.next() {
             Some(x) => x,
             None => return self.not_found(path),
         };
+
+        if first_component == "graph" {
+            return self.graph();
+        } else if first_component == "edit" {
+            return self.edit();
+        }
+
+        let log_name = first_component;
+
         let renderer = match path_split.next() {
             Some(x) => x,
             None => return self.not_found(path),

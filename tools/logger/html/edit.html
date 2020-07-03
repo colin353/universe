@@ -1,0 +1,51 @@
+<iframe src='/graph' style="display:block; width: 100%; height: 500px;" id="iframe"></iframe>
+
+<textarea style="display:block; width: 100%; height: 300px;" id="editor">
+{
+	"title": "Custom plot",
+	"lines": [{
+		"log": "LARGETABLE_READS",
+		"filters": [],
+		"args": {},
+		"extractor": "latency"
+	}],
+	"aggregator": "count",
+	"intervals": 100
+}
+</textarea>
+
+<button onclick="update()" />update</button>
+
+<a id="graph-link" target="_blank">graph link</a>
+
+<script>
+    var plotConfig = {
+        title: "Latency",
+        lines: [{
+            log: "LARGETABLE_READS",
+            filters: [],
+            args: {},
+            extractor: "latency",
+        }],
+        aggregator: 'average',
+        intervals: 100,
+    }
+    try {
+        plotConfig = JSON.parse(atob(location.hash.substr(1)));
+    } catch (e) {
+        console.warn("couldn't parse hash: ", e)
+    }
+
+    const editor = document.getElementById('editor');
+    editor.value = JSON.stringify(plotConfig, null, '\t')
+
+    const link = document.getElementById('graph-link');
+    const iframe = document.getElementById('iframe');
+
+    function update() {
+        editor.value = JSON.stringify(JSON.parse(editor.value), null, '\t')
+        link.href = "/graph#" + btoa(editor.value)
+        iframe.contentWindow.location = "/graph#" + btoa(editor.value)
+        iframe.contentWindow.location.reload();
+    }
+</script>
