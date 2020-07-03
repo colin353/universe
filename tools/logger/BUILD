@@ -98,6 +98,7 @@ rust_library(
         "//third_party:time",
         "//util/tmpl",
         "//util/ws",
+        "//util/ws:ws_utils",
     ],
 )
 

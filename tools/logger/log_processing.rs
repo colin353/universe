@@ -12,6 +12,7 @@ extern crate lazy_static;
 
 use log_types_proto_rust::*;
 use logger_grpc_rust::*;
+use protobuf::Message;
 use std::collections::HashMap;
 
 type FilterFn = fn(&HashMap<String, String>, &EventMessage) -> bool;
@@ -27,6 +28,8 @@ pub fn string_to_log(name: &str) -> Log {
 lazy_static! {
     pub static ref FILTERS: HashMap<String, Vec<(&'static str, FilterFn)>> = {
         let mut h = HashMap::new();
+        let f: FilterFn = latencyFilter;
+        h.insert(format!("{:?}", Log::LARGETABLE_READS), vec![("latency", f)]);
         h
     };
     pub static ref EXTRACTORS: HashMap<String, Vec<(&'static str, ExtractorFn)>> = {
@@ -35,6 +38,28 @@ lazy_static! {
         h.insert(format!("{:?}", Log::LARGETABLE_READS), vec![("text", e)]);
         h
     };
+}
+
+pub fn latencyFilter(s: &HashMap<String, String>, log: &EventMessage) -> bool {
+    let mut m = LargetablePerfLog::new();
+    m.merge_from_bytes(log.get_msg()).unwrap();
+
+    if let Some(min) = s.get("minLatency") {
+        if let Ok(s) = min.parse::<u64>() {
+            if m.get_request_duration_micros() < s {
+                return false;
+            }
+        }
+    }
+    if let Some(max) = s.get("maxLatency") {
+        if let Ok(s) = max.parse::<u64>() {
+            if m.get_request_duration_micros() > s {
+                return false;
+            }
+        }
+    }
+
+    true
 }
 
 pub fn textExtractor<T: protobuf::Message>(

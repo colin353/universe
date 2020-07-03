@@ -41,9 +41,15 @@ impl LoggerWebServer {
         )
     }
 
-    fn index(&self, log_name: &str, renderer: &str, extractor_name: &str) -> Response {
+    fn index(
+        &self,
+        request: Request,
+        log_name: &str,
+        renderer: &str,
+        extractor_name: &str,
+    ) -> Response {
         let end_time = get_timestamp();
-        let start_time = end_time - 2000;
+        let start_time = end_time - 86400;
 
         let mut req = GetLogsRequest::new();
         req.set_log(log_processing::string_to_log(log_name));
@@ -65,11 +71,50 @@ impl LoggerWebServer {
             }
         };
 
+        // Determine filters passed by query
+        let query = match request.uri().query() {
+            Some(q) => q,
+            None => "",
+        };
+
+        let available_filters = match log_processing::FILTERS.get(log_name) {
+            Some(x) => x,
+            None => {
+                return Response::new(Body::from(format!("unknown log_name: {}", log_name)));
+            }
+        };
+
+        let mut query_params = ws_utils::parse_params(query);
+        let filters = match query_params.remove("filters") {
+            Some(x) => {
+                let mut filters = Vec::new();
+                for f in x.split(",") {
+                    match available_filters.iter().find(|(fname, filter)| &f == fname) {
+                        Some((_, filter)) => filters.push(filter),
+                        None => {
+                            return Response::new(Body::from(format!("unknown filter: {}", f)));
+                        }
+                    }
+                }
+                filters
+            }
+            None => Vec::new(),
+        };
+
         let args = HashMap::new();
         let output: Vec<String> = response
             .get_messages()
             .iter()
+            .filter(|x| {
+                for filter in &filters {
+                    if !filter(&query_params, x) {
+                        return false;
+                    }
+                }
+                true
+            })
             .map(|m| extractor(&args, m))
+            .take(4096)
             .collect();
 
         let body = match renderer {
@@ -116,6 +161,6 @@ impl Server for LoggerWebServer {
             None => return self.not_found(path),
         };
 
-        return self.index(log_name, renderer, extractor);
+        return self.index(req, log_name, renderer, extractor);
     }
 }
