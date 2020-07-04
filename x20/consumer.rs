@@ -63,7 +63,7 @@ impl<C: LargeTableClient + Clone> Consumer for X20Consumer<C> {
         for arg in message.get_arguments() {
             if arg.get_name() == "target" {
                 let target = arg.get_value_string();
-                if let Some(_) = binmap.get(target) {
+                if let Some(bin) = binmap.get(target) {
                     // We found a target to rebuild, so let's enqueue a build for it
                     let mut m = Message::new();
                     m.set_name(format!("build + publish {}", target));
@@ -75,6 +75,7 @@ impl<C: LargeTableClient + Clone> Consumer for X20Consumer<C> {
                     args.add_bool("upload", true);
                     args.add_bool("optimized", true);
                     args.add_bool("is_submitted", true);
+                    args.add_bool("is_docker_img_push", !bin.get_docker_img_tag().is_empty());
                     *m.mut_arguments() = args.build_rf();
 
                     let id = self.get_queue_client().enqueue(String::from("builds"), m);
