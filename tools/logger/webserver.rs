@@ -59,8 +59,24 @@ impl LoggerWebServer {
         renderer: &str,
         extractor_name: &str,
     ) -> Response {
-        let end_time = get_timestamp();
-        let start_time = end_time - 86400;
+        let mut end_time = get_timestamp();
+        let mut start_time = end_time - 86400;
+
+        // Determine filters passed by query
+        let query = match request.uri().query() {
+            Some(q) => q,
+            None => "",
+        };
+
+        let mut query_params = ws_utils::parse_params(query);
+
+        if let Some(start) = query_params.get("start_time") {
+            start_time = start.parse().unwrap();
+        }
+
+        if let Some(end) = query_params.get("end_time") {
+            end_time = end.parse().unwrap();
+        }
 
         let mut req = GetLogsRequest::new();
         req.set_log(log_processing::string_to_log(log_name));
@@ -82,12 +98,6 @@ impl LoggerWebServer {
             }
         };
 
-        // Determine filters passed by query
-        let query = match request.uri().query() {
-            Some(q) => q,
-            None => "",
-        };
-
         let available_filters = match log_processing::FILTERS.get(log_name) {
             Some(x) => x,
             None => {
@@ -95,7 +105,6 @@ impl LoggerWebServer {
             }
         };
 
-        let mut query_params = ws_utils::parse_params(query);
         let filters = match query_params.remove("filters") {
             Some(x) => {
                 let mut filters = Vec::new();

@@ -29,7 +29,11 @@ lazy_static! {
     pub static ref FILTERS: HashMap<String, Vec<(&'static str, FilterFn)>> = {
         let mut h = HashMap::new();
         let f: FilterFn = latencyFilter;
-        h.insert(format!("{:?}", Log::LARGETABLE_READS), vec![("latency", f)]);
+        let k: FilterFn = kindFilter;
+        h.insert(
+            format!("{:?}", Log::LARGETABLE_READS),
+            vec![("latency", f), ("kind", k)],
+        );
         h
     };
     pub static ref EXTRACTORS: HashMap<String, Vec<(&'static str, ExtractorFn)>> = {
@@ -42,6 +46,17 @@ lazy_static! {
         );
         h
     };
+}
+
+pub fn kindFilter(s: &HashMap<String, String>, log: &EventMessage) -> bool {
+    if let Some(kind) = s.get("kind") {
+        let mut m = LargetablePerfLog::new();
+        m.merge_from_bytes(log.get_msg()).unwrap();
+        return kind == "read" && m.get_kind() == ReadKind::READ
+            || kind == "read_range" && m.get_kind() == ReadKind::READ_RANGE;
+    }
+
+    return false;
 }
 
 pub fn latencyFilter(s: &HashMap<String, String>, log: &EventMessage) -> bool {

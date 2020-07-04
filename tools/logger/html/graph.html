@@ -4,6 +4,7 @@
     var plotConfig = {
         title: "Latency",
         lines: [{
+            label: "qps",
             log: "LARGETABLE_READS",
             filters: [],
             args: {},
@@ -11,6 +12,7 @@
         }],
         aggregator: 'average',
         intervals: 100,
+        rate: false,
     }
 
     try {
@@ -24,6 +26,7 @@
         if (kind == 'sum') {
             return data.reduce((a, b) => a + b, 0);
         } else if (kind == 'average') {
+            if (data.length == 0) return null;
             const sum = data.reduce((a, b) => a + b, 0);
             return sum / data.length;
         } else if (kind == 'count') {
@@ -35,7 +38,29 @@
         let promises = [];
         for (const line of plotConfig.lines) {
             const data = []
-            promises.push(fetch("/" + line.log + "/json/" + line.extractor).then((r) => r.json()).then((d) => {
+            let url = "/" + line.log + "/json/" + line.extractor + "?q=0";
+
+
+            if (plotConfig.timeInterval) {
+                let ts = Math.round((new Date()).getTime() / 1000);
+
+                if (plotConfig.startTime) {
+                    ts = Math.floor(plotConfig.startTime / 1000000);
+                }
+
+                url += "&start_time=" + (ts - plotConfig.timeInterval) + "&end_time=" + ts
+                console.log("time interval", url)
+            }
+
+            if (line.filters.length) {
+                url += "&filters=" + line.filters.join(",")
+            }
+
+            for (const [key, value] of Object.entries(line.args)) {
+                url += "&" + key + "=" + value
+            }
+
+            promises.push(fetch(url).then((r) => r.json()).then((d) => {
                 line.data = d
             }))
         }
@@ -44,19 +69,25 @@
     }
 
     function plot(data) {
+        const series = [{}];
+        const strokes = ["black", "red", "blue", "green", "purple", "orange"];
+        let index = 0;
+        for (const line of plotConfig.lines) {
+            series.push({
+                stroke: strokes[index++ % strokes.length],
+                label: line.label,
+                show: true,
+                spanGaps: false,
+            })
+        }
+
         let opts = {
             title: plotConfig.title,
             id: "chart1",
             class: "my-chart",
             width: 1024,
             height: 400,
-            series: [{},
-                {
-                    // initial toggled state (optional)
-                    show: true,
-                    spanGaps: false,
-                }
-            ],
+            series,
         };
 
         let uplot = new uPlot(opts, data, document.body);
@@ -91,7 +122,11 @@
 
             aggregatedData = []
             for (var i = 0; i < plotConfig.intervals; i++) {
-                aggregatedData.push(aggregate(plotConfig.aggregator, groupedData[i]))
+                let normalization = 1;
+                if (plotConfig.rate) {
+                    normalization = intervalWidth / 1000000
+                }
+                aggregatedData.push(aggregate(plotConfig.aggregator, groupedData[i]) / normalization)
             }
 
             output.push(aggregatedData)
