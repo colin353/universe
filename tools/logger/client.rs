@@ -163,7 +163,6 @@ impl LoggerClient {
 
         loop {
             std::thread::sleep(std::time::Duration::from_secs(5));
-            println!("saving logs");
 
             // Iterate over available keys
             let keys: Vec<_> = self.logcache.read().unwrap().keys().map(|k| *k).collect();

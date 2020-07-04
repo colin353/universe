@@ -107,7 +107,7 @@ pub fn apply_mut(template: &str, data: &ContentsMap, output: &mut String) {
             // Regular key insertion.
             Key::Value(key) => match data.resolve(key) {
                 Some(Contents::Value(x)) => output.push_str(&x),
-                _ => eprintln!("key {} not found", key),
+                _ => (),
             },
 
             // Array insertion.
@@ -124,7 +124,7 @@ pub fn apply_mut(template: &str, data: &ContentsMap, output: &mut String) {
                         apply_mut(loop_template, &cloned_data, output);
                     }
                 }
-                _ => eprintln!("multi-value key {} not found", key),
+                _ => (),
             },
 
             // Equality condition, only render the block if the condition is true.
