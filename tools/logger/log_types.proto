@@ -3,6 +3,8 @@ syntax = "proto3";
 enum ReadKind {
   READ = 0;
   READ_RANGE = 1;
+  WRITE = 2;
+  BULK_WRITE = 3;
 }
 
 message LargetablePerfLog {
@@ -10,4 +12,5 @@ message LargetablePerfLog {
   string row = 2;
   uint64 records = 3;
   ReadKind kind = 4;
+  uint64 size_bytes = 5;
 }

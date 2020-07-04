@@ -324,6 +324,7 @@ impl largetable_grpc_rust::LargeTableService for LargeTableServiceHandler {
         pl.set_records(if response.get_found() { 1 } else { 0 });
         pl.set_request_duration_micros(start.elapsed().as_micros() as u64);
         pl.set_kind(logger_client::ReadKind::READ);
+        pl.set_size_bytes(response.get_data().len() as u64);
         self.logger.log(logger_client::Log::LARGETABLE_READS, &pl);
 
         grpc::SingleResponse::completed(response)
@@ -355,7 +356,10 @@ impl largetable_grpc_rust::LargeTableService for LargeTableServiceHandler {
         let mut response = largetable_grpc_rust::ReadRangeResponse::new();
 
         // Construct the largetable_grpc_rust::Record from the largetable::Record.
+        let mut size_bytes = 0;
         for record in records {
+            size_bytes += record.get_data().len();
+
             let mut r = largetable_grpc_rust::Record::new();
             r.set_column(record.get_col().to_string());
             r.set_row(record.get_row().to_string());
@@ -370,6 +374,7 @@ impl largetable_grpc_rust::LargeTableService for LargeTableServiceHandler {
         pl.set_records(response.get_records().len() as u64);
         pl.set_request_duration_micros(start.elapsed().as_micros() as u64);
         pl.set_kind(logger_client::ReadKind::READ_RANGE);
+        pl.set_size_bytes(size_bytes as u64);
         self.logger.log(logger_client::Log::LARGETABLE_READS, &pl);
 
         grpc::SingleResponse::completed(response)
@@ -399,12 +404,15 @@ impl largetable_grpc_rust::LargeTableService for LargeTableServiceHandler {
         _m: grpc::RequestOptions,
         req: largetable_grpc_rust::WriteRequest,
     ) -> grpc::SingleResponse<largetable_grpc_rust::WriteResponse> {
+        let start = std::time::Instant::now();
         self.wait_until_ready();
 
         let time_usec = match req.get_timestamp() {
             0 => get_timestamp_usec(),
             x => x,
         };
+        let size_bytes = req.get_data().len();
+
         let mut rec = largetable::Record::new();
         rec.set_timestamp(time_usec);
         rec.set_data(req.get_data().to_owned());
@@ -417,6 +425,15 @@ impl largetable_grpc_rust::LargeTableService for LargeTableServiceHandler {
 
         let mut response = largetable_grpc_rust::WriteResponse::new();
         response.set_timestamp(time_usec);
+
+        let mut pl = logger_client::LargetablePerfLog::new();
+        pl.set_row(req.get_row().to_string());
+        pl.set_records(1);
+        pl.set_request_duration_micros(start.elapsed().as_micros() as u64);
+        pl.set_kind(logger_client::ReadKind::WRITE);
+        pl.set_size_bytes(size_bytes as u64);
+        self.logger.log(logger_client::Log::LARGETABLE_READS, &pl);
+
         grpc::SingleResponse::completed(response)
     }
 
@@ -456,7 +473,9 @@ impl largetable_grpc_rust::LargeTableService for LargeTableServiceHandler {
         _m: grpc::RequestOptions,
         req: largetable_grpc_rust::BatchWriteRequest,
     ) -> grpc::SingleResponse<largetable_grpc_rust::WriteResponse> {
+        let start = std::time::Instant::now();
         self.wait_until_ready();
+        let mut size_bytes = 0;
 
         let request_time = get_timestamp_usec();
         {
@@ -466,6 +485,7 @@ impl largetable_grpc_rust::LargeTableService for LargeTableServiceHandler {
                     0 => request_time,
                     x => x,
                 };
+                size_bytes += write.get_data().len();
                 let mut rec = largetable::Record::new();
                 rec.set_timestamp(time_usec);
                 rec.set_data(write.get_data().to_owned());
@@ -482,6 +502,13 @@ impl largetable_grpc_rust::LargeTableService for LargeTableServiceHandler {
                 table.write(delete.get_row(), delete.get_column(), rec);
             }
         }
+
+        let mut pl = logger_client::LargetablePerfLog::new();
+        pl.set_records((req.get_writes().len() + req.get_deletes().len()) as u64);
+        pl.set_request_duration_micros(start.elapsed().as_micros() as u64);
+        pl.set_kind(logger_client::ReadKind::BULK_WRITE);
+        pl.set_size_bytes(size_bytes as u64);
+        self.logger.log(logger_client::Log::LARGETABLE_READS, &pl);
 
         let mut response = largetable_grpc_rust::WriteResponse::new();
         response.set_timestamp(request_time);
