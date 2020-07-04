@@ -134,7 +134,7 @@ impl LoggerWebServer {
                 true
             })
             .map(|m| extractor(&args, m))
-            .take(16384)
+            .take(1000000)
             .collect();
 
         let body = match renderer {
