@@ -7,6 +7,7 @@ static TEMPLATE: &str = include_str!("html/template.html");
 static SIDEBAR: &str = include_str!("html/sidebar.html");
 static INDEX: &str = include_str!("html/index.html");
 static DETAIL: &str = include_str!("html/detail.html");
+static DETAIL_MD: &str = include_str!("html/markdown.html");
 static DETAIL_FOLDER: &str = include_str!("html/detail_folder.html");
 static DETAIL_TEMPLATE: &str = include_str!("html/detail_template.html");
 static RESULTS: &str = include_str!("html/results.html");
@@ -108,6 +109,13 @@ where
 
         let details = if file.get_is_directory() {
             tmpl::apply(DETAIL_FOLDER, &render::file(&file))
+        } else if file.get_filename().ends_with(".md") {
+            tmpl::apply(
+                DETAIL_MD,
+                &content!(
+                    "markdown" => &markdown::to_html(&file.get_content())
+                ),
+            )
         } else {
             tmpl::apply(DETAIL, &render::file(&file))
         };
