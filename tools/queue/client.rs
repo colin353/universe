@@ -122,6 +122,15 @@ impl QueueClient {
     }
 }
 
+pub fn get_string_result<'a>(name: &str, m: &'a Message) -> Option<&'a str> {
+    for arg in m.get_results() {
+        if arg.get_name() == name {
+            return Some(arg.get_value_string());
+        }
+    }
+    None
+}
+
 pub fn get_string_arg<'a>(name: &str, m: &'a Message) -> Option<&'a str> {
     for arg in m.get_arguments() {
         if arg.get_name() == name {

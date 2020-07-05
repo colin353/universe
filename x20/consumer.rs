@@ -134,12 +134,12 @@ impl<C: LargeTableClient + Clone> Consumer for X20Consumer<C> {
                 }
             };
 
-            let url = match get_string_arg("artifact_url", &m) {
+            let url = match get_string_result("artifact_url", &m) {
                 Some(t) => t.to_string(),
                 None => String::new(),
             };
 
-            let img_tag = match get_string_arg("docker_img_tag", &m) {
+            let img_tag = match get_string_result("docker_img_tag", &m) {
                 Some(t) => t.to_string(),
                 None => String::new(),
             };
