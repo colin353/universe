@@ -581,8 +581,10 @@ impl X20Manager {
             for child in &mut children {
                 child.tail_logs();
                 if !child.check_alive() {
-                    failed = true;
-                    break;
+                    if !child.retry() {
+                        failed = true;
+                        break;
+                    }
                 }
 
                 // Check if there are any updates that apply to this child

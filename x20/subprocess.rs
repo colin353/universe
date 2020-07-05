@@ -1,6 +1,8 @@
 use std::io::BufRead;
 use std::io::Seek;
 
+const MAX_RETRIES: u16 = 4;
+
 pub struct ChildProcess {
     pub config: x20::Configuration,
     pub binary: x20::Binary,
@@ -9,6 +11,8 @@ pub struct ChildProcess {
     log_file: String,
     binary_file: String,
     child: Option<std::process::Child>,
+    failures: u16,
+    last_failure_time: std::time::Instant,
 }
 
 impl ChildProcess {
@@ -24,6 +28,8 @@ impl ChildProcess {
             log_file: log_file,
             binary_file: binary_file,
             child: None,
+            failures: 0,
+            last_failure_time: std::time::Instant::now(),
         }
     }
 
@@ -95,7 +101,7 @@ impl ChildProcess {
     pub fn start_executable(&mut self) -> bool {
         let f = std::fs::File::create(&self.log_file).unwrap();
         let f2 = std::fs::File::create(&self.log_file).unwrap();
-        println!("start bin file: {}", self.binary_file);
+        println!("start binary: {}", self.binary_file);
         let mut c = std::process::Command::new(&self.binary_file);
         c.stdout(f);
         c.stderr(f2);
@@ -176,6 +182,25 @@ impl ChildProcess {
                 return false;
             }
         }
+        true
+    }
+
+    pub fn retry(&mut self) -> bool {
+        if self.last_failure_time.elapsed().as_secs() > 300 {
+            self.failures = 0;
+        }
+
+        self.failures += 1;
+        self.last_failure_time = std::time::Instant::now();
+
+        if self.failures > MAX_RETRIES {
+            return false;
+        }
+
+        if !self.start() {
+            return self.retry();
+        }
+
         true
     }
 
