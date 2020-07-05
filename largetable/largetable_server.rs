@@ -46,7 +46,7 @@ fn main() {
         logger_port
     );
 
-    let logger = if logger_hostname.value().is_empty() {
+    let mut logger = if logger_hostname.value().is_empty() {
         logger_client::LoggerClient::new_stdout()
     } else {
         logger_client::LoggerClient::new(&logger_hostname.value(), logger_port.value())

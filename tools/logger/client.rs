@@ -12,6 +12,8 @@ pub use logger_grpc_rust::Log;
 pub struct LoggerClient {
     client: Option<Arc<LoggerServiceClient>>,
     logcache: Arc<RwLock<HashMap<Log, Mutex<Vec<EventMessage>>>>>,
+    hostname: String,
+    port: u16,
 }
 
 pub fn get_timestamp() -> u64 {
@@ -116,11 +118,17 @@ pub fn get_logs_with_root_dir(
 
 impl LoggerClient {
     pub fn new(hostname: &str, port: u16) -> Self {
+        // Try to initialize the client
+        let client = match LoggerServiceClient::new_plain(hostname, port, Default::default()) {
+            Ok(c) => Some(Arc::new(c)),
+            Err(_) => None,
+        };
+
         Self {
-            client: Some(Arc::new(
-                LoggerServiceClient::new_plain(hostname, port, Default::default()).unwrap(),
-            )),
+            client: client,
             logcache: Arc::new(RwLock::new(HashMap::new())),
+            hostname: hostname.to_string(),
+            port,
         }
     }
 
@@ -128,11 +136,13 @@ impl LoggerClient {
         Self {
             client: None,
             logcache: Arc::new(RwLock::new(HashMap::new())),
+            hostname: String::new(),
+            port: 0,
         }
     }
 
     pub fn log<T: protobuf::Message>(&self, log: Log, input: &T) {
-        if self.client.is_none() {
+        if self.client.is_none() && self.hostname.is_empty() {
             println!("{:?}\t{:?}", log, input);
             return;
         }
@@ -156,13 +166,24 @@ impl LoggerClient {
         self.logcache.write().unwrap().insert(log, Mutex::new(logs));
     }
 
-    pub fn start_logging(&self) {
-        if self.client.is_none() {
+    pub fn start_logging(&mut self) {
+        if self.client.is_none() && self.hostname.is_empty() {
             return;
         }
 
         loop {
             std::thread::sleep(std::time::Duration::from_secs(5));
+
+            if self.client.is_none() {
+                self.client = match LoggerServiceClient::new_plain(
+                    &self.hostname,
+                    self.port,
+                    Default::default(),
+                ) {
+                    Ok(c) => Some(Arc::new(c)),
+                    Err(_) => continue,
+                };
+            }
 
             // Iterate over available keys
             let keys: Vec<_> = self.logcache.read().unwrap().keys().map(|k| *k).collect();
