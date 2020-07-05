@@ -126,6 +126,9 @@
                 if (plotConfig.rate) {
                     normalization = intervalWidth / 1000000
                 }
+                if (line.scaleFactor) {
+                    normalization = normalization / line.scaleFactor
+                }
                 aggregatedData.push(aggregate(plotConfig.aggregator, groupedData[i]) / normalization)
             }
 

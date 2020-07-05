@@ -39,10 +39,11 @@ lazy_static! {
     pub static ref EXTRACTORS: HashMap<String, Vec<(&'static str, ExtractorFn)>> = {
         let mut h = HashMap::new();
         let l: ExtractorFn = latencyExtractor;
+        let s: ExtractorFn = sizeExtractor;
         let e: ExtractorFn = textExtractor::<LargetablePerfLog>;
         h.insert(
             format!("{:?}", Log::LARGETABLE_READS),
-            vec![("text", e), ("latency", l)],
+            vec![("text", e), ("latency", l), ("size", s)],
         );
         h
     };
@@ -79,6 +80,15 @@ pub fn latencyFilter(s: &HashMap<String, String>, log: &EventMessage) -> bool {
     }
 
     true
+}
+
+pub fn sizeExtractor(_: &HashMap<String, String>, log: &EventMessage) -> (u64, String) {
+    let mut extracted_msg = LargetablePerfLog::new();
+    extracted_msg.merge_from_bytes(log.get_msg()).unwrap();
+    (
+        log.get_event_id().get_timestamp(),
+        format!("{}", extracted_msg.get_size_bytes()),
+    )
 }
 
 pub fn latencyExtractor(_: &HashMap<String, String>, log: &EventMessage) -> (u64, String) {
