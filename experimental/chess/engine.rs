@@ -37,6 +37,7 @@ impl Piece {
     }
 }
 
+#[derive(Clone)]
 struct BoardState {
     state: [Option<(Color, Piece)>; 64],
 }
@@ -362,6 +363,139 @@ impl BoardState {
         Move::Position(color, piece, destination.clone(), destination)
     }
 
+    // Determines if the current board state puts a player in check
+    pub fn is_in_check(&self, color: &Color) -> bool {
+        let king_pos = match self.get_king_position(color) {
+            Some(p) => p,
+            None => return false,
+        };
+
+        for row in 0..8 {
+            for col in 0..8 {
+                if let Some((c, p)) = self.get(row, col) {
+                    if c == color {
+                        continue;
+                    }
+
+                    match p {
+                        Piece::Pawn => {
+                            let direction: i8 = match c {
+                                Color::White => 1,
+                                Color::Black => -1,
+                            };
+
+                            if row + direction == king_pos.row()
+                                && (king_pos.col() - col).abs() == 1
+                            {
+                                return true;
+                            }
+                        }
+                        Piece::Knight => {
+                            let dx = (row - king_pos.row()).abs();
+                            let dy = (col - king_pos.col()).abs();
+                            if dx == 2 && dy == 1 || dx == 1 && dy == 2 {
+                                return true;
+                            }
+                        }
+                        Piece::Rook => {
+                            if self.is_line_of_sight(
+                                Position(row, col),
+                                king_pos,
+                                &[(0, 1), (0, -1), (1, 0), (-1, 0)],
+                            ) {
+                                return true;
+                            }
+                        }
+                        Piece::Queen => {
+                            if self.is_line_of_sight(
+                                Position(row, col),
+                                king_pos,
+                                &[
+                                    (0, 1),
+                                    (0, -1),
+                                    (1, 0),
+                                    (-1, 0),
+                                    (1, 1),
+                                    (1, -1),
+                                    (-1, -1),
+                                    (-1, 1),
+                                ],
+                            ) {
+                                return true;
+                            }
+                        }
+                        Piece::Bishop => {
+                            if self.is_line_of_sight(
+                                Position(row, col),
+                                king_pos,
+                                &[(1, 1), (1, -1), (-1, -1), (-1, 1)],
+                            ) {
+                                return true;
+                            }
+                        }
+                        Piece::King => {
+                            let dx = (row - king_pos.row()).abs();
+                            let dy = (col - king_pos.col()).abs();
+                            if dx <= 1 && dy <= 1 {
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        false
+    }
+
+    pub fn is_line_of_sight(
+        &self,
+        start: Position,
+        end: Position,
+        directions: &[(i8, i8)],
+    ) -> bool {
+        let drow = end.row() - start.row();
+        let dcol = end.col() - start.col();
+
+        for (dr, dc) in directions {
+            if drow * dc == dcol * dr && drow * dr >= 0 && dcol * dc >= 0 {
+                // A line of sight may exist, so check all squares for blockers
+                let mut in_check = true;
+                for i in 1..7 {
+                    let p = Position(start.row() + i * dr, start.col() + i * dc);
+                    if !p.is_valid() {
+                        break;
+                    }
+                    if p == end {
+                        break;
+                    }
+                    if let Some(_) = self.get_position(&p) {
+                        in_check = false;
+                        break;
+                    }
+                }
+                if in_check {
+                    return true;
+                }
+            }
+        }
+
+        false
+    }
+
+    pub fn get_king_position(&self, color: &Color) -> Option<Position> {
+        for row in 0..8 {
+            for col in 0..8 {
+                if let Some((c, Piece::King)) = self.get(row, col) {
+                    if c == color {
+                        return Some(Position(row, col));
+                    }
+                }
+            }
+        }
+        None
+    }
+
     pub fn get_legal_moves(&self, color: &Color) -> Vec<Move> {
         let direction: i8 = match color {
             Color::White => 1,
@@ -557,7 +691,15 @@ impl BoardState {
             }
         }
 
+        // Exclude any moves that would lead to check
         moves
+            .into_iter()
+            .filter(|m| {
+                let mut b = self.clone();
+                b.apply(*m);
+                !b.is_in_check(color)
+            })
+            .collect()
     }
 
     pub fn get_legal_moves_along_directions(
@@ -1015,26 +1157,150 @@ mod test {
                     Position::from("e4"),
                     Position::from("d3")
                 ),
-                Move::Position(
-                    Color::White,
-                    Piece::King,
-                    Position::from("e4"),
-                    Position::from("d4")
-                ),
-                Move::Position(
-                    Color::White,
-                    Piece::King,
-                    Position::from("e4"),
-                    Position::from("e5")
-                ),
-                Move::Position(
-                    Color::White,
-                    Piece::King,
-                    Position::from("e4"),
-                    Position::from("e3")
-                ),
+                // King can't move to e4, e3 or e5 due to check
             ]
         );
+    }
+
+    #[test]
+    fn test_is_check() {
+        let mut b = BoardState::from_str(
+            "\
+        ┌─┬─┬─┬─┬─┬─┬─┬─┐\n\
+        | │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │♞│ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │ │ │♞│ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │ │♔│♙│ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │♞│ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │ │ │ │ │ │\n\
+        └─┴─┴─┴─┴─┴─┴─┴─┘",
+        );
+
+        assert_eq!(b.is_in_check(&Color::White), false);
+
+        let mut b = BoardState::from_str(
+            "\
+        ┌─┬─┬─┬─┬─┬─┬─┬─┐\n\
+        | │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │♞│ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │ │ │♞│ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │ │ │♙│ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │♞│♔│ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │ │ │ │ │ │\n\
+        └─┴─┴─┴─┴─┴─┴─┴─┘",
+        );
+
+        assert_eq!(b.is_in_check(&Color::White), true);
+
+        let mut b = BoardState::from_str(
+            "\
+        ┌─┬─┬─┬─┬─┬─┬─┬─┐\n\
+        | │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │♞│ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │♟│ │♙│ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │♞│♔│ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │ │ │ │ │ │\n\
+        └─┴─┴─┴─┴─┴─┴─┴─┘",
+        );
+
+        assert_eq!(b.is_in_check(&Color::White), true);
+
+        let mut b = BoardState::from_str(
+            "\
+        ┌─┬─┬─┬─┬─┬─┬─┬─┐\n\
+        | │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │♛│♞│ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │♙│ │♙│ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │♞│♔│ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │ │ │ │ │ │\n\
+        └─┴─┴─┴─┴─┴─┴─┴─┘",
+        );
+
+        assert_eq!(b.is_in_check(&Color::White), false);
+
+        let mut b = BoardState::from_str(
+            "\
+        ┌─┬─┬─┬─┬─┬─┬─┬─┐\n\
+        | │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │♛│♞│ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │ │ │♙│ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │♞│♔│ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │ │ │ │ │ │\n\
+        └─┴─┴─┴─┴─┴─┴─┴─┘",
+        );
+
+        assert_eq!(b.is_in_check(&Color::White), true);
+
+        let mut b = BoardState::from_str(
+            "\
+        ┌─┬─┬─┬─┬─┬─┬─┬─┐\n\
+        | │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │♞│ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │ │ │♙│ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │♞│♔│ │ │♜│\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │ │ │ │ │ │\n\
+        └─┴─┴─┴─┴─┴─┴─┴─┘",
+        );
+
+        assert_eq!(b.is_in_check(&Color::White), true);
     }
 
     #[test]
