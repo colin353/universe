@@ -40,6 +40,10 @@ impl Piece {
 #[derive(Clone)]
 struct BoardState {
     state: [Option<(Color, Piece)>; 64],
+    white_can_castle_kingside: bool,
+    white_can_castle_queenside: bool,
+    black_can_castle_kingside: bool,
+    black_can_castle_queenside: bool,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -214,11 +218,21 @@ impl BoardState {
                 Some((Color::Black, Piece::Knight)),
                 Some((Color::Black, Piece::Rook)),
             ],
+            white_can_castle_queenside: true,
+            white_can_castle_kingside: true,
+            black_can_castle_queenside: true,
+            black_can_castle_kingside: true,
         }
     }
 
     pub fn new_empty() -> Self {
-        Self { state: [None; 64] }
+        Self {
+            state: [None; 64],
+            white_can_castle_queenside: true,
+            white_can_castle_kingside: true,
+            black_can_castle_queenside: true,
+            black_can_castle_kingside: true,
+        }
     }
 
     pub fn from_str(state: &str) -> Self {
@@ -267,6 +281,35 @@ impl BoardState {
     pub fn apply(&mut self, m: Move) {
         match m {
             Move::Position(color, piece, original_position, new_position) => {
+                if piece == Piece::King {
+                    if color == Color::White {
+                        self.white_can_castle_kingside = false;
+                        self.white_can_castle_queenside = false;
+                    } else {
+                        self.black_can_castle_kingside = false;
+                        self.black_can_castle_queenside = false;
+                    }
+                }
+
+                if piece == Piece::Rook {
+                    if color == Color::White {
+                        if original_position == Position(0, 0) || new_position == Position(0, 0) {
+                            self.white_can_castle_queenside = false;
+                        } else if original_position == Position(0, 7)
+                            || new_position == Position(0, 7)
+                        {
+                            self.white_can_castle_queenside = false;
+                        }
+                    } else if color == Color::Black {
+                        if original_position == Position(7, 0) || new_position == Position(7, 0) {
+                            self.black_can_castle_queenside = false;
+                        } else if original_position == Position(7, 7)
+                            || new_position == Position(7, 7)
+                        {
+                            self.black_can_castle_queenside = false;
+                        }
+                    }
+                }
                 self.set(original_position, None);
                 self.set(new_position, Some((color, piece)));
             }
@@ -279,13 +322,37 @@ impl BoardState {
                 self.set(new_position, Some((color, piece)));
             }
             Move::CastleKingside(color) => {
-                // TODO: Impl castle
+                if color == Color::White {
+                    self.set(Position::from("g1"), Some((Color::White, Piece::King)));
+                    self.set(Position::from("e1"), None);
+                    self.set(Position::from("f1"), Some((Color::White, Piece::Rook)));
+                    self.set(Position::from("h1"), None);
+                    self.white_can_castle_kingside = false;
+                    self.white_can_castle_queenside = false;
+                } else {
+                    self.set(Position::from("g8"), Some((Color::Black, Piece::King)));
+                    self.set(Position::from("e8"), None);
+                    self.set(Position::from("f8"), Some((Color::Black, Piece::Rook)));
+                    self.set(Position::from("h8"), None);
+                    self.black_can_castle_kingside = false;
+                    self.black_can_castle_queenside = false;
+                }
             }
             Move::CastleQueenside(color) => {
                 if color == Color::White {
                     self.set(Position::from("c1"), Some((Color::White, Piece::King)));
+                    self.set(Position::from("e1"), None);
+                    self.set(Position::from("d1"), Some((Color::White, Piece::Rook)));
+                    self.set(Position::from("a1"), None);
+                    self.white_can_castle_kingside = false;
+                    self.white_can_castle_queenside = false;
                 } else {
-                    // Do somethign else here
+                    self.set(Position::from("c8"), Some((Color::Black, Piece::King)));
+                    self.set(Position::from("e8"), None);
+                    self.set(Position::from("d8"), Some((Color::Black, Piece::Rook)));
+                    self.set(Position::from("a8"), None);
+                    self.black_can_castle_kingside = false;
+                    self.black_can_castle_queenside = false;
                 }
             }
         }
@@ -686,6 +753,101 @@ impl BoardState {
                             }
                         }
                         _ => (),
+                    }
+                }
+            }
+        }
+
+        let is_in_check = self.is_in_check(color);
+
+        // Check whether castling is possible
+        if !is_in_check {
+            if color == &Color::White {
+                if self.white_can_castle_queenside {
+                    if let Some((Color::White, Piece::Rook)) = self.get(0, 0) {
+                        if let Some((Color::White, Piece::King)) = self.get(0, 4) {
+                            if self.get(0, 1).is_none()
+                                && self.get(0, 2).is_none()
+                                && self.get(0, 3).is_none()
+                            {
+                                // We also need to ensure that the king does not move into check
+                                // while castling.
+                                let mut b = self.clone();
+                                b.apply(Move::Position(
+                                    *color,
+                                    Piece::King,
+                                    Position(0, 4),
+                                    Position(0, 3),
+                                ));
+                                if !b.is_in_check(color) {
+                                    moves.push(Move::CastleQueenside(*color));
+                                }
+                            }
+                        }
+                    }
+                }
+                if self.white_can_castle_kingside {
+                    if let Some((Color::White, Piece::Rook)) = self.get(0, 7) {
+                        if let Some((Color::White, Piece::King)) = self.get(0, 4) {
+                            if self.get(0, 6).is_none() && self.get(0, 5).is_none() {
+                                // We also need to ensure that the king does not move into check
+                                // while castling.
+                                let mut b = self.clone();
+                                b.apply(Move::Position(
+                                    *color,
+                                    Piece::King,
+                                    Position(0, 4),
+                                    Position(0, 5),
+                                ));
+                                if !b.is_in_check(color) {
+                                    moves.push(Move::CastleKingside(*color));
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                if self.black_can_castle_queenside {
+                    if let Some((Color::Black, Piece::Rook)) = self.get(7, 0) {
+                        if let Some((Color::Black, Piece::King)) = self.get(7, 4) {
+                            if self.get(7, 1).is_none()
+                                && self.get(7, 2).is_none()
+                                && self.get(7, 3).is_none()
+                            {
+                                // We also need to ensure that the king does not move into check
+                                // while castling.
+                                let mut b = self.clone();
+                                b.apply(Move::Position(
+                                    *color,
+                                    Piece::King,
+                                    Position(7, 4),
+                                    Position(7, 3),
+                                ));
+                                if !b.is_in_check(color) {
+                                    moves.push(Move::CastleQueenside(*color));
+                                }
+                            }
+                        }
+                    }
+                }
+                if self.black_can_castle_kingside {
+                    if let Some((Color::Black, Piece::Rook)) = self.get(7, 7) {
+                        if let Some((Color::Black, Piece::King)) = self.get(7, 4) {
+                            if self.get(7, 6).is_none() && self.get(7, 5).is_none() {
+                                // We also need to ensure that the king does not move into check
+                                // while castling.
+                                let mut b = self.clone();
+                                b.apply(Move::Position(
+                                    *color,
+                                    Piece::King,
+                                    Position(7, 4),
+                                    Position(7, 5),
+                                ));
+                                if !b.is_in_check(color) {
+                                    moves.push(Move::CastleKingside(*color));
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -1301,6 +1463,246 @@ mod test {
         );
 
         assert_eq!(b.is_in_check(&Color::White), true);
+    }
+
+    fn assert_contains(parents: &[Move], children: &[Move]) {
+        for child in children {
+            let mut seen = false;
+            for parent in parents {
+                if parent == child {
+                    seen = true;
+                    break;
+                }
+            }
+            assert!(seen, "couldn't find {:?} in {:?}!", child, parents);
+        }
+    }
+
+    fn assert_excludes(parents: &[Move], children: &[Move]) {
+        for child in children {
+            for parent in parents {
+                if parent == child {
+                    assert!(
+                        false,
+                        "expected not to find {:?}!\n\nin: {:?}!",
+                        child, parents
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_castling() {
+        let mut b = BoardState::from_str(
+            "\
+        ┌─┬─┬─┬─┬─┬─┬─┬─┐\n\
+        | │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        |♖│ │ │ │♔│ │ │♖│\n\
+        └─┴─┴─┴─┴─┴─┴─┴─┘",
+        );
+
+        let moves = b.get_legal_moves(&Color::White);
+        assert_contains(
+            &moves,
+            &[
+                Move::CastleKingside(Color::White),
+                Move::CastleQueenside(Color::White),
+            ],
+        );
+
+        let mut b = BoardState::from_str(
+            "\
+        ┌─┬─┬─┬─┬─┬─┬─┬─┐\n\
+        | │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        |♖│♞│ │ │♔│ │ │♖│\n\
+        └─┴─┴─┴─┴─┴─┴─┴─┘",
+        );
+
+        let moves = b.get_legal_moves(&Color::White);
+        assert_contains(&moves, &[Move::CastleKingside(Color::White)]);
+        assert_excludes(&moves, &[Move::CastleQueenside(Color::White)]);
+
+        let mut b = BoardState::from_str(
+            "\
+        ┌─┬─┬─┬─┬─┬─┬─┬─┐\n\
+        | │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │♞│ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        |♖│♞│ │ │♔│ │ │♖│\n\
+        └─┴─┴─┴─┴─┴─┴─┴─┘",
+        );
+
+        let moves = b.get_legal_moves(&Color::White);
+        assert_excludes(
+            &moves,
+            &[
+                Move::CastleKingside(Color::White),
+                Move::CastleQueenside(Color::White),
+            ],
+        );
+
+        let mut b = BoardState::from_str(
+            "\
+        ┌─┬─┬─┬─┬─┬─┬─┬─┐\n\
+        | │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │ │ │♜│ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │♖│ │ │♔│ │ │♖│\n\
+        └─┴─┴─┴─┴─┴─┴─┴─┘",
+        );
+
+        let moves = b.get_legal_moves(&Color::White);
+        assert_excludes(
+            &moves,
+            &[
+                Move::CastleKingside(Color::White),
+                Move::CastleQueenside(Color::White),
+            ],
+        );
+
+        let mut b = BoardState::from_str(
+            "\
+        ┌─┬─┬─┬─┬─┬─┬─┬─┐\n\
+        | │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        |♖│ │ │ │♔│ │ │♖│\n\
+        └─┴─┴─┴─┴─┴─┴─┴─┘",
+        );
+
+        b.apply(Move::Position(
+            Color::White,
+            Piece::King,
+            Position::from("e1"),
+            Position::from("e2"),
+        ));
+        b.apply(Move::Position(
+            Color::White,
+            Piece::King,
+            Position::from("e2"),
+            Position::from("e1"),
+        ));
+
+        let moves = b.get_legal_moves(&Color::White);
+        assert_excludes(
+            &moves,
+            &[
+                Move::CastleKingside(Color::White),
+                Move::CastleQueenside(Color::White),
+            ],
+        );
+
+        let mut b = BoardState::from_str(
+            "\
+        ┌─┬─┬─┬─┬─┬─┬─┬─┐\n\
+        |♜│ │ │ │♚│ │ │♜│\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │ │ │ │ │ │\n\
+        └─┴─┴─┴─┴─┴─┴─┴─┘",
+        );
+
+        let moves = b.get_legal_moves(&Color::Black);
+        assert_contains(
+            &moves,
+            &[
+                Move::CastleKingside(Color::Black),
+                Move::CastleQueenside(Color::Black),
+            ],
+        );
+
+        let expected = "\
+        ┌─┬─┬─┬─┬─┬─┬─┬─┐\n\
+        |♜│ │ │ │ │♜│♚│ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        | │ │ │ │ │ │ │ │\n\
+        └─┴─┴─┴─┴─┴─┴─┴─┘";
+
+        b.apply(Move::CastleKingside(Color::Black));
+        assert_eq!(&b.render(), expected);
     }
 
     #[test]
