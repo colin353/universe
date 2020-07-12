@@ -44,6 +44,7 @@ pub struct BoardState {
     white_can_castle_queenside: bool,
     black_can_castle_kingside: bool,
     black_can_castle_queenside: bool,
+    en_passant: Option<Position>,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -71,9 +72,17 @@ impl std::fmt::Debug for Position {
 }
 
 impl Position {
+    const Invalid: Position = Position(-1, -1);
+
     pub fn from(text: &str) -> Self {
         let mut char_iter = text.chars();
-        let col = match char_iter.next().unwrap() {
+
+        let (col_ch, row_ch) = match (char_iter.next(), char_iter.next()) {
+            (Some(x), Some(y)) => (x, y),
+            _ => return Position::Invalid,
+        };
+
+        let col = match col_ch {
             'a' => 0,
             'b' => 1,
             'c' => 2,
@@ -82,9 +91,9 @@ impl Position {
             'f' => 5,
             'g' => 6,
             'h' => 7,
-            c => panic!("unknown col `{}`!", c),
+            c => return Position::Invalid,
         };
-        let row = match char_iter.next().unwrap() {
+        let row = match row_ch {
             '1' => 0,
             '2' => 1,
             '3' => 2,
@@ -93,7 +102,7 @@ impl Position {
             '6' => 5,
             '7' => 6,
             '8' => 7,
-            c => panic!("unknown row `{}`!", c),
+            c => return Position::Invalid,
         };
 
         Position(row, col)
@@ -222,6 +231,7 @@ impl BoardState {
             white_can_castle_kingside: true,
             black_can_castle_queenside: true,
             black_can_castle_kingside: true,
+            en_passant: None,
         }
     }
 
@@ -232,6 +242,7 @@ impl BoardState {
             white_can_castle_kingside: true,
             black_can_castle_queenside: true,
             black_can_castle_kingside: true,
+            en_passant: None,
         }
     }
 
@@ -278,9 +289,27 @@ impl BoardState {
         board
     }
 
+    pub fn apply_pgn(&mut self, color: Color, pgn: &str) -> Result<(), String> {
+        let m = self.pgn_to_move(color, pgn)?;
+        self.apply(m);
+        Ok(())
+    }
+
     pub fn apply(&mut self, m: Move) {
+        self.en_passant = None;
+
         match m {
             Move::Position(color, piece, original_position, new_position) => {
+                if piece == Piece::Pawn {
+                    let steps = (new_position.row() - original_position.row());
+                    if steps.abs() == 2 {
+                        self.en_passant = Some(Position(
+                            original_position.row() + steps / 2,
+                            new_position.col(),
+                        ));
+                    }
+                }
+
                 if piece == Piece::King {
                     if color == Color::White {
                         self.white_can_castle_kingside = false;
@@ -314,6 +343,21 @@ impl BoardState {
                 self.set(new_position, Some((color, piece)));
             }
             Move::Takes(color, piece, original_position, new_position) => {
+                if piece == Piece::Pawn {
+                    // If we are taking an invisible piece, it must be an en passant capture
+                    if self.get_position(&new_position).is_none() {
+                        let direction = match color {
+                            Color::White => -1,
+                            Color::Black => 1,
+                        };
+
+                        self.set(
+                            Position(new_position.row() + direction, new_position.col()),
+                            None,
+                        );
+                    }
+                }
+
                 self.set(original_position, None);
                 self.set(new_position, Some((color, piece)));
             }
@@ -639,12 +683,44 @@ impl BoardState {
                                         Piece::Rook,
                                     ));
                                 } else {
+                                    // Check if this is the first move for the pawn, in which case
+                                    // we can move twice.
+                                    if row == 1 && *color == Color::White
+                                        || row == 7 && *color == Color::Black
+                                    {
+                                        if self.get(row + direction * 2, col).is_none() {
+                                            moves.push(Move::Position(
+                                                *color,
+                                                Piece::Pawn,
+                                                Position(row, col),
+                                                Position(row + direction * 2, col),
+                                            ));
+                                        }
+                                    }
                                     moves.push(Move::Position(
                                         *color,
                                         Piece::Pawn,
                                         Position(row, col),
                                         Position(row + direction, col),
                                     ));
+                                }
+                            }
+
+                            if let Some(pos) = self.en_passant {
+                                if pos == Position(row + direction, col - 1) {
+                                    moves.push(Move::Takes(
+                                        *color,
+                                        Piece::Pawn,
+                                        Position(row, col),
+                                        Position(row + direction, col - 1),
+                                    ))
+                                } else if pos == Position(row + direction, col + 1) {
+                                    moves.push(Move::Takes(
+                                        *color,
+                                        Piece::Pawn,
+                                        Position(row, col),
+                                        Position(row + direction, col + 1),
+                                    ))
                                 }
                             }
 
@@ -992,14 +1068,29 @@ impl BoardState {
         self.state[(p.row() * 8 + p.col()) as usize] = state;
     }
 
-    pub fn render(&self) -> String {
+    pub fn render(&self, with_guides: bool) -> String {
         let mut output = String::new();
+
+        if with_guides {
+            output += "   a b c d e f g h\n";
+        }
+
         for row in (0..8).rev() {
-            if row == 7 {
-                output += "┌─┬─┬─┬─┬─┬─┬─┬─┐\n|";
-            } else {
-                output += "├─┼─┼─┼─┼─┼─┼─┼─┤\n|";
+            if with_guides {
+                output += "  ";
             }
+
+            if row == 7 {
+                output += "┌─┬─┬─┬─┬─┬─┬─┬─┐\n";
+            } else {
+                output += "├─┼─┼─┼─┼─┼─┼─┼─┤\n";
+            }
+
+            if with_guides {
+                output.push(Position::row_to_char(row));
+                output.push(' ');
+            }
+            output.push('│');
 
             for col in 0..8 {
                 match self.get(row, col) {
@@ -1012,7 +1103,16 @@ impl BoardState {
             }
             output += "\n";
         }
+
+        if with_guides {
+            output += "  ";
+        }
+
         output += "└─┴─┴─┴─┴─┴─┴─┴─┘";
+
+        if with_guides {
+            output += "\n   a b c d e f g h\n";
+        }
         output
     }
 }
@@ -1026,51 +1126,51 @@ mod test {
         let b = BoardState::new();
         let expected = "\
         ┌─┬─┬─┬─┬─┬─┬─┬─┐\n\
-        |♜│♞│♝│♛│♚│♝│♞│♜│\n\
+        │♜│♞│♝│♛│♚│♝│♞│♜│\n\
         ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
-        |♟│♟│♟│♟│♟│♟│♟│♟│\n\
+        │♟│♟│♟│♟│♟│♟│♟│♟│\n\
         ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
-        | │ │ │ │ │ │ │ │\n\
+        │ │ │ │ │ │ │ │ │\n\
         ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
-        | │ │ │ │ │ │ │ │\n\
+        │ │ │ │ │ │ │ │ │\n\
         ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
-        | │ │ │ │ │ │ │ │\n\
+        │ │ │ │ │ │ │ │ │\n\
         ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
-        | │ │ │ │ │ │ │ │\n\
+        │ │ │ │ │ │ │ │ │\n\
         ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
-        |♙│♙│♙│♙│♙│♙│♙│♙│\n\
+        │♙│♙│♙│♙│♙│♙│♙│♙│\n\
         ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
-        |♖│♘│♗│♕│♔│♗│♘│♖│\n\
+        │♖│♘│♗│♕│♔│♗│♘│♖│\n\
         └─┴─┴─┴─┴─┴─┴─┴─┘";
 
-        println!("{}", b.render());
-        assert_eq!(&b.render(), expected);
+        println!("{}", b.render(false));
+        assert_eq!(&b.render(false), expected);
     }
 
     #[test]
     fn test_from_str() {
         let rendered_board = "\
         ┌─┬─┬─┬─┬─┬─┬─┬─┐\n\
-        |♜│♞│♝│♛│ │♝│♞│♜│\n\
+        │♜│♞│♝│♛│ │♝│♞│♜│\n\
         ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
-        |♟│♟│♟│♟│♚│♟│♟│♟│\n\
+        │♟│♟│♟│♟│♚│♟│♟│♟│\n\
         ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
-        | │ │ │ │ │ │ │ │\n\
+        │ │ │ │ │ │ │ │ │\n\
         ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
-        | │ │ │ │♟│ │ │ │\n\
+        │ │ │ │ │♟│ │ │ │\n\
         ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
-        | │ │ │ │♙│ │ │ │\n\
+        │ │ │ │ │♙│ │ │ │\n\
         ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
-        | │ │ │ │ │♘│ │ │\n\
+        │ │ │ │ │ │♘│ │ │\n\
         ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
-        |♙│♙│♙│♙│ │♙│♙│♙│\n\
+        │♙│♙│♙│♙│ │♙│♙│♙│\n\
         ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
-        |♖│♘│♗│♕│♔│♗│ │♖│\n\
+        │♖│♘│♗│♕│♔│♗│ │♖│\n\
         └─┴─┴─┴─┴─┴─┴─┴─┘";
         let b = BoardState::from_str(rendered_board);
 
-        println!("{}", b.render());
-        assert_eq!(&b.render(), rendered_board);
+        println!("{}", b.render(false));
+        assert_eq!(&b.render(false), rendered_board);
     }
 
     #[test]
@@ -1078,21 +1178,21 @@ mod test {
         let mut b = BoardState::from_str(
             "\
         ┌─┬─┬─┬─┬─┬─┬─┬─┐\n\
-        | │ │ │ │ │ │ │ │\n\
+        │ │ │ │ │ │ │ │ │\n\
         ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
-        | │ │ │ │ │ │ │ │\n\
+        │ │ │ │ │ │ │ │ │\n\
         ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
-        | │ │ │ │ │ │ │ │\n\
+        │ │ │ │ │ │ │ │ │\n\
         ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
-        | │ │ │ │♟│ │ │ │\n\
+        │ │ │ │ │♟│ │ │ │\n\
         ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
-        | │ │ │♙│♙│ │ │ │\n\
+        │ │ │ │♙│♙│ │ │ │\n\
         ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
-        | │ │ │ │ │ │ │ │\n\
+        │ │ │ │ │ │ │ │ │\n\
         ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
-        | │ │ │ │ │ │ │ │\n\
+        │ │ │ │ │ │ │ │ │\n\
         ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
-        | │ │ │ │ │ │ │ │\n\
+        │ │ │ │ │ │ │ │ │\n\
         └─┴─┴─┴─┴─┴─┴─┴─┘",
         );
 
@@ -1128,26 +1228,26 @@ mod test {
 
         let expected = "\
         ┌─┬─┬─┬─┬─┬─┬─┬─┐\n\
-        | │ │ │ │ │ │ │ │\n\
+        │ │ │ │ │ │ │ │ │\n\
         ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
-        | │ │ │ │ │ │ │ │\n\
+        │ │ │ │ │ │ │ │ │\n\
         ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
-        | │ │ │ │ │ │ │ │\n\
+        │ │ │ │ │ │ │ │ │\n\
         ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
-        | │ │ │ │ │ │ │ │\n\
+        │ │ │ │ │ │ │ │ │\n\
         ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
-        | │ │ │♟│♙│ │ │ │\n\
+        │ │ │ │♟│♙│ │ │ │\n\
         ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
-        | │ │ │ │ │ │ │ │\n\
+        │ │ │ │ │ │ │ │ │\n\
         ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
-        | │ │ │ │ │ │ │ │\n\
+        │ │ │ │ │ │ │ │ │\n\
         ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
-        | │ │ │ │ │ │ │ │\n\
+        │ │ │ │ │ │ │ │ │\n\
         └─┴─┴─┴─┴─┴─┴─┴─┘";
 
         b.apply(moves[0]);
 
-        assert_eq!(b.render(), expected);
+        assert_eq!(b.render(false), expected);
     }
 
     #[test]
@@ -1641,21 +1741,21 @@ mod test {
         let mut b = BoardState::from_str(
             "\
         ┌─┬─┬─┬─┬─┬─┬─┬─┐\n\
-        | │ │ │ │ │ │ │ │\n\
+        │ │ │ │ │ │ │ │ │\n\
         ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
-        | │ │ │ │ │ │ │ │\n\
+        │ │ │ │ │ │ │ │ │\n\
         ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
-        | │ │ │ │ │ │ │ │\n\
+        │ │ │ │ │ │ │ │ │\n\
         ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
-        | │ │ │ │ │ │ │ │\n\
+        │ │ │ │ │ │ │ │ │\n\
         ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
-        | │ │ │ │ │ │ │ │\n\
+        │ │ │ │ │ │ │ │ │\n\
         ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
-        | │ │ │ │ │ │ │ │\n\
+        │ │ │ │ │ │ │ │ │\n\
         ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
-        | │ │♞│ │ │ │ │ │\n\
+        │ │ │♞│ │ │ │ │ │\n\
         ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
-        |♖│♞│ │ │♔│ │ │♖│\n\
+        │♖│♞│ │ │♔│ │ │♖│\n\
         └─┴─┴─┴─┴─┴─┴─┴─┘",
         );
 
@@ -1773,25 +1873,94 @@ mod test {
 
         let expected = "\
         ┌─┬─┬─┬─┬─┬─┬─┬─┐\n\
-        |♜│ │ │ │ │♜│♚│ │\n\
+        │♜│ │ │ │ │♜│♚│ │\n\
         ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
-        | │ │ │ │ │ │ │ │\n\
+        │ │ │ │ │ │ │ │ │\n\
         ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
-        | │ │ │ │ │ │ │ │\n\
+        │ │ │ │ │ │ │ │ │\n\
         ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
-        | │ │ │ │ │ │ │ │\n\
+        │ │ │ │ │ │ │ │ │\n\
         ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
-        | │ │ │ │ │ │ │ │\n\
+        │ │ │ │ │ │ │ │ │\n\
         ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
-        | │ │ │ │ │ │ │ │\n\
+        │ │ │ │ │ │ │ │ │\n\
         ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
-        | │ │ │ │ │ │ │ │\n\
+        │ │ │ │ │ │ │ │ │\n\
         ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
-        | │ │ │ │ │ │ │ │\n\
+        │ │ │ │ │ │ │ │ │\n\
         └─┴─┴─┴─┴─┴─┴─┴─┘";
 
         b.apply(Move::CastleKingside(Color::Black));
-        assert_eq!(&b.render(), expected);
+        assert_eq!(&b.render(false), expected);
+    }
+
+    #[test]
+    fn test_en_passant() {
+        let mut b = BoardState::from_str(
+            "\
+        ┌─┬─┬─┬─┬─┬─┬─┬─┐\n\
+        │ │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        │ │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        │ │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        │ │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        │ │ │ │ │ │♟│ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        │ │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        │ │ │ │ │♙│ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        │ │ │ │ │ │ │ │ │\n\
+        └─┴─┴─┴─┴─┴─┴─┴─┘",
+        );
+        b.apply_pgn(Color::White, "e4").unwrap();
+
+        let moves = b.get_legal_moves(&Color::Black);
+        assert_eq!(
+            &moves,
+            &[
+                Move::Position(
+                    Color::Black,
+                    Piece::Pawn,
+                    Position::from("f4"),
+                    Position::from("f3"),
+                ),
+                Move::Takes(
+                    Color::Black,
+                    Piece::Pawn,
+                    Position::from("f4"),
+                    Position::from("e3"),
+                )
+            ],
+        );
+
+        b.apply(moves[1]);
+
+        let expected = "\
+        ┌─┬─┬─┬─┬─┬─┬─┬─┐\n\
+        │ │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        │ │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        │ │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        │ │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        │ │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        │ │ │ │ │♟│ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        │ │ │ │ │ │ │ │ │\n\
+        ├─┼─┼─┼─┼─┼─┼─┼─┤\n\
+        │ │ │ │ │ │ │ │ │\n\
+        └─┴─┴─┴─┴─┴─┴─┴─┘";
+
+        println!("{}", b.render(false));
+
+        assert_eq!(&b.render(false), expected);
     }
 
     #[test]
@@ -1821,5 +1990,10 @@ mod test {
                 Position::from("c3"),
             ))
         );
+
+        assert!(b.pgn_to_move(Color::White, "").is_err());
+        assert!(b.pgn_to_move(Color::White, "Yc5").is_err());
+        assert!(b.pgn_to_move(Color::White, "Rc3").is_err());
+        assert!(b.pgn_to_move(Color::White, "N83").is_err());
     }
 }

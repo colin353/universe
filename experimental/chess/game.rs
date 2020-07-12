@@ -3,7 +3,7 @@ use chess_engine::Color;
 fn main() {
     let mut board = chess_engine::BoardState::new();
     loop {
-        println!("{}", board.render());
+        println!("{}", board.render(true));
 
         let mut input = String::new();
 
@@ -23,7 +23,7 @@ fn main() {
             }
         }
 
-        println!("{}", board.render());
+        println!("{}", board.render(true));
 
         let mut input = String::new();
         match std::io::stdin().read_line(&mut input) {
