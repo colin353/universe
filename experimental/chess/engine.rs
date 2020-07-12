@@ -1,11 +1,11 @@
 #[derive(Debug, Copy, Clone, PartialEq)]
-enum Color {
+pub enum Color {
     Black,
     White,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
-enum Piece {
+pub enum Piece {
     King,
     Queen,
     Knight,
@@ -38,7 +38,7 @@ impl Piece {
 }
 
 #[derive(Clone)]
-struct BoardState {
+pub struct BoardState {
     state: [Option<(Color, Piece)>; 64],
     white_can_castle_kingside: bool,
     white_can_castle_queenside: bool,
@@ -47,7 +47,7 @@ struct BoardState {
 }
 
 #[derive(Clone, Copy, PartialEq)]
-struct Position(i8, i8);
+pub struct Position(i8, i8);
 
 impl std::fmt::Display for Position {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -141,7 +141,7 @@ impl Position {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
-enum Move {
+pub enum Move {
     Position(Color, Piece, Position, Position),
     Promotion(Color, Position, Position, Piece),
     Takes(Color, Piece, Position, Position),
@@ -619,22 +619,76 @@ impl BoardState {
 
                             if let Some((c, p)) = self.get(row + direction, col - 1) {
                                 if color != c {
-                                    moves.push(Move::Takes(
-                                        *color,
-                                        Piece::Pawn,
-                                        Position(row, col),
-                                        Position(row + direction, col - 1),
-                                    ))
+                                    if row + direction == 0 || row + direction == 7 {
+                                        moves.push(Move::Promotion(
+                                            *color,
+                                            Position(row, col),
+                                            Position(row + direction, col - 1),
+                                            Piece::Queen,
+                                        ));
+                                        moves.push(Move::Promotion(
+                                            *color,
+                                            Position(row, col),
+                                            Position(row + direction, col - 1),
+                                            Piece::Knight,
+                                        ));
+                                        moves.push(Move::Promotion(
+                                            *color,
+                                            Position(row, col),
+                                            Position(row + direction, col - 1),
+                                            Piece::Bishop,
+                                        ));
+                                        moves.push(Move::Promotion(
+                                            *color,
+                                            Position(row, col),
+                                            Position(row + direction, col - 1),
+                                            Piece::Rook,
+                                        ));
+                                    } else {
+                                        moves.push(Move::Takes(
+                                            *color,
+                                            Piece::Pawn,
+                                            Position(row, col),
+                                            Position(row + direction, col - 1),
+                                        ))
+                                    }
                                 }
                             }
                             if let Some((c, p)) = self.get(row + direction, col + 1) {
                                 if color != c {
-                                    moves.push(Move::Takes(
-                                        *color,
-                                        Piece::Pawn,
-                                        Position(row, col),
-                                        Position(row + direction, col + 1),
-                                    ))
+                                    if row + direction == 0 || row + direction == 7 {
+                                        moves.push(Move::Promotion(
+                                            *color,
+                                            Position(row, col),
+                                            Position(row + direction, col + 1),
+                                            Piece::Queen,
+                                        ));
+                                        moves.push(Move::Promotion(
+                                            *color,
+                                            Position(row, col),
+                                            Position(row + direction, col + 1),
+                                            Piece::Knight,
+                                        ));
+                                        moves.push(Move::Promotion(
+                                            *color,
+                                            Position(row, col),
+                                            Position(row + direction, col + 1),
+                                            Piece::Bishop,
+                                        ));
+                                        moves.push(Move::Promotion(
+                                            *color,
+                                            Position(row, col),
+                                            Position(row + direction, col + 1),
+                                            Piece::Rook,
+                                        ));
+                                    } else {
+                                        moves.push(Move::Takes(
+                                            *color,
+                                            Piece::Pawn,
+                                            Position(row, col),
+                                            Position(row + direction, col + 1),
+                                        ))
+                                    }
                                 }
                             }
                         }
@@ -896,7 +950,11 @@ impl BoardState {
     }
 
     pub fn get(&self, row: i8, col: i8) -> Option<&(Color, Piece)> {
-        self.state[(row * 8 + col) as usize].as_ref()
+        if row >= 0 && row <= 7 && col >= 0 && col <= 7 {
+            self.state[(row * 8 + col) as usize].as_ref()
+        } else {
+            None
+        }
     }
 
     pub fn set(&mut self, p: Position, state: Option<(Color, Piece)>) {
