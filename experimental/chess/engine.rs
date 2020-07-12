@@ -358,18 +358,18 @@ impl BoardState {
         }
     }
 
-    pub fn pgn_to_move(&self, color: Color, code: &str) -> Move {
-        if code == "O-O" {
-            return Move::CastleKingside(color);
-        } else if code == "O-O-O" {
-            return Move::CastleQueenside(color);
-        }
-
+    pub fn pgn_to_move(&self, color: Color, code: &str) -> Result<Move, String> {
         let code = if code.ends_with("#") || code.ends_with("+") {
             &code[..code.len() - 1]
         } else {
             code
         };
+
+        if code == "O-O" {
+            return Ok(Move::CastleKingside(color));
+        } else if code == "O-O-O" {
+            return Ok(Move::CastleQueenside(color));
+        }
 
         let mut char_iter = code.chars().peekable();
 
@@ -418,16 +418,47 @@ impl BoardState {
             (None, position_spec.as_str())
         };
 
-        let destination = Position::from(position);
-        if let Some(piece) = promotes {
-            return Move::Promotion(color, destination.clone(), destination, piece);
+        for m in self.get_legal_moves(&color) {
+            let (p, start, end) = match m {
+                Move::Position(_, p, start, end) => (p, start, end),
+                Move::Takes(_, p, start, end) => (p, start, end),
+                Move::Promotion(_, start, end, _) => (Piece::Pawn, start, end),
+                _ => continue,
+            };
+
+            if p != piece {
+                continue;
+            }
+            if end != Position::from(position) {
+                continue;
+            }
+            if let Some(hint) = position_hint {
+                if hint.len() == 2 {
+                    if start != Position::from(hint) {
+                        continue;
+                    }
+                }
+                if let Some(h) = hint.chars().next() {
+                    if h.is_alphabetic() && Position::col_to_char(start.col()) != h {
+                        continue;
+                    } else if h.is_numeric() && Position::row_to_char(start.row()) != h {
+                        continue;
+                    }
+                }
+            }
+
+            if let Move::Promotion(_, _, _, promoted) = m {
+                if let Some(promoted_to) = promotes {
+                    if promoted != promoted_to {
+                        continue;
+                    }
+                }
+            }
+
+            return Ok(m);
         }
 
-        if takes {
-            return Move::Takes(color, piece, destination.clone(), destination);
-        }
-
-        Move::Position(color, piece, destination.clone(), destination)
+        Err(format!("{} is not a legal move!", code))
     }
 
     // Determines if the current board state puts a player in check
@@ -1768,7 +1799,27 @@ mod test {
         let b = BoardState::new();
         assert_eq!(
             b.pgn_to_move(Color::Black, "O-O"),
-            Move::CastleKingside(Color::Black)
+            Ok(Move::CastleKingside(Color::Black))
+        );
+
+        assert_eq!(
+            b.pgn_to_move(Color::White, "e3"),
+            Ok(Move::Position(
+                Color::White,
+                Piece::Pawn,
+                Position::from("e2"),
+                Position::from("e3"),
+            ))
+        );
+
+        assert_eq!(
+            b.pgn_to_move(Color::White, "Nc3"),
+            Ok(Move::Position(
+                Color::White,
+                Piece::Knight,
+                Position::from("b1"),
+                Position::from("c3"),
+            ))
         );
     }
 }
