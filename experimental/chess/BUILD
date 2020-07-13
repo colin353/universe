@@ -18,11 +18,17 @@ rust_binary(
 
 rust_library(
     name = "chess_engine",
+    srcs = ["engine.rs"],
+    edition = "2018",
+    deps = [":chess"],
+)
+
+rust_library(
+    name = "chess",
     srcs = [
-        "engine.rs",
+        "chess.rs",
     ],
     edition = "2018",
-    deps = [],
 )
 
 rust_test(

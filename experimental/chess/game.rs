@@ -2,6 +2,7 @@ use chess_engine::Color;
 
 fn main() {
     let mut board = chess_engine::BoardState::new();
+    let mut evaluator = chess_engine::Evaluator::new();
     loop {
         println!("{}", board.render(true));
 
@@ -32,8 +33,11 @@ fn main() {
             }
             Err(_) => break,
         }
-        let moves = board.get_legal_moves(&Color::Black);
-        let m = moves[rand::random::<usize>() % moves.len()];
+
+        let (eval, idea) = evaluator.evaluate(&board, Color::Black);
+        println!("black's plan: {:?} w/ {:?}", eval, idea);
+        let m = idea[0];
+
         println!("black plays {:?}", m);
         board.apply(m);
     }
