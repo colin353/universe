@@ -31,6 +31,21 @@ rust_library(
     edition = "2018",
 )
 
+rust_library(
+    name = "parse_pgn",
+    srcs = [
+        "pgn.rs",
+    ],
+    edition = "2018",
+    deps = [":chess"],
+)
+
+rust_test(
+    name = "test_parsing",
+    crate = ":parse_pgn",
+    edition = "2018",
+)
+
 rust_test(
     name = "rules_test",
     crate = ":chess",
