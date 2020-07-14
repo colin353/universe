@@ -35,7 +35,11 @@ fn main() {
         }
 
         let (eval, idea) = evaluator.evaluate(&board, Color::Black);
-        println!("black's plan: {:?} w/ {:?}", eval, idea);
+        println!(
+            "black's plan: {:?} w/ {}",
+            eval,
+            &chess_engine::render_idea(&idea)
+        );
         let m = idea[0];
 
         println!("black plays {:?}", m);

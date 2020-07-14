@@ -44,6 +44,17 @@ impl Piece {
             },
         }
     }
+
+    pub fn to_pgn(&self) -> &'static str {
+        match self {
+            Piece::King => "K",
+            Piece::Queen => "Q",
+            Piece::Knight => "N",
+            Piece::Pawn => "",
+            Piece::Bishop => "B",
+            Piece::Rook => "R",
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -165,6 +176,73 @@ pub enum Move {
     Takes(Color, Piece, Position, Position),
     CastleKingside(Color),
     CastleQueenside(Color),
+}
+
+pub fn render_idea(idea: &[Move]) -> String {
+    let mut result = String::new();
+    let mut first = true;
+    for m in idea {
+        if first {
+            first = false;
+        } else {
+            result.push(' ');
+        }
+        if m.color() == Color::Black {
+            result.push('⬛');
+        } else {
+            result += "□ ";
+        }
+
+        result += &format!("{}", m);
+    }
+
+    result
+}
+
+impl Move {
+    pub fn piece(&self) -> Piece {
+        match self {
+            Move::Position(_, p, _, _) => *p,
+            Move::Promotion(_, _, _, _) => Piece::Pawn,
+            Move::Takes(_, p, _, _) => *p,
+            Move::CastleKingside(_) => Piece::King,
+            Move::CastleQueenside(_) => Piece::King,
+        }
+    }
+
+    pub fn color(&self) -> Color {
+        match self {
+            Move::Position(c, _, _, _) => *c,
+            Move::Promotion(c, _, _, _) => *c,
+            Move::Takes(c, _, _, _) => *c,
+            Move::CastleKingside(c) => *c,
+            Move::CastleQueenside(c) => *c,
+        }
+    }
+}
+
+impl std::fmt::Display for Move {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Move::Position(_, piece, _, position) => write!(f, "{}{}", piece.to_pgn(), position),
+            Move::Takes(_, piece, start, position) => {
+                if *piece == Piece::Pawn {
+                    write!(
+                        f,
+                        "{}{}x{}",
+                        Position::col_to_char(start.col()),
+                        piece.to_pgn(),
+                        position
+                    )
+                } else {
+                    write!(f, "{}x{}", piece.to_pgn(), position)
+                }
+            }
+            Move::Promotion(_, _, position, piece) => write!(f, "{}={}", position, piece.to_pgn()),
+            Move::CastleKingside(_) => write!(f, "O-O"),
+            Move::CastleQueenside(_) => write!(f, "O-O-O"),
+        }
+    }
 }
 
 impl BoardState {
@@ -695,7 +773,7 @@ impl BoardState {
                                     // Check if this is the first move for the pawn, in which case
                                     // we can move twice.
                                     if row == 1 && *color == Color::White
-                                        || row == 7 && *color == Color::Black
+                                        || row == 6 && *color == Color::Black
                                     {
                                         if self.get(row + direction * 2, col).is_none() {
                                             moves.push(Move::Position(

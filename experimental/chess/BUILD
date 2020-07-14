@@ -32,6 +32,11 @@ rust_library(
 )
 
 rust_test(
+    name = "rules_test",
+    crate = ":chess",
+)
+
+rust_test(
     name = "engine_test",
     crate = ":chess_engine",
 )
