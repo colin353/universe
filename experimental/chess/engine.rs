@@ -1,9 +1,10 @@
 pub use chess::*;
+pub use parse_pgn::*;
 
 const DEPTH_LIMIT: u8 = 6;
 
 pub struct Evaluator {
-    depth_limit: u8,
+    pub depth_limit: u8,
 }
 
 impl Evaluator {
@@ -66,6 +67,25 @@ impl Evaluator {
             start.elapsed().as_millis()
         );
         (eval, idea)
+    }
+
+    pub fn find_best_moves(&self, board: &BoardState, turn: Color) -> Vec<(i8, Vec<Move>)> {
+        let mut moves = Vec::new();
+        for m in board.get_legal_moves(&turn) {
+            let mut next_position = board.clone();
+            next_position.apply(m);
+            let (eval, mut idea) = self.evaluate(&next_position, turn.opposite());
+            idea.insert(0, m);
+            moves.push((eval, idea));
+        }
+
+        let direction = match turn {
+            Color::White => -1,
+            Color::Black => 1,
+        };
+
+        moves.sort_by_key(|x| x.0 * direction);
+        moves
     }
 
     fn evaluate_deep(

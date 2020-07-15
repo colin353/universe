@@ -1,6 +1,6 @@
 use chess::*;
 
-struct RecordedGame<'a> {
+pub struct RecordedGame<'a> {
     board: BoardState,
     moves: Vec<&'a str>,
     current_move: usize,

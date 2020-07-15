@@ -20,7 +20,10 @@ rust_library(
     name = "chess_engine",
     srcs = ["engine.rs"],
     edition = "2018",
-    deps = [":chess"],
+    deps = [
+        ":chess",
+        ":parse_pgn",
+    ],
 )
 
 rust_library(
@@ -44,6 +47,13 @@ rust_test(
     name = "test_parsing",
     crate = ":parse_pgn",
     edition = "2018",
+)
+
+rust_binary(
+    name = "puzzles",
+    srcs = ["puzzles.rs"],
+    edition = "2018",
+    deps = ["chess_engine"],
 )
 
 rust_test(
