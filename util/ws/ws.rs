@@ -5,7 +5,7 @@ use rand::Rng;
 
 use futures::future;
 use hyper::header::HeaderValue;
-use hyper::header::{CACHE_CONTROL, COOKIE, LOCATION, SET_COOKIE};
+use hyper::header::{CACHE_CONTROL, CONTENT_TYPE, COOKIE, LOCATION, SET_COOKIE};
 use hyper::http::StatusCode;
 use hyper::rt::Future;
 use hyper::service::service_fn;
@@ -55,7 +55,14 @@ pub trait Server: Sync + Send + Clone + 'static {
         if !path.starts_with(prefix) || path.contains("..") {
             return self.not_found(path);
         }
-        let final_path = format!("{}{}", static_directory, &path[prefix.len() - 1..]);
+
+        let subdir_path = if prefix.ends_with("/") {
+            &path[prefix.len() - 1..]
+        } else {
+            &path[prefix.len()..]
+        };
+
+        let final_path = format!("{}{}", static_directory, subdir_path);
         let mut file = match std::fs::File::open(final_path) {
             Ok(f) => f,
             Err(_) => return self.not_found(path),
@@ -65,6 +72,19 @@ pub trait Server: Sync + Send + Clone + 'static {
             return self.not_found(path);
         }
         let mut response = Response::new(Body::from(contents));
+
+        let mut content_type = None;
+        // TODO: add more supported content types
+        if path.ends_with(".js") {
+            content_type = Some("text/javascript");
+        }
+
+        if let Some(c) = content_type {
+            response
+                .headers_mut()
+                .insert(CONTENT_TYPE, HeaderValue::from_bytes(c.as_bytes()).unwrap());
+        }
+
         response.headers_mut().insert(
             CACHE_CONTROL,
             HeaderValue::from_bytes("max-age=100000".as_bytes()).unwrap(),
