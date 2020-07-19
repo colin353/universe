@@ -21,9 +21,11 @@ pub struct FECompiler {
     class_name: String,
     input_javascript: String,
     input_html: String,
+    input_css: String,
     symbols: Vec<String>,
-    invalidations: Vec<String>,
     html_in_js: String,
+    mutations: Vec<String>,
+    symbol_to_mutations: HashMap<usize, Vec<usize>>,
 }
 
 impl FECompiler {
@@ -38,9 +40,11 @@ impl FECompiler {
             class_name: String::new(),
             input_javascript: String::new(),
             input_html: String::new(),
-            invalidations: Vec::new(),
+            input_css: String::new(),
             symbols: Vec::new(),
             html_in_js: String::new(),
+            mutations: Vec::new(),
+            symbol_to_mutations: HashMap::new(),
         }
     }
 
@@ -67,8 +71,9 @@ impl FECompiler {
                 "javascript" => &self.input_javascript,
                 "component_name" => &self.component_name,
                 "class_name" => &self.class_name,
-                "html" => &self.html_in_js;
-                "invalidations" => self.invalidations.iter().enumerate().map(|(idx, code)| {
+                "html" => &self.html_in_js,
+                "css" => &self.input_css;
+                "mutations" => self.mutations.iter().enumerate().map(|(idx, code)| {
                     content!(
                         "idx" => idx,
                         "code" => code
@@ -96,7 +101,7 @@ impl FECompiler {
             }
         };
 
-        let mut first = false;
+        let mut first = true;
         let mut has_fatal_errors = false;
         let mut has_underscore = false;
         if filename.ends_with("_") {
@@ -112,6 +117,7 @@ impl FECompiler {
                 )));
                 has_fatal_errors = true;
             }
+            first = false;
 
             if ch == '_' {
                 has_underscore = true;
@@ -171,6 +177,14 @@ impl FECompiler {
             Err(_) => (),
         }
 
+        match self
+            .filesystem
+            .read_to_string(format!("{}/{}.css", parent.display(), filename))
+        {
+            Ok(s) => self.input_css = s,
+            Err(_) => (),
+        }
+
         true
     }
 
@@ -181,9 +195,6 @@ impl FECompiler {
     }
 
     fn compile_html(&mut self) -> bool {
-        self.invalidations
-            .push("this.paragraph.innerHTML = x;".to_string());
-
         let elements = match htmlc::parse(&self.input_html) {
             Ok(e) => e,
             Err(s) => {
@@ -191,6 +202,36 @@ impl FECompiler {
                 return false;
             }
         };
+
+        let mut mutators = Vec::new();
+
+        for element in elements {
+            self.html_in_js.push_str(&element.to_js());
+            self.html_in_js.push('\n');
+            self.html_in_js
+                .push_str(&format!("this.shadow.appendChild({});\n", element.name));
+
+            for mutator in element.get_mutators() {
+                mutators.push(mutator);
+            }
+        }
+
+        let mut observed = HashMap::new();
+        for mutator in mutators {
+            self.mutations.push(mutator.operation);
+
+            for dep in &mutator.inputs {
+                if let Some(symbol_idx) = observed.get_mut(dep) {
+                    let entry = self.symbol_to_mutations.get_mut(symbol_idx).unwrap();
+                    entry.push(self.mutations.len() - 1);
+                } else {
+                    self.symbols.push(dep.to_string());
+                    observed.insert(dep.to_string(), self.symbols.len() - 1);
+                    self.symbol_to_mutations
+                        .insert(self.symbols.len() - 1, vec![self.mutations.len() - 1]);
+                }
+            }
+        }
 
         true
     }

@@ -1,10 +1,9 @@
 #[derive(Debug, PartialEq)]
 pub struct HTMLElement {
-    name: String,
+    pub name: String,
     attributes: Vec<(String, String)>,
     tag_name: String,
     constructor: String,
-    mutators: Vec<(Vec<String>, String)>,
     children: Vec<HTMLElement>,
     self_closing: bool,
     inner: String,
@@ -17,12 +16,116 @@ impl HTMLElement {
             attributes: Vec::new(),
             tag_name: String::new(),
             constructor: String::new(),
-            mutators: Vec::new(),
             children: Vec::new(),
             self_closing: false,
             inner: String::new(),
         }
     }
+
+    pub fn to_js(&self) -> String {
+        let mut output = self.define_element();
+        output.push_str(&self.set_attributes());
+
+        if self.children.len() > 0 {
+            output.push('\n');
+        }
+
+        if !self.inner.is_empty() {
+            output.push_str(&self.set_inner());
+        }
+
+        for child in &self.children {
+            output.push_str(&child.to_js());
+            output.push_str(&format!("{}.appendChild({})\n\n", self.name, child.name));
+        }
+
+        output
+    }
+
+    fn set_inner(&self) -> String {
+        format!("{}.innerHTML = `{}`;\n", self.name, self.inner)
+    }
+
+    fn define_element(&self) -> String {
+        format!(
+            "const {} = document.createElement('{}');\n",
+            self.name, self.tag_name
+        )
+    }
+
+    fn set_attributes(&self) -> String {
+        let mut output = String::new();
+        for (k, v) in &self.attributes {
+            output.push_str(&format!("{}.setAttribute('{}', '{}');\n", self.name, k, v));
+        }
+        output
+    }
+
+    fn extract_mutators(&self, mutators: &mut Vec<Mutator>) {
+        // Check if there is any mutator needed for inner
+        let deps = parse_fmtstring(&self.inner);
+        if deps.len() > 0 {
+            mutators.push(Mutator {
+                inputs: deps,
+                operation: format!("{}.innerHTML = `{}`", self.name, self.inner),
+            });
+        }
+
+        for attr in &self.attributes {
+            if attr.1.starts_with("{") && attr.1.ends_with("}") {
+                let expr = &attr.1[1..attr.1.len() - 2];
+                mutators.push(Mutator {
+                    inputs: vec![expr.to_string()],
+                    operation: format!("{}.setAttribute('{}', {});", self.name, attr.0, expr),
+                });
+            }
+
+            let deps = parse_fmtstring(&attr.1);
+            if deps.len() > 0 {
+                mutators.push(Mutator {
+                    inputs: deps,
+                    operation: format!("{}.setAttribute('{}', `{}`);", self.name, attr.0, attr.1),
+                });
+            }
+        }
+    }
+
+    pub fn get_mutators(&self) -> Vec<Mutator> {
+        let mut output = Vec::new();
+        self.extract_mutators(&mut output);
+        for child in &self.children {
+            child.extract_mutators(&mut output);
+        }
+        output
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub struct Mutator {
+    pub inputs: Vec<String>,
+    pub operation: String,
+}
+
+fn parse_fmtstring(fmt: &str) -> Vec<String> {
+    let mut output = Vec::new();
+    for (idx, _) in fmt.match_indices("${") {
+        let substr = &fmt[idx + 2..];
+        if let Some(end) = substr.find("}") {
+            for dep in parse_expression(&fmt[idx + 2..(end + idx + 2)]) {
+                output.push(dep);
+            }
+        }
+    }
+    output
+}
+
+fn parse_expression(expr: &str) -> Vec<String> {
+    // TODO: more correctly implement this
+    if expr.trim().is_empty() {
+        return Vec::new();
+    }
+
+    vec![expr.trim().to_string()]
 }
 
 pub fn parse(html: &str) -> Result<Vec<HTMLElement>, String> {
@@ -31,7 +134,25 @@ pub fn parse(html: &str) -> Result<Vec<HTMLElement>, String> {
     while let Some(el) = take_one_element(&mut chars)? {
         output.push(el);
     }
+
+    let mut idx = 0;
+    for el in output.iter_mut() {
+        name_elements(el, &mut idx);
+    }
+
     Ok(output)
+}
+
+fn name_element(idx: u64) -> String {
+    format!("__el{}", idx)
+}
+
+fn name_elements(el: &mut HTMLElement, idx: &mut u64) {
+    el.name = name_element(*idx);
+    *idx += 1;
+    for child in el.children.iter_mut() {
+        name_elements(child, idx);
+    }
 }
 
 pub fn take_one_element(
@@ -64,6 +185,7 @@ pub fn take_one_element(
             return Ok(Some(element));
         } else {
             let mut fragment = String::new();
+            fragment.push(ch);
             while let Some(ch) = chars.peek() {
                 if *ch == '<' {
                     break;
@@ -77,7 +199,7 @@ pub fn take_one_element(
             }
 
             let mut element = HTMLElement::new();
-            element.tag_name = String::from("__fragment");
+            element.tag_name = String::from("span");
             element.inner = fragment.trim().to_string();
             return Ok(Some(element));
         }
@@ -91,16 +213,20 @@ pub fn read_string(chars: &mut std::iter::Peekable<std::str::Chars>) -> String {
     let mut quoted = false;
     let mut escaped = false;
     let mut started = false;
-    while let Some(ch) = chars.next() {
-        if !started && ch == '\'' || ch == '"' {
-            termchar = ch;
+    while let Some(ch) = chars.peek() {
+        if !started && (*ch == '\'' || *ch == '"') {
+            termchar = *ch;
+            started = true;
             quoted = true;
+            chars.next();
             continue;
         }
-        if !started && ch == '{' {
+        if !started && *ch == '{' {
             quoted = true;
             termchar = '}';
             output.push('{');
+            started = true;
+            chars.next();
             continue;
         }
         started = true;
@@ -109,21 +235,24 @@ pub fn read_string(chars: &mut std::iter::Peekable<std::str::Chars>) -> String {
             break;
         }
 
-        if !escaped && ch == termchar {
+        if !escaped && *ch == termchar {
             if termchar == '}' {
                 output.push('}');
             }
+            chars.next();
             break;
         }
 
-        if ch == '\\' {
+        if *ch == '\\' {
             escaped = true;
         } else {
             escaped = false;
         }
 
-        output.push(ch);
+        output.push(*ch);
+        chars.next();
     }
+
     output
 }
 
@@ -175,7 +304,8 @@ pub fn read_tag(chars: &mut std::iter::Peekable<std::str::Chars>) -> Result<HTML
             chars.next();
             let len = element.attributes.len();
             element.attributes[len - 1].1 = read_string(chars);
-            break;
+            started_attr = false;
+            continue;
         }
 
         if !started_attr {
@@ -197,8 +327,48 @@ mod tests {
 
     #[test]
     fn test_parsing() {
-        let result = parse("<p attr={x}><div tag='hey dude'>my stuff</div><br /></p>").unwrap();
+        let result = parse("<p><div tag=1>my stuff</div><br /></p>").unwrap();
+        assert_eq!(result[0].name, "__el0");
         assert_eq!(result[0].tag_name, "p");
+        assert_eq!(result[0].children[0].name, "__el1");
         assert_eq!(result[0].children[0].tag_name, "div");
+        assert_eq!(result[0].children[0].children[0].inner, "my stuff");
+    }
+
+    #[test]
+    fn test_parsing_2() {
+        let result = parse("<div>my stuff</div>").unwrap();
+        assert_eq!(result[0].tag_name, "div");
+        assert_eq!(result[0].children[0].tag_name, "span");
+        assert_eq!(result[0].children[0].inner, "my stuff");
+    }
+
+    #[test]
+    fn test_parsing_3() {
+        let result = parse("<p style=\"color: red\">red text</p>").unwrap();
+        assert_eq!(result[0].name, "__el0");
+        assert_eq!(result[0].tag_name, "p");
+        assert_eq!(result[0].attributes[0].0, "style");
+        assert_eq!(result[0].attributes[0].1, "color: red");
+        assert_eq!(result[0].children[0].inner, "red text");
+    }
+
+    #[test]
+    fn test_fmtstring_parsing() {
+        let result = parse_fmtstring("test ${x} content");
+        assert_eq!(result, vec!["x"]);
+    }
+
+    #[test]
+    fn test_parse_expression() {
+        let result = parse_expression("x");
+        assert_eq!(result, vec!["x"]);
+    }
+
+    #[test]
+    fn test_mutator_extraction() {
+        let result = parse("<p>test ${x} content</p>").unwrap();
+        assert_eq!(result[0].tag_name, "p");
+        assert_eq!(result[0].get_mutators().len(), 1);
     }
 }

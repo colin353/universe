@@ -2,25 +2,22 @@ class {{class_name}} extends HTMLElement {
     constructor() {
           super();
           this.shadow = this.attachShadow({mode:'open'});
-          this.shadow.innerHTML = `{{html}}`;
-
+          this.shadow.innerHTML = `<style>{{css}}</style>`
           this.state = this.initialize();
-
-          this.paragraph = document.createElement("p");
-          this.paragraph.innerHTML = "my paragraph";
-          this.shadow.appendChild(this.paragraph);
     }
 
     initialize() {
       {{javascript}}
 
+      {{html}}
+
       this.$$invalidate = (idx) => {
         switch(idx) {
-          {{invalidations[]}}
+          {{mutations[]}}
           case {{idx}}:
             {{code}}
             break;
-          {{/invalidations}}
+          {{/mutations}}
           default:
             break;
         }
