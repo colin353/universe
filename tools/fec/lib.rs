@@ -1,8 +1,14 @@
+#[macro_use]
+extern crate tmpl;
+
 use std::collections::HashMap;
+
+static COMPONENT: &str = include_str!("templates/component.js");
 
 #[derive(Debug)]
 pub enum CompileError {
     InvalidFilename(String),
+    HTMLParsingError(String),
 }
 
 pub struct FECompiler {
@@ -15,6 +21,9 @@ pub struct FECompiler {
     class_name: String,
     input_javascript: String,
     input_html: String,
+    symbols: Vec<String>,
+    invalidations: Vec<String>,
+    html_in_js: String,
 }
 
 impl FECompiler {
@@ -29,6 +38,9 @@ impl FECompiler {
             class_name: String::new(),
             input_javascript: String::new(),
             input_html: String::new(),
+            invalidations: Vec::new(),
+            symbols: Vec::new(),
+            html_in_js: String::new(),
         }
     }
 
@@ -40,6 +52,30 @@ impl FECompiler {
         if !self.extract_file_data(input_filename) {
             return;
         }
+
+        if !self.compile_javascript() {
+            return;
+        }
+
+        if !self.compile_html() {
+            return;
+        }
+
+        self.result = tmpl::apply(
+            COMPONENT,
+            &content!(
+                "javascript" => &self.input_javascript,
+                "component_name" => &self.component_name,
+                "class_name" => &self.class_name,
+                "html" => &self.html_in_js;
+                "invalidations" => self.invalidations.iter().enumerate().map(|(idx, code)| {
+                    content!(
+                        "idx" => idx,
+                        "code" => code
+                    )
+                }).collect()
+            ),
+        );
     }
 
     pub fn success(&self) -> bool {
@@ -134,6 +170,27 @@ impl FECompiler {
             Ok(s) => self.input_html = s,
             Err(_) => (),
         }
+
+        true
+    }
+
+    fn compile_javascript(&mut self) -> bool {
+        self.symbols.push("x".to_string());
+
+        true
+    }
+
+    fn compile_html(&mut self) -> bool {
+        self.invalidations
+            .push("this.paragraph.innerHTML = x;".to_string());
+
+        let elements = match htmlc::parse(&self.input_html) {
+            Ok(e) => e,
+            Err(s) => {
+                self.log_error(CompileError::HTMLParsingError(s));
+                return false;
+            }
+        };
 
         true
     }
