@@ -3,29 +3,54 @@ class {{class_name}} extends HTMLElement {
           super();
           this.shadow = this.attachShadow({mode:'open'});
           this.shadow.innerHTML = `<style>{{css}}</style>`
-          this.state = this.initialize();
+
+          this.props = [];
+          this.state = [];
+          this.initialize();
     }
 
     initialize() {
+      this.setState = (newState) => {
+        for (const k of Object.keys(newState)) {
+          this.state[k] = newState[k];
+          this.trigger_rerenders("this.state." + k);
+        }
+      }
+
       {{javascript}}
 
       {{html}}
 
-      this.$$invalidate = (idx) => {
-        switch(idx) {
-          {{mutations[]}}
-          case {{idx}}:
-            {{code}}
-            break;
-          {{/mutations}}
-          default:
-            break;
+      this.render = (keys) => {
+        for (const k of keys) {
+          switch(k) {
+            {{mutations[]}}
+            case {{idx}}:
+              {{code}}
+              break;
+            {{/mutations}}
+            default:
+              break;
+          }
         }
       }
     }
-    
-    $$invalidate() {}
 
+    render(keys) {}
+
+    trigger_rerenders(key) {
+      switch(key) {
+        {{symbols[]}}
+        case '{{name}}':
+           this.render([{{mutations}}]);
+           break;
+        {{/symbols}}
+        default:
+          break;
+      }
+    }
+
+    
     static get observedAttributes() {
       return [];
     }

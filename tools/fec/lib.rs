@@ -25,7 +25,7 @@ pub struct FECompiler {
     symbols: Vec<String>,
     html_in_js: String,
     mutations: Vec<String>,
-    symbol_to_mutations: HashMap<usize, Vec<usize>>,
+    symbol_to_mutations: HashMap<String, Vec<usize>>,
 }
 
 impl FECompiler {
@@ -73,6 +73,12 @@ impl FECompiler {
                 "class_name" => &self.class_name,
                 "html" => &self.html_in_js,
                 "css" => &self.input_css;
+                "symbols" => self.symbol_to_mutations.iter().map(|(symbol, mutations)| {
+                    content!(
+                        "name" => symbol,
+                        "mutations" => mutations.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(",")
+                    )
+                }).collect(),
                 "mutations" => self.mutations.iter().enumerate().map(|(idx, code)| {
                     content!(
                         "idx" => idx,
@@ -222,13 +228,13 @@ impl FECompiler {
 
             for dep in &mutator.inputs {
                 if let Some(symbol_idx) = observed.get_mut(dep) {
-                    let entry = self.symbol_to_mutations.get_mut(symbol_idx).unwrap();
+                    let entry = self.symbol_to_mutations.get_mut(dep).unwrap();
                     entry.push(self.mutations.len() - 1);
                 } else {
                     self.symbols.push(dep.to_string());
                     observed.insert(dep.to_string(), self.symbols.len() - 1);
                     self.symbol_to_mutations
-                        .insert(self.symbols.len() - 1, vec![self.mutations.len() - 1]);
+                        .insert(dep.to_string(), vec![self.mutations.len() - 1]);
                 }
             }
         }

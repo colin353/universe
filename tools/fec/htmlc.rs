@@ -56,7 +56,22 @@ impl HTMLElement {
     fn set_attributes(&self) -> String {
         let mut output = String::new();
         for (k, v) in &self.attributes {
-            output.push_str(&format!("{}.setAttribute('{}', '{}');\n", self.name, k, v));
+            if k.starts_with("on:") {
+                let event = &k[3..];
+                let mut callback = v.as_str();
+                if callback.starts_with("{") {
+                    callback = &callback[1..];
+                }
+                if callback.ends_with("}") {
+                    callback = &callback[..callback.len() - 2];
+                }
+                output.push_str(&format!(
+                    "{}.addEventListener('{}', {}.bind(this))",
+                    self.name, event, callback
+                ));
+            } else {
+                output.push_str(&format!("{}.setAttribute('{}', '{}');\n", self.name, k, v));
+            }
         }
         output
     }
@@ -350,6 +365,16 @@ mod tests {
         assert_eq!(result[0].tag_name, "p");
         assert_eq!(result[0].attributes[0].0, "style");
         assert_eq!(result[0].attributes[0].1, "color: red");
+        assert_eq!(result[0].children[0].inner, "red text");
+    }
+
+    #[test]
+    fn test_parsing_4() {
+        let result = parse("<p on:click={fn}>red text</p>").unwrap();
+        assert_eq!(result[0].name, "__el0");
+        assert_eq!(result[0].tag_name, "p");
+        assert_eq!(result[0].attributes[0].0, "on:click");
+        assert_eq!(result[0].attributes[0].1, "{fn}");
         assert_eq!(result[0].children[0].inner, "red text");
     }
 

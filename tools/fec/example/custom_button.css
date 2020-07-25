@@ -5,4 +5,5 @@ div {
     padding: 10px;
     border: 2px solid grey;
     cursor: pointer;
+    user-select: none;
 }
