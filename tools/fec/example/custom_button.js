@@ -1,12 +1,13 @@
-this.state = {
-  title: "click here!",
-};
+this.stateMappers = {
+  "message": (x) => `you clicked it ${x} times`
+}
 
-let x = 0;
+this.setState({
+  x: 0
+});
 
 function callback() {
-  x += 1;
   this.setState({
-    title: `you clicked it ${x} times`
+    x: this.state.x + 1
   });
 }

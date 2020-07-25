@@ -1,14 +1,14 @@
-alert("hello world");
-console.log("booted up baby");
-
-console.log("document: ", document.getRootNode());
-
 this.state = {
-  x: "updated para" + Math.random(),
+  x: false,
+  message: "Hello, world",
+};
+
+this.stateMappers = {
+  "message": (x) => x ? "Hello, world" : "Goodbye, earth"
 };
 
 setInterval(() => {
   this.setState({
-    x: this.state.x += "newly updated para" + Math.random()
+    x: !this.state.x
   });
 }, 3000)
