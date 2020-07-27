@@ -3,7 +3,7 @@ this.stateMappers = {
 }
 
 this.setState({
-  x: 0
+  x: 0,
 });
 
 function callback() {
