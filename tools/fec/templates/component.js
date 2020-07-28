@@ -4,7 +4,7 @@ class {{class_name}} extends HTMLElement {
           this.shadow = this.attachShadow({mode:'open'});
           this.shadow.innerHTML = `<style>{{css}}</style>`
 
-          this.props = [];
+          this.props = [{{props}}];
           this.state = [];
           this.stateMappers = {};
 
@@ -12,6 +12,22 @@ class {{class_name}} extends HTMLElement {
           this.__selectors = {};
 
           this.initialize();
+    }
+
+    static observedAttributes = [{{props}}];
+
+    connectedCallback() {
+      let propState = {};
+      for (const k of this.props) {
+        propState[k] = this.getAttribute(k);
+      }
+      this.setState(propState);
+    }
+
+    attributeChangedCallback(name, oldValue, newValue) {
+      this.setState({
+        [name]: newValue,
+      })
     }
 
     initialize() {
@@ -22,8 +38,9 @@ class {{class_name}} extends HTMLElement {
           this.triggerRenders("this.state." + k);
         }
       }
-
+      
       {{javascript}}
+
 
       {{html}}
 

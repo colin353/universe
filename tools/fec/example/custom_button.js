@@ -1,10 +1,12 @@
+const attributes = [ 'title' ];
+
 this.stateMappers = {
-  "message": (x) => `you clicked it ${x} times`
+  "message": (title) => `title is: ${title}`
 }
 
-this.setState({
-  x: 0,
-});
+this.state = {
+  x: 0
+};
 
 function callback() {
   this.setState({

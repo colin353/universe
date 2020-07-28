@@ -26,6 +26,7 @@ pub struct FECompiler {
     html_in_js: String,
     mutations: Vec<String>,
     symbol_to_mutations: HashMap<String, Vec<usize>>,
+    props: String,
 }
 
 impl FECompiler {
@@ -45,6 +46,7 @@ impl FECompiler {
             html_in_js: String::new(),
             mutations: Vec::new(),
             symbol_to_mutations: HashMap::new(),
+            props: String::new(),
         }
     }
 
@@ -72,6 +74,7 @@ impl FECompiler {
                 "component_name" => &self.component_name,
                 "class_name" => &self.class_name,
                 "html" => &self.html_in_js,
+                "props" => &self.props,
                 "css" => &self.input_css;
                 "symbols" => self.symbol_to_mutations.iter().map(|(symbol, mutations)| {
                     content!(
@@ -195,7 +198,26 @@ impl FECompiler {
     }
 
     fn compile_javascript(&mut self) -> bool {
-        self.symbols.push("x".to_string());
+        // Extract possible props declaration
+        let mut lines = self.input_javascript.lines().map(|x| x.trim()).peekable();
+        let marker = "const attributes = [";
+        while let Some(line) = lines.peek() {
+            let mut start = 0;
+            if line.starts_with(marker) {
+                start = marker.len();
+                while let Some(line) = lines.peek() {
+                    if let Some(idx) = line.find("]") {
+                        self.props += &line[start..idx].trim();
+                        break;
+                    } else {
+                        self.props += &line[start..].trim();
+                    }
+                    start = 0;
+                    lines.next();
+                }
+            }
+            lines.next();
+        }
 
         true
     }

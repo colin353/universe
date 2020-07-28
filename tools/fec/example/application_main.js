@@ -1,3 +1,5 @@
+const attributes = [ 'test', 'west' ];
+
 this.state = {
   x: false,
   message: "Hello, world",
