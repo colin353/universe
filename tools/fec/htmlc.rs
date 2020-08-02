@@ -1,6 +1,7 @@
 #[derive(Debug, PartialEq)]
 pub struct HTMLElement {
     pub name: String,
+    prefix: String,
     attributes: Vec<(String, String)>,
     tag_name: String,
     constructor: String,
@@ -9,10 +10,17 @@ pub struct HTMLElement {
     inner: String,
 }
 
+#[derive(Debug, PartialEq)]
+pub enum ControlStatement {
+    ForEach(String, String),
+    Noop,
+}
+
 impl HTMLElement {
     pub fn new() -> Self {
         Self {
             name: String::new(),
+            prefix: String::new(),
             attributes: Vec::new(),
             tag_name: String::new(),
             constructor: String::new(),
@@ -22,7 +30,11 @@ impl HTMLElement {
         }
     }
 
-    pub fn to_js(&self) -> String {
+    pub fn to_js(&mut self, parent_name: &str) -> String {
+        if self.tag_name == "control" {
+            return self.to_js_ctrl(parent_name);
+        }
+
         let mut output = self.define_element();
         output.push_str(&self.set_attributes());
 
@@ -34,12 +46,83 @@ impl HTMLElement {
             output.push_str(&self.set_inner());
         }
 
-        for child in &self.children {
-            output.push_str(&child.to_js());
-            output.push_str(&format!("{}.appendChild({})\n\n", self.name, child.name));
+        for child in &mut self.children {
+            output.push_str(&child.to_js(&self.name));
         }
 
+        output.push_str(&format!(
+            "{}.appendChild({}{})\n\n",
+            parent_name, self.prefix, self.name
+        ));
         output
+    }
+
+    pub fn to_js_ctrl(&mut self, parent_name: &str) -> String {
+        let mut output = String::new();
+        match self.parse_control() {
+            ControlStatement::Noop => {
+                for child in &mut self.children {
+                    output.push_str(&child.to_js(parent_name));
+                    output.push_str(&format!(
+                        "{}.appendChild({}{})\n\n",
+                        parent_name, child.prefix, child.name
+                    ));
+                }
+            }
+            ControlStatement::ForEach(array, item) => {
+                for child in &mut self.children {
+                    output.push_str(&format!(
+                        "const {}{}_elements = {{}};",
+                        self.prefix, self.name
+                    ));
+                    output.push_str(&format!(
+                        "for(const {}__key of Object.keys({})) {{\n",
+                        self.name, array
+                    ));
+                    output.push_str(&format!(
+                        "{}{}_elements[{}__key] = {{}};\n",
+                        self.prefix, self.name, self.name,
+                    ));
+                    output.push_str(&format!(
+                        "const {} = {}[{}__key];\n",
+                        item, array, self.name
+                    ));
+
+                    child.set_prefix(format!(
+                        "{}{}_elements[{}__key].",
+                        self.prefix, self.name, self.name
+                    ));
+
+                    output.push_str(&child.to_js(parent_name));
+                    output.push_str("}\n");
+                }
+            }
+        }
+        output
+    }
+
+    pub fn set_prefix(&mut self, prefix: String) {
+        for child in &mut self.children {
+            child.set_prefix(prefix.clone());
+        }
+        self.prefix = prefix;
+    }
+
+    pub fn parse_control(&self) -> ControlStatement {
+        // First, determine what kind of control statement it is
+        for (key, value) in &self.attributes {
+            if key == "for" {
+                let mut item = String::from("item");
+                for (key, item_name) in &self.attributes {
+                    if key == "item" {
+                        item = item_name.clone();
+                    }
+                }
+
+                return ControlStatement::ForEach(value.clone(), item);
+            }
+        }
+        ControlStatement::Noop
     }
 
     fn set_inner(&self) -> String {
@@ -47,10 +130,16 @@ impl HTMLElement {
     }
 
     fn define_element(&self) -> String {
-        format!(
+        let mut output = format!(
             "const {} = document.createElement('{}');\n",
             self.name, self.tag_name
-        )
+        );
+
+        if !self.prefix.is_empty() {
+            output.push_str(&format!("{}{} = {};\n", self.prefix, self.name, self.name));
+        }
+
+        output
     }
 
     fn set_attributes(&self) -> String {
@@ -66,23 +155,31 @@ impl HTMLElement {
                     callback = &callback[..callback.len() - 2];
                 }
                 output.push_str(&format!(
-                    "{}.addEventListener('{}', {}.bind(this))",
-                    self.name, event, callback
+                    "{}{}.addEventListener('{}', {}.bind(this))",
+                    self.prefix, self.name, event, callback
                 ));
             } else {
-                output.push_str(&format!("{}.setAttribute('{}', '{}');\n", self.name, k, v));
+                output.push_str(&format!(
+                    "{}{}.setAttribute('{}', '{}');\n",
+                    self.prefix, self.name, k, v
+                ));
             }
         }
         output
     }
 
-    fn extract_mutators(&self, mutators: &mut Vec<Mutator>) {
+    fn extract_mutators(&mut self, parent_name: &str, mutators: &mut Vec<Mutator>) {
+        if self.tag_name == "control" {
+            println!("extract ctrl mutators");
+            return self.extract_mutators_ctrl(parent_name, mutators);
+        }
+
         // Check if there is any mutator needed for inner
         let deps = parse_fmtstring(&self.inner);
         if deps.len() > 0 {
             mutators.push(Mutator {
                 inputs: deps,
-                operation: format!("{}.innerHTML = `{}`", self.name, self.inner),
+                operation: format!("{}{}.innerHTML = `{}`", self.prefix, self.name, self.inner),
             });
         }
 
@@ -91,7 +188,10 @@ impl HTMLElement {
                 let expr = &attr.1[1..attr.1.len() - 2];
                 mutators.push(Mutator {
                     inputs: vec![expr.to_string()],
-                    operation: format!("{}.setAttribute('{}', {});", self.name, attr.0, expr),
+                    operation: format!(
+                        "{}{}.setAttribute('{}', {});",
+                        self.prefix, self.name, attr.0, expr
+                    ),
                 });
             }
 
@@ -99,18 +199,93 @@ impl HTMLElement {
             if deps.len() > 0 {
                 mutators.push(Mutator {
                     inputs: deps,
-                    operation: format!("{}.setAttribute('{}', `{}`);", self.name, attr.0, attr.1),
+                    operation: format!(
+                        "{}{}.setAttribute('{}', `{}`);",
+                        self.prefix, self.name, attr.0, attr.1
+                    ),
+                });
+            }
+        }
+
+        for child in &mut self.children {
+            child.extract_mutators(&self.name, mutators);
+        }
+    }
+
+    fn extract_mutators_ctrl(&mut self, parent_name: &str, mutators: &mut Vec<Mutator>) {
+        match self.parse_control() {
+            ControlStatement::Noop => {
+                for child in &mut self.children {
+                    child.extract_mutators(parent_name, mutators);
+                }
+            }
+            ControlStatement::ForEach(array, item) => {
+                let mut child_mutators = Vec::new();
+                for child in &mut self.children {
+                    child.extract_mutators(parent_name, &mut child_mutators);
+                }
+
+                for mut mutator in child_mutators {
+                    mutator.operation = format!(
+                        "for(const {}__key of Object.keys({}{}_elements)) {{const {} = {}[{}__key];\n{}\n}}",
+                        self.name, self.prefix, self.name, item, array, self.name, mutator.operation, 
+                    );
+                    mutators.push(mutator);
+                }
+
+                let mut definitions = String::new();
+                for child in &mut self.children {
+                    definitions.push_str(&child.to_js(&parent_name));
+                    definitions.push_str("\n\n");
+                }
+
+                // New entry mutator with additional comment
+                let op = format!(
+                        r#"
+                        for(const {name}__key of Object.keys({array})) {{
+                            if(!{prefix}{name}_elements[{name}__key]) {{
+                                const {item} = {array}[{name}__key];
+                                {prefix}{name}_elements[{name}__key] = {{}};
+                                {definitions}
+                            }}
+                        }}"#,
+                        name=self.name, array=array, prefix=self.prefix, item=item, definitions=definitions);
+
+                mutators.push(Mutator {
+                    inputs: vec![array.clone()],
+                    operation: op,
+                });
+
+                let mut removals = String::new();
+                for child in &self.children {
+                    removals.push_str(&format!("{prefix}{name}_elements[{name}__key].{child_name}.remove();\n",
+                        prefix=self.prefix, name=self.name, child_name=child.name,
+                    ));
+                }
+
+                // Remove old entries mutator
+                let mut op = format!(
+                    r#"
+                    for(const {name}__key of Object.keys({prefix}{name}_elements)) {{
+                        if(!{array}[{name}__key]) {{
+                            {removals}
+                            delete {prefix}{name}_elements[{name}__key];
+                        }}
+                    }}"#,
+                    name=self.name, array=array, prefix=self.prefix, removals=removals,
+                );
+
+                mutators.push(Mutator {
+                    inputs: vec![array.clone()],
+                    operation: op,
                 });
             }
         }
     }
 
-    pub fn get_mutators(&self) -> Vec<Mutator> {
+    pub fn get_mutators(&mut self, parent_name: &str) -> Vec<Mutator> {
         let mut output = Vec::new();
-        self.extract_mutators(&mut output);
-        for child in &self.children {
-            child.extract_mutators(&mut output);
-        }
+        self.extract_mutators(parent_name, &mut output);
         output
     }
 }
@@ -333,6 +508,13 @@ pub fn read_tag(chars: &mut std::iter::Peekable<std::str::Chars>) -> Result<HTML
         chars.next();
     }
 
+    for attr in &mut element.attributes {
+        // Strip off enclosing braces
+        if attr.1.starts_with("{") && attr.1.ends_with("}") {
+            attr.1 = attr.1[1..attr.1.len() - 1].to_string();
+        }
+    }
+
     Ok(element)
 }
 
@@ -374,7 +556,7 @@ mod tests {
         assert_eq!(result[0].name, "__el0");
         assert_eq!(result[0].tag_name, "p");
         assert_eq!(result[0].attributes[0].0, "on:click");
-        assert_eq!(result[0].attributes[0].1, "{fn}");
+        assert_eq!(result[0].attributes[0].1, "fn");
         assert_eq!(result[0].children[0].inner, "red text");
     }
 
@@ -392,8 +574,8 @@ mod tests {
 
     #[test]
     fn test_mutator_extraction() {
-        let result = parse("<p>test ${x} content</p>").unwrap();
+        let mut result = parse("<p>test ${x} content</p>").unwrap();
         assert_eq!(result[0].tag_name, "p");
-        assert_eq!(result[0].get_mutators().len(), 1);
+        assert_eq!(result[0].get_mutators("x").len(), 1);
     }
 }

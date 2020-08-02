@@ -223,7 +223,7 @@ impl FECompiler {
     }
 
     fn compile_html(&mut self) -> bool {
-        let elements = match htmlc::parse(&self.input_html) {
+        let mut elements = match htmlc::parse(&self.input_html) {
             Ok(e) => e,
             Err(s) => {
                 self.log_error(CompileError::HTMLParsingError(s));
@@ -233,13 +233,11 @@ impl FECompiler {
 
         let mut mutators = Vec::new();
 
-        for element in elements {
-            self.html_in_js.push_str(&element.to_js());
+        for element in &mut elements {
+            self.html_in_js.push_str(&element.to_js("this.shadow"));
             self.html_in_js.push('\n');
-            self.html_in_js
-                .push_str(&format!("this.shadow.appendChild({});\n", element.name));
 
-            for mutator in element.get_mutators() {
+            for mutator in element.get_mutators("this.shadow") {
                 mutators.push(mutator);
             }
         }
