@@ -234,7 +234,8 @@ impl FECompiler {
         let mut mutators = Vec::new();
 
         for element in &mut elements {
-            self.html_in_js.push_str(&element.to_js("this.shadow"));
+            self.html_in_js
+                .push_str(&element.to_js("this.shadow", "true"));
             self.html_in_js.push('\n');
 
             for mutator in element.get_mutators("this.shadow") {

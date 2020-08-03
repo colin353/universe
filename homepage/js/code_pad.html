@@ -1,10 +1,14 @@
 <div class="line-numbers">
-    <control for={this.state.code}>
-        <p>1</p>
+    <control for={this.state.lines}>
+        <p>${item.lineNumber}</p>
     </control>
 </div>
 <code class="code">
-    <control for={this.state.code}>
-        <p class="${this.state.codeStyle}">${item}</p>
+    <control for={this.state.lines}>
+        <p>${item.code}</p>
     </control>
 </code>
+
+<control if={this.state.x==2}>
+    <p>condition satisfied</p>
+</control>

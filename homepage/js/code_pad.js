@@ -1,29 +1,29 @@
-//const attributes = [ "code" ];
+const attributes = [ "code" ];
 
-this.state = {
-  code: {
-    1: "abcdef",
-    2: "ghijkl",
-    3: "mnopqr",
-  },
-  codeStyle: 'normal',
+this.stateMappers = {
+  lines: (code) => {
+    if (!code) return {}
+
+    const output = {};
+    let lineNumber = 0;
+    for(const line of atob(code).split("\n")) {
+      output[lineNumber] = {};
+      output[lineNumber].lineNumber = lineNumber;
+      output[lineNumber].code = line;
+
+      lineNumber += 1;
+    }
+    return output;
+  }
 };
 
-let x = 4;
+this.state = {
+  lines: this.stateMappers.lines(this.state.code),
+  x: 0,
+};
 
 setInterval(() => {
-  this.state.code[x] = `hello ${x}`;
-  x++;
-
-  if (x % 2 == 0) {
-    delete this.state.code[x-2];
-  }
-
-  if (x % 4 == 0) {
-    this.state.code = {}
-  }
-
   this.setState({
-    code: this.state.code,
+    x: (this.state.x + 1) % 4 
   })
-}, 800)
+}, 500)

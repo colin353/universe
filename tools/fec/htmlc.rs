@@ -13,6 +13,7 @@ pub struct HTMLElement {
 #[derive(Debug, PartialEq)]
 pub enum ControlStatement {
     ForEach(String, String),
+    Condition(String),
     Noop,
 }
 
@@ -30,7 +31,7 @@ impl HTMLElement {
         }
     }
 
-    pub fn to_js(&mut self, parent_name: &str) -> String {
+    pub fn to_js(&mut self, parent_name: &str, add_dom_condition: &str) -> String {
         if self.tag_name == "control" {
             return self.to_js_ctrl(parent_name);
         }
@@ -47,12 +48,16 @@ impl HTMLElement {
         }
 
         for child in &mut self.children {
-            output.push_str(&child.to_js(&self.name));
+            output.push_str(&child.to_js(&self.name, "true"));
         }
 
         output.push_str(&format!(
-            "{}.appendChild({}{})\n\n",
-            parent_name, self.prefix, self.name
+            r#"
+            if({cond}) {{
+                {parent_name}.appendChild({prefix}{name});
+            }}
+            "#,
+            cond=add_dom_condition, parent_name=parent_name, prefix=self.prefix, name=self.name
         ));
         output
     }
@@ -62,7 +67,7 @@ impl HTMLElement {
         match self.parse_control() {
             ControlStatement::Noop => {
                 for child in &mut self.children {
-                    output.push_str(&child.to_js(parent_name));
+                    output.push_str(&child.to_js(parent_name, "true"));
                     output.push_str(&format!(
                         "{}.appendChild({}{})\n\n",
                         parent_name, child.prefix, child.name
@@ -93,8 +98,13 @@ impl HTMLElement {
                         self.prefix, self.name, self.name
                     ));
 
-                    output.push_str(&child.to_js(parent_name));
+                    output.push_str(&child.to_js(parent_name, "true"));
                     output.push_str("}\n");
+                }
+            },
+            ControlStatement::Condition(cond) => {
+                for child in &mut self.children {
+                    output.push_str(&child.to_js(parent_name, &cond));
                 }
             }
         }
@@ -121,7 +131,12 @@ impl HTMLElement {
 
                 return ControlStatement::ForEach(value.clone(), item);
             }
+
+            if key == "if" {
+                return ControlStatement::Condition(value.clone());
+            }
         }
+
         ControlStatement::Noop
     }
 
@@ -219,6 +234,20 @@ impl HTMLElement {
                     child.extract_mutators(parent_name, mutators);
                 }
             }
+            ControlStatement::Condition(cond) => {
+                for child in &mut self.children {
+                    mutators.push(Mutator{
+                        inputs: extract_dependencies(&cond),
+                        operation: format!(r#"
+                            if({cond}) {{
+                                {parent_name}.appendChild({prefix}{name});
+                            }} else {{
+                                {prefix}{name}.remove();
+                            }}
+                        "#, cond=cond, parent_name=parent_name, prefix=child.prefix, name=child.name),
+                    })
+                }
+            }
             ControlStatement::ForEach(array, item) => {
                 let mut child_mutators = Vec::new();
                 for child in &mut self.children {
@@ -235,7 +264,7 @@ impl HTMLElement {
 
                 let mut definitions = String::new();
                 for child in &mut self.children {
-                    definitions.push_str(&child.to_js(&parent_name));
+                    definitions.push_str(&child.to_js(&parent_name, "true"));
                     definitions.push_str("\n\n");
                 }
 
@@ -294,6 +323,16 @@ impl HTMLElement {
 pub struct Mutator {
     pub inputs: Vec<String>,
     pub operation: String,
+}
+
+fn extract_dependencies(input: &str) -> Vec<String> {
+    let mut output = Vec::new();
+    for (idx, _) in input.match_indices("this.state.") {
+        output.push(input.chars().skip(idx).take_while(|x| {
+            return x.is_alphanumeric() || *x == '.' || *x == '_'
+        }).collect());
+    }
+    output
 }
 
 fn parse_fmtstring(fmt: &str) -> Vec<String> {
@@ -577,5 +616,12 @@ mod tests {
         let mut result = parse("<p>test ${x} content</p>").unwrap();
         assert_eq!(result[0].tag_name, "p");
         assert_eq!(result[0].get_mutators("x").len(), 1);
+    }
+
+    #[test]
+    fn test_extract_deps() {
+        let deps = extract_dependencies("this.state.x > this.state.y");
+        assert_eq!(deps[0], "this.state.x");
+        assert_eq!(deps[1], "this.state.y");
     }
 }
