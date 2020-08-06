@@ -25,6 +25,7 @@ pub struct FECompiler {
     symbols: Vec<String>,
     html_in_js: String,
     mutations: Vec<String>,
+    refs: Vec<(String, String)>,
     symbol_to_mutations: HashMap<String, Vec<usize>>,
     props: String,
 }
@@ -45,6 +46,7 @@ impl FECompiler {
             symbols: Vec::new(),
             html_in_js: String::new(),
             mutations: Vec::new(),
+            refs: Vec::new(),
             symbol_to_mutations: HashMap::new(),
             props: String::new(),
         }
@@ -86,6 +88,12 @@ impl FECompiler {
                     content!(
                         "idx" => idx,
                         "code" => code
+                    )
+                }).collect(),
+                "refs" => self.refs.iter().map(|(tagname, refname)| {
+                    content!(
+                        "refname" => refname,
+                        "tagname" => tagname
                     )
                 }).collect()
             ),
@@ -260,6 +268,22 @@ impl FECompiler {
             }
         }
 
+        for element in &elements {
+            self.extract_refs(element);
+        }
+
         true
+    }
+
+    fn extract_refs(&mut self, element: &htmlc::HTMLElement) {
+        for (key, value) in &element.attributes {
+            if key == "ref" {
+                self.refs.push((element.name.clone(), value.to_owned()));
+            }
+        }
+
+        for child in &element.children {
+            self.extract_refs(child);
+        }
     }
 }

@@ -11,6 +11,8 @@ class {{class_name}} extends HTMLElement {
           this.__mappings = {};
           this.__selectors = {};
 
+          this.refs = {};
+
           this.initialize();
     }
 
@@ -57,6 +59,10 @@ class {{class_name}} extends HTMLElement {
           }
         }
       }
+
+      {{refs[]}}
+      this.refs.{{refname}} = {{tagname}};
+      {{/refs}}
 
       this.initializeStateMappers();
     }

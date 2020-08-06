@@ -2,10 +2,10 @@
 pub struct HTMLElement {
     pub name: String,
     prefix: String,
-    attributes: Vec<(String, String)>,
+    pub attributes: Vec<(String, String)>,
     tag_name: String,
     constructor: String,
-    children: Vec<HTMLElement>,
+    pub children: Vec<HTMLElement>,
     self_closing: bool,
     inner: String,
 }
@@ -170,12 +170,12 @@ impl HTMLElement {
                     callback = &callback[..callback.len() - 2];
                 }
                 output.push_str(&format!(
-                    "{}{}.addEventListener('{}', {}.bind(this))",
+                    "{}{}.addEventListener('{}', {}.bind(this));\n",
                     self.prefix, self.name, event, callback
                 ));
             } else {
                 output.push_str(&format!(
-                    "{}{}.setAttribute('{}', '{}');\n",
+                    "{}{}.setAttribute('{}', `{}`);\n",
                     self.prefix, self.name, k, v
                 ));
             }

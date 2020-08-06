@@ -1,0 +1,10 @@
+<h1>To do</h1>
+
+<input on:keydown={keyDown} ref={todoInput} type=text />
+<button on:click={addItem}>add item</button>
+
+<ul>
+    <control for={this.state.todo}>
+        <todo-item message="${item}" />
+    </control>
+</ul>
