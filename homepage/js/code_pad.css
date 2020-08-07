@@ -1,10 +1,8 @@
 :host {
     width: 1024px;
-    height: 768px;
     display: flex;
     flex-direction: row;
     font-family: monospace;
-    overflow: auto;
 }
 
 div.line-numbers {
@@ -24,8 +22,14 @@ p {
     font-size: 24px;
     margin-top: 0;
     margin-bottom: 0;
+    white-space: pre;
+    min-height: 1.25em;
 }
 
 .italic {
     font-style: italic;
+}
+
+span.str {
+    color: green;
 }
