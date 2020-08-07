@@ -1,5 +1,5 @@
 const attributes = [ 
-  'message', 'done'
+  'key', 'message', 'done'
 ];
 
 this.state = {
@@ -7,16 +7,21 @@ this.state = {
 }
 
 this.stateMappers = {
-  style: (done) => done ? "done" : "not-done",
-  _setRef: (done) => {
+  completed: (done) => done == "true",
+  style: (completed) => completed ? "done" : "not-done",
+  _syncChecked: (completed) => {
     if (this.refs.checkbox) {
-      this.refs.checkbox.checked = done;
+      this.refs.checkbox.checked = completed;
     }
   }
 }
 
-const onClick = () => {
-  this.setState({
-    done: !this.state.done
-  })
+
+const onClick = (e) => {
+  this.dispatchEvent(new CustomEvent('toggle', {
+    detail: {
+      key: this.state.key,
+      done: !this.state.completed
+    }
+  }))
 }

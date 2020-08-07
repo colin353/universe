@@ -92,6 +92,10 @@ impl HTMLElement {
                         "const {} = {}[{}__key];\n",
                         item, array, self.name
                     ));
+                    output.push_str(&format!(
+                        "const key = {}__key;\n",
+                        self.name
+                    ));
 
                     child.set_prefix(format!(
                         "{}{}_elements[{}__key].",
@@ -185,7 +189,6 @@ impl HTMLElement {
 
     fn extract_mutators(&mut self, parent_name: &str, mutators: &mut Vec<Mutator>) {
         if self.tag_name == "control" {
-            println!("extract ctrl mutators");
             return self.extract_mutators_ctrl(parent_name, mutators);
         }
 
@@ -249,42 +252,6 @@ impl HTMLElement {
                 }
             }
             ControlStatement::ForEach(array, item) => {
-                let mut child_mutators = Vec::new();
-                for child in &mut self.children {
-                    child.extract_mutators(parent_name, &mut child_mutators);
-                }
-
-                for mut mutator in child_mutators {
-                    mutator.operation = format!(
-                        "for(const {}__key of Object.keys({}{}_elements)) {{const {} = {}[{}__key];\n{}\n}}",
-                        self.name, self.prefix, self.name, item, array, self.name, mutator.operation, 
-                    );
-                    mutators.push(mutator);
-                }
-
-                let mut definitions = String::new();
-                for child in &mut self.children {
-                    definitions.push_str(&child.to_js(&parent_name, "true"));
-                    definitions.push_str("\n\n");
-                }
-
-                // New entry mutator with additional comment
-                let op = format!(
-                        r#"
-                        for(const {name}__key of Object.keys({array})) {{
-                            if(!{prefix}{name}_elements[{name}__key]) {{
-                                const {item} = {array}[{name}__key];
-                                {prefix}{name}_elements[{name}__key] = {{}};
-                                {definitions}
-                            }}
-                        }}"#,
-                        name=self.name, array=array, prefix=self.prefix, item=item, definitions=definitions);
-
-                mutators.push(Mutator {
-                    inputs: vec![array.clone()],
-                    operation: op,
-                });
-
                 let mut removals = String::new();
                 for child in &self.children {
                     removals.push_str(&format!("{prefix}{name}_elements[{name}__key].{child_name}.remove();\n",
@@ -303,6 +270,56 @@ impl HTMLElement {
                     }}"#,
                     name=self.name, array=array, prefix=self.prefix, removals=removals,
                 );
+
+                mutators.push(Mutator {
+                    inputs: vec![array.clone()],
+                    operation: op,
+                });
+
+                let mut child_mutators = Vec::new();
+                for child in &mut self.children {
+                    child.extract_mutators(parent_name, &mut child_mutators);
+                }
+
+
+                for mut mutator in child_mutators {
+                    mutator.operation = format!(
+                        "for(const {}__key of Object.keys({}{}_elements)) {{const {} = {}[{}__key];\n{}\n}}",
+                        self.name, self.prefix, self.name, item, array, self.name, mutator.operation, 
+                    );
+
+                    let mut array_dep = false;
+                    for input in &mutator.inputs {
+                        if input == &item || input.starts_with(&format!("{}.", item)) {
+                            array_dep = true;
+                            break;
+                        }
+                    }
+                    if array_dep { 
+                        mutator.inputs.push(array.clone());
+                    }
+
+                    mutators.push(mutator);
+                }
+
+                let mut definitions = String::new();
+                for child in &mut self.children {
+                    definitions.push_str(&child.to_js(&parent_name, "true"));
+                    definitions.push_str("\n\n");
+                }
+
+                // New entry mutator with additional comment
+                let op = format!(
+                        r#"
+                        for(const {name}__key of Object.keys({array})) {{
+                            if(!{prefix}{name}_elements[{name}__key]) {{
+                                const key = {name}__key;
+                                const {item} = {array}[{name}__key];
+                                {prefix}{name}_elements[{name}__key] = {{}};
+                                {definitions}
+                            }}
+                        }}"#,
+                        name=self.name, array=array, prefix=self.prefix, item=item, definitions=definitions);
 
                 mutators.push(Mutator {
                     inputs: vec![array.clone()],

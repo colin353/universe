@@ -98,7 +98,7 @@ def _devenv_impl(ctx):
     script = """
 #!/bin/bash
 tools/fec/fec $(printf "%s" | sed -e "s*__BZL_PREFIX__*$1/*g") --output=%s/
-printf "%s" | sed -e "s*^*$1/*" | entr -p tools/fec/fec /_ --output=%s/ &
+printf "%s" | sed -e "s*^*$1/*" | entr -p tools/fec/fec $(printf "%s" | sed -e "s*__BZL_PREFIX__*$1/*g") --output=%s/ &
 echo $1/%s | entr cp /_ %s &
 echo "serving from $PWD/%s"
 tools/fes/fes --base_dir=%s
@@ -108,6 +108,7 @@ tools/fes/fes --base_dir=%s
         out_shell.dirname + "/js",
         # Build watch the input javascript files
         "\n".join([x.path for x in original_srcs]),
+        " ".join(["__BZL_PREFIX__" + x.path for x in original_srcs]),
         out_shell.dirname + "/js",
         # Copy the input HTML into the runfiles dir
         " ".join([x.path for x in ctx.files.srcs]),

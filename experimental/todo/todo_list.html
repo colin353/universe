@@ -5,6 +5,6 @@
 
 <ul>
     <control for={this.state.todo}>
-        <todo-item message="${item}" />
+        <todo-item key="${key}" on:toggle={onToggle} done="${item.done}" message="${item.message}" />
     </control>
 </ul>

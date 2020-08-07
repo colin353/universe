@@ -23,6 +23,7 @@ fe_devenv(
     name = "todo_devenv",
     srcs = ["index.html"],
     deps = [
+        ":todo_item",
         ":todo_list",
     ],
 )
