@@ -1,6 +1,8 @@
 class {{class_name}} extends HTMLElement {
     constructor() {
           super();
+          this.componentDidMount = () => {};
+
           this.shadow = this.attachShadow({mode:'open'});
           this.shadow.innerHTML = `<style>{{css}}</style>`
 
@@ -24,6 +26,7 @@ class {{class_name}} extends HTMLElement {
         propState[k] = this.getAttribute(k);
       }
       this.setState(propState);
+      this.componentDidMount();
     }
 
     attributeChangedCallback(name, oldValue, newValue) {

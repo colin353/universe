@@ -1,10 +1,10 @@
 <div class="line-numbers">
     <control for={this.state.lines}>
-        <p>${item.lineNumber}</p>
+        <p on:click={selectLine} class="${item.class}">${item.lineNumber}</p>
     </control>
 </div>
 <code class="code">
     <control for={this.state.lines}>
-        <p>${item.code}</p>
+        <p class="${item.class}">${item.code}</p>
     </control>
 </code>

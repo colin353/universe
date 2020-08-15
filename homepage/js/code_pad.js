@@ -1,4 +1,8 @@
-const attributes = [ "code", "language" ];
+const attributes = [ "code", "language", "line" ];
+
+// Disables chrome's automatic scroll restoration logic, necessary to
+// avoid conflicts w/ the automatic "jump-to-line" behaviour.
+window.history.scrollRestoration = 'manual';
 
 function base64Decode(str) {
     return decodeURIComponent(atob(str).split('').map(function(c) {
@@ -7,26 +11,48 @@ function base64Decode(str) {
 }
 
 this.stateMappers = {
-  lines: (code, language) => {
+  lines: (code, language, line) => {
     if (!code) return {}
 
     const output = {};
     let lineNumber = 1;
+    const selectedLine = parseInt(line)
     let model = getLanguageModel(this.state.language);
     for(const line of base64Decode(code).split("\n")) {
       output[lineNumber] = {};
       output[lineNumber].lineNumber = lineNumber;
+      output[lineNumber].class = lineNumber == selectedLine ? 'selected-line' : '';
       output[lineNumber].code = model.extractSyntax(line);
 
       lineNumber += 1;
     }
     return output;
+  },
+  _ensureLineVisible: (line) => {
+    focusSelectedLine()
   }
 };
+
+const focusSelectedLine = () => {
+    const elements = this.shadowRoot.querySelectorAll(".selected-line")
+    if (elements.length) {
+      elements[0].scrollIntoView({block: "center"});
+    }
+}
+
+this.componentDidMount = () => {
+  setTimeout(focusSelectedLine, 10);
+}
 
 this.state = {
   lines: this.stateMappers.lines(this.state.code),
 };
+
+function selectLine(event) {
+  this.setState({
+    line: parseInt(event.srcElement.innerText)
+  })
+}
 
 // Syntax highlighting
 
@@ -154,10 +180,13 @@ class RustLanguageModel extends LanguageModel {
     super();
 
     this.keywords = new Set([
-      'as', 'break', 'const', 'continue', 'crate', 'else', 'enum', 'extern', 'false', 'fn', 'for', 'if', 'impl',
-      'in', 'let', 'loop', 'match', 'mod', 'move', 'mut', 'pub', 'ref', 'return', 'self', 'Self', 'static', 'struct',
-      'super', 'trait', 'true', 'type', 'unsafe', 'use', 'where', 'while', 'async', 'await', 'dyn',
-      'u8', 'u16', 'u32', 'u64', 'u128', 'i8', 'i16', 'i32', 'i64', 'i128', 'f16', 'f32', 'f64', 'f128'
+      'as', 'break', 'const', 'continue', 'crate', 'else', 'enum',
+      'extern', 'false', 'fn', 'for', 'if', 'impl', 'in', 'let',
+      'loop', 'match', 'mod', 'move', 'mut', 'pub', 'ref', 'return',
+      'self', 'Self', 'static', 'struct', 'super', 'trait', 'true',
+      'type', 'unsafe', 'use', 'where', 'while', 'async', 'await',
+      'dyn', 'u8', 'u16', 'u32', 'u64', 'u128', 'i8', 'i16', 'i32',
+      'i64', 'i128', 'f16', 'f32', 'f64', 'f128'
     ]);
   }
 

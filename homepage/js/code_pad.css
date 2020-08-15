@@ -9,17 +9,38 @@ div.line-numbers {
     width: 50px;
     background-color: white;
     text-align: right;
-    padding-right: 20px;
     color: grey;
     user-select: none;
+    border-right: 1px solid #eee;
+}
+
+div.line-numbers p {
+    padding-left: 5px;
+    padding-right: 15px;
 }
 
 div.code {
     flex: 1;
 }
 
+.code p {
+    padding-left: 5px;
+}
+
+div.line-numbers p.selected-line {
+    color: white;
+    background-color: #03a9f4
+}
+
+.code p.selected-line {
+    border-top: 1px solid #eee;
+    border-bottom: 1px solid #eee;
+    background-color: #fafafa;
+    min-height: calc(1.25em - 2px);
+}
+
 p {
-    font-size: 24px;
+    font-size: 18px;
     margin-top: 0;
     margin-bottom: 0;
     white-space: pre;
