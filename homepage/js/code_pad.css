@@ -6,7 +6,6 @@
 }
 
 div.line-numbers {
-    width: 50px;
     background-color: white;
     text-align: right;
     color: grey;
@@ -40,7 +39,7 @@ div.line-numbers p.selected-line {
 }
 
 p {
-    font-size: 18px;
+    font-size: 16px;
     margin-top: 0;
     margin-bottom: 0;
     white-space: pre;

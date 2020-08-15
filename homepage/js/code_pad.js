@@ -10,26 +10,46 @@ function base64Decode(str) {
     }).join(''));
 }
 
+function escapeHtml(unsafe) {
+    return unsafe
+         .replace(/&/g, "&amp;")
+         .replace(/</g, "&lt;")
+         .replace(/>/g, "&gt;")
+         .replace(/"/g, "&quot;")
+         .replace(/'/g, "&#039;");
+}
+
 this.stateMappers = {
-  lines: (code, language, line) => {
-    if (!code) return {}
+  parsedLines: (code, language) => {
+    if (!code) return [];
+    let parsedLines = [];
+    let model = getLanguageModel(language);
+    for(const line of base64Decode(code).split("\n")) {
+      parsedLines.push(model.extractSyntax(line));
+    }
+    return parsedLines;
+  },
+  lines: (parsedLines, language, line) => {
+    if(!parsedLines) return {};
 
     const output = {};
     let lineNumber = 1;
     const selectedLine = parseInt(line)
-    let model = getLanguageModel(this.state.language);
-    for(const line of base64Decode(code).split("\n")) {
+    for(const line of parsedLines) {
       output[lineNumber] = {};
       output[lineNumber].lineNumber = lineNumber;
       output[lineNumber].class = lineNumber == selectedLine ? 'selected-line' : '';
-      output[lineNumber].code = model.extractSyntax(line);
+      output[lineNumber].code = line;
 
       lineNumber += 1;
     }
     return output;
   },
   _ensureLineVisible: (line) => {
-    focusSelectedLine()
+    focusSelectedLine();
+    this.dispatchEvent(new CustomEvent('lineSelected', {
+      detail: { line }
+    }));
   }
 };
 
@@ -45,6 +65,7 @@ this.componentDidMount = () => {
 }
 
 this.state = {
+  parsedLines: this.stateMappers.parsedLines(this.state.code),
   lines: this.stateMappers.lines(this.state.code),
 };
 
@@ -131,7 +152,7 @@ class LanguageModel {
       loops++;
       if(this.isStringDelimiter(ch)) {
         const str = this.takeUntil(ch);
-        output += `<span class='str'>${ch}${str}${ch}</span>`;
+        output += `<span class='str'>${escapeHtml(ch + str + ch)}</span>`;
         ch = this.next();
         continue;
       }
@@ -146,7 +167,7 @@ class LanguageModel {
             remainder += ch;
           }
           
-          output += `<span class='comment'>${commentAcc}${remainder}</span>`;
+          output += `<span class='comment'>${escapeHtml(commentAcc + remainder)}</span>`;
           return output;
         }
         continue;
@@ -159,19 +180,19 @@ class LanguageModel {
         acc += ch;
       } else if(acc.length > 0) {
         if (this.keywords.has(acc)) {
-          output += `<span class='keyword'>${acc}</span>${ch}`;
+          output += `<span class='keyword'>${escapeHtml(acc)}</span>${escapeHtml(ch)}`;
         } else {
-          output += acc + ch;
+          output += escapeHtml(acc + ch);
         }
         acc = "";
       } else {
-        output += ch;
+        output += escapeHtml(ch);
       }
 
       ch = this.next();
     }
 
-    return output + acc;
+    return output + escapeHtml(acc);
   }
 }
 
