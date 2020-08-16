@@ -248,7 +248,9 @@ impl HTMLElement {
                                 {prefix}{name}.remove();
                             }}
                         "#, cond=cond, parent_name=parent_name, prefix=child.prefix, name=child.name),
-                    })
+                    });
+
+                    child.extract_mutators(parent_name, mutators);
                 }
             }
             ControlStatement::ForEach(array, item) => {
@@ -620,6 +622,12 @@ mod tests {
     fn test_fmtstring_parsing() {
         let result = parse_fmtstring("test ${x} content");
         assert_eq!(result, vec!["x"]);
+    }
+
+    #[test]
+    fn test_fmtstring_parsing_2() {
+        let result = parse_fmtstring("top: ${this.state.menuY}px; left: ${this.state.menuX}px");
+        assert_eq!(result, vec!["this.state.menuY", "this.state.menuX"]);
     }
 
     #[test]

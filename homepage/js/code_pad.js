@@ -19,6 +19,42 @@ function escapeHtml(unsafe) {
          .replace(/'/g, "&#039;");
 }
 
+this.shadow.addEventListener("click", () => {
+  this.setState({
+    showMenu: false
+  })
+})
+
+const contextMenu = (event) => {
+  const selection = window.getSelection().toString();
+  if(selection == "") return;
+
+  this.setState({
+    showMenu: true,
+    menuX: event.screenX,
+    menuY: event.screenY,
+    selection,
+  })
+  console.log("position: ", event.pageX, event.pageY);
+  event.preventDefault();
+}
+
+const copy = (event) => {
+  navigator.clipboard.writeText(this.state.selection)
+}
+
+const search = () => {
+  this.dispatchEvent(new CustomEvent('search', {
+    detail: { token: this.state.selection }
+  }));
+}
+
+const definition = () => {
+  this.dispatchEvent(new CustomEvent('define', {
+    detail: { token: this.state.selection }
+  }));
+}
+
 this.stateMappers = {
   parsedLines: (code, language) => {
     if (!code) return [];
@@ -38,7 +74,7 @@ this.stateMappers = {
     for(const line of parsedLines) {
       output[lineNumber] = {};
       output[lineNumber].lineNumber = lineNumber;
-      output[lineNumber].class = lineNumber == selectedLine ? 'selected-line' : '';
+      output[lineNumber].class = lineNumber == selectedLine ? 'selected-line' : lineNumber == selectedLine - 5 ? 'top-line' : '';
       output[lineNumber].code = line;
 
       lineNumber += 1;
@@ -54,9 +90,9 @@ this.stateMappers = {
 };
 
 const focusSelectedLine = () => {
-    const elements = this.shadowRoot.querySelectorAll(".selected-line")
+    const elements = this.shadowRoot.querySelectorAll(".top-line")
     if (elements.length) {
-      elements[0].scrollIntoView({block: "center"});
+      elements[0].scrollIntoView({block: "start"});
     }
 }
 

@@ -1,9 +1,18 @@
+<control if={this.state.showMenu}>
+    <div class="menu" style="top: ${this.state.menuY}px; left: ${this.state.menuX}px;">
+        <ul>
+            <li on:click={copy}>Copy</li>
+            <li on:click={search}>Search for this token</li>
+            <li on:click={definition}>Find definition</li>
+        </ul>
+    </div>
+</control>
 <div class="line-numbers">
     <control for={this.state.lines}>
         <p on:click={selectLine} class="${item.class}">${item.lineNumber}</p>
     </control>
 </div>
-<code class="code">
+<code class="code" on:contextmenu={contextMenu}>
     <control for={this.state.lines}>
         <p class="${item.class}">${item.code}</p>
     </control>
