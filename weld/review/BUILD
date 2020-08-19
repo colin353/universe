@@ -56,10 +56,19 @@ pkg_tar(
     strip_prefix = ".",
 )
 
+pkg_tar(
+    name = "codepad",
+    srcs = ["//homepage/js:code_pad"],
+    package_dir = "/static",
+)
+
 container_image(
     name = "review_base_img",
     base = "@glibc_base//image",
-    tars = [":static_files"],
+    tars = [
+        ":static_files",
+        ":codepad",
+    ],
 )
 
 rust_image(

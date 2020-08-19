@@ -1,3 +1,5 @@
+package(default_visibility = ["//visibility:public"])
+
 load("//tools/fec:fec.bzl", "fe_component")
 load("//tools/fec:fec.bzl", "fe_application")
 load("//tools/fec:fec.bzl", "fe_devenv")
