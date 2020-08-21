@@ -1,4 +1,5 @@
 OriginalSourceFiles = provider()
+ModuleSourceFiles = provider()
 
 def _component_impl(ctx):
     args = [x.path for x in ctx.files.srcs]
@@ -19,8 +20,13 @@ def _component_impl(ctx):
         original_srcs += dep[OriginalSourceFiles].files.to_list()
     original_srcs += ctx.files.srcs
 
+    module_srcs = []
+    for dep in ctx.attr.deps:
+        module_srcs += dep[ModuleSourceFiles].files.to_list()
+
     return [
-        DefaultInfo(files = depset([out_js])),
+        DefaultInfo(files = depset([out_js] + module_srcs)),
+        ModuleSourceFiles(files = depset([out_js] + module_srcs)),
         OriginalSourceFiles(files = depset(original_srcs)),
     ]
 
@@ -156,4 +162,51 @@ fe_devenv = rule(
         ),
     },
     executable = True,
+)
+
+def _fe_library_impl(ctx):
+    original_srcs = []
+    for dep in ctx.attr.deps:
+        original_srcs += dep[OriginalSourceFiles].files.to_list()
+    original_srcs += ctx.files.srcs
+
+    out_js = ctx.actions.declare_file("%s.mjs" % ctx.attr.name)
+
+    module_srcs = []
+    for dep in ctx.attr.deps:
+        module_srcs += dep[ModuleSourceFiles].files.to_list()
+
+    ctx.actions.run_shell(
+        inputs = module_srcs + ctx.files.srcs,
+        tools = [ctx.file._compiler],
+        command = "cp -R bazel-out/k8-fastbuild/bin/* . && cat %s > %s && %s %s" % (
+            " ".join([x.path for x in ctx.files.srcs]),
+            out_js.path,
+            ctx.file._compiler.path,
+            " ".join([x.path for x in original_srcs]),
+        ),
+        progress_message = "node: checking library code...",
+        outputs = [out_js],
+    )
+
+    module_srcs += [out_js]
+
+    return [
+        OriginalSourceFiles(files = depset(original_srcs)),
+        ModuleSourceFiles(files = depset(module_srcs + [out_js])),
+        DefaultInfo(files = depset([out_js])),
+    ]
+
+fe_library = rule(
+    implementation = _fe_library_impl,
+    attrs = {
+        "deps": attr.label_list(),
+        "srcs": attr.label_list(allow_files = True),
+        "_compiler": attr.label(
+            allow_single_file = True,
+            default = Label("//third_party:node"),
+            cfg = "target",
+            executable = True,
+        ),
+    },
 )

@@ -77,9 +77,12 @@ pub trait Server: Sync + Send + Clone + 'static {
             let mut response = Response::new(Body::from(contents));
 
             let mut content_type = None;
-            // TODO: add more supported content types
-            if path.ends_with(".js") {
+            if path.ends_with(".js") || path.ends_with(".mjs") {
                 content_type = Some("text/javascript");
+            } else if path.ends_with(".css") {
+                content_type = Some("text/css");
+            } else if path.ends_with(".json") {
+                content_type = Some("application/json");
             }
 
             if let Some(c) = content_type {

@@ -27,6 +27,7 @@ http_archive(
 http_archive(
     name = "vendored_node",
     build_file_content = """exports_files(["node-v14.8.0-linux-x64/bin/node"])""",
+    sha256 = "c7761fe5d56d045d1540b1f0bc8a20d7edf03e6fd695ee5fbffc1dd9416ccc75",
     urls = ["https://nodejs.org/dist/v14.8.0/node-v14.8.0-linux-x64.tar.xz"],
 )
 

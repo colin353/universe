@@ -19,6 +19,7 @@ pub struct FECompiler {
     // Extracted properties
     component_name: String,
     class_name: String,
+    js_imports: String,
     input_javascript: String,
     input_html: String,
     input_css: String,
@@ -41,6 +42,7 @@ impl FECompiler {
             component_name: String::new(),
             class_name: String::new(),
             input_javascript: String::new(),
+            js_imports: String::new(),
             input_html: String::new(),
             input_css: String::new(),
             symbols: Vec::new(),
@@ -73,6 +75,7 @@ impl FECompiler {
             COMPONENT,
             &content!(
                 "javascript" => &self.input_javascript,
+                "js_imports" => &self.js_imports,
                 "component_name" => &self.component_name,
                 "class_name" => &self.class_name,
                 "html" => &self.html_in_js,
@@ -207,9 +210,21 @@ impl FECompiler {
 
     fn compile_javascript(&mut self) -> bool {
         // Extract possible props declaration
+        let mut imports = String::new();
+        let mut output_javascript = String::new();
         let mut lines = self.input_javascript.lines().map(|x| x.trim()).peekable();
         let marker = "const attributes = [";
         while let Some(line) = lines.peek() {
+            if line.starts_with("import ") {
+                imports.push_str(line);
+                imports.push('\n');
+                lines.next();
+                continue;
+            }
+
+            output_javascript.push_str(line);
+            output_javascript.push('\n');
+
             let mut start = 0;
             if line.starts_with(marker) {
                 start = marker.len();
@@ -224,8 +239,12 @@ impl FECompiler {
                     lines.next();
                 }
             }
+
             lines.next();
         }
+
+        self.input_javascript = output_javascript;
+        self.js_imports = imports;
 
         true
     }

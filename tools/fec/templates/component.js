@@ -1,3 +1,5 @@
+{{js_imports}}
+
 class {{class_name}} extends HTMLElement {
     constructor() {
           super();

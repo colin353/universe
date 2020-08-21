@@ -11,6 +11,9 @@ fe_component(
         "code_pad.html",
         "code_pad.js",
     ],
+    deps = [
+        "//tools/search/js:test",
+    ],
 )
 
 fe_application(
