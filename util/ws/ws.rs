@@ -51,7 +51,7 @@ pub trait Server: Sync + Send + Clone + 'static {
         Box::new(future::ok(self.respond(path, req, session_key)))
     }
 
-    fn serve_static_files(&self, path: String, prefix: &str, static_directory: &str) -> Response {
+    fn serve_static_files(&self, path: String, prefix: &str, static_directories: &str) -> Response {
         if !path.starts_with(prefix) || path.contains("..") {
             return self.not_found(path);
         }
@@ -62,38 +62,46 @@ pub trait Server: Sync + Send + Clone + 'static {
             &path[prefix.len()..]
         };
 
-        let final_path = format!("{}{}", static_directory, subdir_path);
-        let mut file = match std::fs::File::open(final_path) {
-            Ok(f) => f,
-            Err(_) => return self.not_found(path),
-        };
-        let mut contents = String::new();
-        if let Err(_) = file.read_to_string(&mut contents) {
-            return self.not_found(path);
-        }
-        let mut response = Response::new(Body::from(contents));
+        // If the static_directories field contains several directories, we look in each one in
+        // series before returning 404.
+        for static_directory in static_directories.split(",") {
+            let final_path = format!("{}{}", static_directory, subdir_path);
+            let mut file = match std::fs::File::open(final_path) {
+                Ok(f) => f,
+                Err(_) => continue,
+            };
+            let mut contents = String::new();
+            if let Err(_) = file.read_to_string(&mut contents) {
+                continue;
+            }
+            let mut response = Response::new(Body::from(contents));
 
-        let mut content_type = None;
-        // TODO: add more supported content types
-        if path.ends_with(".js") {
-            content_type = Some("text/javascript");
+            let mut content_type = None;
+            // TODO: add more supported content types
+            if path.ends_with(".js") {
+                content_type = Some("text/javascript");
+            }
+
+            if let Some(c) = content_type {
+                response
+                    .headers_mut()
+                    .insert(CONTENT_TYPE, HeaderValue::from_bytes(c.as_bytes()).unwrap());
+            }
+
+            response.headers_mut().insert(
+                CACHE_CONTROL,
+                HeaderValue::from_bytes("max-age=100000".as_bytes()).unwrap(),
+            );
+            return response;
         }
 
-        if let Some(c) = content_type {
-            response
-                .headers_mut()
-                .insert(CONTENT_TYPE, HeaderValue::from_bytes(c.as_bytes()).unwrap());
-        }
-
-        response.headers_mut().insert(
-            CACHE_CONTROL,
-            HeaderValue::from_bytes("max-age=100000".as_bytes()).unwrap(),
-        );
-        response
+        self.not_found(path)
     }
 
     fn not_found(&self, path: String) -> Response {
-        Response::new(Body::from(format!("404 not found: path {}", path)))
+        let mut response = Response::new(Body::from(format!("404 not found: path {}", path)));
+        *response.status_mut() = StatusCode::NOT_FOUND;
+        response
     }
 
     fn set_cookie_for_domain(&self, new_token: &str, domain: &str, response: &mut Response) {
