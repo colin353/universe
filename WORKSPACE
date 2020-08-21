@@ -24,6 +24,12 @@ http_archive(
     urls = ["https://github.com/bazelbuild/rules_docker/releases/download/v0.14.1/rules_docker-v0.14.1.tar.gz"],
 )
 
+http_archive(
+    name = "vendored_node",
+    build_file_content = """exports_files(["node-v14.8.0-linux-x64/bin/node"])""",
+    urls = ["https://nodejs.org/dist/v14.8.0/node-v14.8.0-linux-x64.tar.xz"],
+)
+
 load(
     "@io_bazel_rules_docker//repositories:repositories.bzl",
     container_repositories = "repositories",

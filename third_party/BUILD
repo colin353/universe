@@ -114,3 +114,8 @@ alias(
     name = "regex",
     actual = "//third_party/vendor/regex-1.3.4:regex",
 )
+
+alias(
+    name = "node",
+    actual = "@vendored_node//:node-v14.8.0-linux-x64/bin/node",
+)
