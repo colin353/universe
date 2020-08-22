@@ -234,6 +234,51 @@ class BazelLanguageModel extends LanguageModel {
     }
 }
 
+class ProtobufLanguageModel extends LanguageModel {
+    constructor() {
+        super();
+
+        this.keywords = new Set([
+            "optional", "required", "message", "import", "string", "repeated",
+            "option", "true", "false", "enum", "int64", "int32", "int16",
+            "uint64", "uint32", "uint16", "bool", "float", "service", "rpc",
+            "returns",
+        ]);
+    }
+
+    isCommentCharacter(ch) {
+        return ch == "/" || ch == "*";
+    }
+
+    isInterminableComment(chs) {
+        return chs == "//";
+    }
+}
+
+class PythonLanguageModel extends LanguageModel {
+    constructor() {
+        super();
+        this.keywords = new Set([
+            "and", "except", "lambda", "with", "as",
+            "finally", "nonlocal", "while", "assert", "false",
+            "None", "yield", "break", "for", "not",
+            "class", "from", "or", "continue", "global",
+            "pass", "def", "if", "raise", "del",
+            "import", "return", "elif", "in", "True",
+            "else", "is", "try",
+        ]);
+    }
+
+    isCommentCharacter(ch) {
+        return ch == "#";
+    }
+
+    isInterminableComment(chs) {
+        return chs == "#";
+    }
+
+}
+
 export default function getLanguageModel(lang) {
     const models = {
         "bazel": BazelLanguageModel,
@@ -241,6 +286,8 @@ export default function getLanguageModel(lang) {
         "javascript": JavascriptLanguageModel,
         "c": CLanguageModel,
         "cpp": CLanguageModel,
+        "proto": ProtobufLanguageModel,
+        "python": PythonLanguageModel,
     };
 
     if(models[lang]) {
