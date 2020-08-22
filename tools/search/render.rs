@@ -16,6 +16,7 @@ pub fn result(c: &Candidate) -> tmpl::ContentsMap {
 pub fn file(f: &File) -> tmpl::ContentsMap {
     content!(
          "filename" => f.get_filename(),
+         "type" => format!("{:?}", f.get_file_type()).to_lowercase(),
          "content" => base64::encode(f.get_content());
          "child_directories" => f.get_child_directories().iter().map(|s| content!("child" => s)).collect(),
          "child_files" => f.get_child_files().iter().map(|s| content!("child" => s)).collect()

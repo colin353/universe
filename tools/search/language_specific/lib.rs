@@ -19,7 +19,7 @@ pub fn get_filetype(filename: &str) -> FileType {
     if filename.ends_with(".proto") {
         return FileType::PROTO;
     }
-    if filename.ends_with(".js") || filename.ends_with(".ts") {
+    if filename.ends_with(".js") || filename.ends_with(".ts") || filename.ends_with(".mjs") {
         return FileType::JAVASCRIPT;
     }
     if filename.ends_with("BUILD") || filename == "WORKSPACE" {
@@ -28,6 +28,13 @@ pub fn get_filetype(filename: &str) -> FileType {
     if filename.ends_with(".py") {
         return FileType::PYTHON;
     }
+    if filename.ends_with(".h") || filename.ends_with(".c") {
+        return FileType::C;
+    }
+    if filename.ends_with(".hpp") || filename.ends_with(".cpp") {
+        return FileType::CPP;
+    }
+
     FileType::UNKNOWN
 }
 

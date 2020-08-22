@@ -59,6 +59,11 @@ span.keyword {
     color: blue;
 }
 
+span.literal {
+    color: red;
+}
+
+
 span.comment {
     color: grey;
 }
