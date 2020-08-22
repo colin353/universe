@@ -1,6 +1,7 @@
 package(default_visibility = ["//visibility:public"])
 
 load("//tools/fec:fec.bzl", "fe_component")
+load("//tools/fec:fec.bzl", "fe_library")
 load("//tools/fec:fec.bzl", "fe_application")
 load("//tools/fec:fec.bzl", "fe_devenv")
 
@@ -12,6 +13,8 @@ fe_component(
         "code_pad.js",
     ],
     deps = [
+        ":syntax_highlighter",
+        ":utils",
         "//tools/search/js:test",
     ],
 )
@@ -33,4 +36,15 @@ fe_devenv(
     deps = [
         ":app_main",
     ],
+)
+
+fe_library(
+    name = "syntax_highlighter",
+    srcs = ["syntax_highlighter.mjs"],
+    deps = [":utils"],
+)
+
+fe_library(
+    name = "utils",
+    srcs = ["utils.mjs"],
 )

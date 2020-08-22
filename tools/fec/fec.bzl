@@ -179,7 +179,7 @@ def _fe_library_impl(ctx):
     ctx.actions.run_shell(
         inputs = module_srcs + ctx.files.srcs,
         tools = [ctx.file._compiler],
-        command = "cp -R bazel-out/k8-fastbuild/bin/* . && cat %s > %s && %s %s" % (
+        command = "cp -R bazel-out/k8-*/bin/* . && cat %s > %s && %s %s" % (
             " ".join([x.path for x in ctx.files.srcs]),
             out_js.path,
             ctx.file._compiler.path,

@@ -8,6 +8,7 @@
         "web_port": "50001",
         "grpc_port": "50002",
         "index_dir": "/index",
+        "static_files": "/static/,.",
         "auth_hostname": "auth",
         "auth_port": "8888",
         "base_url": "https://search.colinmerkel.xyz"
