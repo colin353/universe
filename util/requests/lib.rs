@@ -5,9 +5,9 @@ use std::sync::{Arc, Mutex};
 
 #[derive(Debug)]
 pub struct Response {
-    status_code: u16,
-    headers: hyper::HeaderMap,
-    body: Vec<u8>,
+    pub status_code: u16,
+    pub headers: hyper::HeaderMap,
+    pub body: Vec<u8>,
 }
 
 impl Response {

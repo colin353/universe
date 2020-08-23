@@ -232,7 +232,7 @@ impl GoogleCloudFile {
             }
         };
 
-        Ok(Self {
+        let mut s = Self {
             token: token.to_string(),
             bucket: bucket.to_string(),
             object: object.to_string(),
@@ -242,7 +242,10 @@ impl GoogleCloudFile {
             index: 0,
             mode: Mode::Write,
             buf_start_index: 0,
-        })
+        };
+        s.confirm_reupload_status();
+
+        Ok(s)
     }
 
     fn refill_buffer(&mut self, index: u64) -> std::io::Result<()> {
@@ -316,9 +319,86 @@ impl GoogleCloudFile {
             return Ok(buf.len());
         }
 
-        let bytes = self.buf.len();
         self.flush(false)?;
-        Ok(bytes)
+        Ok(buf.len())
+    }
+
+    fn cancel(&mut self) -> std::io::Result<()> {
+        let req = hyper::Request::delete(self.resumable_url.as_ref().unwrap())
+            .header(
+                hyper::header::AUTHORIZATION,
+                format!("Bearer {}", self.token),
+            )
+            .header(hyper::header::CONTENT_LENGTH, "0")
+            .body(hyper::Body::from(String::new()))
+            .unwrap();
+
+        let response = requests::request(req)?;
+
+        Ok(())
+    }
+
+    fn confirm_reupload_status(&mut self) -> std::io::Result<()> {
+        if self.get_reupload_status() {
+            return Ok(());
+        }
+
+        self.cancel().unwrap();
+
+        let req = hyper::Request::post(format!(
+            "{}/{}/o?uploadType=resumable&name={}",
+            UPLOAD_API, self.bucket, self.object
+        ))
+        .header(
+            hyper::header::AUTHORIZATION,
+            format!("Bearer {}", self.token),
+        )
+        .header(hyper::header::CONTENT_TYPE, "application/json")
+        .body(hyper::Body::from("{}".to_string()))
+        .unwrap();
+
+        let response = requests::request(req)?;
+        if let Some(l) = response.headers.get("Location") {
+            self.resumable_url = Some(l.to_str().unwrap().to_string());
+        } else {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "no location provided",
+            ));
+        }
+
+        Ok(())
+    }
+
+    fn get_reupload_status(&mut self) -> bool {
+        let req = hyper::Request::put(self.resumable_url.as_ref().unwrap())
+            .header(
+                hyper::header::AUTHORIZATION,
+                format!("Bearer {}", self.token),
+            )
+            .header(hyper::header::CONTENT_LENGTH, "0")
+            .header(hyper::header::CONTENT_RANGE, "bytes */*")
+            .body(hyper::Body::from(String::new()))
+            .unwrap();
+
+        let https = hyper_tls::HttpsConnector::new(1).unwrap();
+        let client = hyper::client::Client::builder().build::<_, hyper::Body>(https);
+
+        let response = match requests::request(req) {
+            Ok(r) => r,
+            Err(_) => return false,
+        };
+
+        if response.status_code == 308 {
+            if let Some(_) = response.headers.get("Range") {
+                // Some data has already been uploaded, but we don't know what it was.
+                // So let's cancel this upload and restart a new one.
+                return false;
+            }
+            return true;
+        }
+
+        response.status_code == 200 || response.status_code == 201
     }
 
     fn flush(&mut self, finished: bool) -> std::io::Result<()> {
@@ -328,6 +408,7 @@ impl GoogleCloudFile {
         } else {
             format!("bytes {}-{}/*", self.size, end_range - 1)
         };
+        self.size += self.buf.len() as u64;
 
         let req = hyper::Request::post(self.resumable_url.as_ref().unwrap())
             .header(
@@ -342,33 +423,15 @@ impl GoogleCloudFile {
             )))
             .unwrap();
 
-        let https = hyper_tls::HttpsConnector::new(1).unwrap();
-        let client = hyper::client::Client::builder().build::<_, hyper::Body>(https);
+        let response = requests::request(req)?;
+        if response.status_code != 200 && response.status_code != 308 && response.status_code != 201
+        {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("bad status code during flush"),
+            ));
+        }
 
-        let f = Box::new(
-            client
-                .request(req)
-                .map_err(|e| format!("{:?}", e))
-                .and_then(|res| {
-                    if res.status() == hyper::StatusCode::OK {
-                        return future::ok(());
-                    }
-                    future::err(format!("bad status: {:?}", res.status()))
-                }),
-        );
-
-        let mut runtime = tokio::runtime::Runtime::new().unwrap();
-        let output = match runtime.block_on(f) {
-            Ok(m) => m,
-            Err(e) => {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::NotFound,
-                    format!("file does not exist: {:?}", e),
-                ))
-            }
-        };
-
-        self.size += self.buf.len() as u64;
         self.buf.clear();
 
         Ok(())
@@ -563,7 +626,9 @@ mod tests {
         {
             let mut f = GFile::create("/cns/colossus/data.sstable").unwrap();
             let mut t = sstable::SSTableBuilder::new(&mut f);
-            t.write_ordered("abcdef", primitive::Primitive::from(0 as u64));
+            for _ in 0..100000 {
+                t.write_ordered("abcdef", primitive::Primitive::from(0 as u64));
+            }
             t.finish().unwrap();
         }
     }

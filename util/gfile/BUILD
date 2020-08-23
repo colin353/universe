@@ -14,6 +14,7 @@ rust_library(
         "//third_party:hyper_tls",
         "//third_party:json",
         "//third_party:tokio",
+        "//util/requests",
     ],
 )
 
