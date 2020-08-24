@@ -408,7 +408,6 @@ impl GoogleCloudFile {
         } else {
             format!("bytes {}-{}/*", self.size, end_range - 1)
         };
-        self.size += self.buf.len() as u64;
 
         let req = hyper::Request::post(self.resumable_url.as_ref().unwrap())
             .header(
@@ -417,10 +416,8 @@ impl GoogleCloudFile {
             )
             .header(hyper::header::CONTENT_TYPE, "application/json")
             .header(hyper::header::CONTENT_RANGE, content_range.as_str())
-            .body(hyper::Body::from(std::mem::replace(
-                &mut self.buf,
-                Vec::new(),
-            )))
+            .header(hyper::header::CONTENT_LENGTH, self.buf.len())
+            .body(hyper::Body::from(self.buf.clone()))
             .unwrap();
 
         let response = requests::request(req)?;
@@ -428,8 +425,31 @@ impl GoogleCloudFile {
         {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::NotFound,
-                format!("bad status code during flush"),
+                format!(
+                    "bad status code during flush: {}, response: {}",
+                    response.status_code,
+                    String::from_utf8(response.body).unwrap()
+                ),
             ));
+        }
+
+        let mut parsed_range_header = false;
+
+        if let Some(range) = response.headers.get("Range") {
+            let values: Vec<_> = range.to_str().unwrap().split("-").collect();
+            if values.len() == 2 {
+                if let Ok(offset) = values[1].parse::<u64>() {
+                    let taken = (offset - self.size) as usize;
+                    self.buf = self.buf.split_off(taken);
+                    self.size = offset;
+                    parsed_range_header = true;
+                }
+            }
+        }
+
+        if !parsed_range_header {
+            self.size += self.buf.len() as u64;
+            self.buf.clear();
         }
 
         self.buf.clear();
@@ -626,7 +646,7 @@ mod tests {
         {
             let mut f = GFile::create("/cns/colossus/data.sstable").unwrap();
             let mut t = sstable::SSTableBuilder::new(&mut f);
-            for _ in 0..100000 {
+            for _ in 0..500000 {
                 t.write_ordered("abcdef", primitive::Primitive::from(0 as u64));
             }
             t.finish().unwrap();
