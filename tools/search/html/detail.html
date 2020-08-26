@@ -13,7 +13,20 @@
         document.getElementById("code-pad").setAttribute("line", line);
     }
 
-    document.getElementById("code-pad").addEventListener("lineSelected", (event) => {
+    const codepad = document.getElementById("code-pad");
+    codepad.addEventListener("lineSelected", (event) => {
         window.location.hash = "#L" + event.detail.line;
+    })
+
+    codepad.addEventListener("search", (event) => {
+        const url = window.location.protocol + "//" + window.location.host + "?q=" + event.detail.token
+        window.open(url, '_blank');
+        return null;
+    })
+
+    codepad.addEventListener("define", (event) => {
+        const url = window.location.protocol + "//" + window.location.host + "?q=def:" + event.detail.token
+        window.open(url, '_blank');
+        return null;
     })
 </script>
