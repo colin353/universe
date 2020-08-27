@@ -1,0 +1,11 @@
+{
+    "name": "fes",
+    "binary_name": "fes",
+    "priority": 100,
+    "environment": "server",
+    "long_running": true,
+    "arguments": {
+        "port": 5464
+    },
+    "docker_arguments": ["--init"]
+}

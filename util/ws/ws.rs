@@ -5,7 +5,9 @@ use rand::Rng;
 
 use futures::future;
 use hyper::header::HeaderValue;
-use hyper::header::{CACHE_CONTROL, CONTENT_TYPE, COOKIE, LOCATION, SET_COOKIE};
+use hyper::header::{
+    ACCESS_CONTROL_ALLOW_ORIGIN, CACHE_CONTROL, CONTENT_TYPE, COOKIE, LOCATION, SET_COOKIE,
+};
 use hyper::http::StatusCode;
 use hyper::rt::Future;
 use hyper::service::service_fn;
@@ -94,6 +96,10 @@ pub trait Server: Sync + Send + Clone + 'static {
             response.headers_mut().insert(
                 CACHE_CONTROL,
                 HeaderValue::from_bytes("max-age=100000".as_bytes()).unwrap(),
+            );
+            response.headers_mut().insert(
+                ACCESS_CONTROL_ALLOW_ORIGIN,
+                HeaderValue::from_bytes("*".as_bytes()).unwrap(),
             );
             return response;
         }

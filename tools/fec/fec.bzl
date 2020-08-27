@@ -73,8 +73,13 @@ def _application_impl(ctx):
         original_srcs += dep[OriginalSourceFiles].files.to_list()
     original_srcs += ctx.files.srcs
 
+    module_srcs = []
+    for dep in ctx.attr.deps:
+        module_srcs += dep[ModuleSourceFiles].files.to_list()
+
     return [
         OriginalSourceFiles(files = depset(original_srcs)),
+        ModuleSourceFiles(files = depset(module_srcs)),
         DefaultInfo(files = depset([combined_js])),
     ]
 
@@ -106,8 +111,8 @@ def _devenv_impl(ctx):
 tools/fec/fec $(printf "%s" | sed -e "s*__BZL_PREFIX__*$1/*g") --output=%s/
 printf "%s" | sed -e "s*^*$1/*" | entr -p tools/fec/fec $(printf "%s" | sed -e "s*__BZL_PREFIX__*$1/*g") --output=%s/ &
 echo $1/%s | entr cp /_ %s &
-echo "serving from $PWD/%s"
-tools/fes/fes --base_dir=%s
+echo "serving from $PWD ++ %s"
+tools/fes/fes --base_dir=./%s,$PWD
     """ % (
         # Do the initial build of all assets
         " ".join(["__BZL_PREFIX__" + x.path for x in original_srcs]),
@@ -130,12 +135,16 @@ tools/fes/fes --base_dir=%s
         is_executable = True,
     )
 
+    module_srcs = []
+    for dep in ctx.attr.deps:
+        module_srcs += dep[ModuleSourceFiles].files.to_list()
+
     return [DefaultInfo(
         executable = out_shell,
         runfiles = ctx.runfiles([
             ctx.file._server,
             ctx.file._compiler,
-        ]),
+        ] + module_srcs),
     )]
 
 fe_devenv = rule(

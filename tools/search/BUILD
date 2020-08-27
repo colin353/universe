@@ -39,7 +39,6 @@ rust_binary(
         "html/results.html",
         "html/sidebar.html",
         "html/template.html",
-        "//homepage/js:code_pad",
     ],
     edition = "2018",
     deps = [
