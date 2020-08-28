@@ -6,12 +6,18 @@ use std::io::Write;
 
 fn main() {
     let output = define_flag!("output", String::new(), "location of the compiled output");
-    let inputs = parse_flags!(output);
+    let prefix = define_flag!(
+        "prefix",
+        String::new(),
+        "a prefix to strip when writing outputs"
+    );
+    let inputs = parse_flags!(output, prefix);
 
     if inputs.len() == 0 {
         eprintln!("must specify an input file");
         std::process::exit(1);
     }
+    println!("output = {}", output.value());
 
     // If necessary, create the parent directories
     let path_string = output.value();
@@ -21,10 +27,6 @@ fn main() {
         if let Some(p) = path.parent() {
             std::fs::create_dir_all(p);
         }
-    } else {
-        let last_dir = path.file_name().unwrap().to_owned();
-        path.push(last_dir);
-        std::fs::create_dir_all(&path);
     }
 
     let mut input_js = HashSet::new();
@@ -47,14 +49,30 @@ fn main() {
         std::process::exit(1);
     }
 
+    let prefix = prefix.value();
+
     for input in input_js.iter() {
         let input_path = std::path::Path::new(&input);
 
-        if !path_string.ends_with(".js") {
-            path.set_file_name(input_path.file_name().unwrap());
-        }
+        // Strip the prefix off and create parent directories
+        let mut output_path = if path_string.ends_with(".js") {
+            std::path::PathBuf::from(&path_string)
+        } else {
+            let mut p = path.join(
+                input_path
+                    .strip_prefix(&prefix)
+                    .unwrap()
+                    .parent()
+                    .unwrap()
+                    .to_owned(),
+            );
 
-        let mut f = std::fs::File::create(&path).unwrap();
+            std::fs::create_dir_all(&p).unwrap();
+            p.push(input_path.file_name().unwrap());
+            p
+        };
+
+        let mut f = std::fs::File::create(&output_path).unwrap();
         let mut compiler = fec_lib::FECompiler::new();
         compiler.compile(input);
         if compiler.success() {
@@ -64,6 +82,6 @@ fn main() {
                 eprintln!("err: {:?}", error);
             }
         }
-        println!("compiled {:?}", path);
+        println!("compiled {:?}", output_path);
     }
 }

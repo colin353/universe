@@ -5,6 +5,7 @@ def _component_impl(ctx):
     args = [x.path for x in ctx.files.srcs]
 
     out_js = ctx.actions.declare_file("%s.js" % ctx.attr.name)
+
     args.append("--output=%s" % out_js.path)
 
     ctx.actions.run(
@@ -97,6 +98,11 @@ fe_application = rule(
     },
 )
 
+def maybe_remove_prefix(s, prefix):
+    if s.startswith(prefix):
+        return s[len(prefix):]
+    return s
+
 def _devenv_impl(ctx):
     out_shell = ctx.actions.declare_file("%s.sh" % ctx.attr.name)
 
@@ -106,27 +112,44 @@ def _devenv_impl(ctx):
     for dep in ctx.attr.deps:
         original_srcs += dep[OriginalSourceFiles].files.to_list()
 
+    module_srcs = []
+    for dep in ctx.attr.deps:
+        module_srcs += dep[ModuleSourceFiles].files.to_list()
+
+    relative_paths = []
+    for path in [x.path for x in module_srcs] + [x.path for x in ctx.files.srcs]:
+        path = maybe_remove_prefix(path, "bazel-out/k8-fastbuild/bin/")
+        path = maybe_remove_prefix(path, "bazel-out/k8-opt/bin/")
+        relative_paths.append(path)
+
+    relative_dirs = ["/".join(x.split("/")[:-1]) for x in relative_paths]
+
     script = """
 #!/bin/bash
-tools/fec/fec $(printf "%s" | sed -e "s*__BZL_PREFIX__*$1/*g") --output=%s/
-printf "%s" | sed -e "s*^*$1/*" | entr -p tools/fec/fec $(printf "%s" | sed -e "s*__BZL_PREFIX__*$1/*g") --output=%s/ &
-echo $1/%s | entr cp /_ %s &
-echo "serving from $PWD ++ %s"
-tools/fes/fes --base_dir=./%s,$PWD
+
+COMPILED_TMP_DIR=$(mktemp -d)
+
+tools/fec/fec $(printf "%s" | sed -e "s*__BZL_PREFIX__*$1/*g") --output=$COMPILED_TMP_DIR/ --prefix=$1
+printf "%s" | sed -e "s*__BZL_PREFIX__*$1/*g" | entr -p tools/fec/fec $(printf "%s" | sed -e "s*__BZL_PREFIX__*$1/*g") --output=$COMPILED_TMP_DIR/ --prefix=$1 &
+
+TMP_DIR=$(mktemp -d)
+sh -c 'cd $1; mkdir -p %s' -s $1
+
+printf "%s" | sed -e "s*__BZL_PREFIX__*$1/*g" | entr sh -c 'cd $1; cp --no-preserve=mode,ownership --parents %s $2' -s $1 $TMP_DIR &
+tools/fes/fes --base_dir=$COMPILED_TMP_DIR,$TMP_DIR
+kill $(jobs -p)
+rm -rf $TMP_DIR $COMPILED_TMP_DIR
     """ % (
         # Do the initial build of all assets
         " ".join(["__BZL_PREFIX__" + x.path for x in original_srcs]),
-        out_shell.dirname + "/js",
         # Build watch the input javascript files
-        "\n".join([x.path for x in original_srcs]),
+        "\\n".join(["__BZL_PREFIX__" + x.path for x in original_srcs]),
         " ".join(["__BZL_PREFIX__" + x.path for x in original_srcs]),
-        out_shell.dirname + "/js",
+        # Create all the dirs
+        " ".join(relative_dirs),
         # Copy the input HTML into the runfiles dir
-        " ".join([x.path for x in ctx.files.srcs]),
-        out_shell.dirname,
-        # Run the server itself
-        out_shell.dirname,
-        out_shell.dirname,
+        "\\n".join(["__BZL_PREFIX__" + x for x in relative_paths]),
+        " ".join(relative_paths),
     )
 
     ctx.actions.write(
@@ -134,10 +157,6 @@ tools/fes/fes --base_dir=./%s,$PWD
         content = script,
         is_executable = True,
     )
-
-    module_srcs = []
-    for dep in ctx.attr.deps:
-        module_srcs += dep[ModuleSourceFiles].files.to_list()
 
     return [DefaultInfo(
         executable = out_shell,
