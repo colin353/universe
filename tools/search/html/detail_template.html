@@ -6,6 +6,16 @@
         height: calc(100% - 20px);
     }
 
+    .flow-container {
+        display: none;
+        flex-direction: row;
+        position: relative;
+        height: calc(100% - 35px);
+        flex-direction: column;
+        align-items: center;
+        padding-top: 20px;
+    }
+
     .sidebar {
         position: relative;
         min-width: 200px;
@@ -24,6 +34,7 @@
         padding-bottom: 10px;
         padding-top: 10px;
         padding-left: 20px;
+        display: flex;
     }
 
     .sidebar {
@@ -33,10 +44,41 @@
         border-right: 1px solid #EEE;
         margin-right: 20px;
     }
+
+    .filename .spacer {
+        flex: 1;
+    }
+
+    .filename .flow {
+        margin-right: 10px;
+        cursor: pointer
+    }
 </style>
 
+<script src="https://js.colinmerkel.xyz/tools/search/js/flow_view.js"></script>
+
+<script>
+    function toggleFlow() {
+        const flowContainer = document.getElementsByClassName("flow-container")[0];
+        const contentContainer = document.getElementsByClassName("content-container")[0];
+
+        const contentDisplayState = !(contentContainer.style.display == "none");
+        if (contentDisplayState) {
+            contentContainer.style.display = "none";
+            flowContainer.style.display = "flex";
+        } else {
+            contentContainer.style.display = "flex";
+            flowContainer.style.display = "none";
+        }
+    }
+</script>
+
 <div class='content'>
-    <div class="filename">{{filename_components[]}}<a class="invisible-link" href="/{{path}}">{{section}}</a>{{/filename_components}}</div>
+    <div class="filename">
+        {{filename_components[]}}<a class="invisible-link" href="/{{path}}">{{section}}</a>{{/filename_components}}
+        <div class="spacer"></div>
+        <div onclick="toggleFlow()" class="flow">◱</div>
+    </div>
 
     <div class="content-container">
         {{sidebar != ""}}
@@ -48,4 +90,8 @@
         {{/sidebar}}
         <div class="detail">{{detail}}</div>
     </div>
+    <div class="flow-container">
+        <flow-view />
+    </div>
+
 </div>

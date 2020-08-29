@@ -9,9 +9,22 @@
     .sidebar-file.selected {
         font-weight: bold;
     }
+
+    .sidebar-collapse {
+        position: absolute;
+        right: 0;
+        top: 0px;
+        background-color: #EEE;
+        padding: 3px;
+        padding-top: 0px;
+        padding-bottom: 2px;
+        cursor: pointer;
+    }
 </style>
 
 {{parent_dir != ""}}
+<div onclick="this.parentElement.remove()" class="sidebar-collapse">↩</div>
+
 <a class="child" href='/{{parent_dir}}?q={{query}}'>
     <div class="sidebar-file">📁 ..</div>
 </a>

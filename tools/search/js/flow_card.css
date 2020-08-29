@@ -1,0 +1,29 @@
+:host {
+    display: block;
+    width: 750px;
+    border: 1px solid #aaa;
+}
+
+.filename {
+    padding: 10px;
+    background-color: #eee;
+    display: flex;
+}
+
+.spacer {
+    flex: 1;
+}
+
+.button {
+    cursor: pointer;
+}
+
+.code {
+    padding: 10px;
+}
+
+.comment {
+    min-height: 21.25px;
+    border-top: 1px solid #eee;
+    padding: 10px;
+}
