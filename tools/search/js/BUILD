@@ -30,7 +30,10 @@ fe_component(
         "flow_view.html",
         "flow_view.js",
     ],
-    deps = [":flow_card"],
+    deps = [
+        ":flow_card",
+        "//util/js:store",
+    ],
 )
 
 fe_devenv(
