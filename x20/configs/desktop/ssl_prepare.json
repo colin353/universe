@@ -1,0 +1,8 @@
+{
+    "name": "ssl_prepare",
+    "binary_name": "ssl_prepare",
+    "priority": 10,
+    "target": "x20/scripts/ssl-prepare.sh",
+    "environment": "desktop",
+    "long_running": false
+}
