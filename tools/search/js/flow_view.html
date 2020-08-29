@@ -1,1 +1,7 @@
-<flow-card filename="plume/lib.rs#L81" code="pub struct InMemoryPCollection {" comment="" />
+<div class="stack">
+    <control for="this.state.stack">
+        <flow-card filename="${item.filename}" code="${item.code}" comment="${item.comment}" />
+    </control>
+</div>
+
+<flow-card on:add-card="addCard" temporary=true filename="${this.state.currentFilename}#L${this.state.currentLineNumber}" code="${this.state.currentLine}" comment="" />

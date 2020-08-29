@@ -23,7 +23,7 @@ fn main() {
     let path_string = output.value();
     let mut path = std::path::PathBuf::from(&path_string);
 
-    if path_string.ends_with(".js") {
+    if path_string.ends_with(".js") | path_string.ends_with(".mjs") {
         if let Some(p) = path.parent() {
             std::fs::create_dir_all(p);
         }
@@ -31,21 +31,21 @@ fn main() {
 
     let mut input_js = HashSet::new();
     for input in inputs {
-        if input.ends_with(".js") {
+        if input.ends_with(".js") || input.ends_with(".mjs") {
             input_js.insert(input);
         } else if input.ends_with(".html") {
             let mut js = input[..input.len() - 5].to_string();
-            js += ".js";
+            js += ".mjs";
             input_js.insert(js);
         } else if input.ends_with(".css") {
             let mut js = input[..input.len() - 4].to_string();
-            js += ".js";
+            js += ".mjs";
             input_js.insert(js);
         }
     }
 
     if input_js.len() == 0 {
-        eprintln!("must specify at least one javascript input (*.js)");
+        eprintln!("must specify at least one javascript input (*.js or *.mjs)");
         std::process::exit(1);
     }
 
@@ -55,7 +55,7 @@ fn main() {
         let input_path = std::path::Path::new(&input);
 
         // Strip the prefix off and create parent directories
-        let mut output_path = if path_string.ends_with(".js") {
+        let mut output_path = if path_string.ends_with(".js") || path_string.ends_with(".mjs") {
             std::path::PathBuf::from(&path_string)
         } else {
             let mut p = path.join(

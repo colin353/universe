@@ -20,15 +20,16 @@ fe_component(
     srcs = [
         "flow_card.css",
         "flow_card.html",
-        "flow_card.js",
+        "flow_card.mjs",
     ],
 )
 
 fe_component(
     name = "flow_view",
     srcs = [
+        "flow_view.css",
         "flow_view.html",
-        "flow_view.js",
+        "flow_view.mjs",
     ],
     deps = [
         ":flow_card",

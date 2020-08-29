@@ -2,7 +2,7 @@
     <a href="#">${this.state.filename}</a>
     <div class="spacer"></div>
     <control if="this.state.isTemporary">
-        <div class="button">+</div>
+        <div on:click="clickAdd" class="button">+</div>
     </control>
 
     <control if="!this.state.isTemporary">
@@ -10,6 +10,6 @@
     </control>
 </div>
 <div class='code'>${this.state.code}</div>
-<div contenteditable class='comment'>
+<div ref={comment} contenteditable="${this.state.isTemporary}" class='comment'>
     ${this.state.comment}
 </div>

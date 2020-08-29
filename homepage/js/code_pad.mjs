@@ -1,7 +1,9 @@
 import getLanguageModel from './syntax_highlighter.mjs';
 import { base64Decode } from './utils.mjs';
+import Store from '../../util/js/store.mjs';
 
 const attributes = [ "code", "language", "line" ];
+const store = new Store();
 
 // Disables chrome's automatic scroll restoration logic, necessary to
 // avoid conflicts w/ the automatic "jump-to-line" behaviour.
@@ -73,7 +75,12 @@ this.stateMappers = {
     this.dispatchEvent(new CustomEvent('lineSelected', {
       detail: { line }
     }));
-  }
+  },
+  _updateLineInStore: (line, parsedLines) => {
+    console.log("update line in store");
+    store.setState("currentLineNumber", line);
+    store.setState("currentLine", parsedLines[line-1]);
+  },
 };
 
 const focusSelectedLine = () => {

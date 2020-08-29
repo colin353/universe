@@ -10,7 +10,7 @@ fe_component(
     srcs = [
         "code_pad.css",
         "code_pad.html",
-        "code_pad.js",
+        "code_pad.mjs",
     ],
     deps = [
         ":syntax_highlighter",

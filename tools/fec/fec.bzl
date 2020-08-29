@@ -4,7 +4,7 @@ ModuleSourceFiles = provider()
 def _component_impl(ctx):
     args = [x.path for x in ctx.files.srcs]
 
-    out_js = ctx.actions.declare_file("%s.js" % ctx.attr.name)
+    out_js = ctx.actions.declare_file("%s.mjs" % ctx.attr.name)
 
     args.append("--output=%s" % out_js.path)
 
@@ -48,7 +48,7 @@ fe_component = rule(
 def _application_impl(ctx):
     args = [x.path for x in ctx.files.srcs]
 
-    out_js = ctx.actions.declare_file("%s_apponly.js" % ctx.attr.name)
+    out_js = ctx.actions.declare_file("%s_apponly.mjs" % ctx.attr.name)
     args.append("--output=%s" % out_js.path)
 
     ctx.actions.run(
@@ -220,7 +220,7 @@ def _fe_library_impl(ctx):
     module_srcs += [out_js]
 
     return [
-        OriginalSourceFiles(files = depset(original_srcs)),
+        OriginalSourceFiles(files = depset([])),
         ModuleSourceFiles(files = depset(module_srcs + [out_js])),
         DefaultInfo(files = depset([out_js])),
     ]

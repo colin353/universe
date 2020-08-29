@@ -5,7 +5,7 @@ class GlobalStore {
     }
 
     addWatcher(key, listenerId, updateFn) {
-        if(!this.listeners.listenerId) {
+        if(!this.listeners[listenerId]) {
             this.listeners[listenerId] = {};
         }
         this.listeners[listenerId][key] = updateFn;

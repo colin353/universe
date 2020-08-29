@@ -1,7 +1,6 @@
 const attributes = [ "title", "code", "filename", "comment", "temporary" ];
 
 this.state = {
-  title: "default title",
   code: "default code",
   filename: "default filename",
   comment: "default comment",
@@ -22,4 +21,15 @@ this.stateMappers = {
 
     return isTemporary
   }
+}
+
+function clickAdd() {
+  this.dispatchEvent(new CustomEvent('add-card', {
+    detail: {
+      code: this.state.code,
+      filename: this.state.filename,
+      comment: this.refs.comment.innerHTML,
+    }
+  }))
+  this.refs.comment.innerHTML = "";
 }
