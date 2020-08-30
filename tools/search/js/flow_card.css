@@ -4,6 +4,11 @@
     border: 1px solid #aaa;
 }
 
+a {
+    color: black;
+    text-decoration: none;
+}
+
 .filename {
     padding: 10px;
     background-color: #eee;
@@ -20,6 +25,11 @@
 
 .code {
     padding: 10px;
+    display: none;
+}
+
+.code.has-code {
+    display: block;
 }
 
 .comment {

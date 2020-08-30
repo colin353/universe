@@ -1,15 +1,15 @@
 <div class='filename'>
-    <a href="#">${this.state.filename}</a>
+    <a href="/${this.state.filename}">${this.state.filename}</a>
     <div class="spacer"></div>
     <control if="this.state.isTemporary">
         <div on:click="clickAdd" class="button">+</div>
     </control>
 
     <control if="!this.state.isTemporary">
-        <div class="button">x</div>
+        <div on:click="clickRemove" class="button">x</div>
     </control>
 </div>
-<div class='code'>${this.state.code}</div>
-<div ref={comment} contenteditable="${this.state.isTemporary}" class='comment'>
+<div class="${this.state.hasCode} code">${this.state.code}</div>
+<div ref={comment} contenteditable="${this.state.isTemporary}" class=' comment'>
     ${this.state.comment}
 </div>

@@ -1,7 +1,7 @@
 <div class="stack">
     <control for="this.state.stack">
-        <flow-card filename="${item.filename}" code="${item.code}" comment="${item.comment}" />
+        <flow-card on:remove-card="removeCard" filename="${item.filename}" code="${item.code}" comment="${item.comment}" />
     </control>
 </div>
 
-<flow-card on:add-card="addCard" temporary=true filename="${this.state.currentFilename}#L${this.state.currentLineNumber}" code="${this.state.currentLine}" comment="" />
+<flow-card on:add-card="addCard" temporary=true filename="${this.state.currentJoinedFilename}" code="${this.state.currentLine}" comment="" />
