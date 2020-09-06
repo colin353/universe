@@ -20,6 +20,7 @@
         position: relative;
         min-width: 200px;
         padding-top: 10px;
+        overflow-y: auto;
     }
 
     .detail {
@@ -53,6 +54,12 @@
         margin-right: 10px;
         cursor: pointer
     }
+
+    .copy-icon {
+        padding-left: 10px;
+        padding-right: 10px;
+        cursor: pointer;
+    }
 </style>
 
 <script type="module" src="https://js.colinmerkel.xyz/tools/search/js/flow_view.mjs"></script>
@@ -71,11 +78,25 @@
             flowContainer.style.display = "none";
         }
     }
+
+    function selectFilename() {
+        const filenameContent = document.getElementsByClassName("filename-content")[0];
+        const range = document.createRange();
+        range.setStartBefore(filenameContent);
+        range.setEndAfter(filenameContent);
+
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+
+        document.execCommand("copy")
+    }
 </script>
 
 <div class='content'>
     <div class="filename">
-        {{filename_components[]}}<a class="invisible-link" href="/{{path}}">{{section}}</a>{{/filename_components}}
+        <span class="filename-content">{{filename_components[]}}<a class="invisible-link" href="/{{path}}">{{section}}</a>{{/filename_components}}</span>
+        <span class="copy-icon" onclick="selectFilename()">⎘</span>
         <div class="spacer"></div>
         <div onclick="toggleFlow()" class="flow">◱</div>
     </div>
