@@ -39,4 +39,19 @@ impl SearchService for SearchServiceHandler {
         let mut response = self.searcher.search(req.get_query());
         grpc::SingleResponse::completed(response)
     }
+
+    fn suggest(
+        &self,
+        _: grpc::RequestOptions,
+        req: SuggestRequest,
+    ) -> grpc::SingleResponse<SuggestResponse> {
+        if !self.authenticate(req.get_token()) {
+            let mut response = SuggestResponse::new();
+            response.set_error(Error::AUTHENTICATION);
+            return grpc::SingleResponse::completed(response);
+        }
+
+        let mut response = self.searcher.suggest(req.get_prefix());
+        grpc::SingleResponse::completed(response)
+    }
 }

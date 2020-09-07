@@ -2,6 +2,7 @@
 extern crate lazy_static;
 
 use search_grpc_rust::*;
+use sstable::SpecdSSTableReader;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
@@ -19,6 +20,7 @@ pub struct Searcher {
     code: Mutex<sstable::SSTableReader<File>>,
     candidates: Arc<Mutex<sstable::SSTableReader<File>>>,
     definitions: Mutex<sstable::SSTableReader<DefinitionMatches>>,
+    keywords: Mutex<sstable::SSTableReader<ExtractedKeyword>>,
     trigrams: Mutex<sstable::SSTableReader<KeywordMatches>>,
 
     files: HashMap<u64, File>,
@@ -41,6 +43,9 @@ impl Searcher {
         let mut trigrams =
             sstable::SSTableReader::from_filename(&format!("{}/trigrams.sstable", base_dir))
                 .unwrap();
+        let mut keywords =
+            sstable::SSTableReader::from_filename(&format!("{}/keywords.sstable", base_dir))
+                .unwrap();
 
         let mut files = HashMap::<u64, File>::new();
         for (key, file) in &mut candidates {
@@ -52,10 +57,23 @@ impl Searcher {
             definitions: Mutex::new(definitions),
             candidates: Arc::new(Mutex::new(candidates)),
             trigrams: Mutex::new(trigrams),
+            keywords: Mutex::new(keywords),
             candidates_to_return: CANDIDATES_TO_RETURN,
             candidates_to_expand: CANDIDATES_TO_EXPAND,
             files: files,
         }
+    }
+
+    pub fn suggest(&self, prefix: &str) -> SuggestResponse {
+        let mut reader = self.keywords.lock().unwrap();
+
+        let specd_reader =
+            SpecdSSTableReader::from_reader(&mut *reader, &search_utils::normalize_keyword(prefix));
+        let mut output = SuggestResponse::new();
+        for (_, mut keyword) in specd_reader {
+            output.mut_suggestions().push(keyword.take_keyword());
+        }
+        output
     }
 
     pub fn search(&self, keywords: &str) -> SearchResponse {

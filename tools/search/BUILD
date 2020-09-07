@@ -49,6 +49,7 @@ rust_binary(
         ":server_lib",
         "//auth:auth_client",
         "//third_party:base64",
+        "//third_party:json",
         "//util/flags",
         "//util/markdown",
         "//util/tmpl",

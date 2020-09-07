@@ -135,4 +135,16 @@ message SearchResponse {
   repeated string prefixes = 4;
 }
 
-service SearchService { rpc Search(SearchRequest) returns (SearchResponse); }
+message SuggestRequest {
+  string prefix = 1;
+  string token = 2;
+}
+message SuggestResponse {
+  repeated string suggestions = 1;
+  Error error = 2;
+}
+
+service SearchService {
+  rpc Search(SearchRequest) returns (SearchResponse);
+  rpc Suggest(SuggestRequest) returns (SuggestResponse);
+}

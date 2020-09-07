@@ -79,6 +79,16 @@ where
         Response::new(Body::from(self.wrap_template(true, keywords, page)))
     }
 
+    fn suggest(&self, query: &str, req: Request) -> Response {
+        let mut response = self.searcher.suggest(query);
+        let mut output = Vec::new();
+        for keyword in response.take_suggestions().into_iter() {
+            output.push(keyword);
+        }
+
+        Response::new(Body::from(json::stringify(output)))
+    }
+
     fn detail(&self, query: &str, path: String, req: Request) -> Response {
         let file = match self.searcher.get_document(&path[1..]) {
             Some(f) => f,
@@ -186,6 +196,10 @@ where
                 query = keywords.replace("+", " ");
             }
         };
+
+        if path == "/suggest" {
+            return self.suggest(&query, req);
+        }
 
         if path.len() > 1 {
             return self.detail(&query, path, req);

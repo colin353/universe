@@ -4,6 +4,47 @@ use search_proto_rust::*;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
+pub struct ExtractKeywordsFn {}
+impl plume::DoFn for ExtractKeywordsFn {
+    type Input = File;
+    type Output = KV<String, ExtractedKeyword>;
+
+    fn do_it(&self, input: &File, emit: &mut dyn EmitFn<Self::Output>) {
+        for keyword in language_specific::extract_keywords(input) {
+            let mut normalized_keyword = keyword.get_keyword().to_lowercase();
+            normalized_keyword.retain(|c| c != '_' && c != '-');
+            if normalized_keyword.len() > 4 {
+                emit.emit(KV::new(normalized_keyword, keyword));
+            }
+        }
+    }
+}
+
+pub struct AggregateKeywordsFn {}
+impl plume::DoStreamFn for AggregateKeywordsFn {
+    type Input = ExtractedKeyword;
+    type Output = KV<String, ExtractedKeyword>;
+    fn do_it(
+        &self,
+        key: &str,
+        values: &mut Stream<ExtractedKeyword>,
+        emit: &mut dyn EmitFn<Self::Output>,
+    ) {
+        let mut keywords = std::collections::HashMap::new();
+        while let Some(kw) = values.next() {
+            let mut count = keywords.entry(kw.get_keyword().to_string()).or_insert(0);
+            *count += kw.get_occurrences();
+        }
+
+        for (key, occurrences) in keywords.into_iter() {
+            let mut output = ExtractedKeyword::new();
+            output.set_keyword(key.clone());
+            output.set_occurrences(occurrences);
+            emit.emit(KV::new(key, output));
+        }
+    }
+}
+
 pub struct ExtractDefinitionsFn {}
 impl plume::DoFn for ExtractDefinitionsFn {
     type Input = File;

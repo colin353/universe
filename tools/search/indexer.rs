@@ -2,8 +2,8 @@
 extern crate flags;
 
 use indexer_lib::{
-    AggregateDefinitionsFn, AggregateTrigramsFn, ExtractCandidatesFn, ExtractDefinitionsFn,
-    ExtractTrigramsFn, ProcessFilesFn,
+    AggregateDefinitionsFn, AggregateKeywordsFn, AggregateTrigramsFn, ExtractCandidatesFn,
+    ExtractDefinitionsFn, ExtractKeywordsFn, ExtractTrigramsFn, ProcessFilesFn,
 };
 use plume::{EmitFn, PCollection, Stream, StreamingIterator, KV};
 
@@ -53,25 +53,27 @@ fn main() {
     files.write_to_sstable(&files_sstable);
 
     // Extract file info by file_id
-    let code = PCollection::from_recordio(&code_recordio);
     let files = code.par_do(ExtractCandidatesFn {});
     let files_sstable = format!("{}/candidates.sstable", output_dir.path());
     files.write_to_sstable(&files_sstable);
 
     // Extract trigrams
-    let code = PCollection::from_recordio(&code_recordio);
     let trigrams = code.par_do(ExtractTrigramsFn {});
     let trigram_matches = trigrams.group_by_key_and_par_do(AggregateTrigramsFn {});
     let trigrams_sstable = format!("{}/trigrams.sstable", output_dir.path());
     trigram_matches.write_to_sstable(&trigrams_sstable);
 
     // Extract definitions
-    let code = PCollection::from_recordio(&code_recordio);
     let keywords = code.par_do(ExtractDefinitionsFn {});
     let mut index = keywords.group_by_key_and_par_do(AggregateDefinitionsFn {});
-
     let definitions_sstable = format!("{}/definitions.sstable", output_dir.path());
     index.write_to_sstable(&definitions_sstable);
+
+    // Extract keywords
+    let keywords = code.par_do(ExtractKeywordsFn {});
+    let mut extracted_keywords = keywords.group_by_key_and_par_do(AggregateKeywordsFn {});
+    let keywords_sstable = format!("{}/keywords.sstable", output_dir.path());
+    extracted_keywords.write_to_sstable(&keywords_sstable);
 
     plume::run();
 }
