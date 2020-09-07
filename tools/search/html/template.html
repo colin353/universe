@@ -129,7 +129,8 @@
     {{show_header==true}}
     <div class="header">
         <h2 style="margin-right: 40px;"><a class="invisible-link" href="/">code search</a></h2>
-        <input id="search-input" class="search-input-small" type=text value="{{query}}" />
+
+        <search-box />
     </div>
     {{/show_header}}
     {{content}}
@@ -162,5 +163,6 @@
 <script>
     hljs.initHighlightingOnLoad();
 </script>
+<script type=module src="https://js.colinmerkel.xyz/tools/search/js/search_box.mjs"></script>
 
 </html>

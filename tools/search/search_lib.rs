@@ -10,6 +10,7 @@ const CANDIDATES_TO_RETURN: usize = 25;
 const CANDIDATES_TO_EXPAND: usize = 100;
 const MAX_LINE_LENGTH: usize = 144;
 const SNIPPET_LENGTH: usize = 7;
+const SUGGESTION_LIMIT: usize = 10;
 
 lazy_static! {
     static ref KEYWORDS_RE: regex::Regex = { regex::Regex::new(r#"("(.*?)")|([^\s]+)"#).unwrap() };
@@ -65,13 +66,19 @@ impl Searcher {
     }
 
     pub fn suggest(&self, prefix: &str) -> SuggestResponse {
+        let prefix = search_utils::normalize_keyword(prefix);
+
         let mut reader = self.keywords.lock().unwrap();
 
-        let specd_reader =
-            SpecdSSTableReader::from_reader(&mut *reader, &search_utils::normalize_keyword(prefix));
+        let specd_reader = SpecdSSTableReader::from_reader(&mut *reader, &prefix);
         let mut output = SuggestResponse::new();
+        let mut count = 0;
         for (_, mut keyword) in specd_reader {
             output.mut_suggestions().push(keyword.take_keyword());
+            count += 1;
+            if count > SUGGESTION_LIMIT {
+                break;
+            }
         }
         output
     }

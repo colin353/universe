@@ -25,6 +25,16 @@ fe_component(
 )
 
 fe_component(
+    name = "search_box",
+    srcs = [
+        "search_box.css",
+        "search_box.html",
+        "search_box.mjs",
+    ],
+    deps = ["//util/js:debounce"],
+)
+
+fe_component(
     name = "flow_view",
     srcs = [
         "flow_view.css",
@@ -42,6 +52,7 @@ fe_devenv(
     deps = [
         ":flow_card",
         ":flow_view",
+        ":search_box",
         "//homepage/js:code_pad",
     ],
 )

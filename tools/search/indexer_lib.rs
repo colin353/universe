@@ -11,8 +11,7 @@ impl plume::DoFn for ExtractKeywordsFn {
 
     fn do_it(&self, input: &File, emit: &mut dyn EmitFn<Self::Output>) {
         for keyword in language_specific::extract_keywords(input) {
-            let mut normalized_keyword = keyword.get_keyword().to_lowercase();
-            normalized_keyword.retain(|c| c != '_' && c != '-');
+            let mut normalized_keyword = search_utils::normalize_keyword(keyword.get_keyword());
             if normalized_keyword.len() > 4 {
                 emit.emit(KV::new(normalized_keyword, keyword));
             }
@@ -40,7 +39,7 @@ impl plume::DoStreamFn for AggregateKeywordsFn {
             let mut output = ExtractedKeyword::new();
             output.set_keyword(key.clone());
             output.set_occurrences(occurrences);
-            emit.emit(KV::new(key, output));
+            emit.emit(KV::new(search_utils::normalize_keyword(&key), output));
         }
     }
 }
@@ -52,8 +51,7 @@ impl plume::DoFn for ExtractDefinitionsFn {
 
     fn do_it(&self, input: &File, emit: &mut dyn EmitFn<Self::Output>) {
         for definition in language_specific::extract_definitions(input) {
-            let mut normalized_symbol = definition.get_symbol().to_lowercase();
-            normalized_symbol.retain(|c| c != '_' && c != '-');
+            let mut normalized_symbol = search_utils::normalize_keyword(definition.get_symbol());
             emit.emit(KV::new(normalized_symbol, definition));
         }
     }

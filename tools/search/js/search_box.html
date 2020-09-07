@@ -1,0 +1,9 @@
+<input on:keydown={handleKeyPress} ref={search_input} autofocus type=text />
+
+<control if="this.state.showSuggestions">
+    <ul class="suggestions">
+        <control for="this.state.suggestionMap">
+            <li class="${item.className}">${item.suggestion}</li>
+        </control>
+    </ul>
+</control>

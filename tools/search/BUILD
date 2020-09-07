@@ -41,6 +41,7 @@ rust_binary(
         "html/template.html",
         "//homepage/js:code_pad",
         "//tools/search/js:flow_view",
+        "//tools/search/js:search_box",
     ],
     edition = "2018",
     deps = [
