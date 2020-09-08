@@ -13,6 +13,7 @@ input {
 }
 
 .suggestions {
+    overflow: hidden;
     position: absolute;
     padding: 0;
     width: 623px;

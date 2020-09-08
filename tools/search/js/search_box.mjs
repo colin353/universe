@@ -1,6 +1,7 @@
 import debounce from '../../../util/js/debounce.mjs';
 
 this.state = {
+  baseQuery: '',
   suggestions: [],
   suggestionMap: {},
   selectedIndex: -1,
@@ -18,8 +19,20 @@ this.stateMappers = {
       }
       key += 1;
     }
-    console.log("saved: ", output);
     return output;
+  },
+  _updateSuggestions: (selectedIndex) => {
+    if(this.state.selectedIndex == -1) {
+      this.refs.search_input.value = this.state.baseQuery;
+    } else {
+      this.refs.search_input.value = this.state.suggestions[this.state.selectedIndex];
+    }
+
+    setTimeout(() => {
+      this.refs.search_input.focus();
+      const caretPos = this.refs.search_input.value.length;
+      this.refs.search_input.setSelectionRange(caretPos, caretPos);
+    });
   }
 };
 
@@ -39,14 +52,31 @@ function handleKeyPress(e) {
   }
 
   if(e.keyCode == 40) {
+    let baseQuery = this.state.baseQuery;
+    if (this.state.selectedIndex == -1) {
+      baseQuery = this.refs.search_input.value;
+    }
+
     this.setState({
-      selectedIndex: this.state.selectedIndex + 1,
+      selectedIndex: ((this.state.selectedIndex + 2) % (this.state.suggestions.length + 1)) - 1,
+      baseQuery,
     })
   } else if(e.keyCode == 38) {
-    this.setState({
-      selectedIndex: this.state.selectedIndex - 1,
-    })
-  }
+    if(this.state.selectedIndex == -1) {
+      this.setState({selectedIndex: this.state.suggestions.length-1 });
+    } else {
+      this.setState({
+        selectedIndex: this.state.selectedIndex - 1,
+      })
+    }
 
-  getSuggestionsDebounced();
+  } else {
+    getSuggestionsDebounced();
+  }
+}
+
+function handleBlur() {
+  this.setState({
+    suggestions: [],
+  })
 }
