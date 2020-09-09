@@ -3,7 +3,7 @@
 <control if="this.state.showSuggestions">
     <ul class="suggestions">
         <control for="this.state.suggestionMap">
-            <li class="${item.className}">${item.suggestion}</li>
+            <li on:click="handleClick.bind(this, key)" class="${item.className}">${item.suggestion}</li>
         </control>
     </ul>
 </control>

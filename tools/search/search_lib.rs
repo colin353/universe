@@ -71,14 +71,25 @@ impl Searcher {
         let mut reader = self.keywords.lock().unwrap();
 
         let specd_reader = SpecdSSTableReader::from_reader(&mut *reader, &prefix);
-        let mut output = SuggestResponse::new();
         let mut count = 0;
-        for (_, mut keyword) in specd_reader {
-            output.mut_suggestions().push(keyword.take_keyword());
+        let mut suggestions = Vec::new();
+        for (_, keyword) in specd_reader {
+            suggestions.push(keyword);
             count += 1;
-            if count > SUGGESTION_LIMIT {
+            if count > SUGGESTION_LIMIT * 100 {
                 break;
             }
+        }
+
+        suggestions.sort_by_key(|x| std::u64::MAX - x.get_occurrences());
+
+        let mut output = SuggestResponse::new();
+        for suggestion in suggestions
+            .into_iter()
+            .take(SUGGESTION_LIMIT)
+            .map(|mut x| x.take_keyword())
+        {
+            output.mut_suggestions().push(suggestion);
         }
         output
     }

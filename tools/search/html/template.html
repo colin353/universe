@@ -130,7 +130,7 @@
     <div class="header">
         <h2 style="margin-right: 40px;"><a class="invisible-link" href="/">code search</a></h2>
 
-        <search-box />
+        <search-box query="{{query}}" />
     </div>
     {{/show_header}}
     {{content}}
@@ -148,14 +148,6 @@
         }
         el.innerHTML = (new Date(parseInt(t) / 1000)).toLocaleDateString("en-US", options);
     };
-
-    const searchInput = document.getElementById("search-input");
-    searchInput.addEventListener('keyup', function(e) {
-        if (e.keyCode == 13) {
-            event.preventDefault();
-            window.location.href = '/?q=' + encodeURIComponent(searchInput.value);
-        }
-    });
 </script>
 
 <link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/highlight.js/10.0.2/styles/default.min.css">

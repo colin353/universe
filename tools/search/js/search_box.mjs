@@ -1,5 +1,7 @@
 import debounce from '../../../util/js/debounce.mjs';
 
+const attributes = ["query"];
+
 this.state = {
   baseQuery: '',
   suggestions: [],
@@ -38,6 +40,9 @@ this.stateMappers = {
 
 async function getSuggestions() {
   const query = this.refs.search_input.value;
+  if (query.length < 4) {
+    return this.setState({ suggestions: [] });
+  }
   const result = await fetch("/suggest?q=" + encodeURIComponent(query));
   const suggestions = await result.json();
   this.setState({ suggestions });
@@ -75,8 +80,20 @@ function handleKeyPress(e) {
   }
 }
 
-function handleBlur() {
+function handleClick(key) {
   this.setState({
-    suggestions: [],
+    selectedIndex: key
   })
+}
+
+function handleBlur() {
+  setTimeout(() => {
+    this.setState({
+      suggestions: [],
+    })
+  }, 200);
+}
+
+this.componentDidMount = () => {
+  this.refs.search_input.value = this.state.query;
 }
