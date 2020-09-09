@@ -2,7 +2,7 @@ import getLanguageModel from './syntax_highlighter.mjs';
 import { base64Decode } from './utils.mjs';
 import Store from '../../util/js/store.mjs';
 
-const attributes = [ "code", "language", "line" ];
+const attributes = [ "code", "language", "line", "startline" ];
 const store = new Store();
 
 // Disables chrome's automatic scroll restoration logic, necessary to
@@ -62,7 +62,7 @@ this.stateMappers = {
     const selectedLine = parseInt(line)
     for(const line of parsedLines) {
       output[lineNumber] = {};
-      output[lineNumber].lineNumber = lineNumber;
+      output[lineNumber].lineNumber = this.state.startingLine + lineNumber;
       output[lineNumber].class = lineNumber == selectedLine ? 'selected-line' : lineNumber == selectedLine - 5 ? 'top-line' : '';
       output[lineNumber].code = line;
 
@@ -77,10 +77,12 @@ this.stateMappers = {
     }));
   },
   _updateLineInStore: (line, parsedLines) => {
-    console.log("update line in store");
     store.setState("currentLineNumber", line);
     store.setState("currentLine", parsedLines[line-1]);
   },
+  startingLine: (startline) => {
+    return parseInt(startline) || 0
+  }
 };
 
 const focusSelectedLine = () => {
@@ -97,6 +99,7 @@ this.componentDidMount = () => {
 this.state = {
   parsedLines: this.stateMappers.parsedLines(this.state.code),
   lines: this.stateMappers.lines(this.state.code),
+  startingLine: 0,
 };
 
 function selectLine(event) {

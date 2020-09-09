@@ -2,7 +2,7 @@
     .result-filename {
         background-color: #EEE;
         margin-top: 5px;
-        margin-bottom: 5px;
+        margin-bottom: 10px;
         padding-top: 5px;
         padding-bottom: 5px;
         padding-left: 10px;
@@ -72,11 +72,10 @@
     </div>
 
     {{results[]}}
-    <a href='{{filename}}?q={{query}}#L{{jump_to_line}}' class='invisible-link'>
+    <a href='{{filename}}?q={{query}}#L{{jump_to_line}}' class='invisible-link result-link'>
         <div class='result-filename'>{{filename}}</div>
         {{is_directory == false}}
-        <pre><code style="overflow: hidden">{{snippet[]}}  {{snippet}}
-{{/snippet}}</code></pre>
+        <code-pad startline="{{snippet_starting_line}}" language="{{language}}" code="{{code}}" />
         {{/is_directory}}
         {{is_directory == true}}
         <div class="directory-results">
@@ -93,6 +92,7 @@
         </div>
         {{/is_directory}}
     </a>
+    <div style="height:15px; display:block;"></div>
     {{/results}}
 
     {{results == 0}}
@@ -101,3 +101,5 @@
     </div>
     {{/results}}
 </div>
+
+<script type="module" src="https://js.colinmerkel.xyz/homepage/js/code_pad.mjs"></script>

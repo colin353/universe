@@ -1,13 +1,21 @@
 use search_grpc_rust::*;
 
 pub fn result(c: &Candidate) -> tmpl::ContentsMap {
-    let snippet_starting_line = 1 + c.get_snippet_starting_line() as usize;
+    let snippet_starting_line = c.get_snippet_starting_line() as usize;
+    let code = c
+        .get_snippet()
+        .iter()
+        .map(|x| x.to_string())
+        .collect::<Vec<_>>()
+        .join("\n");
 
     content!(
         "filename" => c.get_filename(),
         "is_directory" => c.get_is_directory(),
+        "code" => base64::encode(&code),
+        "language" => format!("{:?}", c.get_file_type()).to_lowercase(),
+        "snippet_starting_line" => snippet_starting_line,
         "jump_to_line" => c.get_jump_to_line() + 1;
-        "snippet" => c.get_snippet().iter().enumerate().map(|(idx, s)| content!("line_number" => idx+snippet_starting_line, "snippet" => ws_utils::escape_htmlentities(s))).collect(),
         "child_directories" => c.get_child_directories().iter().map(|s| content!("child" => s)).collect(),
         "child_files" => c.get_child_files().iter().map(|s| content!("child" => s)).collect()
     )
