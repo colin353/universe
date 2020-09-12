@@ -21,10 +21,11 @@ const contextMenu = (event) => {
 
   this.setState({
     showMenu: true,
-    menuX: event.screenX,
-    menuY: event.screenY,
+    menuX: event.clientX,
+    menuY: event.clientY,
     selection,
   })
+
   event.preventDefault();
 }
 

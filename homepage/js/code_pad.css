@@ -1,8 +1,7 @@
 :host {
-    width: 1024px;
+    font-family: 'Roboto Mono', monospace;
     display: flex;
     flex-direction: row;
-    font-family: monospace;
     overflow: hidden;
 }
 
@@ -23,20 +22,27 @@ div.code {
     flex: 1;
 }
 
+code {
+    width: 100%;
+}
+
 .code p {
     padding-left: 5px;
+    white-space: pre;
+    font-family: 'Roboto Mono', monospace;
 }
 
 div.line-numbers p.selected-line {
     color: white;
-    background-color: #03a9f4
+    background-color: #268bd2;
 }
 
 .code p.selected-line {
+    margin-top:-1px;
+    margin-bottom:-1px;
     border-top: 1px solid #eee;
     border-bottom: 1px solid #eee;
     background-color: #fafafa;
-    min-height: calc(1.25em - 2px);
 }
 
 p {
@@ -44,7 +50,7 @@ p {
     margin-top: 0;
     margin-bottom: 0;
     white-space: pre;
-    min-height: 1.25em;
+    height: 1.35em;
 }
 
 .italic {
@@ -52,26 +58,28 @@ p {
 }
 
 span.str {
-    color: green;
+    color: #cb4b16;
 }
 
 
 span.keyword {
-    color: blue;
+    color: #268bd2;
+    font-weight: 500;
 }
 
 span.literal {
-    color: red;
+    color: #dc322f;
+    font-weight: 500;
 }
 
 
 span.comment {
-    color: grey;
+    color: #657b83;
 }
 
 div.menu {
-    margin-top: -80px;
-    margin-left: -10px;
+    margin-top: 0px;
+    margin-left: 0px;
     display: block;
     position: fixed;
     padding: 10px;

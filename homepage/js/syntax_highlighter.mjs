@@ -1,11 +1,20 @@
 import { escapeHtml, } from "./utils.mjs";
 
+const PreviousLineStates = {
+  NONE: 0,
+  COMMENT: 1,
+  STRING: 2,
+}
+
 class LanguageModel {
     constructor() {
         this.line = "";
         this.index = 0;
         this.keywords = new Set([]);
-        this.multiCharacterSingleQuoteStrings = true;
+        this.multiCharacterSingleQuoteStrings = true;  
+        this.multiLineCommentTerminator = "*/";
+        
+        this.previousLineState = PreviousLineStates.NONE;
     }
 
     next() {
@@ -34,6 +43,10 @@ class LanguageModel {
         return false;
     }
 
+    isMultiLineComment(chs) { 
+        return chs == "/*";
+    }
+
     isAlphanumericUnderscore(ch) {
         const code = ch.charCodeAt(0);
         if(code >= 48 && code <= 57) return true;
@@ -44,24 +57,48 @@ class LanguageModel {
         return false;
     }
 
-    takeUntil(delimiter) {
+    takeUntilCh(delimiter) {
         let acc = "";
         let ch = this.next();
         let escaped = false;
         let loops = 0;
         while(ch != "" && loops < 250) {
             loops++;
+            acc += ch;
             if(ch == delimiter && !escaped) {
                 break;
             }
 
             escaped = ch == "'";
-            acc += ch;
-
             ch = this.next();
         }
 
         return acc;
+    }
+
+    takeUntil(delimeter) {
+      let acc = "";
+      let done = false;
+      while(!done) {
+        let index = 0;
+        let segment = this.takeUntilCh(delimeter[index]);
+        if (segment == "") break;
+        acc += segment;
+
+        done = true;
+        for(const ch of delimeter.substr(1)) {
+          const next = this.next();
+          acc += next;
+          if (next == "") {
+            return acc;
+          } else if(next != ch) {
+            done = false;
+            break;
+          }
+        }
+      }
+
+      return acc;
     }
 
     extractSyntax(line) {
@@ -73,8 +110,19 @@ class LanguageModel {
         let loops = 0;
         let acc = "";
         let commentAcc = "";
-        while(ch != "" && loops < 100) {
+        while(ch != "" && loops < 512) {
             loops++;
+
+            if(this.isMultiLineComment(commentAcc) || this.previousLineState === PreviousLineStates.COMMENT) {
+              const comment = this.takeUntil(this.multiLineCommentTerminator);
+              output += `<span class='comment'>${commentAcc + comment}</span>`;
+              commentAcc = "";
+              if(comment.endsWith(this.multiLineCommentTerminator)) {
+                this.previousLineState = PreviousLineStates.NONE;
+                console.log(`unset prev line state, comment: "${comment}"`);
+              }
+            }
+
             if(this.isStringDelimiter(ch)) {
                 if(ch == "'" && !this.multiCharacterSingleQuoteStrings) {
                     const str = this.next();
@@ -82,14 +130,14 @@ class LanguageModel {
                     if (ch != "'") {
                         output += "'" + str;
                     } else {
-                        output += `<span class='str'>${escapeHtml(ch + str + ch)}</span>`;
+                        output += `<span class='str'>${escapeHtml(ch + str)}</span>`;
                         ch = this.next();
                     }
 
                     continue;
                 }
                 const str = this.takeUntil(ch);
-                output += `<span class='str'>${escapeHtml(ch + str + ch)}</span>`;
+                output += `<span class='str'>${escapeHtml(ch + str)}</span>`;
                 ch = this.next();
                 continue;
             }
@@ -104,8 +152,11 @@ class LanguageModel {
                     }
                     output += `<span class='comment'>${escapeHtml(commentAcc + remainder)}</span>`;
                     return output;
+                } else if(this.isMultiLineComment(commentAcc)) {
+                  this.previousLineState = PreviousLineStates.COMMENT;
+                } else {
+                  ch = this.next();
                 }
-                ch = this.next();
                 continue;
             } else if(commentAcc.length > 0) {
                 output += commentAcc;
@@ -130,6 +181,10 @@ class LanguageModel {
             ch = this.next();
         }
 
+        if (commentAcc.length > 0) {
+          output += `<span class='comment'>${commentAcc}</span>`;
+        }
+
         return output + escapeHtml(acc);
     }
 }
@@ -146,7 +201,8 @@ class RustLanguageModel extends LanguageModel {
             "self", "Self", "static", "struct", "super", "trait", "true",
             "type", "unsafe", "use", "where", "while", "async", "await",
             "dyn", "u8", "u16", "u32", "u64", "u128", "i8", "i16", "i32",
-            "i64", "i128", "f16", "f32", "f64", "f128",
+            "i64", "i128", "f16", "f32", "f64", "f128", "str", "String",
+            "Result", "Option", "Some", "Ok", "None", "Err",
         ]);
     }
 
@@ -186,6 +242,10 @@ class CLanguageModel extends LanguageModel {
         return ch == "/" || ch == "*" || ch == "#";
     }
 
+    isMultiLineComment(chs) { 
+        return chs == "/*";
+    }
+
     isInterminableComment(chs) {
         return chs == "//";
     }
@@ -219,6 +279,10 @@ class JavascriptLanguageModel extends LanguageModel {
         return ch == "/" || ch == "*";
     }
 
+    isMultiLineComment(chs) { 
+        return chs == "/*";
+    }
+
     isInterminableComment(chs) {
         return chs == "//";
     }
@@ -227,6 +291,10 @@ class JavascriptLanguageModel extends LanguageModel {
 class BazelLanguageModel extends LanguageModel {
     isCommentCharacter(ch) {
         return ch == "#";
+    }
+
+    isMultiLineComment(chs) { 
+        return chs == "/*";
     }
 
     isInterminableComment(chs) {
@@ -248,6 +316,10 @@ class ProtobufLanguageModel extends LanguageModel {
 
     isCommentCharacter(ch) {
         return ch == "/" || ch == "*";
+    }
+
+    isMultiLineComment(chs) { 
+        return chs == "/*";
     }
 
     isInterminableComment(chs) {
