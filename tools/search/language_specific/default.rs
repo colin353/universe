@@ -28,6 +28,15 @@ pub fn extract_keywords(file: &File) -> Vec<ExtractedKeyword> {
     results.into_iter().map(|(_, x)| x).collect()
 }
 
+pub fn annotate_file(file: &mut File) {
+    if file.get_filename().contains("__tests__")
+        || file.get_filename().contains("/tests/")
+        || file.get_filename().contains("__snapshots__")
+    {
+        file.set_is_test(true);
+    }
+}
+
 pub fn extract_definitions(file: &File) -> Vec<SymbolDefinition> {
     Vec::new()
 }

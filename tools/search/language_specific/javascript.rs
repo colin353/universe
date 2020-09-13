@@ -19,8 +19,15 @@ lazy_static! {
 
 pub fn annotate_file(file: &mut File) {
     if file.get_filename().ends_with(".jest.js")
+        || file.get_filename().ends_with("-test.js")
+        || file.get_filename().ends_with("-jest.js")
         || file.get_filename().ends_with(".test.js")
-        || file.get_filename().ends_with("/__snapshots__")
+        || file.get_filename().ends_with(".test.ts")
+        || file.get_filename().ends_with(".snap")
+        || file.get_filename().ends_with(".ambr")
+        || file.get_filename().contains("/__tests__")
+        || file.get_filename().contains("/__snapshots__")
+        || file.get_filename().contains("_test/")
     {
         file.set_is_test(true);
     }

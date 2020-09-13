@@ -566,12 +566,12 @@ impl Searcher {
             score += 100.0;
         }
 
-        if candidate.get_filename().starts_with("third_party") {
-            score /= 3.0;
+        if candidate.get_filename().contains("/migrations/") {
+            score /= 2.0;
         }
 
-        if candidate.get_is_test() {
-            score /= 2.0;
+        if candidate.get_filename().starts_with("third_party") {
+            score /= 3.0;
         }
 
         // Definition scoring
@@ -581,7 +581,7 @@ impl Searcher {
             let symbol_score = match def.get_symbol_type() {
                 SymbolType::VARIABLE => 5,
                 SymbolType::FUNCTION => 40,
-                SymbolType::STRUCTURE => 50,
+                SymbolType::STRUCTURE => 80,
                 SymbolType::TRAIT => 40,
             };
             definition_score += symbol_score;
@@ -596,6 +596,10 @@ impl Searcher {
         // Sometimes definition scores can get really crazy, e.g. if there are
         // a billion instances of a variable being defined over and over. Limit at 100.
         score += std::cmp::min(definition_score, 100) as f32;
+
+        if candidate.get_is_test() {
+            score /= 2.0;
+        }
 
         candidate.set_score(score);
     }
@@ -664,6 +668,7 @@ impl Searcher {
             if !started && line.trim().is_empty() {
                 continue;
             }
+            started = true;
             let mut snippet = line.to_string();
             if let Some((idx, _)) = snippet.char_indices().nth(MAX_LINE_LENGTH) {
                 snippet.truncate(idx);

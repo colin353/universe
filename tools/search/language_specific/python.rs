@@ -89,7 +89,12 @@ pub fn extract_definitions(file: &File) -> Vec<SymbolDefinition> {
 }
 
 pub fn annotate_file(file: &mut File) {
-    if file.get_filename().contains("/__tests__") || file.get_filename().contains("/tests") {
+    if file.get_filename().contains("__tests__")
+        || file.get_filename().contains("/tests/")
+        || file.get_filename().contains("/__snapshots__")
+        || file.get_filename().ends_with(".ambr")
+        || file.get_filename().contains("/test_")
+    {
         file.set_is_test(true);
     }
 }

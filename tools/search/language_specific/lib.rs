@@ -43,7 +43,7 @@ pub fn annotate_file(file: &mut File) {
         FileType::RUST => rust::annotate_file(file),
         FileType::PYTHON => python::annotate_file(file),
         FileType::JAVASCRIPT => javascript::annotate_file(file),
-        _ => (),
+        _ => default::annotate_file(file),
     }
 }
 
