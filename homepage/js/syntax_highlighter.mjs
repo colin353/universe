@@ -13,6 +13,7 @@ class LanguageModel {
         this.keywords = new Set([]);
         this.multiCharacterSingleQuoteStrings = true;  
         this.multiLineCommentTerminator = "*/";
+        this.multiLineStringDelimiter = '"""';
         
         this.previousLineState = PreviousLineStates.NONE;
     }
@@ -119,11 +120,33 @@ class LanguageModel {
               commentAcc = "";
               if(comment.endsWith(this.multiLineCommentTerminator)) {
                 this.previousLineState = PreviousLineStates.NONE;
-                console.log(`unset prev line state, comment: "${comment}"`);
               }
             }
 
-            if(this.isStringDelimiter(ch)) {
+            if (this.previousLineState === PreviousLineStates.STRING) {
+                this.index = 0;
+                const strAcc = this.takeUntil(this.multiLineStringDelimiter);
+                output += `<span class='str'>${strAcc}</span>`;
+                if (strAcc.endsWith(this.multiLineStringDelimiter)) {
+                    this.previousLineState = PreviousLineStates.NONE;
+                } else {
+                    break;
+                }
+            }
+
+            if (this.isStringDelimiter(ch)) {
+                if (this.line.substr(this.index-1).startsWith(this.multiLineStringDelimiter)) {
+                    const strAcc = this.takeUntil(this.multiLineStringDelimiter)
+                    if (strAcc.endsWith(this.multiLineStringDelimiter)) {
+                        this.previousLineState = PreviousLineStates.NONE;
+                    } else {
+                        this.previousLineState = PreviousLineStates.STRING
+                    }
+                    output += `<span class='str'>${ch+strAcc}</span>`;
+                    ch = this.next();
+                    continue
+                }
+
                 if(ch == "'" && !this.multiCharacterSingleQuoteStrings) {
                     const str = this.next();
                     ch = this.next();
