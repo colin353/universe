@@ -578,12 +578,7 @@ impl Searcher {
         // TODO: adjust score based on symbol type
         let mut definition_score = 0;
         for def in candidate.get_matched_definitions() {
-            let symbol_score = match def.get_symbol_type() {
-                SymbolType::VARIABLE => 5,
-                SymbolType::FUNCTION => 40,
-                SymbolType::STRUCTURE => 80,
-                SymbolType::TRAIT => 40,
-            };
+            let symbol_score = score_definition_type(def.get_symbol_type());
             definition_score += symbol_score;
             for keyword in query.get_keywords() {
                 if def.get_symbol() == keyword.get_keyword() {
@@ -641,7 +636,15 @@ impl Searcher {
         candidate.set_file_type(doc.get_file_type());
 
         let window_start = if candidate.get_matched_definitions().len() > 0 {
-            let mut line_number = candidate.get_matched_definitions()[0].get_line_number() as usize;
+            // Need to find the MOST important definition to highlight in the snippet
+            let mut line_options: Vec<_> = candidate
+                .get_matched_definitions()
+                .iter()
+                .map(|x| (x.get_symbol_type(), x.get_line_number()))
+                .collect();
+            line_options.sort_by_key(|x| score_definition_type(x.0));
+
+            let mut line_number = line_options.last().unwrap().1 as usize;
             candidate.set_jump_to_line(line_number as u32);
 
             if line_number > SNIPPET_LENGTH / 2 {
@@ -743,4 +746,13 @@ fn extract_spans(re: &aho_corasick::AhoCorasick, line: &str) -> Vec<Span> {
 
 fn update_mask(mask: u32, index: usize) -> u32 {
     mask | (1 << index)
+}
+
+fn score_definition_type(def: SymbolType) -> u64 {
+    match def {
+        SymbolType::VARIABLE => 5,
+        SymbolType::FUNCTION => 40,
+        SymbolType::STRUCTURE => 80,
+        SymbolType::TRAIT => 40,
+    }
 }
