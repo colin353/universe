@@ -30,6 +30,25 @@ lazy_static! {
         s.insert("raise".into());
         s
     };
+    static ref IMPORT_DEFINITION_1: regex::Regex =
+        { regex::Regex::new(r"^\s*from\s+(\S+)\s+import").unwrap() };
+    static ref IMPORT_DEFINITION_2: regex::Regex =
+        { regex::Regex::new(r"^\s*import\s+(\S+)").unwrap() };
+}
+
+pub fn extract_imports(file: &File) -> Vec<String> {
+    let mut results = Vec::new();
+    for line in file.get_content().lines() {
+        for captures in IMPORT_DEFINITION_1.captures_iter(line) {
+            let import_path = &captures[captures.len() - 1];
+            results.push(format!("{}.py", import_path.replace(".", "/")));
+        }
+        for captures in IMPORT_DEFINITION_2.captures_iter(line) {
+            let import_path = &captures[captures.len() - 1];
+            results.push(format!("{}.py", import_path.replace(".", "/")));
+        }
+    }
+    results
 }
 
 pub fn extract_keywords(file: &File) -> Vec<ExtractedKeyword> {
@@ -117,6 +136,28 @@ mod tests {
         s.set_symbol_type(SymbolType::VARIABLE);
         s.set_line_number(line);
         s
+    }
+
+    #[test]
+    fn test_extract_imports() {
+        let mut f = File::new();
+        f.set_content(
+            "
+                from abcdef.gooble.test_123 import Comment
+                from constants.xyz.mycode import (
+                    MY_BIG_CONST,
+                    test_constant,
+                )
+                import re
+            "
+            .into(),
+        );
+
+        let result = extract_imports(&f);
+        assert_eq!(result[0], "abcdef/gooble/test_123.py");
+        assert_eq!(result[1], "constants/xyz/mycode.py");
+        assert_eq!(result[2], "re.py");
+        assert_eq!(result.len(), 3);
     }
 
     #[test]

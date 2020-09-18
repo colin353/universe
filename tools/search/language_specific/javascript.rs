@@ -15,6 +15,8 @@ lazy_static! {
             .unwrap()
     };
     static ref PROPERTY_DEFINITION: regex::Regex = { regex::Regex::new(r"(\w+)\s*:").unwrap() };
+    static ref IMPORT_DEFINITION: regex::Regex =
+        { regex::Regex::new(r"(?m:^)\s*import(?sUm:\s.*)from\s+'([^']+)'").unwrap() };
 }
 
 pub fn annotate_file(file: &mut File) {
@@ -92,6 +94,28 @@ pub fn extract_definitions(file: &File) -> Vec<SymbolDefinition> {
     results
 }
 
+pub fn extract_imports(file: &File) -> Vec<String> {
+    let mut results = Vec::new();
+    for captures in IMPORT_DEFINITION.captures_iter(file.get_content()) {
+        let import_path = &captures[captures.len() - 1];
+
+        if !import_path.ends_with(".js")
+            && !import_path.ends_with(".mjs")
+            && !import_path.ends_with(".ts")
+        {
+            // If the ending is not specified, then we should check any valid
+            // javascript file ending to see if any exist
+            results.push(format!("{}.js", import_path));
+            results.push(format!("{}.mjs", import_path));
+            results.push(format!("{}.ts", import_path));
+            results.push(format!("{}/index.js", import_path));
+        } else {
+            results.push(import_path.to_string());
+        }
+    }
+    results
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -102,6 +126,33 @@ mod tests {
         xk.set_symbol_type(typ);
         xk.set_line_number(line);
         xk
+    }
+
+    #[test]
+    fn test_extract_imports() {
+        let mut f = File::new();
+        f.set_content(
+            "
+            import { abcdef }, xyz from './utils/docs/code.js';
+            import xyz from 'fake/path/here.mjs';
+            import { 
+                abcdef,
+                cdefg,
+                qrst}, xyz 
+            from './my/relative/path.ts';
+            import qqq from 'test/path'
+            "
+            .into(),
+        );
+
+        let result = extract_imports(&f);
+        assert_eq!(result[0], "./utils/docs/code.js");
+        assert_eq!(result[1], "fake/path/here.mjs");
+        assert_eq!(result[2], "./my/relative/path.ts");
+        assert_eq!(result[3], "test/path.js");
+        assert_eq!(result[4], "test/path.mjs");
+        assert_eq!(result[5], "test/path.ts");
+        assert_eq!(result[6], "test/path/index.js");
     }
 
     #[test]
