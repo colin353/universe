@@ -51,12 +51,14 @@ message PFnProto {
 
 message Stage {
   repeated PCollectionProto inputs = 1;
-  PFnProto function = 2;
-  repeated PCollectionProto outputs = 3;
+  repeated PCollectionProto side_inputs = 2;
+  PFnProto function = 3;
+  repeated PCollectionProto outputs = 4;
 }
 
 message Shard {
   repeated PCollectionProto inputs = 1;
-  PFnProto function = 2;
-  repeated PCollectionProto outputs = 3;
+  repeated PCollectionProto side_inputs = 2;
+  PFnProto function = 3;
+  repeated PCollectionProto outputs = 4;
 }

@@ -17,7 +17,7 @@ pub use primitive::{Primitive, PrimitiveType};
 
 use itertools::MinHeap;
 pub use itertools::KV;
-use plume_proto_rust::*;
+pub use plume_proto_rust::*;
 use primitive::Serializable;
 
 use std::cmp::{Ordering, Reverse};
@@ -223,6 +223,26 @@ where
             dependency: self.clone(),
             function: Box::new(f),
         }));
+        out
+    }
+
+    pub fn par_do_side_input<O, TSideInput, DoType>(
+        &self,
+        f: DoType,
+        side_input: PCollection<TSideInput>,
+    ) -> PCollection<O>
+    where
+        DoType: DoSideInputFn<Input = T, SideInput = TSideInput, Output = O> + 'static,
+        TSideInput: PlumeTrait + Default,
+        O: PlumeTrait + Default,
+    {
+        let mut out: PCollection<O> = PCollection::<O>::new();
+        Arc::get_mut(&mut out.underlying).unwrap().dependency =
+            Some(Arc::new(DoSideInputFnWrapper {
+                dependency: self.clone(),
+                side_input_dependency: side_input,
+                function: Box::new(f),
+            }));
         out
     }
 
@@ -534,12 +554,14 @@ pub fn execute_shard(shard: &Shard) {
         .unwrap()
         .clone();
 
+    pfn.init(shard);
     pfn.execute(shard);
 }
 
 pub trait PFn: Send + Sync {
     fn stages(&self, id: u64) -> (Stage, Vec<Stage>);
     fn execute(&self, shard: &Shard);
+    fn init(&self, shard: &Shard) {}
 }
 pub trait EmitFn<T> {
     fn emit(&mut self, value: T);
@@ -553,7 +575,7 @@ pub struct JoinFnWrapper<V1, V2, O> {
 }
 
 pub struct Stream<'a, T> {
-    iter: &'a mut (dyn StreamingIterator<Item = KV<std::string::String, T>>),
+    iter: &'a mut (dyn StreamingIterator<Item = KV<String, T>>),
     current_key: Option<String>,
 }
 
@@ -618,6 +640,12 @@ pub trait JoinFn: Send + Sync {
     );
 }
 
+pub struct DoSideInputFnWrapper<TInput, TSideInput, TOutput> {
+    dependency: PCollection<TInput>,
+    side_input_dependency: PCollection<TSideInput>,
+    function: Box<DoSideInputFn<Input = TInput, SideInput = TSideInput, Output = TOutput>>,
+}
+
 pub struct DoFnWrapper<T1, T2> {
     dependency: PCollection<T1>,
     function: Box<DoFn<Input = T1, Output = T2>>,
@@ -625,6 +653,14 @@ pub struct DoFnWrapper<T1, T2> {
 pub trait DoFn: Send + Sync {
     type Input;
     type Output;
+    fn do_it(&self, input: &Self::Input, emit: &mut dyn EmitFn<Self::Output>);
+}
+
+pub trait DoSideInputFn: Send + Sync {
+    type Input;
+    type SideInput;
+    type Output;
+    fn init(&self, side_input: &mut dyn StreamingIterator<Item = Self::SideInput>);
     fn do_it(&self, input: &Self::Input, emit: &mut dyn EmitFn<Self::Output>);
 }
 
@@ -714,6 +750,78 @@ where
     }
 }
 
+impl<TInput, TSideInput, TOutput> PFn for DoSideInputFnWrapper<TInput, TSideInput, TOutput>
+where
+    TInput: PlumeTrait + Default,
+    TSideInput: PlumeTrait + Default,
+    TOutput: PlumeTrait + Default,
+{
+    fn stages(&self, id: u64) -> (Stage, Vec<Stage>) {
+        let mut dep_stages = self.dependency.stages();
+        dep_stages.append(&mut self.side_input_dependency.stages());
+
+        let mut s = Stage::new();
+        s.mut_inputs().push(self.dependency.to_proto());
+        s.mut_function().set_description(String::from("DoFn"));
+        s.mut_function().set_id(id);
+        s.mut_side_inputs()
+            .push(self.side_input_dependency.to_proto());
+
+        (s, dep_stages)
+    }
+
+    fn init(&self, input: &Shard) {
+        let side_input = &input.get_side_inputs()[0];
+        let source = Source::<TSideInput>::new(side_input.clone());
+        let mut mem_iter;
+        let mut mem_src;
+        let mut dyn_src: &mut dyn StreamingIterator<Item = TSideInput>;
+        match side_input.get_format() {
+            DataFormat::IN_MEMORY => {
+                mem_src = source.mem_source();
+                mem_iter = mem_src.iter();
+                dyn_src = &mut mem_iter;
+            }
+            _ => {
+                panic!(
+                    "idk how to deal with data format {:?}",
+                    side_input.get_format()
+                );
+            }
+        }
+        self.function.init(dyn_src);
+    }
+
+    default fn execute(&self, shard: &Shard) {
+        for input in shard.get_inputs() {
+            let source = Source::<TInput>::new(input.clone());
+            let producer = SinkProducer::<TOutput>::new();
+            let mut sink = producer.make_sink(shard.get_outputs());
+            {
+                let sink_ref: &mut dyn EmitFn<TOutput> = &mut *sink;
+
+                match input.get_format() {
+                    DataFormat::IN_MEMORY => {
+                        let mut memsource = source.mem_source();
+                        let mut source_iter = memsource.iter();
+                        while let Some(item) = source_iter.next() {
+                            self.function.do_it(item, sink_ref);
+                        }
+                    }
+                    DataFormat::RECORDIO => {
+                        let mut recordio_source = source.recordio_source();
+                        while let Some(item) = recordio_source.next() {
+                            self.function.do_it(&item, sink_ref);
+                        }
+                    }
+                    x => panic!("I don't know how to execute format: {:?}!", x),
+                }
+            }
+            sink.finish();
+        }
+    }
+}
+
 impl<T1, T2> PFn for DoFnWrapper<T1, T2>
 where
     T1: PlumeTrait + Default,
@@ -753,6 +861,46 @@ where
                         }
                     }
                     x => panic!("I don't know how to execute format: {:?}!", x),
+                }
+            }
+            sink.finish();
+        }
+    }
+}
+
+impl<TInput, TSideInput, TOutput> PFn
+    for DoSideInputFnWrapper<KV<String, TInput>, TSideInput, TOutput>
+where
+    TInput: PlumeTrait + Default,
+    TSideInput: PlumeTrait + Default,
+    TOutput: PlumeTrait + Default,
+{
+    default fn execute(&self, shard: &Shard) {
+        for input in shard.get_inputs() {
+            let source = Source::<KV<String, TInput>>::new(input.clone());
+            let producer = SinkProducer::<TOutput>::new();
+            let mut sink = producer.make_sink(shard.get_outputs());
+            {
+                let sink_ref: &mut dyn EmitFn<TOutput> = &mut *sink;
+
+                match input.get_format() {
+                    DataFormat::IN_MEMORY => {
+                        let memtable = source.mem_table_source();
+                        let mut iter = memtable.iter();
+                        while let Some(item) = iter.next() {
+                            self.function.do_it(item, sink_ref);
+                        }
+                    }
+                    DataFormat::SSTABLE => {
+                        let mut iter = source.sstable_source();
+                        while let Some((key, value)) = iter.next() {
+                            let kv = KV(key, value);
+                            self.function.do_it(&kv, sink_ref);
+                        }
+                    }
+                    x => {
+                        panic!("I don't know how to execute with source type: {:?}", x);
+                    }
                 }
             }
             sink.finish();
@@ -1015,6 +1163,10 @@ impl Planner {
             }
             shard.set_function(stage.get_function().clone());
             shard.mut_outputs().push(shard_output);
+
+            for side_input in stage.get_side_inputs() {
+                shard.mut_side_inputs().push(side_input.clone());
+            }
 
             shards.push(shard);
         }

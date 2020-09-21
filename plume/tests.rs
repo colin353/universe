@@ -6,7 +6,10 @@ use plume::EmitFn;
 use plume::Stream;
 use plume::StreamingIterator;
 use plume::KV;
-use plume::{PCollection, PTable, Primitive};
+use plume::{PCollection, PCollectionProto, PTable, Primitive};
+
+use std::collections::HashSet;
+use std::sync::RwLock;
 
 struct MapSquareFn {}
 impl plume::DoFn for MapSquareFn {
@@ -78,6 +81,36 @@ impl plume::DoFn for DoNothingFn {
     type Output = KV<String, Primitive<String>>;
     fn do_it(&self, input: &Self::Input, emit: &mut dyn EmitFn<Self::Output>) {
         emit.emit(KV::new(input.key().to_owned(), input.value().to_owned()));
+    }
+}
+
+struct DoSideInputTestFn {
+    side_map: RwLock<HashSet<String>>,
+}
+impl DoSideInputTestFn {
+    fn new() -> Self {
+        Self {
+            side_map: RwLock::new(HashSet::new()),
+        }
+    }
+}
+
+impl plume::DoSideInputFn for DoSideInputTestFn {
+    type Input = Primitive<String>;
+    type SideInput = Primitive<String>;
+    type Output = Primitive<String>;
+
+    fn init(&self, input: &mut dyn StreamingIterator<Item = Self::SideInput>) {
+        let mut side_map = self.side_map.write().unwrap();
+        while let Some(x) = input.next() {
+            side_map.insert(x.to_string());
+        }
+    }
+
+    fn do_it(&self, input: &Self::Input, emit: &mut dyn EmitFn<Self::Output>) {
+        if self.side_map.read().unwrap().contains(input.as_str()) {
+            emit.emit(input.clone());
+        }
     }
 }
 
@@ -167,6 +200,34 @@ mod tests {
                 String::from("john, who is a janitor"),
                 String::from("tim, who is a marketing"),
             ]
+        );
+    }
+
+    #[test]
+    fn test_side_input() {
+        let mut _runlock = plume::RUNLOCK.lock();
+        plume::cleanup();
+
+        let emp_types = PCollection::<Primitive<String>>::from_primitive_vec(vec![
+            String::from("tim").into(),
+            String::from("john").into(),
+            String::from("colin").into(),
+            String::from("william").into(),
+        ]);
+
+        let emp_names = PCollection::<Primitive<String>>::from_primitive_vec(vec![
+            String::from("tim").into(),
+            String::from("colin").into(),
+            String::from("josh").into(),
+            String::from("kyle").into(),
+        ]);
+        let mut output = emp_types.par_do_side_input(DoSideInputTestFn::new(), emp_names);
+        output.write_to_vec();
+
+        plume::run();
+        assert_eq!(
+            output.into_vec().as_ref(),
+            &vec![String::from("tim"), String::from("colin"),]
         );
     }
 
