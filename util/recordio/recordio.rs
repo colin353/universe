@@ -2,6 +2,7 @@ extern crate byteorder;
 extern crate protobuf;
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use itertools::StreamingIterator;
 use primitive::Serializable;
 use std::io::Read;
 
@@ -76,6 +77,13 @@ impl<T: Serializable, R: std::io::Read> RecordIOReader<T, R> {
             }
         }
     }
+
+    pub fn streaming_iter<'a>(&'a mut self) -> RecordIOStreamingIteratorWrapper<'a, T, R> {
+        RecordIOStreamingIteratorWrapper {
+            reader: self,
+            last: None,
+        }
+    }
 }
 
 impl<T: Serializable, R: std::io::Read> Iterator for RecordIOReader<T, R> {
@@ -89,6 +97,34 @@ pub type RecordIOReaderOwned<T> = RecordIOReader<T, Box<dyn std::io::Read>>;
 pub type RecordIOReaderBorrowed<'a, T> = RecordIOReader<T, &'a dyn std::io::Read>;
 pub type RecordIOWriterOwned<T> = RecordIOWriter<T, Box<dyn std::io::Write + Send + Sync>>;
 pub type RecordIOWriterBorrowed<'a, T> = RecordIOWriter<T, &'a (dyn std::io::Write + Send + Sync)>;
+
+pub struct RecordIOStreamingIteratorWrapper<'a, T: Serializable, R: std::io::Read> {
+    reader: &'a mut RecordIOReader<T, R>,
+    last: Option<T>,
+}
+
+impl<'b, T, R> itertools::StreamingIterator for RecordIOStreamingIteratorWrapper<'b, T, R>
+where
+    T: Serializable,
+    R: std::io::Read,
+{
+    type Item = T;
+    fn peek<'a>(&'a mut self) -> Option<&'a T> {
+        if self.last.is_none() {
+            self.last = self.reader.read();
+        }
+        self.last.as_ref()
+    }
+
+    fn next<'a>(&'a mut self) -> Option<&'a T> {
+        self.last = self.reader.read();
+        self.last.as_ref()
+    }
+
+    fn count(&mut self) -> u64 {
+        0
+    }
+}
 
 #[cfg(test)]
 mod tests {

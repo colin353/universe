@@ -775,12 +775,19 @@ where
         let source = Source::<TSideInput>::new(side_input.clone());
         let mut mem_iter;
         let mut mem_src;
+        let mut rec_src;
+        let mut rec_iter;
         let mut dyn_src: &mut dyn StreamingIterator<Item = TSideInput>;
         match side_input.get_format() {
             DataFormat::IN_MEMORY => {
                 mem_src = source.mem_source();
                 mem_iter = mem_src.iter();
                 dyn_src = &mut mem_iter;
+            }
+            DataFormat::RECORDIO => {
+                rec_src = source.recordio_source();
+                rec_iter = rec_src.streaming_iter();
+                dyn_src = &mut rec_iter;
             }
             _ => {
                 panic!(

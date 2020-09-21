@@ -12,6 +12,7 @@ rust_library(
     edition = "2018",
     deps = [
         "//third_party:byteorder",
+        "//util/itertools",
         "//util/primitive",
         "@io_bazel_rules_rust//proto/raze:protobuf",
     ],
