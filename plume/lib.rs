@@ -421,7 +421,7 @@ where
         }
     }
 
-    pub fn write_to_sstable(mut self, filename: &str) {
+    pub fn write_to_sstable(&mut self, filename: &str) {
         if !self.underlying.proto.get_filenames().len() == 0
             || self.underlying.proto.get_format() != DataFormat::UNKNOWN
         {
@@ -480,6 +480,7 @@ pub fn run() {
     let mut started = std::collections::HashSet::new();
     let planner = Planner::new();
     let pool = pool::ThreadPool::new(4);
+    let mut completed = 0;
 
     loop {
         let mut did_execute = false;
@@ -524,12 +525,17 @@ pub fn run() {
                 started.insert(id);
             }
         }
+
+        println!("{}/{} in progress", pool.get_in_progress(), stages.len());
+        println!("{}/{} completed", completed, stages.len());
+
         if !did_execute {
             if pool.get_in_progress() == 0 && started.len() == stages.len() {
                 println!("we're done!");
                 break;
             }
             pool.block_until_job_completes();
+            completed += 1;
         }
     }
 }
@@ -1332,7 +1338,6 @@ impl Planner {
                 for file in input.get_filenames() {
                     filenames.append(&mut shard_lib::unshard(file));
                 }
-                println!("try to open sharded sstable: {:?}", filenames);
                 let reader = sstable::ShardedSSTableReader::<Primitive<Vec<u8>>>::from_filenames(
                     &filenames,
                     "",
@@ -1361,7 +1366,6 @@ impl Planner {
                     out.set_starting_key(window[0].to_string());
                     out.set_ending_key(window[1].to_string());
 
-                    println!("sstable shard: {:?}", out);
                     shard.push(out);
                 }
                 results.push(shard);
@@ -1382,7 +1386,6 @@ impl Planner {
                     let mut out = input.clone();
                     out.set_starting_key(window[0].to_string());
                     out.set_ending_key(window[1].to_string());
-                    println!("shard: {:?}", out);
                     shard.push(out);
                 }
                 results.push(shard);
@@ -1606,10 +1609,15 @@ where
 
         println!("reshard {:?} -> {:?}", self.sstables_written, outputs);
 
-        // TODO: we aren't marking the config as resolved. I think if
-        // you make a stage which depends on the output of an sstablesink,
-        // you will end up with a problem because it won't ever mark as resolved?
         sstable::reshard(&self.sstables_written, &outputs);
+
+        let mut pcoll_write = PCOLLECTION_REGISTRY.write().unwrap();
+        let mut config = pcoll_write.get_mut(&self.configs[0].get_id()).unwrap();
+        config.set_is_ptable(true);
+        config.set_num_resolved_shards(config.get_num_resolved_shards() + 1);
+        if config.get_num_resolved_shards() == config.get_num_shards() {
+            config.set_resolved(true);
+        }
     }
 }
 
@@ -1915,11 +1923,6 @@ where
             start_key: self.config.get_starting_key().to_string(),
             end_key: self.config.get_ending_key().to_string(),
         };
-        println!(
-            "constructed grouped source: `{}` --> `{}`",
-            output.start_key, output.end_key
-        );
-
         for memory_id in self.config.get_memory_ids() {
             let data = {
                 let guard = IN_MEMORY_DATASETS.read().unwrap();

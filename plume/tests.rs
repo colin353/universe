@@ -257,7 +257,7 @@ mod tests {
         let p = PTable::<String, Primitive<String>>::from_sstable(
             "/tmp/test-write-to-disk/input.sstable",
         );
-        let out = p.par_do(DoNothingFn {});
+        let mut out = p.par_do(DoNothingFn {});
         out.write_to_sstable("/tmp/test-write-to-disk/output.sstable@2");
 
         plume::run();

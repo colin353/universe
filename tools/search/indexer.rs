@@ -48,18 +48,18 @@ fn main() {
 
     // Interpret filetypes and process file data
     let code = PCollection::from_recordio(&code_recordio);
-    let files = code.par_do(ProcessFilesFn {});
+    let mut files = code.par_do(ProcessFilesFn {});
     let files_sstable = format!("{}/files.sstable", output_dir.path());
     files.write_to_sstable(&files_sstable);
 
     // Extract file info by file_id
-    let files = code.par_do(ExtractCandidatesFn {});
+    let mut files = code.par_do(ExtractCandidatesFn {});
     let files_sstable = format!("{}/candidates.sstable", output_dir.path());
     files.write_to_sstable(&files_sstable);
 
     // Extract trigrams
     let trigrams = code.par_do(ExtractTrigramsFn {});
-    let trigram_matches = trigrams.group_by_key_and_par_do(AggregateTrigramsFn {});
+    let mut trigram_matches = trigrams.group_by_key_and_par_do(AggregateTrigramsFn {});
     let trigrams_sstable = format!("{}/trigrams.sstable", output_dir.path());
     trigram_matches.write_to_sstable(&trigrams_sstable);
 
