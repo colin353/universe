@@ -3,14 +3,12 @@ use search_proto_rust::*;
 static MIN_KEYWORD_LENGTH: usize = 4;
 static SPLIT_CHARS: &'static [char] = &[' ', ',', '.', '?', ':'];
 
-lazy_static! {
-    static ref KEYWORDS_RE: regex::Regex = { regex::Regex::new(r"(\w+)").unwrap() };
-}
-
 pub fn extract_keywords(file: &File) -> Vec<ExtractedKeyword> {
     let mut results = std::collections::BTreeMap::<String, ExtractedKeyword>::new();
-    for captures in KEYWORDS_RE.captures_iter(file.get_content()) {
-        let keyword = &captures[0];
+    for keyword in file
+        .get_content()
+        .split(|ch: char| !ch.is_alphanumeric() && ch != '_')
+    {
         if keyword.len() < MIN_KEYWORD_LENGTH {
             continue;
         }

@@ -3,7 +3,6 @@ use search_proto_rust::*;
 static MIN_KEYWORD_LENGTH: usize = 3;
 
 lazy_static! {
-    static ref KEYWORDS_RE: regex::Regex = { regex::Regex::new(r"(\w+)").unwrap() };
     static ref FUNCTION_DEFINITION: regex::Regex =
         { regex::Regex::new(r"\s*def\s*(\w+)\(").unwrap() };
     static ref CLASS_DEFINITION: regex::Regex =
@@ -53,13 +52,15 @@ pub fn extract_imports(file: &File) -> Vec<String> {
 
 pub fn extract_keywords(file: &File) -> Vec<ExtractedKeyword> {
     let mut results = std::collections::BTreeMap::<String, ExtractedKeyword>::new();
-    for captures in KEYWORDS_RE.captures_iter(file.get_content()) {
-        let keyword = &captures[0];
-        if STOPWORDS.contains(keyword) {
+    for keyword in file
+        .get_content()
+        .split(|ch: char| !ch.is_alphanumeric() && ch != '_')
+    {
+        if keyword.len() < MIN_KEYWORD_LENGTH {
             continue;
         }
 
-        if keyword.len() < MIN_KEYWORD_LENGTH {
+        if STOPWORDS.contains(keyword) {
             continue;
         }
 
