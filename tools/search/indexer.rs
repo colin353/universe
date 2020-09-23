@@ -3,7 +3,8 @@ extern crate flags;
 
 use indexer_lib::{
     AggregateDefinitionsFn, AggregateKeywordsFn, AggregateTrigramsFn, ExtractCandidatesFn,
-    ExtractDefinitionsFn, ExtractKeywordsFn, ExtractTrigramsFn, ProcessFilesFn,
+    ExtractDefinitionsFn, ExtractImportsFn, ExtractKeywordsFn, ExtractTrigramsFn, ImportsJoinFn,
+    ProcessFilesFn,
 };
 use plume::{EmitFn, PCollection, Stream, StreamingIterator, KV};
 
@@ -48,14 +49,19 @@ fn main() {
 
     // Interpret filetypes and process file data
     let code = PCollection::from_recordio(&code_recordio);
-    let mut files = code.par_do(ProcessFilesFn {});
+    let files = code.par_do(ProcessFilesFn {});
+
+    // Extract and join imports into files
+    let imports = code.par_do_side_input(ExtractImportsFn::new(), code.clone());
+    let mut annotated_files = imports.join(files, ImportsJoinFn {});
+
     let files_sstable = format!("{}/files.sstable", output_dir.path());
-    files.write_to_sstable(&files_sstable);
+    annotated_files.write_to_sstable(&files_sstable);
 
     // Extract file info by file_id
-    let mut files = code.par_do(ExtractCandidatesFn {});
-    let files_sstable = format!("{}/candidates.sstable", output_dir.path());
-    files.write_to_sstable(&files_sstable);
+    let mut candidates = annotated_files.par_do(ExtractCandidatesFn {});
+    let candidates_sstable = format!("{}/candidates.sstable", output_dir.path());
+    candidates.write_to_sstable(&candidates_sstable);
 
     // Extract trigrams
     let trigrams = code.par_do(ExtractTrigramsFn {});

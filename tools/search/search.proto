@@ -59,6 +59,9 @@ message File {
 
   // If the file only contains tests
   bool is_test = 9;
+
+  repeated string imports = 10;
+  repeated string dependents = 11;
 }
 
 message Span {
@@ -121,6 +124,11 @@ message SymbolDefinition {
   string filename = 2;
   uint32 line_number = 3;
   SymbolType symbol_type = 4;
+}
+
+message ImportDefinition {
+  string from_filename = 1;
+  string to_filename = 2;
 }
 
 message SearchRequest {

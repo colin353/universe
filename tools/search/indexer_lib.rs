@@ -2,7 +2,9 @@ use plume::{EmitFn, PCollection, Primitive, Stream, StreamingIterator, KV};
 use search_proto_rust::*;
 
 use std::collections::hash_map::DefaultHasher;
+use std::collections::BTreeSet;
 use std::hash::{Hash, Hasher};
+use std::sync::RwLock;
 
 pub struct ExtractKeywordsFn {}
 impl plume::DoFn for ExtractKeywordsFn {
@@ -103,26 +105,14 @@ impl plume::DoFn for ProcessFilesFn {
 
 pub struct ExtractCandidatesFn {}
 impl plume::DoFn for ExtractCandidatesFn {
-    type Input = File;
+    type Input = KV<String, File>;
     type Output = KV<String, File>;
-    fn do_it(&self, input: &File, emit: &mut dyn EmitFn<Self::Output>) {
-        let mut file = input.clone();
-        file.set_file_type(language_specific::get_filetype(file.get_filename()));
-
-        // Add any other language-specific file annotations
-        language_specific::annotate_file(&mut file);
-
-        // Some machine-generated files have insanely long lines. Usually humans
-        // don't want to read files like that.
-        let lines = file.get_content().lines().count();
-        let chars = file.get_content().len();
-        if chars > 200 * lines {
-            file.set_is_ugly(true);
-        }
+    fn do_it(&self, input: &KV<String, File>, emit: &mut dyn EmitFn<Self::Output>) {
+        let file = input.value();
 
         emit.emit(KV::new(
             search_utils::hash_filename(file.get_filename()).to_string(),
-            file,
+            file.clone(),
         ));
     }
 }
@@ -172,6 +162,128 @@ impl plume::DoStreamFn for AggregateTrigramsFn {
         if matches.get_matches().len() > 0 {
             emit.emit(KV::new(key.to_owned(), matches));
         }
+    }
+}
+
+pub struct ExtractImportsFn {
+    filenames: RwLock<BTreeSet<String>>,
+}
+impl ExtractImportsFn {
+    pub fn new() -> Self {
+        Self {
+            filenames: RwLock::new(BTreeSet::new()),
+        }
+    }
+
+    fn file_exists(&self, filename: &str) -> bool {
+        let reversed_filename: String = filename.chars().rev().collect();
+        let filenames = self.filenames.read().unwrap();
+        filenames.contains(&reversed_filename)
+    }
+
+    fn resolve_file(&self, filename: &str, ending: &str) -> Option<String> {
+        // Check if the file exists directly
+        if self.file_exists(ending) {
+            return Some(ending.to_string());
+        }
+
+        // If the file doesn't exist in the root, let's try to find it by following the path up to
+        // the current file.
+        let mut filename_components: Vec<_> = filename.split("/").collect();
+        // Remove the filename from the current file to get its directory
+        filename_components.pop();
+
+        for idx in 1..filename_components.len() {
+            let resolved_filename = format!("{}/{}", filename_components[0..idx].join("/"), ending);
+
+            if self.file_exists(&resolved_filename) {
+                return Some(ending.to_string());
+            }
+        }
+
+        // Desperation tactics, let's just try looking for any file with the correct suffix.
+        let reversed_suffix: String = ending.chars().rev().collect();
+        let filenames = self.filenames.read().unwrap();
+
+        let mut shortest = String::new();
+        for candidate in filenames.range::<str, _>((
+            std::ops::Bound::Included(reversed_suffix.as_str()),
+            std::ops::Bound::Unbounded,
+        )) {
+            if !candidate.starts_with(&reversed_suffix) {
+                break;
+            }
+
+            if shortest.is_empty() || candidate.len() < shortest.len() {
+                shortest = candidate.into();
+            }
+        }
+
+        if !shortest.is_empty() {
+            return Some(shortest);
+        }
+
+        None
+    }
+}
+impl plume::DoSideInputFn for ExtractImportsFn {
+    type Input = File;
+    type SideInput = File;
+    type Output = KV<String, ImportDefinition>;
+
+    fn init(&self, side_input: &mut dyn StreamingIterator<Item = Self::SideInput>) {
+        let mut filenames = self.filenames.write().unwrap();
+        while let Some(f) = side_input.next() {
+            // Get the reversed filename
+            let reversed_filename = f.get_filename().chars().rev().collect();
+            filenames.insert(reversed_filename);
+        }
+    }
+
+    fn do_it(&self, input: &File, emit: &mut dyn EmitFn<Self::Output>) {
+        for import in language_specific::extract_imports(input) {
+            if let Some(from_filename) = self.resolve_file(input.get_filename(), &import) {
+                let mut def = ImportDefinition::new();
+                def.set_from_filename(from_filename.clone());
+                def.set_to_filename(input.get_filename().to_owned());
+                emit.emit(KV::new(input.get_filename().to_owned(), def.clone()));
+                emit.emit(KV::new(from_filename, def));
+            }
+        }
+    }
+}
+
+pub struct ImportsJoinFn {}
+impl plume::JoinFn for ImportsJoinFn {
+    type ValueLeft = ImportDefinition;
+    type ValueRight = File;
+    type Output = KV<String, File>;
+
+    fn join(
+        &self,
+        key: &str,
+        left: &mut Stream<ImportDefinition>,
+        right: &mut Stream<File>,
+        emit: &mut dyn EmitFn<Self::Output>,
+    ) {
+        let mut f = match right.next() {
+            Some(x) => x.clone(),
+            None => return,
+        };
+
+        while let Some(import) = left.next() {
+            if import.get_from_filename() == f.get_filename() {
+                f.mut_imports().push(import.get_to_filename().into());
+            } else {
+                f.mut_dependents().push(import.get_from_filename().into());
+            }
+            println!(
+                "joined inputs for {} <--> {}",
+                f.get_filename(),
+                import.get_to_filename()
+            );
+        }
+        emit.emit(KV::new(f.get_filename().into(), f));
     }
 }
 

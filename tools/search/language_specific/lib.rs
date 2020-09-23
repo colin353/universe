@@ -38,6 +38,14 @@ pub fn get_filetype(filename: &str) -> FileType {
     FileType::UNKNOWN
 }
 
+pub fn extract_imports(file: &File) -> Vec<String> {
+    match get_filetype(file.get_filename()) {
+        FileType::PYTHON => python::extract_imports(file),
+        FileType::JAVASCRIPT => javascript::extract_imports(file),
+        _ => Vec::new(),
+    }
+}
+
 pub fn annotate_file(file: &mut File) {
     match get_filetype(file.get_filename()) {
         FileType::RUST => rust::annotate_file(file),
