@@ -6,6 +6,8 @@ use indexer_lib::{
     ExtractDefinitionsFn, ExtractImportsFn, ExtractKeywordsFn, ExtractTrigramsFn, ImportsJoinFn,
     ProcessFilesFn,
 };
+use pagerank::PageRankFn;
+
 use plume::{EmitFn, PCollection, Stream, StreamingIterator, KV};
 
 fn fail(message: &str) -> ! {
@@ -55,11 +57,16 @@ fn main() {
     let imports = code.par_do_side_input(ExtractImportsFn::new(), code.clone());
     let mut annotated_files = imports.join(files, ImportsJoinFn {});
 
+    // Run pagerank with several iterations
+    let ranked_1 = annotated_files.par_do_side_input(PageRankFn::new(), annotated_files.clone());
+    let ranked_2 = ranked_1.par_do_side_input(PageRankFn::new(), ranked_1.clone());
+    let mut ranked_3 = ranked_1.par_do_side_input(PageRankFn::new(), ranked_2.clone());
+
     let files_sstable = format!("{}/files.sstable", output_dir.path());
-    annotated_files.write_to_sstable(&files_sstable);
+    ranked_3.write_to_sstable(&files_sstable);
 
     // Extract file info by file_id
-    let mut candidates = annotated_files.par_do(ExtractCandidatesFn {});
+    let mut candidates = ranked_3.par_do(ExtractCandidatesFn {});
     let candidates_sstable = format!("{}/candidates.sstable", output_dir.path());
     candidates.write_to_sstable(&candidates_sstable);
 

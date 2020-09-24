@@ -95,6 +95,8 @@ where
             None => return self.not_found(path, req),
         };
 
+        println!("pagerank: {:?}", file.get_page_rank());
+
         let sidebar = match path[1..].rmatch_indices("/").next() {
             Some((idx, _)) => match self.searcher.get_document(&path[1..idx + 1]) {
                 Some(f) => tmpl::apply(

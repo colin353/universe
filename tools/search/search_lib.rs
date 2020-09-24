@@ -274,6 +274,7 @@ impl Searcher {
                 let c = candidates
                     .entry(search_utils::hash_filename(filename))
                     .or_insert(Candidate::new());
+                c.set_page_rank(file.get_page_rank());
                 c.set_filename(filename.to_owned());
                 c.set_keyword_matched_filename(true);
                 c.set_query_in_filename(query_match);
@@ -418,6 +419,7 @@ impl Searcher {
         };
 
         candidate.set_is_test(file.get_is_test());
+        candidate.set_page_rank(file.get_page_rank());
         candidate.set_filename(file.get_filename().to_string());
         candidate.set_is_ugly(file.get_is_ugly());
         candidate.set_file_type(file.get_file_type());
@@ -550,8 +552,8 @@ impl Searcher {
         // Filename match scoring
         if candidate.get_keyword_matched_filename() {
             score += 10.0;
-            score += 200.0 * candidate.get_filename_match_coverage();
-            score += 40.0 * candidate.get_filename_query_matches() as f32;
+            score += 100.0 * candidate.get_filename_match_coverage();
+            score += 10.0 * candidate.get_filename_query_matches() as f32;
         }
         score +=
             candidate.get_filename_match_position() as f32 / candidate.get_filename().len() as f32;
@@ -562,8 +564,10 @@ impl Searcher {
             }
         }
 
+        score += 20.0 * candidate.get_page_rank().log2();
+
         if candidate.get_exactly_matched_filename() {
-            score += 100.0;
+            score += 40.0;
         }
 
         if candidate.get_filename().contains("/migrations/") {
@@ -592,17 +596,21 @@ impl Searcher {
         // a billion instances of a variable being defined over and over. Limit at 100.
         score += std::cmp::min(definition_score, 100) as f32;
 
+        candidate.set_score(score);
+    }
+
+    fn fullscore(&self, query: &Query, candidate: &mut Candidate) {
+        let mut score = candidate.get_score();
+
+        if candidate.get_is_ugly() {
+            score /= 10.0;
+        }
+
         if candidate.get_is_test() {
             score /= 2.0;
         }
 
         candidate.set_score(score);
-    }
-
-    fn fullscore(&self, query: &Query, candidate: &mut Candidate) {
-        if candidate.get_is_ugly() {
-            candidate.set_score(candidate.get_score() / 10.0);
-        }
     }
 
     pub fn render_results(&self, results: &[Candidate]) {

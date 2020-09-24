@@ -481,6 +481,8 @@ pub fn run() {
     let planner = Planner::new();
     let pool = pool::ThreadPool::new(4);
     let mut completed = 0;
+    let mut total_shards = stages.len();
+    let mut started_shards = 0;
 
     loop {
         let mut did_execute = false;
@@ -500,6 +502,7 @@ pub fn run() {
 
             if ready {
                 let shards = planner.plan(&stage);
+                total_shards += shards.len() - 1;
 
                 // Update the total number of shards in the pcollection regsitry. Note,
                 // this means we only support a single sharded output per stage.
@@ -515,6 +518,8 @@ pub fn run() {
                 if shards.len() == 0 {
                     panic!("Stage {} has zero shards!", shards.len());
                 }
+
+                started_shards += shards.len();
                 for shard in shards {
                     let s = shard.clone();
                     pool.execute(move || {
@@ -526,17 +531,25 @@ pub fn run() {
             }
         }
 
-        println!("{}/{} in progress", pool.get_in_progress(), stages.len());
-        println!("{}/{} completed", completed, stages.len());
+        println!("{}/{} started", started_shards, total_shards);
+        println!("{}/{} in progress", pool.get_in_progress(), total_shards);
+        println!("{}/{} completed", completed, total_shards);
 
         if !did_execute {
-            if pool.get_in_progress() == 0 && started.len() == stages.len() {
+            if pool.get_in_progress() == 0 && started_shards == total_shards {
+                pool.join();
                 println!("we're done!");
                 break;
             }
-            pool.block_until_job_completes();
-            completed += 1;
+
+            if completed > total_shards {
+                println!("something went wrong");
+                break;
+            }
         }
+
+        pool.block_until_job_completes();
+        completed += 1;
     }
 }
 
@@ -778,6 +791,15 @@ where
 
     fn init(&self, input: &Shard) {
         let side_input = &input.get_side_inputs()[0];
+
+        let side_input = {
+            let id = &input.get_side_inputs()[0].get_id();
+            let reg = PCOLLECTION_REGISTRY.read().unwrap();
+            reg.get(id)
+                .expect(&format!("Couldn't find pcollection {}??", id))
+                .clone()
+        };
+
         let source = Source::<TSideInput>::new(side_input.clone());
         let mut mem_iter;
         let mut mem_src;
@@ -796,10 +818,7 @@ where
                 dyn_src = &mut rec_iter;
             }
             _ => {
-                panic!(
-                    "idk how to deal with data format {:?}",
-                    side_input.get_format()
-                );
+                panic!("idk how to deal with side input {:?}", side_input);
             }
         }
         self.function.init(dyn_src);

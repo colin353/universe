@@ -146,6 +146,7 @@ rust_binary(
     deps = [
         ":extract_lib",
         ":indexer_lib",
+        ":pagerank",
         ":search_proto_rust",
         "//plume",
         "//util/flags",
@@ -161,6 +162,18 @@ rust_library(
         ":search_utils",
         "//plume",
         "//tools/search/language_specific",
+    ],
+)
+
+
+rust_library(
+    name = "pagerank",
+    srcs = ["pagerank.rs"],
+    edition = "2018",
+    deps = [
+        ":search_proto_rust",
+        ":search_utils",
+        "//plume",
     ],
 )
 

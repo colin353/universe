@@ -197,7 +197,7 @@ impl ExtractImportsFn {
             let resolved_filename = format!("{}/{}", filename_components[0..idx].join("/"), ending);
 
             if self.file_exists(&resolved_filename) {
-                return Some(ending.to_string());
+                return Some(resolved_filename);
             }
         }
 
@@ -220,7 +220,7 @@ impl ExtractImportsFn {
         }
 
         if !shortest.is_empty() {
-            return Some(shortest);
+            return Some(shortest.chars().rev().collect());
         }
 
         None
@@ -244,8 +244,8 @@ impl plume::DoSideInputFn for ExtractImportsFn {
         for import in language_specific::extract_imports(input) {
             if let Some(from_filename) = self.resolve_file(input.get_filename(), &import) {
                 let mut def = ImportDefinition::new();
-                def.set_from_filename(from_filename.clone());
-                def.set_to_filename(input.get_filename().to_owned());
+                def.set_to_filename(from_filename.clone());
+                def.set_from_filename(input.get_filename().to_owned());
                 emit.emit(KV::new(input.get_filename().to_owned(), def.clone()));
                 emit.emit(KV::new(from_filename, def));
             }
@@ -277,12 +277,11 @@ impl plume::JoinFn for ImportsJoinFn {
             } else {
                 f.mut_dependents().push(import.get_from_filename().into());
             }
-            println!(
-                "joined inputs for {} <--> {}",
-                f.get_filename(),
-                import.get_to_filename()
-            );
         }
+
+        // Set a default initial pagerank
+        f.set_page_rank(1.0);
+
         emit.emit(KV::new(f.get_filename().into(), f));
     }
 }
