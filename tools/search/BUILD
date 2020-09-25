@@ -153,6 +153,20 @@ rust_binary(
     ],
 )
 
+rust_image(
+    name = "indexer_img",
+    base = "@glibc_base//image",
+    binary = ":indexer",
+)
+
+docker_push(
+    name = "indexer_img_push",
+    image = ":indexer_img",
+    registry = "us.gcr.io",
+    repository = "mushu-194218/search_indexer",
+    tag = "dev",
+)
+
 rust_library(
     name = "indexer_lib",
     srcs = ["indexer_lib.rs"],
