@@ -25,19 +25,19 @@
 {{parent_dir != ""}}
 <div onclick="this.parentElement.remove()" class="sidebar-collapse">↩</div>
 
-<a class="child" href='/{{parent_dir}}?q={{query}}'>
+<a class="child" href='/{{parent_dir}}'>
     <div class="sidebar-file">📁 ..</div>
 </a>
 {{/parent_dir}}
 
 {{sibling_directories[]}}
-<a class="child" href='/{{parent_dir}}/{{child}}?q={{query}}'>
+<a class="child" href='/{{parent_dir}}/{{child}}'>
     <div class="sidebar-file{{selected==true}} selected{{/selected}}">📁 {{child}}/</div>
 </a>
 {{/sibling_directories}}
 
 {{sibling_files[]}}
-<a class="child" href='/{{parent_dir}}/{{child}}?q={{query}}'>
+<a class="child" href='/{{parent_dir}}/{{child}}'>
     <div class="sidebar-file{{selected==true}} selected{{/selected}}">📄 {{child}}</div>
 </a>
 {{/sibling_files}}

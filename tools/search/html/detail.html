@@ -15,7 +15,9 @@
 
     const codepad = document.getElementById("code-pad");
     codepad.addEventListener("lineSelected", (event) => {
+      if (event.detail.line) {
         window.location.hash = "#L" + event.detail.line;
+      }
     })
 
     codepad.addEventListener("search", (event) => {
