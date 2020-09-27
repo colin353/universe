@@ -61,10 +61,14 @@ this.stateMappers = {
     const output = {};
     let lineNumber = 1;
     const selectedLine = parseInt(line)
+    const topLine = Math.max(1, selectedLine - 5);
+
     for(const line of parsedLines) {
       output[lineNumber] = {};
       output[lineNumber].lineNumber = this.state.startingLine + lineNumber;
-      output[lineNumber].class = lineNumber == selectedLine ? 'selected-line' : lineNumber == selectedLine - 5 ? 'top-line' : '';
+
+      output[lineNumber].class = lineNumber == selectedLine ? 'selected-line' : ''
+      output[lineNumber].class += lineNumber == topLine ? ' top-line' : '';
       output[lineNumber].code = line;
 
       lineNumber += 1;
@@ -108,3 +112,56 @@ function selectLine(event) {
     line: parseInt(event.srcElement.innerText)
   })
 }
+
+let jumpToLine = '';
+let command = '';
+
+// Keyboard shortcuts for jumping to lines/to top
+window.addEventListener('keydown', (e) => {
+  // Ignore keypresses within inputs
+  if (e.srcElement != window.document.body) {
+    return;
+  }
+
+  if (e.key == 'g') {
+    if (command.length > 0) {
+      // Jump to top
+      this.setState({
+        line: 1
+      })
+    } else {
+      command = 'g';
+    }
+  } else {
+    command = '';
+  }
+
+  if (e.key == 'd') {
+    this.parentElement.scrollBy(0, 350);
+  } else if (e.key == 'u') {
+    this.parentElement.scrollBy(0, -350);
+  } else if (e.key == 'j') {
+    this.parentElement.scrollBy(0, 100);
+  } else if (e.key == 'k') {
+    this.parentElement.scrollBy(0, -100);
+  }
+
+  if (e.key.length == 1 && e.key >= '0' && e.key <= '9') {
+    jumpToLine += e.key
+  } else if (e.keyCode == 27) {
+    // Detect escape + clear the jump-to-line
+    jumpToLine = '';
+  } else if (e.key == 'G') {
+    if (jumpToLine.length > 0) {
+      const lineToJumpTo = Math.min(parseInt(jumpToLine), Object.keys(this.state.lines).length)
+      this.setState({
+        line: lineToJumpTo
+      })
+    } else {
+      this.setState({
+        line: Object.keys(this.state.lines).length,
+      })
+    }
+    jumpToLine = '';
+  }
+})

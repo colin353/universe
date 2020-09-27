@@ -12,7 +12,7 @@
         <p on:click={selectLine} class="${item.class}">${item.lineNumber}</p>
     </control>
 </div>
-<code class="code" on:contextmenu={contextMenu}>
+<code ref={code} class="code" on:contextmenu={contextMenu}>
     <control for={this.state.lines}>
         <span class="line ${item.class}">${item.code}</span>
     </control>
