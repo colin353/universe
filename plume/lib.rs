@@ -87,6 +87,10 @@ where
     }
 
     fn keyranges(&self, target_shards: usize) -> Vec<String> {
+        if self.data.len() == 0 {
+            return Vec::new();
+        }
+
         (1..(target_shards))
             .map(|i| {
                 self.data[i * self.data.len() / target_shards]

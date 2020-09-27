@@ -286,6 +286,65 @@ impl plume::JoinFn for ImportsJoinFn {
     }
 }
 
+pub struct ExtractTargetsFn {}
+impl plume::DoFn for ExtractTargetsFn {
+    type Input = File;
+    type Output = KV<String, Target>;
+
+    fn do_it(&self, input: &File, emit: &mut dyn EmitFn<Self::Output>) {
+        let targets = language_specific::extract_targets(input);
+        for target in targets {
+            emit.emit(KV::new(target.get_name().to_owned(), target));
+        }
+    }
+}
+
+pub struct ExtractTargetRelationshipsFn {}
+impl plume::DoFn for ExtractTargetRelationshipsFn {
+    type Input = KV<String, Target>;
+    type Output = KV<String, Primitive<String>>;
+
+    fn do_it(&self, input: &KV<String, Target>, emit: &mut dyn EmitFn<Self::Output>) {
+        let target = input.value();
+        for dep in target.get_dependencies() {
+            for file in target.get_files() {
+                emit.emit(KV::new(dep.to_owned(), Primitive::from(file.to_owned())));
+            }
+        }
+    }
+}
+
+pub struct JoinRelationshipsFn {}
+impl plume::JoinFn for JoinRelationshipsFn {
+    type ValueLeft = Primitive<String>;
+    type ValueRight = Target;
+    type Output = KV<String, ImportDefinition>;
+
+    fn join(
+        &self,
+        key: &str,
+        left: &mut Stream<Self::ValueLeft>,
+        right: &mut Stream<Self::ValueRight>,
+        emit: &mut dyn EmitFn<Self::Output>,
+    ) {
+        let target = match right.next() {
+            Some(x) => x,
+            None => return,
+        };
+
+        while let Some(from_file) = left.next() {
+            for to_file in target.get_files() {
+                let mut def = ImportDefinition::new();
+                def.set_from_filename(from_file.to_string());
+                def.set_to_filename(to_file.to_owned());
+
+                emit.emit(KV::new((*from_file).to_string(), def.clone()));
+                emit.emit(KV::new(to_file.to_owned(), def));
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

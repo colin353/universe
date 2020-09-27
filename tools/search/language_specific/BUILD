@@ -11,6 +11,7 @@ rust_library(
         "lib.rs",
         "proto.rs",
         "python.rs",
+        "bazel.rs",
         "rust.rs",
     ],
     edition = "2018",

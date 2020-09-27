@@ -123,6 +123,13 @@ enum Error {
   AUTHENTICATION = 1;
 }
 
+message Target {
+  string name = 1;
+  string canonical_name = 2;
+  repeated string files = 3;
+  repeated string dependencies = 4;
+}
+
 message SymbolDefinition {
   string symbol = 1;
   string filename = 2;

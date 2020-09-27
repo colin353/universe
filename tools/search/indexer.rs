@@ -3,8 +3,8 @@ extern crate flags;
 
 use indexer_lib::{
     AggregateDefinitionsFn, AggregateKeywordsFn, AggregateTrigramsFn, ExtractCandidatesFn,
-    ExtractDefinitionsFn, ExtractImportsFn, ExtractKeywordsFn, ExtractTrigramsFn, ImportsJoinFn,
-    ProcessFilesFn,
+    ExtractDefinitionsFn, ExtractImportsFn, ExtractKeywordsFn, ExtractTargetRelationshipsFn,
+    ExtractTargetsFn, ExtractTrigramsFn, ImportsJoinFn, JoinRelationshipsFn, ProcessFilesFn,
 };
 use pagerank::PageRankFn;
 
@@ -55,7 +55,17 @@ fn main() {
 
     // Extract and join imports into files
     let imports = code.par_do_side_input(ExtractImportsFn::new(), code.clone());
-    let mut annotated_files = imports.join(files, ImportsJoinFn {});
+    let partially_annotated_files = imports.join(files, ImportsJoinFn {});
+
+    // Extract bazel targets
+    let mut targets = code.par_do(ExtractTargetsFn {});
+    let targets_sstable = format!("{}/targets.sstable", output_dir.path());
+    targets.write_to_sstable(&targets_sstable);
+
+    // Annotate imports with bazel target info
+    let relationships = targets.par_do(ExtractTargetRelationshipsFn {});
+    let imports = relationships.join(targets, JoinRelationshipsFn {});
+    let mut annotated_files = imports.join(partially_annotated_files, ImportsJoinFn {});
 
     // Run pagerank with several iterations
     let ranked_1 = annotated_files.par_do_side_input(PageRankFn::new(), annotated_files.clone());

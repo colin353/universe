@@ -3,6 +3,7 @@ extern crate lazy_static;
 
 use search_proto_rust::*;
 
+mod bazel;
 mod default;
 mod javascript;
 mod proto;
@@ -70,5 +71,11 @@ pub fn extract_definitions(file: &File) -> Vec<SymbolDefinition> {
         FileType::PYTHON => python::extract_definitions(file),
         FileType::JAVASCRIPT => javascript::extract_definitions(file),
         _ => default::extract_definitions(file),
+    }
+}
+pub fn extract_targets(file: &File) -> Vec<Target> {
+    match get_filetype(file.get_filename()) {
+        FileType::BAZEL => bazel::extract_targets(file),
+        _ => Vec::new(),
     }
 }
