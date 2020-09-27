@@ -33,13 +33,13 @@ rust_binary(
 )
 
 rust_image(
-    name = "fes_image",
+    name = "fes_img",
     base = "@glibc_base//image",
     binary = ":fes_with_js",
 )
 
 docker_push(
-    name = "fes_image_push",
+    name = "fes_img_push",
     image = ":fes_image",
     registry = "us.gcr.io",
     repository = "mushu-194218/fes",
