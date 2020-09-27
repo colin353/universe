@@ -295,11 +295,10 @@ impl Searcher {
     ) {
         let mut short_keyword_mask: u32 = 0;
 
-        for (index, keyword) in query
-            .get_keywords()
-            .iter()
-            .enumerate()
-            .filter(|(_, k)| !k.get_is_prefix() && !k.get_is_language())
+        for (index, keyword) in
+            query.get_keywords().iter().enumerate().filter(|(_, k)| {
+                !k.get_is_definition() && !k.get_is_prefix() && !k.get_is_language()
+            })
         {
             // We use a trigram index. If this keyword has fewer than 3 chars, just assume
             // any candidate might match it.

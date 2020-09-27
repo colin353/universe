@@ -9,6 +9,8 @@ lazy_static! {
         { regex::Regex::new(r"\s*(pub)?\s*struct\s+(\w+)").unwrap() };
     static ref LET_BINDING: regex::Regex =
         { regex::Regex::new(r"\s*let\s*(mut)?\s+(\w+)").unwrap() };
+    static ref TRAIT_DEFINITION: regex::Regex =
+        { regex::Regex::new(r"\s*(pub)?\s*trait\s+(\w+)").unwrap() };
     static ref STOPWORDS: std::collections::HashSet<String> = {
         let mut s = std::collections::HashSet::new();
         s.insert("let".into());
@@ -79,6 +81,14 @@ pub fn extract_definitions(file: &File) -> Vec<SymbolDefinition> {
             d.set_filename(file.get_filename().to_string());
             d.set_line_number(line_number as u32);
             d.set_symbol_type(SymbolType::VARIABLE);
+            results.push(d);
+        }
+        for captures in TRAIT_DEFINITION.captures_iter(line) {
+            let mut d = SymbolDefinition::new();
+            d.set_symbol(captures[captures.len() - 1].to_string());
+            d.set_filename(file.get_filename().to_string());
+            d.set_line_number(line_number as u32);
+            d.set_symbol_type(SymbolType::TRAIT);
             results.push(d);
         }
     }
