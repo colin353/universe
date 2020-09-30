@@ -35,6 +35,11 @@ fn main() {
         String::from("http://localhost:9898"),
         "the base URL of the site"
     );
+    let js_src = define_flag!(
+        "js_src",
+        String::from("https://js.colinmerkel.xyz"),
+        "where to serve JS assets from"
+    );
 
     parse_flags!(
         web_port,
@@ -44,7 +49,8 @@ fn main() {
         auth_port,
         disable_auth,
         static_files,
-        base_url
+        base_url,
+        js_src
     );
 
     let mut server = grpc::ServerBuilder::<tls_api_stub::TlsAcceptor>::new();
@@ -64,6 +70,12 @@ fn main() {
     ));
     let _server = server.build().unwrap();
 
-    webserver::SearchWebserver::new(searcher, static_files.value(), base_url.value(), auth)
-        .serve(web_port.value());
+    webserver::SearchWebserver::new(
+        searcher,
+        static_files.value(),
+        base_url.value(),
+        auth,
+        js_src.value(),
+    )
+    .serve(web_port.value());
 }

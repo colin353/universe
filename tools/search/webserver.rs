@@ -18,6 +18,7 @@ pub struct SearchWebserver<A> {
     auth: A,
     searcher: Arc<search_lib::Searcher>,
     base_url: String,
+    settings: tmpl::ContentsMap,
 }
 
 impl<A> SearchWebserver<A>
@@ -29,23 +30,26 @@ where
         static_dir: String,
         base_url: String,
         auth: A,
+        js_src: String,
     ) -> Self {
         Self {
             static_dir: static_dir,
             auth: auth,
             base_url: base_url,
             searcher: searcher,
+            settings: content!("js_src" => js_src),
         }
     }
 
     fn wrap_template(&self, header: bool, query: &str, content: String) -> String {
-        tmpl::apply(
+        tmpl::apply_with_settings(
             TEMPLATE,
-            &content!(
+            content!(
                 "title" => "code search",
                 "show_header" => header,
                 "query" => query,
                 "content" => content),
+            &self.settings,
         )
     }
 
@@ -67,14 +71,15 @@ where
             return response;
         }
 
-        let page = tmpl::apply(
+        let page = tmpl::apply_with_settings(
             RESULTS,
-            &content!(
+            content!(
                 "query" => keywords;
                 "results" => results.get_candidates().iter().map(|r| render::result(r)).collect(),
                 "languages" => results.take_languages().iter().map(|x| content!("name" => x)).collect(),
                 "prefixes" => results.take_prefixes().iter().map(|x| content!("name" => x)).collect()
             ),
+            &self.settings,
         );
         Response::new(Body::from(self.wrap_template(true, keywords, page)))
     }
@@ -129,7 +134,7 @@ where
                 ),
             )
         } else {
-            tmpl::apply(DETAIL, &render::file(&file))
+            tmpl::apply_with_settings(DETAIL, render::file(&file), &self.settings)
         };
 
         let mut filename_components = Vec::new();
@@ -146,9 +151,9 @@ where
                 "section" => file.get_filename()[prev_idx..].to_string()
         ));
 
-        let page = tmpl::apply(
+        let page = tmpl::apply_with_settings(
             DETAIL_TEMPLATE,
-            &content!(
+            content!(
                 "filename" => file.get_filename(),
                 "sidebar" => sidebar,
                 "detail" => details;
@@ -156,13 +161,14 @@ where
                 // Extract the filename into clickable components
                 "filename_components" => filename_components
             ),
+            &self.settings,
         );
 
         Response::new(Body::from(self.wrap_template(true, query, page)))
     }
 
     fn index(&self, path: String, req: Request) -> Response {
-        let page = tmpl::apply(INDEX, &content!());
+        let page = tmpl::apply_with_settings(INDEX, content!(), &self.settings);
         Response::new(Body::from(self.wrap_template(false, "", page)))
     }
 
