@@ -90,6 +90,17 @@ pub fn apply(template: &str, data: &ContentsMap) -> String {
     out
 }
 
+pub fn apply_with_settings(
+    template: &str,
+    mut data: ContentsMap,
+    settings: &ContentsMap,
+) -> String {
+    let mut out = String::from("");
+    data.insert("settings", Contents::Object(settings.clone()));
+    apply_mut(template, &data, &mut out);
+    out
+}
+
 pub fn apply_mut(template: &str, data: &ContentsMap, output: &mut String) {
     let mut parser = Parser::new(template);
     while let Some((start, end, maybe_key)) = parser.next() {
@@ -608,5 +619,19 @@ mod tests {
         );
         let expected = "hello world";
         assert_eq!(apply(template, &contents), expected);
+    }
+
+    #[test]
+    fn test_use_settings_data() {
+        let template = "{{settings.test}} {{content}}";
+
+        let contents = content!(
+            "content" => "winner"
+        );
+        let settings = content!(
+            "test" => "game"
+        );
+        let expected = "game winner";
+        assert_eq!(apply_with_settings(template, contents, &settings), expected);
     }
 }
