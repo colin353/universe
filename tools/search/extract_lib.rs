@@ -60,7 +60,13 @@ fn extract_from_dir(
                     String::new()
                 }
             };
-            f.set_content(contents);
+
+            // Omit files that are too long
+            if contents.len() < 1_000_000 {
+                f.set_content(contents);
+                f.set_is_ugly(true);
+            }
+
             child_files.push(path.clone());
         }
 
