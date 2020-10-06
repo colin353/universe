@@ -30,11 +30,11 @@ use std::sync::{Arc, Mutex, RwLock};
 
 static ORDER: std::sync::atomic::Ordering = std::sync::atomic::Ordering::Relaxed;
 static LAST_ID: AtomicU64 = AtomicU64::new(1);
-static MAX_SSTABLE_HEAP_SIZE: usize = 1000 * 1000 * 1000;
+static MAX_SSTABLE_HEAP_SIZE: usize = 100 * 1000 * 1000;
 
 static TARGET_SHARDS: usize = 8;
-static IN_MEMORY_RECORD_THRESHOLD: u64 = 1000 * 1000;
-static IN_MEMORY_BYTES_THRESHOLD: u64 = 1000 * 1000 * 1000;
+static IN_MEMORY_RECORD_THRESHOLD: u64 = 100 * 1000;
+static IN_MEMORY_BYTES_THRESHOLD: u64 = 100 * 1000 * 1000;
 
 lazy_static! {
     static ref PCOLLECTION_REGISTRY: RwLock<HashMap<u64, PCollectionProto>> =
