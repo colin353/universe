@@ -133,6 +133,10 @@ impl Searcher {
         self.expand_candidates(&query, &mut candidates);
         self.final_rank(&query, &mut candidates);
         self.cutoff(&mut candidates, self.candidates_to_return);
+
+        #[cfg(debug_scoring)]
+        self.print_debug_scoring(&query, &candidates);
+
         self.render_results(&candidates);
         println!("total search: {} ms", start.elapsed().as_millis());
 
@@ -228,6 +232,22 @@ impl Searcher {
         }
     }
 
+    fn print_debug_scoring(&self, query: &Query, candidates: &[Candidate]) {
+        println!("\n\nScoring report:");
+
+        for candidate in candidates {
+            debug_scoring("\n---------------------------------------------------------------------------------");
+            debug_scoring(format!("candidate: {}", candidate.get_filename()));
+            debug_scoring(
+                "---------------------------------------------------------------------------------",
+            );
+            let mut c = candidate.clone();
+            self.score(query, &mut c);
+            self.fullscore(query, &mut c);
+            debug_scoring(format!("final score: {}", c.get_score()));
+        }
+    }
+
     fn get_candidates_by_filename(&self, query: &Query, candidates: &mut HashMap<u64, Candidate>) {
         // Construct regex matchers for each keyword
         let keyword_matchers: Vec<_> = query
@@ -253,6 +273,8 @@ impl Searcher {
             let mut exact_match = false;
             let mut match_position = 0;
             let mut match_mask = 0;
+            let mut border_match_mask = 0;
+            let mut complete_match_mask = 0;
             let mut num_matches = 0;
             let mut matched_in_order = true;
             let mut filename_coverage = 0;
@@ -277,16 +299,37 @@ impl Searcher {
                     if m.end() < match_position {
                         matched_in_order = false;
                     }
+
                     num_matches += 1;
                     filename_coverage += m.end() - m.start();
                     match_position = std::cmp::max(match_position, m.end());
                     match_mask = update_mask(match_mask, index);
+
+                    // Keep track of whether the keyword matches were interior, border, or complete
+                    // matches.
+                    let mut keyword_matches_border = false;
+                    if m.start() == 0
+                        || !is_valid_variable_char(filename.chars().nth(m.start() - 1).unwrap())
+                    {
+                        border_match_mask = update_mask(border_match_mask, index);
+                    }
+
+                    if let Some(ch) = filename.chars().nth(m.end()) {
+                        if !is_valid_variable_char(ch) {
+                            if keyword_matches_border {
+                                complete_match_mask = update_mask(complete_match_mask, index);
+                            } else {
+                                border_match_mask = update_mask(border_match_mask, index);
+                            }
+                        }
+                    } else {
+                        border_match_mask = update_mask(border_match_mask, index);
+                    }
                 }
             }
 
-            if let Some(m) = query_matcher.find(filename) {
+            if let Some(m) = query_matcher.find(&search_utils::normalize_keyword(filename)) {
                 query_match = true;
-                num_matches += 1;
 
                 // It matched all components of the query so just fill the match mask with 1s
                 match_mask = std::u32::MAX;
@@ -309,8 +352,16 @@ impl Searcher {
                 c.set_exactly_matched_filename(exact_match);
                 c.set_filename_match_position(match_position as u32);
                 c.set_filename_query_matches(num_matches);
-                c.set_filename_keywords_matched_in_order(matched_in_order);
+                if num_matches > 1 {
+                    c.set_filename_keywords_matched_in_order(matched_in_order);
+                }
                 c.set_keyword_definite_match_mask(c.get_keyword_definite_match_mask() | match_mask);
+                c.set_keyword_border_match_mask(
+                    c.get_keyword_border_match_mask() | border_match_mask,
+                );
+                c.set_keyword_complete_match_mask(
+                    c.get_keyword_complete_match_mask() | complete_match_mask,
+                );
                 c.set_filename_match_coverage(filename_coverage as f32 / filename.len() as f32);
             }
         }
@@ -464,8 +515,34 @@ impl Searcher {
                     continue;
                 }
 
+                let mut border_match = false;
+                let mut complete_match = false;
+
                 for mut span in s.into_iter() {
                     span.set_line(line_number as u64);
+
+                    let mut span_is_border_match = false;
+                    if span.get_offset() >= 1
+                        && !is_valid_variable_char(
+                            line.chars().nth((span.get_offset() - 1) as usize).unwrap(),
+                        )
+                    {
+                        span_is_border_match = true;
+                    }
+                    if let Some(c) = line
+                        .chars()
+                        .nth((span.get_offset() + span.get_length() + 1) as usize)
+                    {
+                        if !is_valid_variable_char(c) {
+                            if span_is_border_match {
+                                complete_match = true;
+                            } else {
+                                border_match = true;
+                            }
+                        }
+                    }
+                    border_match |= span_is_border_match;
+
                     candidate.mut_spans().push(span);
                 }
 
@@ -475,6 +552,8 @@ impl Searcher {
                     e
                 });
                 k.set_occurrences(k.get_occurrences() + 1);
+                k.set_border_match(border_match);
+                k.set_complete_match(complete_match);
 
                 if k.get_occurrences() > 20 {
                     break;
@@ -490,11 +569,24 @@ impl Searcher {
         }
 
         for (index, k) in matched_keywords.into_iter() {
-            candidate.mut_matched_keywords().push(k);
             candidate.set_keyword_definite_match_mask(update_mask(
                 candidate.get_keyword_definite_match_mask(),
                 index,
             ));
+
+            if (k.get_border_match()) {
+                candidate.set_keyword_border_match_mask(update_mask(
+                    candidate.get_keyword_border_match_mask(),
+                    index,
+                ))
+            }
+            if (k.get_complete_match()) {
+                candidate.set_keyword_complete_match_mask(update_mask(
+                    candidate.get_keyword_complete_match_mask(),
+                    index,
+                ))
+            }
+            candidate.mut_matched_keywords().push(k);
         }
 
         candidate
@@ -563,65 +655,130 @@ impl Searcher {
     }
 
     fn score(&self, query: &Query, candidate: &mut Candidate) {
-        let mut score = candidate.get_score();
+        let mut score = 0.0;
 
         // Keyword match scoring
         for kw in candidate.get_matched_keywords() {
-            score += 10.0;
-            score += 0.1 * std::cmp::min(kw.get_occurrences(), 10) as f32;
+            let mut points = 10.0;
+            points += std::cmp::min(kw.get_occurrences(), 10) as f32;
+            score += points;
+            debug_score(format!("matched `{}`", kw.get_keyword()), points);
 
             // Penalty for non-exact keyword match
             if kw.get_normalized() {
                 score -= 3.0;
+                debug_score("keyword was normalized", -3);
             }
         }
 
         // Filename match scoring
         if candidate.get_keyword_matched_filename() {
             score += 10.0;
+            debug_score("keyword matched filename", 10);
             score += 100.0 * candidate.get_filename_match_coverage();
+            if candidate.get_filename_match_coverage() > 0.0 {
+                debug_score(
+                    "filename match coverage",
+                    100.0 * candidate.get_filename_match_coverage(),
+                );
+            }
             score += 10.0 * candidate.get_filename_query_matches() as f32;
-        }
-        score +=
-            candidate.get_filename_match_position() as f32 / candidate.get_filename().len() as f32;
-
-        if candidate.get_query_in_filename() {
-            if candidate.get_filename_keywords_matched_in_order() {
-                score += 20.0 * candidate.get_filename_query_matches() as f32;
+            if candidate.get_filename_query_matches() > 0 {
+                debug_score(
+                    "filename query matches",
+                    10.0 * candidate.get_filename_query_matches() as f32,
+                );
             }
         }
 
-        score += 20.0 * candidate.get_page_rank().log2();
+        let points = 50.0 * candidate.get_filename_match_position() as f32
+            / candidate.get_filename().len() as f32;
+
+        if points > 0.0 {
+            debug_score("filename match position", points);
+        }
+        score += points;
+
+        if candidate.get_query_in_filename() {
+            if candidate.get_filename_keywords_matched_in_order() {
+                let points = 20.0 * candidate.get_filename_query_matches() as f32;
+                debug_score("filename match is ordered", points);
+                score += points;
+            }
+        }
+
+        score += 10.0 * candidate.get_page_rank().log2();
+        debug_score("pagerank: ", 10.0 * candidate.get_page_rank().log2());
 
         if candidate.get_exactly_matched_filename() {
             score += 40.0;
+            debug_score("exact filename match", 40);
         }
 
         if candidate.get_filename().contains("/migrations/") {
+            debug_score("contains migrations", -score / 2.0);
             score /= 2.0;
         }
 
         if candidate.get_filename().starts_with("third_party") {
+            debug_score("contains third_party", -score / 3.0);
             score /= 3.0;
         }
 
         // Definition scoring
-        // TODO: adjust score based on symbol type
         let mut definition_score = 0;
+        let mut variable_definitions = HashSet::new();
         for def in candidate.get_matched_definitions() {
+            // Skip duplicate variable definitions, since those can be spammy
+            if def.get_symbol_type() == SymbolType::VARIABLE
+                && variable_definitions.contains(def.get_symbol())
+            {
+                continue;
+            } else if def.get_symbol_type() == SymbolType::VARIABLE {
+                variable_definitions.insert(def.get_symbol());
+            }
+
             let symbol_score = score_definition_type(def.get_symbol_type());
             definition_score += symbol_score;
+            debug_score(
+                format!("contains definition `{}`", def.get_symbol()),
+                symbol_score,
+            );
             for keyword in query.get_keywords() {
                 if def.get_symbol() == keyword.get_keyword() {
                     // Exact match, give extra points
                     definition_score += symbol_score;
+                    debug_score("exact definition match", symbol_score);
                 }
             }
         }
 
         // Sometimes definition scores can get really crazy, e.g. if there are
         // a billion instances of a variable being defined over and over. Limit at 100.
+        if definition_score > 100 {
+            debug_score("cap definition score", -(definition_score as f32 - 100.0));
+        }
         score += std::cmp::min(definition_score, 100) as f32;
+
+        let points = 10.0 * candidate.get_keyword_complete_match_mask().count_ones() as f32;
+        debug_score("complete match mask", points);
+        score += points;
+
+        let points = 5.0 * candidate.get_keyword_border_match_mask().count_ones() as f32;
+        debug_score("border match mask", points);
+        score += points;
+
+        let target_match_mask = (1 << (query.get_keywords().len())) - 1;
+        if candidate.get_keyword_border_match_mask() != target_match_mask {
+            debug_score("incomplete border match mask", score / 2.0);
+            score /= 2.0;
+        }
+
+        score -= 0.25 * candidate.get_filename().len() as f32;
+        debug_score(
+            "long filename discount",
+            -0.25 * (candidate.get_filename().len() as f32),
+        );
 
         candidate.set_score(score);
     }
@@ -630,10 +787,12 @@ impl Searcher {
         let mut score = candidate.get_score();
 
         if candidate.get_is_ugly() {
+            debug_score("is ugly", -(9.0 * score / 10.0));
             score /= 10.0;
         }
 
         if candidate.get_is_test() {
+            debug_score("is a test", -(score / 2.0));
             score /= 2.0;
         }
 
@@ -768,6 +927,25 @@ fn find_max_span_window(spans: &[Span]) -> usize {
     max_window_start
 }
 
+#[cfg(debug_scoring)]
+fn debug_scoring<T: std::fmt::Display>(input: T) {
+    println!("{}", input);
+}
+
+#[cfg(debug_scoring)]
+fn debug_score<T: std::fmt::Display, U: std::fmt::Display>(input: T, diff: U) {
+    let mut out = format!("{}", input);
+    let spaces = 60 - out.len();
+    for _ in (0..spaces) {
+        out.push(' ');
+    }
+    out += &format!("{}", diff);
+    println!("{}", out);
+}
+
+#[cfg(not(debug_scoring))]
+fn debug_scoring<T: std::fmt::Display>(_: T) {}
+
 fn render_query_keyword(kw: &QueryKeyword) -> String {
     let mut prefix = "";
     if kw.get_is_definition() {
@@ -790,6 +968,10 @@ fn extract_spans(re: &aho_corasick::AhoCorasick, line: &str) -> Vec<Span> {
         output.push(s);
     }
     output
+}
+
+fn is_valid_variable_char(ch: char) -> bool {
+    ch.is_alphanumeric() || ch == '_'
 }
 
 fn update_mask(mask: u32, index: usize) -> u32 {

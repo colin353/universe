@@ -127,6 +127,9 @@ rust_library(
         "//util/sstable",
         "@io_bazel_rules_rust//proto/raze:protobuf",
     ],
+    rustc_flags = [
+        "--cfg=debug_scoring",
+    ]
 )
 
 rust_library(
