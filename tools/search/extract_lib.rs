@@ -64,6 +64,7 @@ fn extract_from_dir(
             // Omit files that are too long
             if contents.len() < 1_000_000 {
                 f.set_content(contents);
+            } else {
                 f.set_is_ugly(true);
             }
 
