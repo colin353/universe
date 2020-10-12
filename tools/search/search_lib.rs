@@ -65,12 +65,33 @@ impl Searcher {
         }
     }
 
-    pub fn suggest(&self, prefix: &str) -> SuggestResponse {
-        let prefix = search_utils::normalize_keyword(prefix);
+    pub fn suggest(&self, keyword: &str) -> SuggestResponse {
+        let query = self.parse_query(keyword);
+
+        // Extract the common query prefix
+        let mut prefix = query
+            .get_keywords()
+            .iter()
+            .take(query.get_keywords().len() - 1)
+            .map(|x| render_query_keyword(x))
+            .collect::<Vec<_>>()
+            .join(" ");
+
+        if prefix.len() > 0 {
+            prefix.push(' ');
+        }
+
+        // Only provide suggestions for the LAST keyword in the query
+        let last_keyword = match query.get_keywords().iter().last() {
+            Some(x) => x,
+            None => return SuggestResponse::new(),
+        };
+
+        let keyword = search_utils::normalize_keyword(last_keyword.get_keyword());
 
         let mut reader = self.keywords.lock().unwrap();
 
-        let specd_reader = SpecdSSTableReader::from_reader(&mut *reader, &prefix);
+        let specd_reader = SpecdSSTableReader::from_reader(&mut *reader, &keyword);
         let mut count = 0;
         let mut suggestions = Vec::new();
         for (_, keyword) in specd_reader {
@@ -84,12 +105,19 @@ impl Searcher {
         suggestions.sort_by_key(|x| std::u64::MAX - x.get_occurrences());
 
         let mut output = SuggestResponse::new();
+        let mut expanded_keyword = last_keyword.clone();
         for suggestion in suggestions
             .into_iter()
             .take(SUGGESTION_LIMIT)
             .map(|mut x| x.take_keyword())
         {
-            output.mut_suggestions().push(suggestion);
+            expanded_keyword.set_keyword(suggestion);
+
+            output.mut_suggestions().push(format!(
+                "{}{}",
+                prefix,
+                render_query_keyword(&expanded_keyword)
+            ));
         }
         output
     }
@@ -738,6 +766,19 @@ fn find_max_span_window(spans: &[Span]) -> usize {
     }
 
     max_window_start
+}
+
+fn render_query_keyword(kw: &QueryKeyword) -> String {
+    let mut prefix = "";
+    if kw.get_is_definition() {
+        prefix = "def:";
+    } else if kw.get_is_prefix() {
+        prefix = "in:";
+    } else if kw.get_is_language() {
+        prefix = "lang:";
+    }
+
+    format!("{}{}", prefix, kw.get_keyword())
 }
 
 fn extract_spans(re: &aho_corasick::AhoCorasick, line: &str) -> Vec<Span> {
