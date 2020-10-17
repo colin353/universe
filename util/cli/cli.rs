@@ -10,6 +10,27 @@ pub fn wait_for_enter() {
     }
 }
 
+pub fn confirm_string(mut input: &str) -> bool {
+    if input.trim().is_empty() {
+        input = "yes";
+    }
+
+    eprint!("Are you sure? To confirm, type \"{}\": ", input);
+
+    for line in std::io::stdin().lock().lines() {
+        let line = match line {
+            Ok(x) => x,
+            Err(_) => return false,
+        };
+
+        if line.trim() == input.trim() {
+            return true;
+        }
+        break;
+    }
+    return false;
+}
+
 // If the authentication token exists, will read from that token. Doesn't check if it's valid. If
 // not set, just gives back an empty string.
 pub fn load_auth() -> String {

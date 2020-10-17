@@ -4,6 +4,15 @@ load("@io_bazel_rules_rust//rust:rust.bzl", "rust_library")
 load("@io_bazel_rules_rust//rust:rust.bzl", "rust_binary")
 load("@io_bazel_rules_rust//rust:rust.bzl", "rust_test")
 
+rust_binary(
+    name = "example",
+    srcs = [ "example.rs" ],
+    edition = "2018",
+    deps = [
+        ":cli",
+    ],
+)
+
 rust_library(
     name = "cli",
     srcs = [
