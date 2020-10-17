@@ -61,6 +61,46 @@ rust_binary(
     ],
 )
 
+rust_binary(
+    name = "index_and_search",
+    srcs = [
+        "render.rs",
+        "index_and_search.rs",
+        "webserver.rs",
+    ],
+    data = [
+        "html/detail.html",
+        "html/detail_folder.html",
+        "html/detail_template.html",
+        "html/index.html",
+        "html/markdown.html",
+        "html/results.html",
+        "html/sidebar.html",
+        "html/template.html",
+        "//homepage/js:code_pad",
+        "//tools/search/js:flow_view",
+        "//tools/search/js:search_box",
+    ],
+    edition = "2018",
+    deps = [
+        "search_grpc_rust",
+        ":search_lib",
+        ":server_lib",
+        ":extract_lib",
+        ":indexer_lib",
+        "//auth:auth_client",
+        "//third_party:base64",
+        "//third_party:json",
+        "//util/flags",
+        "//util/markdown",
+        "//util/tmpl",
+        "//util/ws",
+        "//util/ws:ws_utils",
+        "@io_bazel_rules_rust//proto/raze:grpc",
+        "@io_bazel_rules_rust//proto/raze:tls_api_stub",
+    ],
+)
+
 rust_image(
     name = "search_server_img",
     base = "//weld/review:review_base_img",
@@ -149,7 +189,6 @@ rust_binary(
     deps = [
         ":extract_lib",
         ":indexer_lib",
-        ":pagerank",
         ":search_proto_rust",
         "//plume",
         "//util/flags",
@@ -176,6 +215,7 @@ rust_library(
     edition = "2018",
     deps = [
         ":search_proto_rust",
+        ":pagerank",
         ":search_utils",
         "//plume",
         "//tools/search/language_specific",

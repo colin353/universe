@@ -1,15 +1,6 @@
 #[macro_use]
 extern crate flags;
 
-use indexer_lib::{
-    AggregateDefinitionsFn, AggregateKeywordsFn, AggregateTrigramsFn, ExtractCandidatesFn,
-    ExtractDefinitionsFn, ExtractImportsFn, ExtractKeywordsFn, ExtractTargetRelationshipsFn,
-    ExtractTargetsFn, ExtractTrigramsFn, ImportsJoinFn, JoinRelationshipsFn, ProcessFilesFn,
-};
-use pagerank::PageRankFn;
-
-use plume::{EmitFn, PCollection, Stream, StreamingIterator, KV};
-
 fn fail(message: &str) -> ! {
     eprintln!("{}", message);
     std::process::exit(1);
@@ -49,54 +40,5 @@ fn main() {
         input_recordio.path()
     };
 
-    // Interpret filetypes and process file data
-    let code = PCollection::from_recordio(&code_recordio);
-    let files = code.par_do(ProcessFilesFn {});
-
-    // Extract and join imports into files
-    let imports = code.par_do_side_input(ExtractImportsFn::new(), code.clone());
-    let partially_annotated_files = imports.join(files, ImportsJoinFn {});
-
-    // Extract bazel targets
-    let mut targets = code.par_do(ExtractTargetsFn {});
-    let targets_sstable = format!("{}/targets.sstable", output_dir.path());
-    targets.write_to_sstable(&targets_sstable);
-
-    // Annotate imports with bazel target info
-    let relationships = targets.par_do(ExtractTargetRelationshipsFn {});
-    let imports = relationships.join(targets, JoinRelationshipsFn {});
-    let mut annotated_files = imports.join(partially_annotated_files, ImportsJoinFn {});
-
-    // Run pagerank with several iterations
-    let ranked_1 = annotated_files.par_do_side_input(PageRankFn::new(), annotated_files.clone());
-    let ranked_2 = ranked_1.par_do_side_input(PageRankFn::new(), ranked_1.clone());
-    let mut ranked_3 = ranked_1.par_do_side_input(PageRankFn::new(), ranked_2.clone());
-
-    let files_sstable = format!("{}/files.sstable", output_dir.path());
-    ranked_3.write_to_sstable(&files_sstable);
-
-    // Extract file info by file_id
-    let mut candidates = ranked_3.par_do(ExtractCandidatesFn {});
-    let candidates_sstable = format!("{}/candidates.sstable", output_dir.path());
-    candidates.write_to_sstable(&candidates_sstable);
-
-    // Extract trigrams
-    let trigrams = code.par_do(ExtractTrigramsFn {});
-    let mut trigram_matches = trigrams.group_by_key_and_par_do(AggregateTrigramsFn {});
-    let trigrams_sstable = format!("{}/trigrams.sstable", output_dir.path());
-    trigram_matches.write_to_sstable(&trigrams_sstable);
-
-    // Extract definitions
-    let keywords = code.par_do(ExtractDefinitionsFn {});
-    let mut index = keywords.group_by_key_and_par_do(AggregateDefinitionsFn {});
-    let definitions_sstable = format!("{}/definitions.sstable", output_dir.path());
-    index.write_to_sstable(&definitions_sstable);
-
-    // Extract keywords
-    let keywords = code.par_do(ExtractKeywordsFn {});
-    let mut extracted_keywords = keywords.group_by_key_and_par_do(AggregateKeywordsFn {});
-    let keywords_sstable = format!("{}/keywords.sstable", output_dir.path());
-    extracted_keywords.write_to_sstable(&keywords_sstable);
-
-    plume::run();
+    indexer_lib::run_indexer(&code_recordio, &output_dir.path());
 }
