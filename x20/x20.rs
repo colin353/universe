@@ -96,6 +96,12 @@ fn main() {
                 create.value(),
             );
         }
+        "delete_binary" => manager.delete_binary(name.value()),
+        "delete_config" => {
+            let mut buffer = String::new();
+            std::io::stdin().read_to_string(&mut buffer).unwrap();
+            manager.delete_config(buffer);
+        }
         "build" => manager.build(name.value()),
         "update" => {
             manager.update();

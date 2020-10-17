@@ -42,6 +42,9 @@ message GetBinariesResponse { repeated Binary binaries = 1; }
 message PublishBinaryRequest {
   Binary binary = 1;
   string token = 2;
+
+  // If true, delete this binary
+  bool delete = 3;
 }
 message PublishBinaryResponse { Error error = 1; }
 
@@ -51,6 +54,9 @@ message GetConfigsResponse { repeated Configuration configs = 1; }
 message PublishConfigRequest {
   Configuration config = 1;
   string token = 2;
+  
+  // If true, delete this config
+  bool delete = 3;
 }
 message PublishConfigResponse { Error error = 1; }
 

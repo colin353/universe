@@ -241,6 +241,30 @@ impl X20Manager {
         Ok((new_binaries, new_configs))
     }
 
+    pub fn delete_binary(&self, name: String) {
+        if name.is_empty() {
+            eprintln!("You must specify a name of the binary to delete");
+            std::process::exit(1);
+        }
+
+        if !cli::confirm_string(&name) {
+            eprintln!("Aborting!");
+            std::process::exit(1);
+        }
+
+        let mut req = x20::PublishBinaryRequest::new();
+        req.set_delete(true);
+        req.mut_binary().set_name(name);
+
+        let response = self.client.publish_binary(req);
+        if response.get_error() != x20::Error::NONE {
+            eprintln!("❌could not delete binary: {:?}", response.get_error());
+            std::process::exit(1);
+        }
+
+        println!("✔️ deleted");
+    }
+
     pub fn publish(
         &self,
         name: String,
@@ -350,6 +374,33 @@ impl X20Manager {
         }
 
         println!("✔️ published");
+    }
+
+    pub fn delete_config(&self, input_configuration: String) {
+        let config = match config::generate_config(&input_configuration) {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("❌invalid config: {:?}", e);
+                std::process::exit(1);
+            }
+        };
+
+        if !cli::confirm_string(config.get_name()) {
+            eprintln!("Aborting!");
+            std::process::exit(1);
+        }
+
+        let mut req = x20::PublishConfigRequest::new();
+        req.set_config(config);
+        req.set_delete(true);
+        let response = self.client.publish_config(req);
+
+        if response.get_error() != x20::Error::NONE {
+            eprintln!("❌could not delete config: {:?}", response.get_error());
+            std::process::exit(1);
+        }
+
+        println!("✔️ deleted");
     }
 
     pub fn setconfig(&self, input_configuration: String) {

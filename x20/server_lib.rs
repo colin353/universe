@@ -62,6 +62,12 @@ impl<C: LargeTableClient + Clone> X20ServiceHandler<C> {
 
         let name = req.get_binary().get_name().to_owned();
 
+        // If deletion, delete the binary
+        if req.get_delete() {
+            self.database.delete(BINARIES, &name);
+            return x20::PublishBinaryResponse::new();
+        }
+
         if req.get_binary().get_name().is_empty() {
             eprintln!("cannot publish empty binary name");
             return x20::PublishBinaryResponse::new();
@@ -102,6 +108,13 @@ impl<C: LargeTableClient + Clone> X20ServiceHandler<C> {
         }
 
         let name = req.get_config().get_name().to_owned();
+
+        // If deletion, delete the config
+        if req.get_delete() {
+            self.database
+                .delete(&config_rowname(req.get_config().get_environment()), &name);
+            return x20::PublishConfigResponse::new();
+        }
 
         if name.is_empty() {
             eprintln!("cannot publish empty config name");
