@@ -535,9 +535,7 @@ pub fn run() {
             }
         }
 
-        println!("{}/{} started", started_shards, total_shards);
-        println!("{}/{} in progress", pool.get_in_progress(), total_shards);
-        println!("{}/{} completed", completed, total_shards);
+        println!("{}/{} stages completed", completed, total_shards);
 
         if !did_execute {
             if pool.get_in_progress() == 0 && started_shards == total_shards {
@@ -577,6 +575,8 @@ pub fn execute_shard(shard: &Shard) {
         .unwrap()
         .clone();
 
+    println!("executing: {}", pfn.name());
+
     pfn.init(shard);
     pfn.execute(shard);
 }
@@ -584,6 +584,7 @@ pub fn execute_shard(shard: &Shard) {
 pub trait PFn: Send + Sync {
     fn stages(&self, id: u64) -> (Stage, Vec<Stage>);
     fn execute(&self, shard: &Shard);
+    fn name(&self) -> &'static str;
     fn init(&self, shard: &Shard) {}
 }
 pub trait EmitFn<T> {
@@ -661,6 +662,10 @@ pub trait JoinFn: Send + Sync {
         right: &mut Stream<Self::ValueRight>,
         emit: &mut dyn EmitFn<Self::Output>,
     );
+
+    fn type_name(&self) -> &'static str {
+        std::any::type_name::<Self>().split("::").last().unwrap()
+    }
 }
 
 pub struct DoSideInputFnWrapper<TInput, TSideInput, TOutput> {
@@ -677,6 +682,10 @@ pub trait DoFn: Send + Sync {
     type Input;
     type Output;
     fn do_it(&self, input: &Self::Input, emit: &mut dyn EmitFn<Self::Output>);
+
+    fn type_name(&self) -> &'static str {
+        std::any::type_name::<Self>().split("::").last().unwrap()
+    }
 }
 
 pub trait DoSideInputFn: Send + Sync {
@@ -685,6 +694,10 @@ pub trait DoSideInputFn: Send + Sync {
     type Output;
     fn init(&self, side_input: &mut dyn StreamingIterator<Item = Self::SideInput>);
     fn do_it(&self, input: &Self::Input, emit: &mut dyn EmitFn<Self::Output>);
+
+    fn type_name(&self) -> &'static str {
+        std::any::type_name::<Self>().split("::").last().unwrap()
+    }
 }
 
 pub struct DoStreamFnWrapper<T1, T2> {
@@ -700,6 +713,10 @@ pub trait DoStreamFn: Send + Sync {
         values: &mut Stream<Self::Input>,
         emit: &mut dyn EmitFn<Self::Output>,
     );
+
+    fn type_name(&self) -> &'static str {
+        std::any::type_name::<Self>().split("::").last().unwrap()
+    }
 }
 
 impl<T1, T2> PFn for DoStreamFnWrapper<T1, T2>
@@ -716,6 +733,10 @@ where
         s.mut_function().set_id(id);
 
         (s, dep_stages)
+    }
+
+    fn name(&self) -> &'static str {
+        self.function.type_name()
     }
 
     default fn execute(&self, shard: &Shard) {
@@ -791,6 +812,10 @@ where
             .push(self.side_input_dependency.to_proto());
 
         (s, dep_stages)
+    }
+
+    fn name(&self) -> &'static str {
+        self.function.type_name()
     }
 
     fn init(&self, input: &Shard) {
@@ -872,6 +897,10 @@ where
         s.mut_function().set_id(id);
 
         (s, dep_stages)
+    }
+
+    fn name(&self) -> &'static str {
+        self.function.type_name()
     }
 
     default fn execute(&self, shard: &Shard) {
@@ -1005,6 +1034,10 @@ where
         s.mut_function().set_id(id);
 
         (s, deps)
+    }
+
+    fn name(&self) -> &'static str {
+        self.function.type_name()
     }
 
     fn execute(&self, shard: &Shard) {
@@ -1397,7 +1430,6 @@ impl Planner {
         }
 
         if inputs[0].get_format() == DataFormat::IN_MEMORY && inputs[0].get_is_ptable() {
-            println!("planning ptable ({} shards)", target_shards);
             let mut boundaries = Self::shard_memtables(inputs, target_shards);
             boundaries.push(String::new());
             boundaries.insert(0, String::new());
@@ -1629,8 +1661,6 @@ where
             .flatten()
             .map(|f| f.to_string())
             .collect();
-
-        println!("reshard {:?} -> {:?}", self.sstables_written, outputs);
 
         sstable::reshard(&self.sstables_written, &outputs);
 
