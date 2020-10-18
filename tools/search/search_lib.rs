@@ -524,7 +524,9 @@ impl Searcher {
                     let mut span_is_border_match = false;
                     if span.get_offset() >= 1
                         && !is_valid_variable_char(
-                            line.chars().nth((span.get_offset() - 1) as usize).unwrap(),
+                            line.chars()
+                                .nth((span.get_offset() - 1) as usize)
+                                .unwrap_or(' '),
                         )
                     {
                         span_is_border_match = true;
