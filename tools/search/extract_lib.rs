@@ -18,6 +18,44 @@ pub fn extract_code(root_dir: &Path, output_filename: &str) {
     extract_from_dir(prefix_len, &root_dir.to_str().unwrap(), &mut builder);
 }
 
+fn should_ignore_path(path: &str) -> bool {
+    if let Some(x) = path.split("/").last() {
+        // Ignore all file/directories that start with . (i.e. hidden stuff)
+        if x.starts_with(".") {
+            return true;
+        }
+
+        let forbidden_extensions = &[
+            ".zip",
+            ".exe",
+            ".dll",
+            ".dylib",
+            ".out",
+            ".tgz",
+            ".tar.gz",
+            ".rs.bk",
+            ".swo",
+            ".swp",
+            ".swx",
+            ".swpx",
+            ".pyc",
+            "~",
+            ".log",
+            ".db",
+            ".so",
+            ".venv",
+            "node_modules",
+        ];
+        for ext in forbidden_extensions {
+            if x.ends_with(ext) {
+                return true;
+            }
+        }
+    }
+
+    false
+}
+
 fn extract_from_dir(
     prefix: usize,
     root_dir: &str,
@@ -26,10 +64,19 @@ fn extract_from_dir(
     let mut children = std::collections::BTreeMap::new();
     for result in std::fs::read_dir(root_dir).unwrap() {
         let result = result.unwrap();
-        children.insert(
-            result.path().into_os_string().into_string().unwrap(),
-            result.file_type().unwrap(),
-        );
+
+        // Do not traverse symlinks
+        if result.file_type().unwrap().is_symlink() {
+            continue;
+        }
+
+        let path = result.path().into_os_string().into_string().unwrap();
+
+        if should_ignore_path(&path) {
+            continue;
+        }
+
+        children.insert(path, result.file_type().unwrap());
     }
 
     let mut child_directories = Vec::new();
