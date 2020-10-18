@@ -25,13 +25,13 @@ fn main() {
     let grpc_port = define_flag!("grpc_port", 9899, "The port to bind to (for grpc)");
     let static_files = define_flag!(
         "static_files",
-        String::from("/static/"),
+        String::from("."),
         "the directory containing static files"
     );
     let base_url = define_flag!("base_url", String::from(""), "the base URL of the site");
     let js_src = define_flag!(
         "js_src",
-        String::from("https://js.colinmerkel.xyz"),
+        String::from("/static"),
         "where to serve JS assets from"
     );
 
