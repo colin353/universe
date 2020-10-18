@@ -10,10 +10,14 @@ mod render;
 mod webserver;
 
 fn main() {
-    let input_dir = define_flag!("input_dir", String::new(), "The directory to read from");
+    let input_dir = define_flag!(
+        "input_dir",
+        String::from("/code"),
+        "The directory to read from"
+    );
     let output_dir = define_flag!(
         "output_dir",
-        String::new(),
+        String::from(""),
         "The directory to write the index to"
     );
 
@@ -47,9 +51,13 @@ fn main() {
         input_dir.path().into()
     };
 
+    println!("extracting code...");
+
     // Extract the codebase into a code sstable
     let code_recordio = format!("{}/code.recordio", output_dir.path());
     extract_lib::extract_code(&starting_dir, &code_recordio);
+
+    println!("running indexer... (this usually takes a few minutes)");
 
     // Run indexer
     indexer_lib::run_indexer(&code_recordio, &output_dir.path());
@@ -73,6 +81,7 @@ fn main() {
         base_url = format!("http://localhost:{}/", web_port.value());
     }
 
+    println!("{}\n", search_utils::CREDITS);
     println!("indexing done! serving at {}", base_url);
 
     webserver::SearchWebserver::new(

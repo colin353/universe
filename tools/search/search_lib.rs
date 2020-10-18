@@ -944,6 +944,9 @@ fn debug_score<T: std::fmt::Display, U: std::fmt::Display>(input: T, diff: U) {
 }
 
 #[cfg(not(debug_scoring))]
+fn debug_score<T: std::fmt::Display, U: std::fmt::Display>(input: T, diff: U) {}
+
+#[cfg(not(debug_scoring))]
 fn debug_scoring<T: std::fmt::Display>(_: T) {}
 
 fn render_query_keyword(kw: &QueryKeyword) -> String {

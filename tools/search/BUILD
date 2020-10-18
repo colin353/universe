@@ -88,6 +88,7 @@ rust_binary(
         ":server_lib",
         ":extract_lib",
         ":indexer_lib",
+        ":search_utils",
         "//auth:auth_client",
         "//third_party:base64",
         "//third_party:json",
@@ -100,6 +101,22 @@ rust_binary(
         "@io_bazel_rules_rust//proto/raze:tls_api_stub",
     ],
 )
+
+
+rust_image(
+    name = "index_and_search_img",
+    base = "@glibc_base//image",
+    binary = ":index_and_search",
+)
+
+docker_push(
+    name = "index_and_search_img_push",
+    image = ":index_and_search_img",
+    registry = "us.gcr.io",
+    repository = "mushu-194218/codesearch_combined",
+    tag = "dev",
+)
+
 
 rust_image(
     name = "search_server_img",
@@ -168,7 +185,7 @@ rust_library(
         "@io_bazel_rules_rust//proto/raze:protobuf",
     ],
     rustc_flags = [
-        "--cfg=debug_scoring",
+        #"--cfg=debug_scoring",
     ]
 )
 
