@@ -1,13 +1,8 @@
-```
-   ____          _      ____                      _     
-  / ___|___   __| | ___/ ___|  ___  __ _ _ __ ___| |__  
- | |   / _ \ / _` |/ _ \___ \ / _ \/ _` | '__/ __| '_ \ 
- | |__| (_) | (_| |  __/___) |  __/ (_| | | | (__| | | |
-  \____\___/ \__,_|\___|____/ \___|\__,_|_|  \___|_| |_|
-```
+## CodeSearch
 
-  Author:   Colin Merkel (colin.merkel@gmail.com)
-  Github:   https://github.com/colin353/universe/tree/master/tools/search
+Author:   Colin Merkel (colin.merkel@gmail.com)
+
+Github:   https://github.com/colin353/universe/tree/master/tools/search
 
 ## Overview
 
