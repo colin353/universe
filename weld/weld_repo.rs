@@ -405,6 +405,13 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
     }
 
     pub fn initialize_head(&mut self, id: u64) {
+        // Set up compaction policies
+        let mut policy = largetable_client::CompactionPolicy::new();
+        policy.set_row(CHANGE_METADATA.into());
+        policy.set_scope(String::new());
+        policy.set_history(1);
+        self.batching_client.client.set_compaction_policy(policy);
+
         self.batching_client.client.write_proto(
             CHANGE_METADATA,
             &change_to_colname(id),

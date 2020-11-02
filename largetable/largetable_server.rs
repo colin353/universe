@@ -38,12 +38,20 @@ fn main() {
         "The hostname of the logger service. If empty, just log to stdout"
     );
     let logger_port = define_flag!("logger_port", 3232, "Port of the logger service");
+
+    let compact_immediately = define_flag!(
+        "compact_immediately",
+        false,
+        "Whether to run compaction on startup"
+    );
+
     parse_flags!(
         port,
         data_directory,
         memory_limit,
         logger_hostname,
-        logger_port
+        logger_port,
+        compact_immediately
     );
 
     let mut logger = if logger_hostname.value().is_empty() {
@@ -82,6 +90,10 @@ fn main() {
 
     // Indicate that requests can now be processed
     handler.ready();
+
+    if compact_immediately.value() {
+        handler.perform_compaction();
+    }
 
     loop {
         thread::sleep(std::time::Duration::from_secs(60));

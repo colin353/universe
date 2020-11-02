@@ -214,6 +214,13 @@ impl LargeTableServiceHandler {
                 .unwrap()
                 .read_range(COMPACTION_POLICIES, "", "", "", 0, 0);
         let mut policies = Vec::new();
+
+        // Metapolicy to clean up compaction policies!
+        let mut metapolicy = largetable_grpc_rust::CompactionPolicy::new();
+        metapolicy.set_row(COMPACTION_POLICIES.into());
+        metapolicy.set_history(1);
+        policies.push(metapolicy);
+
         for record in records {
             let mut p = largetable_grpc_rust::CompactionPolicy::new();
             p.merge_from_bytes(record.get_data()).unwrap();
