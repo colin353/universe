@@ -1,6 +1,6 @@
 use raw_tty::GuardMode;
 use std::collections::HashMap;
-use std::io::Write;
+use std::io::{BufRead, Read, Write};
 use std::rc::Rc;
 use std::sync::Mutex;
 
@@ -100,6 +100,22 @@ impl Terminal {
     pub fn hide_cursor(&self) {
         let esc = "\u{001B}";
         eprint!("{}[?25l", esc)
+    }
+
+    pub fn get_cursor_pos(&self) -> (usize, usize) {
+        let mut l = std::io::stdin();
+        let mut s = l.lock();
+        eprint!("\x1B[6n");
+        self.flush();
+
+        let mut buf = Vec::new();
+        s.read_until(0x52, &mut buf);
+
+        let response = std::str::from_utf8(&buf[2..buf.len() - 1]).unwrap();
+        let mut iter = response.split(";");
+        let y = iter.next().unwrap().parse().unwrap();
+        let x = iter.next().unwrap().parse().unwrap();
+        (x, y)
     }
 
     pub fn move_cursor_to(&mut self, x: usize, y: usize) {
@@ -392,8 +408,14 @@ pub enum Transition<S> {
 
 impl<S, E> App<S, E> {
     pub fn start(controller: Box<dyn AppController<S, E>>) -> Self {
+        let mut term = Terminal::new();
+        term.clear_screen();
+        Self::start_with_terminal(controller, term)
+    }
+
+    pub fn start_with_terminal(controller: Box<dyn AppController<S, E>>, term: Terminal) -> Self {
         let mut app = Self {
-            terminal: Terminal::new(),
+            terminal: term,
             state: controller.initial_state(),
             controller: controller,
         };
@@ -403,7 +425,6 @@ impl<S, E> App<S, E> {
             app.terminal.width = terminal_size_override.0;
             app.terminal.height = terminal_size_override.1;
         }
-        app.terminal.clear_screen();
         app.controller.render(&mut app.terminal, &app.state, None);
         let focus = *app.terminal.focus.lock().unwrap();
         if let Some((x, y)) = focus {

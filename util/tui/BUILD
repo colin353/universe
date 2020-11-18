@@ -23,3 +23,17 @@ rust_binary(
     edition = "2018",
     deps = [":tui"],
 )
+
+rust_library(
+    name = "sel",
+    srcs = [ "sel.rs" ],
+    edition = "2018",
+    deps = [ ":tui" ],
+)
+
+rust_binary(
+    name = "sel_example",
+    srcs = [ "sel_example.rs"],
+    edition = "2018",
+    deps = [ ":tui", ":sel" ],
+ )
