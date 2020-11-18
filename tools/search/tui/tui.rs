@@ -285,12 +285,12 @@ impl tui::AppController<AppState, InputEvent> for App {
                         result.snippet_starting_line
                             + (result.snippet.len() / 2 + result.snippet.len() % 2 + 1) as u32
                     );
-                    Transition::Terminate(0)
+                    Transition::Terminate(state.clone())
                 }
             }
             InputEvent::Keyboard('q') => {
                 if !state.edit_mode {
-                    Transition::Terminate(1)
+                    Transition::Terminate(state.clone())
                 } else {
                     let mut new_state = (*state).clone();
                     new_state.query.push('q');

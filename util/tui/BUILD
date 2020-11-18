@@ -28,12 +28,15 @@ rust_library(
     name = "sel",
     srcs = [ "sel.rs" ],
     edition = "2018",
-    deps = [ ":tui" ],
+    deps = [ ":tui",
+  "//third_party/raw_tty",
+              ],
 )
 
 rust_binary(
     name = "sel_example",
     srcs = [ "sel_example.rs"],
     edition = "2018",
-    deps = [ ":tui", ":sel" ],
+    deps = [ ":tui", ":sel",
+            ]
  )

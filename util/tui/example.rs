@@ -227,12 +227,12 @@ impl tui::AppController<AppState, InputEvent> for App {
                     Transition::Updated(new_state)
                 } else {
                     println!("{}", state.results[state.selected].filename);
-                    Transition::Terminate(0)
+                    Transition::Terminate(state.clone())
                 }
             }
             InputEvent::Keyboard('q') => {
                 if !state.edit_mode {
-                    Transition::Terminate(1)
+                    Transition::Terminate(state.clone())
                 } else {
                     let mut new_state = (*state).clone();
                     new_state.query.push('q');

@@ -1,4 +1,4 @@
-use raw_tty::GuardMode;
+use raw_tty::{GuardMode, IntoRawMode};
 use std::collections::HashMap;
 use std::io::{BufRead, Read, Write};
 use std::rc::Rc;
@@ -93,8 +93,7 @@ impl Terminal {
     }
 
     pub fn show_cursor(&self) {
-        let esc = "\u{001B}";
-        eprint!("{}[?25h", esc)
+        eprint!("\x1b[?25h");
     }
 
     pub fn hide_cursor(&self) {
@@ -103,15 +102,21 @@ impl Terminal {
     }
 
     pub fn get_cursor_pos(&self) -> (usize, usize) {
-        let mut l = std::io::stdin();
-        let mut s = l.lock();
-        eprint!("\x1B[6n");
-        self.flush();
+        let mut tty = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open("/dev/tty")
+            .unwrap();
+        let mut tty_input = tty.try_clone().unwrap();
+        write!(tty, "\x1B[6n");
 
-        let mut buf = Vec::new();
-        s.read_until(0x52, &mut buf);
+        let buf: Vec<_> = tty_input
+            .bytes()
+            .map(|b| b.unwrap())
+            .take_while(|b| *b != 0x52)
+            .collect();
 
-        let response = std::str::from_utf8(&buf[2..buf.len() - 1]).unwrap();
+        let response = std::str::from_utf8(&buf[2..buf.len()]).unwrap();
         let mut iter = response.split(";");
         let y = iter.next().unwrap().parse().unwrap();
         let x = iter.next().unwrap().parse().unwrap();
@@ -390,6 +395,8 @@ pub trait AppController<S, E> {
     fn get_terminal_size(&self) -> (usize, usize) {
         (0, 0)
     }
+
+    fn clean_up(&self, term: &mut Terminal) {}
 }
 
 pub struct App<S, E> {
@@ -401,12 +408,17 @@ pub struct App<S, E> {
 pub enum Transition<S> {
     Updated(S),
     // Terminate the program with the provided exit code
-    Terminate(i32),
+    Terminate(S),
+    // Program is finished, clean up and quit
+    Finished(S),
     // No state update
     Nothing,
 }
 
-impl<S, E> App<S, E> {
+impl<S, E> App<S, E>
+where
+    S: Clone,
+{
     pub fn start(controller: Box<dyn AppController<S, E>>) -> Self {
         let mut term = Terminal::new();
         term.clear_screen();
@@ -436,9 +448,10 @@ impl<S, E> App<S, E> {
         app
     }
 
-    pub fn handle_event(&mut self, event: E) {
-        match self.controller.transition(&self.state, event) {
-            Transition::Updated(new_state) => {
+    pub fn handle_event(&mut self, event: E) -> Transition<S> {
+        let t = self.controller.transition(&self.state, event);
+        match t {
+            Transition::Updated(ref new_state) => {
                 self.terminal.hide_cursor();
                 self.controller
                     .render(&mut self.terminal, &new_state, Some(&self.state));
@@ -449,14 +462,17 @@ impl<S, E> App<S, E> {
                 } else {
                     self.terminal.hide_cursor();
                 }
-                self.state = new_state;
+                self.state = new_state.clone();
             }
-            Transition::Terminate(exit_code) => {
-                self.terminal.show_cursor();
-                self.terminal.clear_screen();
-                std::process::exit(exit_code);
+            Transition::Terminate(_) => {
+                self.controller.clean_up(&mut self.terminal);
             }
             Transition::Nothing => (),
-        }
+            Transition::Finished(_) => {
+                self.controller.clean_up(&mut self.terminal);
+            }
+        };
+
+        t
     }
 }
