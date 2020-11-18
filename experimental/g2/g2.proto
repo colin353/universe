@@ -1,0 +1,7 @@
+syntax = "proto3";
+
+message BranchConfig {
+   string name = 1;
+   string pull_request_url = 2;
+   bool is_root_branch = 3;
+}
