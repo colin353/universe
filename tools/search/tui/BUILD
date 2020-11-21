@@ -8,6 +8,7 @@ rust_binary(
     edition = "2018",
     deps = [
         "//auth:auth_client",
+        "//third_party/raw_tty",
         "//tools/search:search_client",
         "//tools/search:search_grpc_rust",
         "//util/cli",

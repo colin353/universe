@@ -1,3 +1,4 @@
+use raw_tty::{GuardMode, IntoRawMode};
 use std::io::Read;
 use tui::Component;
 use tui::Transition;
@@ -245,6 +246,11 @@ impl tui::AppController<AppState, InputEvent> for App {
         self.component.render(term, state, prev_state);
     }
 
+    fn clean_up(&self, term: &mut tui::Terminal) {
+        term.clear_screen();
+        term.show_cursor();
+    }
+
     fn transition(&mut self, state: &AppState, event: InputEvent) -> Transition<AppState> {
         match event {
             InputEvent::Keyboard('\x1B') => {
@@ -273,19 +279,13 @@ impl tui::AppController<AppState, InputEvent> for App {
                 new_state.query.pop();
                 Transition::Updated(new_state)
             }
-            InputEvent::Keyboard('\n') => {
+            InputEvent::Keyboard('\n') | InputEvent::Keyboard('\x0d') => {
                 if state.edit_mode {
                     let new_state = self.search(state.query.clone(), state);
                     Transition::Updated(new_state)
                 } else {
                     let result = &state.results[state.selected];
-                    println!(
-                        "{}#L{}",
-                        result.filename,
-                        result.snippet_starting_line
-                            + (result.snippet.len() / 2 + result.snippet.len() % 2 + 1) as u32
-                    );
-                    Transition::Terminate(state.clone())
+                    Transition::Finished(state.clone())
                 }
             }
             InputEvent::Keyboard('q') => {
@@ -296,6 +296,9 @@ impl tui::AppController<AppState, InputEvent> for App {
                     new_state.query.push('q');
                     Transition::Updated(new_state)
                 }
+            }
+            InputEvent::Keyboard('\x03') | InputEvent::Keyboard('\x04') => {
+                Transition::Terminate((*state).clone())
             }
             InputEvent::Keyboard('j') => {
                 let mut new_state = (*state).clone();
@@ -417,8 +420,40 @@ fn main() {
     ctrl.initial_query = query.value();
 
     let mut app = tui::App::start(Box::new(ctrl));
+    let mut result = None;
+    {
+        let tty = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open("/dev/tty")
+            .unwrap();
+        let mut tty_input = tty.try_clone().unwrap().guard_mode().unwrap();
+        tty_input.set_raw_mode();
+        for ch in (&mut tty_input).bytes() {
+            match app.handle_event(InputEvent::Keyboard(ch.unwrap().into())) {
+                Transition::Finished(final_state) => {
+                    let selected = &final_state.results[final_state.selected];
 
-    for ch in std::io::stdin().lock().bytes() {
-        app.handle_event(InputEvent::Keyboard(ch.unwrap().into()));
+                    result = Some(format!(
+                        "{}#L{}",
+                        selected.filename,
+                        selected.snippet_starting_line
+                            + (selected.snippet.len() / 2 + selected.snippet.len() % 2 + 1) as u32
+                    ));
+
+                    break;
+                }
+                Transition::Terminate(_) => {
+                    break;
+                }
+                _ => continue,
+            }
+        }
+    }
+
+    if let Some(output) = result {
+        println!("{}", output);
+    } else {
+        std::process::exit(1);
     }
 }
