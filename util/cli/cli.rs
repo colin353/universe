@@ -17,7 +17,14 @@ pub fn confirm_string(mut input: &str) -> bool {
 
     eprint!("Are you sure? To confirm, type \"{}\": ", input);
 
-    for line in std::io::stdin().lock().lines() {
+    let mut tty = std::io::BufReader::new(
+        std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open("/dev/tty")
+            .unwrap(),
+    );
+    for line in tty.lines() {
         let line = match line {
             Ok(x) => x,
             Err(_) => return false,
