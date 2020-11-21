@@ -21,9 +21,9 @@ rust_binary(
     srcs = ["fes.rs"],
     data = [
         "//homepage/js:code_pad",
-        "//tools/search/js:search_box",
         "//tools/search/js:flow_card",
         "//tools/search/js:flow_view",
+        "//tools/search/js:search_box",
     ],
     edition = "2018",
     deps = [
@@ -40,7 +40,7 @@ rust_image(
 
 docker_push(
     name = "fes_img_push",
-    image = ":fes_image",
+    image = ":fes_img",
     registry = "us.gcr.io",
     repository = "mushu-194218/fes",
     tag = "dev",

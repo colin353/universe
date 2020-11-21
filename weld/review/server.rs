@@ -2,7 +2,6 @@
 extern crate tmpl;
 extern crate auth_client;
 extern crate queue_client;
-extern crate task_client;
 extern crate weld;
 extern crate ws;
 
@@ -25,7 +24,6 @@ pub struct ReviewServer {
     static_dir: String,
     base_url: String,
     auth: auth_client::AuthClient,
-    task_client: task_client::TaskRemoteClient,
     queue_client: queue_client::QueueClient,
 }
 
@@ -35,7 +33,6 @@ impl ReviewServer {
         static_dir: String,
         base_url: String,
         auth: auth_client::AuthClient,
-        task_client: task_client::TaskRemoteClient,
         queue_client: queue_client::QueueClient,
     ) -> Self {
         Self {
@@ -43,7 +40,6 @@ impl ReviewServer {
             static_dir,
             base_url,
             auth,
-            task_client,
             queue_client,
         }
     }

@@ -3,7 +3,6 @@ extern crate flags;
 extern crate auth_client;
 extern crate queue_client;
 extern crate server;
-extern crate task_client;
 extern crate weld;
 extern crate ws;
 
@@ -90,16 +89,8 @@ fn main() {
         server_port.value(),
     );
 
-    let task = task_client::TaskRemoteClient::new(task_hostname.value(), task_port.value());
     let queue = queue_client::QueueClient::new(&queue_hostname.value(), queue_port.value());
     let auth = auth_client::AuthClient::new(&auth_hostname.value(), auth_port.value());
-    server::ReviewServer::new(
-        client,
-        static_files.value(),
-        base_url.value(),
-        auth,
-        task,
-        queue,
-    )
-    .serve(port.value());
+    server::ReviewServer::new(client, static_files.value(), base_url.value(), auth, queue)
+        .serve(port.value());
 }
