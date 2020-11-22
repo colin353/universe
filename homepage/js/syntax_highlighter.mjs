@@ -81,8 +81,7 @@ class LanguageModel {
       let acc = "";
       let done = false;
       while(!done) {
-        let index = 0;
-        let segment = this.takeUntilCh(delimeter[index]);
+        let segment = this.takeUntilCh(delimeter[0]);
         if (segment == "") break;
         acc += segment;
 
@@ -105,8 +104,16 @@ class LanguageModel {
     extractSyntax(line) {
         this.line = line;
         this.index = 0;
-
         let output = "";
+
+        if(this.previousLineState === PreviousLineStates.COMMENT) {
+          const comment = this.takeUntil(this.multiLineCommentTerminator);
+          output += `<span class='comment'>${comment}</span>`;
+          if(comment.endsWith(this.multiLineCommentTerminator)) {
+            this.previousLineState = PreviousLineStates.NONE;
+          }
+        }
+
         let ch = this.next();
         let loops = 0;
         let acc = "";
@@ -114,12 +121,14 @@ class LanguageModel {
         while(ch != "" && loops < 512) {
             loops++;
 
-            if(this.isMultiLineComment(commentAcc) || this.previousLineState === PreviousLineStates.COMMENT) {
+            if(this.isMultiLineComment(commentAcc)) {
               const comment = this.takeUntil(this.multiLineCommentTerminator);
               output += `<span class='comment'>${commentAcc + comment}</span>`;
               commentAcc = "";
               if(comment.endsWith(this.multiLineCommentTerminator)) {
                 this.previousLineState = PreviousLineStates.NONE;
+              } else {
+                break;
               }
             }
 
@@ -177,6 +186,7 @@ class LanguageModel {
                     return output;
                 } else if(this.isMultiLineComment(commentAcc)) {
                   this.previousLineState = PreviousLineStates.COMMENT;
+                  ch = this.next();
                 } else {
                   ch = this.next();
                 }
