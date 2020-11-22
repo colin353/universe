@@ -3,6 +3,7 @@ package(default_visibility = ["//visibility:public"])
 load("@io_bazel_rules_rust//rust:rust.bzl", "rust_binary")
 load("@io_bazel_rules_rust//rust:rust.bzl", "rust_library")
 load("@io_bazel_rules_rust//rust:rust.bzl", "rust_test")
+load("//tools/fec:fec.bzl", "fe_library")
 
 rust_binary(
     name = "fec",
@@ -42,5 +43,11 @@ rust_library(
     name = "fs",
     srcs = ["fs.rs"],
     edition = "2018",
+    deps = [],
+)
+
+fe_library(
+    name = "test",
+    srcs = ["test.mjs"],
     deps = [],
 )

@@ -1,0 +1,24 @@
+<div class="diff-container">
+    <div class="line-numbers">
+        <control for={this.state.lines}>
+            <p on:click={selectLine} class="${item.class}">${item.lineNumber}</p>
+        </control>
+    </div>
+    <code ref={code} class="code" on:contextmenu={contextMenu}>
+        <control for={this.state.lines}>
+            <span class="line ${item.class}">${item.code}</span>
+        </control>
+    </code>
+</div>
+<div class="diff-container">
+    <div class="line-numbers">
+        <control for={this.state.lines}>
+            <p on:click={selectLine} class="${item.class}">${item.lineNumber}</p>
+        </control>
+    </div>
+    <code ref={code} class="code" on:contextmenu={contextMenu}>
+        <control for={this.state.lines}>
+            <span class="line ${item.class}">${item.code}</span>
+        </control>
+    </code>
+</div>
