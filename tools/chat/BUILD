@@ -10,5 +10,46 @@ load("@io_bazel_rules_docker//docker:docker.bzl", "docker_push")
 
 rust_binary(
     name = "chat",
+    srcs = ["chat.rs"],
+    edition = "2018",
+    deps = [
+        ":chat_grpc_rust",
+        ":chat_service",
+        "//util/flags",
+        "@io_bazel_rules_rust//proto/raze:grpc",
+        "@io_bazel_rules_rust//proto/raze:protobuf",
+        "@io_bazel_rules_rust//proto/raze:tls_api",
+        "@io_bazel_rules_rust//proto/raze:tls_api_stub",
+    ],
+)
+
+rust_library(
+    name = "irc",
     srcs = ["irc.rs"],
+    edition = "2018",
+)
+
+rust_library(
+    name = "chat_service",
+    srcs = ["chat_service.rs"],
+    edition = "2018",
+    deps = [
+        ":chat_grpc_rust",
+        "@io_bazel_rules_rust//proto/raze:grpc",
+    ],
+)
+
+proto_library(
+    name = "chat_proto",
+    srcs = ["chat.proto"],
+)
+
+rust_proto_library(
+    name = "chat_proto_rust",
+    deps = [":chat_proto"],
+)
+
+rust_grpc_library(
+    name = "chat_grpc_rust",
+    deps = [":chat_proto"],
 )

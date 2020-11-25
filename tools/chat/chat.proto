@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+message Message {
+  string channel = 1;
+  string content = 2;
+  uint64 timestamp = 3;
+  string user = 4;
+}
+
+message Channel { string name = 1; }
+
+message Follower { string name = 1; }
+
+message ReadRequest { string channel = 1; }
+message ReadResponse { repeated Message messages = 1; }
+
+message SendResponse {}
+
+service ChatService {
+  rpc Read(ReadRequest) returns (ReadResponse);
+  rpc Send(Message) returns (SendResponse);
+}
