@@ -10,6 +10,7 @@ rust_binary(
     deps = [
         "//util/flags",
         "//util/recordio",
+        "//util/tui:sel",
         ":git",
         ":g2_proto_rust",
     ],

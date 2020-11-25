@@ -68,6 +68,7 @@ fn configure() {
     let mut w = RecordIOWriter::new(f);
     let mut config = BranchConfig::new();
     config.set_name(main_branch);
+    config.set_is_root_branch(true);
     w.write(&config);
     eprintln!("✔️ configured g2");
 }
@@ -134,14 +135,34 @@ fn run_command(mut branches: Vec<BranchConfig>, args: &[String]) -> Result<(), G
             b.set_name(args[1].clone());
             update_branches(&mut branches, b);
         }
-        "switch" | "s" => {
+        "configure" => configure(),
+        "printconfig" => {
             for branch in branches {
                 println!("{:?}", branch);
             }
         }
+        "switch" | "s" => {
+            let choices = branches
+                .iter()
+                .map(|b| {
+                    if b.get_pull_request_url().is_empty() {
+                        format!("{}", b.get_name())
+                    } else {
+                        format!("{} [{}]", b.get_name(), b.get_pull_request_url())
+                    }
+                })
+                .collect();
+            let choice = match sel::select(choices) {
+                Some(idx) => idx,
+                None => {
+                    std::process::exit(1);
+                }
+            };
+            git::checkout(branches[choice].get_name(), false);
+        }
         "sync" => {
-            git::add_all()?;
-            git::commit()?;
+            git::add_all();
+            git::commit();
             git::checkout(main_branch, false)?;
             git::pull()?;
             git::checkout(&current_branch, false)?;
