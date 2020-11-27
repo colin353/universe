@@ -177,6 +177,12 @@ pub enum ConsumeResult {
     Blocked(Vec<Artifact>, Vec<BlockingMessage>),
 }
 
+pub fn next_state(mut x: u64) -> u64 {
+    x ^= x << 13;
+    x ^= x >> 17;
+    x ^ x << 5
+}
+
 pub trait Consumer {
     fn consume(&self, message: &Message) -> ConsumeResult;
 
@@ -193,8 +199,13 @@ pub trait Consumer {
             renewer_client.defend();
         });
 
+        let mut prev_state = 0;
+        let mut state = 0;
+
         loop {
             for mut m in self.get_queue_client().consume_stream(queue.clone()) {
+                state = m.get_id();
+
                 // First, attempt to acquire a lock on the message and mark it as started.
                 let lock = match self
                     .get_lockserv_client()
@@ -203,6 +214,8 @@ pub trait Consumer {
                     Ok(l) => l,
                     Err(_) => continue,
                 };
+
+                state = next_state(state);
 
                 let did_resume = m.get_status() == Status::CONTINUE;
                 if !did_resume {
@@ -213,6 +226,9 @@ pub trait Consumer {
                 if let Err(_) = self.get_queue_client().update(m.clone()) {
                     continue;
                 }
+
+                state = next_state(state);
+
                 self.get_lockserv_client().put_lock(lock);
 
                 // Run potentially long-running consume task.
@@ -231,6 +247,8 @@ pub trait Consumer {
                     continue;
                 }
 
+                state = next_state(state);
+
                 // Let's grab the lock from the renewal thread
                 let lock = match self
                     .get_lockserv_client()
@@ -243,6 +261,8 @@ pub trait Consumer {
                     }
                 };
 
+                state = next_state(state);
+
                 let result = panic_result.unwrap();
 
                 // Re-assert lock ownership before writing completion status
@@ -250,6 +270,8 @@ pub trait Consumer {
                     Ok(l) => l,
                     Err(_) => continue,
                 };
+
+                state = next_state(state);
 
                 match result {
                     ConsumeResult::Success(results) => {
@@ -282,13 +304,17 @@ pub trait Consumer {
                 if let Err(_) = self.get_queue_client().update(m.clone()) {
                     continue;
                 };
+                state = next_state(state);
 
                 self.get_lockserv_client().yield_lock(lock);
-
-                break;
             }
 
-            std::thread::sleep(std::time::Duration::from_secs(1));
+            // If the state didn't change since the last try, it means that the same operation
+            // failed at the same step, so wait a bit to throttle requests
+            if (state == prev_state) {
+                std::thread::sleep(std::time::Duration::from_secs(1));
+            }
+            prev_state = state;
         }
     }
 }

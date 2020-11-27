@@ -28,11 +28,14 @@ impl Consumer for PresubmitConsumer {
         let mut output = ArtifactsBuilder::new();
         output.add_string("signature", "sha1234".to_string());
 
+        println!("finished task");
+
         ConsumeResult::Success(output.build())
     }
 
     fn consume(&self, message: &Message) -> ConsumeResult {
         let mut blockers = Vec::new();
+        println!("consumed task");
 
         // Queue up a build
         let mut msg = Message::new();
@@ -120,6 +123,7 @@ fn main() {
             *msg.mut_arguments() = protobuf::RepeatedField::from_vec(args.build());
 
             q.enqueue(String::from("presubmit"), msg);
+            println!("enqueued task");
             std::thread::sleep(std::time::Duration::from_secs(5));
         }
     });
