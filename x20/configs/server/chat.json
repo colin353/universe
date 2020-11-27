@@ -1,0 +1,12 @@
+{
+    "name": "chat",
+    "binary_name": "chat",
+    "priority": 250,
+    "environment": "server",
+    "long_running": true,
+    "docker_arguments": ["--init"],
+    "arguments": {
+        "chat_port": "16667",
+        "grpc_port": "16668"
+    }
+}

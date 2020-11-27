@@ -4,7 +4,8 @@ use irc::IrcServer;
 
 fn main() {
     let grpc_port = define_flag!("grpc_port", 6668, "The gRPC port to bind to");
-    parse_flags!(grpc_port);
+    let chat_port = define_flag!("chat_port", 6667, "The IRC port to bind to");
+    parse_flags!(grpc_port, chat_port);
 
     let handler = chat_service::ChatServiceHandler::new();
 
@@ -16,7 +17,7 @@ fn main() {
     ));
     let _server = server.build().unwrap();
 
-    let listener = std::net::TcpListener::bind("127.0.0.1:6667").unwrap();
+    let listener = std::net::TcpListener::bind(format!("127.0.0.1:{}", chat_port.value())).unwrap();
     for stream in listener.incoming() {
         let h = handler.clone();
         std::thread::spawn(move || {
