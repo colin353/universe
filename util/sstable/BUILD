@@ -18,11 +18,15 @@ rust_proto_library(
 rust_library(
     name = "sstable",
     srcs = [
+        "index.rs",
+        "mm.rs",
         "sstable.rs",
     ],
+    edition = "2018",
     deps = [
         ":sstable_proto_rust",
         "//third_party:byteorder",
+        "//third_party:mmap",
         "//util/itertools",
         "//util/primitive",
         "//util/shard_lib",

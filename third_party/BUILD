@@ -101,6 +101,11 @@ alias(
 )
 
 alias(
+    name = "mmap",
+    actual = "//third_party/vendor/mmap-0.7.0:mmap",
+)
+
+alias(
     name = "json",
     actual = "//third_party/vendor/json:json",
 )
