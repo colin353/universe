@@ -1,3 +1,4 @@
+use chat_client::ChatClient;
 use client_service::WeldLocalServiceHandler;
 use largetable_client::LargeTableClient;
 use lockserv_client::LockservClient;
@@ -9,6 +10,7 @@ use weld::{RunBuildQueryRequest, RunBuildRequest, WeldServer};
 
 pub struct BuildConsumer<C: LargeTableClient> {
     queue_client: QueueClient,
+    chat_client: ChatClient,
     lockserv_client: LockservClient,
     weld: WeldLocalServiceHandler<C>,
 }
@@ -18,11 +20,13 @@ impl<C: LargeTableClient> BuildConsumer<C> {
         weld: WeldLocalServiceHandler<C>,
         queue_client: QueueClient,
         lockserv_client: LockservClient,
+        chat_client: ChatClient,
     ) -> Self {
         Self {
             weld,
             queue_client,
             lockserv_client,
+            chat_client,
         }
     }
 }
@@ -117,6 +121,12 @@ impl<C: LargeTableClient> Consumer for BuildConsumer<C> {
                 }
 
                 if !response.get_success() {
+                    self.chat_client.send_message(
+                        "robot",
+                        "system",
+                        format!("build failed! {}", message.get_info_url()),
+                    );
+
                     let reason = if !response.get_build_success() {
                         String::from("build failed")
                     } else if !response.get_test_success() {

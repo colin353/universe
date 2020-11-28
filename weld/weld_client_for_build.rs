@@ -8,6 +8,7 @@ extern crate time;
 #[macro_use]
 extern crate flags;
 extern crate build_consumer;
+extern crate chat_client;
 extern crate client_service;
 extern crate largetable_client;
 extern crate largetable_test;
@@ -36,6 +37,12 @@ fn main() {
         "Whether or not to try to mount the FUSE filesystem"
     );
     let port = define_flag!("port", 8008, "The port to bind to.");
+    let chat_hostname = define_flag!(
+        "chat_hostname",
+        String::from("chat"),
+        "The server for the chat client"
+    );
+    let chat_port = define_flag!("chat_port", 16668, "The grpc port of the chat service");
     let weld_hostname = define_flag!(
         "weld_hostname",
         String::from("localhost"),
@@ -63,7 +70,9 @@ fn main() {
         lockserv_hostname,
         lockserv_port,
         queue_hostname,
-        queue_port
+        queue_port,
+        chat_hostname,
+        chat_port
     );
 
     let db = largetable_test::LargeTableMockClient::new();
@@ -100,6 +109,10 @@ fn main() {
     // Mount filesystem.
     let filesystem = parallel_fs::WeldParallelFs::new(repo);
 
+    // Connect to the chat service
+    let chat_client =
+        chat_client::ChatClient::new(&chat_hostname.value(), chat_port.value(), false);
+
     let lockserv_client =
         lockserv_client::LockservClient::new(&lockserv_hostname.value(), lockserv_port.value());
     let queue_client = queue_client::QueueClient::new(&queue_hostname.value(), queue_port.value());
@@ -107,6 +120,7 @@ fn main() {
         handler.clone(),
         queue_client.clone(),
         lockserv_client.clone(),
+        chat_client,
     );
     let presubmit_consumer =
         build_consumer::PresubmitConsumer::new(queue_client.clone(), lockserv_client.clone());

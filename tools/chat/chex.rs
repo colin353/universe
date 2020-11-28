@@ -12,7 +12,7 @@ fn main() {
     let channel = &content[0];
     let message = content[1..].join(" ");
 
-    let client = chat_client::ChatClient::new("localhost", 6668);
+    let client = chat_client::ChatClient::new("chat.colinmerkel.xyz", 6668, true);
     let mut msg = chat_client::Message::new();
     msg.set_channel(channel.to_string());
     msg.set_content(message);

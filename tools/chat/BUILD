@@ -67,6 +67,7 @@ rust_library(
     edition = "2018",
     deps = [
         ":chat_grpc_rust",
+        "//util/grpc_tls",
         "@io_bazel_rules_rust//proto/raze:grpc",
     ],
 )
