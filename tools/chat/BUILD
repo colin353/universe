@@ -10,7 +10,7 @@ load("@io_bazel_rules_docker//docker:docker.bzl", "docker_push")
 
 rust_image(
     name = "chat_server_img",
-    base = "@build_base//image",
+    base = "@glibc_base//image",
     binary = ":chat",
 )
 

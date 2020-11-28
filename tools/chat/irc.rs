@@ -98,7 +98,6 @@ impl IrcServer {
         };
 
         let incoming = self.chat.subscribe(&user);
-        println!("authentication done!");
 
         {
             let handler = self.clone();
@@ -147,7 +146,6 @@ impl IrcServer {
                     let channel = channel.trim_left_matches("#");
                     self.chat.join(&user, channel);
                     let members = self.chat.get_members(channel);
-                    println!("announcing members: {:?}", members);
                     self.announce_channel(&mut stream, &user, &members, channel);
                 }
                 IrcMessage::Mode(channel) => {
@@ -158,7 +156,6 @@ impl IrcServer {
                     message.set_user(user.to_string());
                     message.set_content(content.to_string());
                     message.set_channel(target.trim_left_matches("#").to_string());
-                    println!("send message: {:?}", message);
                     self.chat.send(message);
                 }
                 _ => return,

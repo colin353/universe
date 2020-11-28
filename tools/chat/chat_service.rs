@@ -79,8 +79,6 @@ impl ChatServiceHandler {
                     }
                 }
             }
-        } else {
-            println!("broadcast, but no users in {}", channel);
         }
     }
 

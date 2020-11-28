@@ -17,7 +17,7 @@ fn main() {
     ));
     let _server = server.build().unwrap();
 
-    let listener = std::net::TcpListener::bind(format!("127.0.0.1:{}", chat_port.value())).unwrap();
+    let listener = std::net::TcpListener::bind(format!("0.0.0.0:{}", chat_port.value())).unwrap();
     for stream in listener.incoming() {
         let h = handler.clone();
         std::thread::spawn(move || {
