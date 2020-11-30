@@ -23,6 +23,7 @@ rust_binary(
         "//third_party:rand",
         "//util/flags",
         "//util/sstable",
+        "//util/sstable/v2:sstable2",
     ],
 )
 
