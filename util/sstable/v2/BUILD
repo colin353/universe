@@ -25,7 +25,9 @@ rust_library(
     deps = [
         "//third_party:byteorder",
         "//third_party:mmap",
+        "//util/itertools",
         "//util/primitive",
+        "//util/shard_lib",
         "//util/sstable:sstable_proto_rust",
         "@io_bazel_rules_rust//proto/raze:protobuf",
     ],

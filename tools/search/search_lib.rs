@@ -2,9 +2,9 @@
 extern crate lazy_static;
 
 use search_grpc_rust::*;
-use sstable::SpecdSSTableReader;
+use sstable2::{SSTableReader, SpecdSSTableReader};
 use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 const CANDIDATES_TO_RETURN: usize = 25;
 const CANDIDATES_TO_EXPAND: usize = 100;
@@ -18,11 +18,11 @@ lazy_static! {
 }
 
 pub struct Searcher {
-    code: Mutex<sstable::SSTableReader<File>>,
-    candidates: Arc<Mutex<sstable::SSTableReader<File>>>,
-    definitions: Mutex<sstable::SSTableReader<DefinitionMatches>>,
-    keywords: Mutex<sstable::SSTableReader<ExtractedKeyword>>,
-    trigrams: Mutex<sstable::SSTableReader<KeywordMatches>>,
+    code: SSTableReader<File>,
+    candidates: Arc<SSTableReader<File>>,
+    definitions: SSTableReader<DefinitionMatches>,
+    keywords: SSTableReader<ExtractedKeyword>,
+    trigrams: SSTableReader<KeywordMatches>,
 
     files: HashMap<u64, File>,
 
@@ -34,19 +34,15 @@ pub struct Searcher {
 impl Searcher {
     pub fn new(base_dir: &str) -> Self {
         let mut code =
-            sstable::SSTableReader::from_filename(&format!("{}/files.sstable", base_dir)).unwrap();
+            SSTableReader::from_filename(&format!("{}/files.sstable", base_dir)).unwrap();
         let mut definitions =
-            sstable::SSTableReader::from_filename(&format!("{}/definitions.sstable", base_dir))
-                .unwrap();
+            SSTableReader::from_filename(&format!("{}/definitions.sstable", base_dir)).unwrap();
         let mut candidates =
-            sstable::SSTableReader::from_filename(&format!("{}/candidates.sstable", base_dir))
-                .unwrap();
+            SSTableReader::from_filename(&format!("{}/candidates.sstable", base_dir)).unwrap();
         let mut trigrams =
-            sstable::SSTableReader::from_filename(&format!("{}/trigrams.sstable", base_dir))
-                .unwrap();
+            SSTableReader::from_filename(&format!("{}/trigrams.sstable", base_dir)).unwrap();
         let mut keywords =
-            sstable::SSTableReader::from_filename(&format!("{}/keywords.sstable", base_dir))
-                .unwrap();
+            SSTableReader::from_filename(&format!("{}/keywords.sstable", base_dir)).unwrap();
 
         let mut files = HashMap::<u64, File>::new();
         for (key, file) in &mut candidates {
@@ -54,11 +50,11 @@ impl Searcher {
         }
 
         Self {
-            code: Mutex::new(code),
-            definitions: Mutex::new(definitions),
-            candidates: Arc::new(Mutex::new(candidates)),
-            trigrams: Mutex::new(trigrams),
-            keywords: Mutex::new(keywords),
+            code,
+            definitions,
+            candidates: Arc::new(candidates),
+            trigrams,
+            keywords,
             candidates_to_return: CANDIDATES_TO_RETURN,
             candidates_to_expand: CANDIDATES_TO_EXPAND,
             files: files,
@@ -89,9 +85,7 @@ impl Searcher {
 
         let keyword = search_utils::normalize_keyword(last_keyword.get_keyword());
 
-        let mut reader = self.keywords.lock().unwrap();
-
-        let specd_reader = SpecdSSTableReader::from_reader(&mut *reader, &keyword);
+        let specd_reader = SpecdSSTableReader::from_reader(&self.keywords, &keyword);
         let mut count = 0;
         let mut suggestions = Vec::new();
         for (_, keyword) in specd_reader {
@@ -145,7 +139,7 @@ impl Searcher {
     }
 
     pub fn get_document(&self, filename: &str) -> Option<File> {
-        self.code.lock().unwrap().get(filename).unwrap()
+        self.code.get(filename).unwrap()
     }
 
     fn parse_query(&self, query: &str) -> Query {
@@ -209,8 +203,6 @@ impl Searcher {
         {
             let mut matches = match self
                 .definitions
-                .lock()
-                .unwrap()
                 .get(&search_utils::normalize_keyword(keyword.get_keyword()))
                 .unwrap()
             {
@@ -389,7 +381,7 @@ impl Searcher {
             for trigram in search_utils::trigrams(&keyword.get_keyword().to_lowercase()) {
                 let mut matches = HashSet::new();
 
-                let mut results = match self.trigrams.lock().unwrap().get(&trigram).unwrap() {
+                let mut results = match self.trigrams.get(&trigram).unwrap() {
                     Some(s) => s,
                     None => KeywordMatches::new(),
                 };
@@ -462,13 +454,13 @@ impl Searcher {
             })
             .collect();
 
-        let pool = pool::ThreadPool::new(4);
+        let pool = pool::ThreadPool::new(8);
 
         for (file_id, candidate) in candidates.into_iter() {
             let matchers = keyword_matchers.clone();
             let reader = self.candidates.clone();
             pool.execute(move || {
-                Self::finalize_keyword_matches_for_candidate(reader, file_id, candidate, matchers)
+                Self::finalize_keyword_matches_for_candidate(&reader, file_id, candidate, matchers)
             });
             scanned += 1;
         }
@@ -481,20 +473,13 @@ impl Searcher {
     }
 
     fn finalize_keyword_matches_for_candidate(
-        reader: Arc<Mutex<sstable::SSTableReader<File>>>,
+        reader: &SSTableReader<File>,
         file_id: u64,
         mut candidate: Candidate,
         keyword_matchers: Vec<(QueryKeyword, aho_corasick::AhoCorasick)>,
     ) -> Candidate {
         let start = std::time::Instant::now();
-        let mut file = {
-            reader
-                .lock()
-                .unwrap()
-                .get(&file_id.to_string())
-                .unwrap()
-                .unwrap()
-        };
+        let mut file = { reader.get(&file_id.to_string()).unwrap().unwrap() };
 
         candidate.set_is_test(file.get_is_test());
         candidate.set_page_rank(file.get_page_rank());

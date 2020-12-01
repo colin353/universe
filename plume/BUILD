@@ -26,9 +26,9 @@ rust_library(
         "//util/itertools",
         "//util/pool",
         "//util/primitive",
-        "//util/shard_lib",
-        "//util/sstable",
         "//util/recordio",
+        "//util/shard_lib",
+        "//util/sstable/v2:sstable2",
     ],
 )
 
@@ -52,7 +52,7 @@ rust_test(
     srcs = ["tests.rs"],
     deps = [
         ":plume",
-        "//util/sstable",
         "//util/recordio",
+        "//util/sstable",
     ],
 )

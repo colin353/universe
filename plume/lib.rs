@@ -7,7 +7,9 @@ extern crate plume_proto_rust;
 extern crate primitive;
 extern crate recordio;
 extern crate shard_lib;
-extern crate sstable;
+extern crate sstable2;
+
+use sstable2::{reshard, SSTableBuilder, SSTableReader, ShardedSSTableReader};
 
 #[macro_use]
 extern crate lazy_static;
@@ -1394,7 +1396,7 @@ impl Planner {
                 for file in input.get_filenames() {
                     filenames.append(&mut shard_lib::unshard(file));
                 }
-                let reader = sstable::ShardedSSTableReader::<Primitive<Vec<u8>>>::from_filenames(
+                let reader = ShardedSSTableReader::<Primitive<Vec<u8>>>::from_filenames(
                     &filenames,
                     "",
                     String::new(),
@@ -1632,7 +1634,7 @@ where
         self.sstables_written.push(path.clone());
         let file = std::fs::File::create(path).unwrap();
         let mut writer = std::io::BufWriter::new(file);
-        let mut builder = sstable::SSTableBuilder::new(&mut writer);
+        let mut builder = SSTableBuilder::new(&mut writer);
         while let Some(KV(key, value)) = self.heap.pop() {
             builder.write_ordered(&key, value);
         }
@@ -1662,7 +1664,7 @@ where
             .map(|f| f.to_string())
             .collect();
 
-        sstable::reshard(&self.sstables_written, &outputs);
+        reshard(&self.sstables_written, &outputs);
 
         let mut pcoll_write = PCOLLECTION_REGISTRY.write().unwrap();
         let mut config = pcoll_write.get_mut(&self.configs[0].get_id()).unwrap();
@@ -1922,8 +1924,8 @@ impl<T> Source<KV<String, T>>
 where
     T: PlumeTrait + Default,
 {
-    pub fn sstable_source(&self) -> sstable::ShardedSSTableReader<T> {
-        sstable::ShardedSSTableReader::from_filenames(
+    pub fn sstable_source(&self) -> ShardedSSTableReader<T> {
+        ShardedSSTableReader::from_filenames(
             self.config.get_filenames(),
             self.config.get_starting_key(),
             self.config.get_ending_key().to_string(),
@@ -1961,8 +1963,8 @@ impl<'b, T> Source<KV<String, Stream<'b, T>>>
 where
     T: PlumeTrait + Default,
 {
-    pub fn sstable_source(&self) -> sstable::ShardedSSTableReader<T> {
-        sstable::ShardedSSTableReader::from_filenames(
+    pub fn sstable_source(&self) -> ShardedSSTableReader<T> {
+        ShardedSSTableReader::from_filenames(
             self.config.get_filenames(),
             self.config.get_starting_key(),
             self.config.get_ending_key().to_string(),

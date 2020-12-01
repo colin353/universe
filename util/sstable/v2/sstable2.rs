@@ -4,7 +4,8 @@ const VERSION: u16 = 0;
 mod index;
 
 use byteorder::{ByteOrder, LittleEndian, WriteBytesExt};
-use primitive::Serializable;
+use itertools::{MinHeap, StreamingIterator, KV};
+use primitive::{Primitive, Serializable};
 use protobuf::Message;
 use std::io::{Error, Result};
 
@@ -92,23 +93,6 @@ pub struct SSTableReader<T> {
     offset: usize,
 }
 
-impl<T: Serializable + Default> Iterator for SSTableReader<T> {
-    type Item = (String, T);
-    fn next(&mut self) -> Option<(String, T)> {
-        let (k, v, idx) = match self.read_at(self.offset).unwrap() {
-            Some((k, v, idx)) => {
-                let mut value = T::default();
-                value.read_from_bytes(v).unwrap();
-                (k.to_string(), value, idx)
-            }
-            None => return None,
-        };
-
-        self.offset = idx;
-        Some((k, v))
-    }
-}
-
 impl<T: Serializable + Default> SSTableReader<T> {
     pub fn new(file: std::fs::File) -> Result<Self> {
         let dtable = unsafe { mmap::MmapOptions::new().map(&file)? };
@@ -137,6 +121,15 @@ impl<T: Serializable + Default> SSTableReader<T> {
             version,
             offset: 0,
         })
+    }
+
+    pub fn from_filename(filename: &str) -> Result<Self> {
+        let f = std::fs::File::open(filename)?;
+        Self::new(f)
+    }
+
+    pub fn get_shard_boundaries(&self, target_shard_count: usize) -> Vec<String> {
+        index::get_shard_boundaries(&self.index, target_shard_count)
     }
 
     pub fn get(&self, key: &str) -> Result<Option<T>> {
@@ -183,8 +176,426 @@ impl<T: Serializable + Default> SSTableReader<T> {
 
         Ok(Some((key, value, offset)))
     }
+
+    fn get_offset_for_min_key(&self, key: &str) -> Result<usize> {
+        let mut offset = match index::get_block_with_min_key(&self.index, key) {
+            Some(block) => block.get_offset() as usize,
+            None => return Ok(0),
+        };
+
+        loop {
+            let (k, _, new_offset) = match self.read_at(offset)? {
+                Some(x) => x,
+                None => break,
+            };
+
+            if k >= key {
+                break;
+            }
+
+            offset = new_offset;
+        }
+
+        Ok(offset)
+    }
 }
 
+pub struct SpecdSSTableReader<'a, T: 'a> {
+    reader: &'a SSTableReader<T>,
+    key_spec: String,
+
+    min_key: String,
+    max_key: String,
+
+    reached_end: bool,
+
+    offset: usize,
+}
+
+impl<'a, T: Serializable + Default> SpecdSSTableReader<'a, T> {
+    pub fn from_reader(reader: &'a SSTableReader<T>, key_spec: &str) -> SpecdSSTableReader<'a, T> {
+        let mut specd_reader = SpecdSSTableReader {
+            min_key: String::from(""),
+            max_key: String::from(""),
+            reader: reader,
+            key_spec: key_spec.to_owned(),
+            reached_end: false,
+            offset: 0,
+        };
+
+        specd_reader.seek_to_start().unwrap();
+        specd_reader
+    }
+
+    pub fn seek_to_start(&mut self) -> Result<()> {
+        self.reached_end = false;
+        let maybe_block = match self.min_key > self.key_spec {
+            true => index::get_block_with_min_key(&self.reader.index, self.min_key.as_str()),
+            false => index::get_block_with_keyspec(&self.reader.index, self.key_spec.as_str()),
+        };
+
+        self.offset = match maybe_block {
+            Some(block) => block.get_offset() as usize,
+            None => {
+                self.reached_end = true;
+                return Ok(());
+            }
+        };
+
+        Ok(())
+    }
+
+    pub fn from_reader_with_scope(
+        reader: &'a mut SSTableReader<T>,
+        key_spec: &str,
+        min_key: &str,
+        max_key: &str,
+    ) -> SpecdSSTableReader<'a, T> {
+        let mut specd_reader = SpecdSSTableReader {
+            reader: reader,
+            key_spec: key_spec.to_owned(),
+            reached_end: false,
+            min_key: min_key.to_owned(),
+            max_key: max_key.to_owned(),
+            offset: 0,
+        };
+
+        specd_reader
+    }
+
+    // is_within_scope determines whether a key falls within the range specified by the specd
+    // reader definition.
+    fn is_within_scope(&self, key: &str) -> i8 {
+        if key < self.min_key.as_str() {
+            return -1;
+        }
+
+        // If the key doesn't start witht he prefix, we might be before or after the
+        // prefix.
+        if !key.starts_with(self.key_spec.as_str()) {
+            return match key > self.key_spec.as_str() {
+                true => 1,
+                false => -1,
+            };
+        }
+
+        if self.max_key != "" && key >= self.max_key.as_str() {
+            return 1;
+        }
+
+        0
+    }
+}
+
+impl<'a, T: Serializable + Default> Iterator for SpecdSSTableReader<'a, T> {
+    type Item = (String, T);
+    fn next(&mut self) -> Option<(String, T)> {
+        if self.reached_end {
+            return None;
+        }
+
+        loop {
+            let (k, v, idx) = match self.reader.read_at(self.offset).unwrap() {
+                Some(x) => x,
+                None => return None,
+            };
+
+            self.offset = idx;
+
+            if k < self.key_spec.as_str() {
+                continue;
+            }
+            let mode = self.is_within_scope(k);
+            return match mode {
+                0 => Some((k.to_string(), T::from_bytes(v).unwrap())),
+                1 => None,
+                _ => continue,
+            };
+        }
+    }
+}
+
+impl<T: Serializable + Default> Iterator for SSTableReader<T> {
+    type Item = (String, T);
+    fn next(&mut self) -> Option<(String, T)> {
+        let (k, v, idx) = match self.read_at(self.offset).unwrap() {
+            Some((k, v, idx)) => {
+                let mut value = T::default();
+                value.read_from_bytes(v).unwrap();
+                (k.to_string(), value, idx)
+            }
+            None => return None,
+        };
+
+        self.offset = idx;
+        Some((k, v))
+    }
+}
+
+pub struct ShardedSSTableReader<T> {
+    readers: Vec<SSTableReader<T>>,
+    offsets: Vec<usize>,
+    // A max key of "" means no max.
+    max_key: String,
+    heap: MinHeap<KV<KV<String, T>, usize>>,
+    top: Option<KV<String, T>>,
+}
+
+impl<'a, T: Serializable + Default> ShardedSSTableReader<T> {
+    pub fn from_readers(
+        readers: Vec<SSTableReader<T>>,
+        min_key: &str,
+        max_key: String,
+    ) -> ShardedSSTableReader<T> {
+        let mut reader = ShardedSSTableReader {
+            readers: readers,
+            offsets: Vec::new(),
+            max_key: max_key,
+            heap: MinHeap::new(),
+            top: None,
+        };
+
+        reader.seek(min_key);
+        reader
+    }
+
+    pub fn seek(&mut self, min_key: &str) {
+        // First, seek to the starting key in all the SSTables.
+        self.offsets.clear();
+        for r in &self.readers {
+            self.offsets
+                .push(r.get_offset_for_min_key(min_key).unwrap());
+        }
+
+        // Next, we'll construct a heap using our keys. This will allow us to efficiently
+        // insert while keeping a sorted list.
+        self.heap.clear();
+        for index in 0..self.readers.len() {
+            let (k, v, new_offset) = match self.readers[index].read_at(self.offsets[index]).unwrap()
+            {
+                Some(x) => x,
+                None => continue,
+            };
+
+            self.offsets[index] = new_offset;
+
+            let value = T::from_bytes(v).unwrap();
+            self.heap.push(KV::new(KV::new(k.to_owned(), value), index));
+        }
+    }
+
+    pub fn from_filenames(filenames: &[String], min_key: &str, max_key: String) -> Result<Self> {
+        let (successes, failures): (Vec<_>, Vec<_>) = filenames
+            .iter()
+            .map(|f| SSTableReader::from_filename(f))
+            .partition(Result::is_ok);
+
+        if failures.len() != 0 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "failed to open sharded sstable",
+            ));
+        }
+
+        let readers = successes.into_iter().map(|r| r.unwrap()).collect();
+
+        let mut reader = ShardedSSTableReader {
+            offsets: Vec::new(),
+            readers: readers,
+            max_key: max_key,
+            heap: MinHeap::new(),
+            top: None,
+        };
+        reader.seek(min_key);
+        Ok(reader)
+    }
+
+    pub fn from_filename(filename: &str, min_key: &str, max_key: String) -> Result<Self> {
+        let filenames = shard_lib::unshard(filename);
+        Self::from_filenames(&filenames, min_key, max_key)
+    }
+
+    pub fn get_shard_boundaries(&self, target_shard_count: usize) -> Vec<String> {
+        let mut output = Vec::new();
+        for shard in &self.readers {
+            output.append(&mut shard.get_shard_boundaries(target_shard_count));
+        }
+
+        shard_lib::compact_shards(output, target_shard_count)
+    }
+
+    pub fn next(&mut self) -> Option<(String, T)> {
+        let (kv, index) = match self.heap.pop() {
+            Some(KV(k, v)) => (k, v),
+            None => return None,
+        };
+
+        match self.readers[index].read_at(self.offsets[index]).unwrap() {
+            Some((k, v, new_offset)) => {
+                if self.max_key.as_str() == "" || k < self.max_key.as_str() {
+                    let value = T::from_bytes(v).unwrap();
+                    self.heap.push(KV::new(KV::new(k.to_owned(), value), index));
+                }
+
+                self.offsets[index] = new_offset;
+            }
+            None => (),
+        };
+
+        if self.max_key.as_str() == "" || kv.key() < &self.max_key {
+            let KV(k, v) = kv;
+            Some((k, v))
+        } else {
+            None
+        }
+    }
+}
+
+impl<'a, T: Serializable + Default> Iterator for ShardedSSTableReader<T> {
+    type Item = (String, T);
+    fn next(&mut self) -> Option<(String, T)> {
+        return self.next();
+    }
+}
+
+impl<T> StreamingIterator for ShardedSSTableReader<T>
+where
+    T: Serializable + Default,
+{
+    type Item = KV<String, T>;
+    fn next(&mut self) -> Option<&Self::Item> {
+        let (top, idx) = match self.heap.pop() {
+            Some(KV(kv, idx)) => (Some(kv), Some(idx)),
+            None => (None, None),
+        };
+
+        if let Some(index) = idx {
+            match self.readers[index].read_at(self.offsets[index]).unwrap() {
+                Some((k, v, new_offset)) => {
+                    if self.max_key.as_str() == "" || k < self.max_key.as_str() {
+                        let value = T::from_bytes(v).unwrap();
+                        self.heap
+                            .push(KV::new(KV::new(k.to_string(), value), index));
+                    }
+
+                    self.offsets[index] = new_offset;
+                }
+                None => (),
+            };
+        }
+
+        self.top = top;
+
+        match &self.top {
+            Some(kv) => Some(kv),
+            None => None,
+        }
+    }
+
+    fn peek(&mut self) -> Option<&Self::Item> {
+        match self.heap.peek() {
+            Some(o) => Some(o.key()),
+            None => None,
+        }
+    }
+}
+
+#[derive(PartialEq, Debug)]
+pub enum ReshardTask {
+    Split(String, Vec<String>),
+    Copy(String, String),
+    Merge(Vec<String>, String),
+}
+
+pub fn plan_reshard(sources: &[String], sinks: &[String]) -> Vec<ReshardTask> {
+    let reversed = sinks.len() > sources.len();
+    let (from, to) = if reversed {
+        (sinks, sources)
+    } else {
+        (sources, sinks)
+    };
+
+    let mut links = Vec::new();
+    for _ in to {
+        links.push(Vec::new());
+    }
+
+    for (index, f) in from.iter().enumerate() {
+        links[index % to.len()].push(f.to_string());
+    }
+
+    let mut plans = Vec::new();
+    for (x, ys) in to.iter().zip(links.into_iter()) {
+        if reversed {
+            if ys.len() == 1 {
+                plans.push(ReshardTask::Copy(x.into(), ys[0].clone()));
+            } else {
+                plans.push(ReshardTask::Split(x.into(), ys));
+            }
+        } else {
+            if ys.len() == 1 {
+                plans.push(ReshardTask::Copy(ys[0].clone(), x.into()));
+            } else {
+                plans.push(ReshardTask::Merge(ys, x.into()));
+            }
+        }
+    }
+    plans
+}
+
+pub fn execute_reshard_task(task: ReshardTask) {
+    match task {
+        ReshardTask::Copy(from, to) => {
+            std::fs::copy(from, to).unwrap();
+        }
+        ReshardTask::Split(from, to) => {
+            let reader = SSTableReader::<Primitive<Vec<u8>>>::from_filename(&from).unwrap();
+            let mut boundaries = reader.get_shard_boundaries(to.len());
+            let mut source = reader.peekable();
+            boundaries.push(String::new());
+            for (boundary, to_filename) in boundaries.iter().zip(to.iter()) {
+                let f = std::fs::File::create(to_filename).unwrap();
+                let mut w = std::io::BufWriter::new(f);
+                let mut builder = SSTableBuilder::<Primitive<Vec<u8>>, _>::new(&mut w);
+
+                loop {
+                    if let Some((k, _)) = source.peek() {
+                        if !boundary.is_empty() && k > boundary {
+                            break;
+                        }
+                    } else {
+                        break;
+                    }
+                    let (k, v) = source.next().unwrap();
+                    builder.write_ordered(&k, v).unwrap();
+                }
+
+                builder.finish().unwrap();
+            }
+        }
+        ReshardTask::Merge(from, to) => {
+            let reader = ShardedSSTableReader::<Primitive<Vec<u8>>>::from_filenames(
+                &from,
+                "",
+                String::new(),
+            )
+            .unwrap();
+            let f = std::fs::File::open(to).unwrap();
+            let mut w = std::io::BufWriter::new(f);
+            let mut builder = SSTableBuilder::new(&mut w);
+            for (k, v) in reader {
+                builder.write_ordered(&k, v).unwrap();
+            }
+            builder.finish().unwrap();
+        }
+    }
+}
+
+pub fn reshard(from: &[String], to: &[String]) {
+    for task in plan_reshard(from, to) {
+        execute_reshard_task(task);
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;

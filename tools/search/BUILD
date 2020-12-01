@@ -64,8 +64,8 @@ rust_binary(
 rust_binary(
     name = "index_and_search",
     srcs = [
-        "render.rs",
         "index_and_search.rs",
+        "render.rs",
         "webserver.rs",
     ],
     data = [
@@ -84,11 +84,11 @@ rust_binary(
     edition = "2018",
     deps = [
         "search_grpc_rust",
-        ":search_lib",
-        ":server_lib",
         ":extract_lib",
         ":indexer_lib",
+        ":search_lib",
         ":search_utils",
+        ":server_lib",
         "//auth:auth_client",
         "//third_party:base64",
         "//third_party:json",
@@ -101,7 +101,6 @@ rust_binary(
         "@io_bazel_rules_rust//proto/raze:tls_api_stub",
     ],
 )
-
 
 rust_image(
     name = "index_and_search_img",
@@ -116,7 +115,6 @@ docker_push(
     repository = "mushu-194218/codesearch_combined",
     tag = "dev",
 )
-
 
 rust_image(
     name = "search_server_img",
@@ -173,6 +171,9 @@ rust_library(
     name = "search_lib",
     srcs = ["search_lib.rs"],
     edition = "2018",
+    rustc_flags = [
+        #"--cfg=debug_scoring",
+    ],
     deps = [
         ":search_grpc_rust",
         ":search_utils",
@@ -181,12 +182,9 @@ rust_library(
         "//third_party:regex",
         "//util/itertools",
         "//util/pool",
-        "//util/sstable",
+        "//util/sstable/v2:sstable2",
         "@io_bazel_rules_rust//proto/raze:protobuf",
     ],
-    rustc_flags = [
-        #"--cfg=debug_scoring",
-    ]
 )
 
 rust_library(
@@ -231,14 +229,13 @@ rust_library(
     srcs = ["indexer_lib.rs"],
     edition = "2018",
     deps = [
-        ":search_proto_rust",
         ":pagerank",
+        ":search_proto_rust",
         ":search_utils",
         "//plume",
         "//tools/search/language_specific",
     ],
 )
-
 
 rust_library(
     name = "pagerank",
