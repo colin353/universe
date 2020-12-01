@@ -23,6 +23,6 @@ rust_test(
     crate = ":gfile",
     deps = [
         "//util/primitive",
-        "//util/sstable",
+        "//util/recordio",
     ],
 )

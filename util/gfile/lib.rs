@@ -605,7 +605,7 @@ impl Drop for GFile {
 mod tests {
     use super::*;
     extern crate primitive;
-    extern crate sstable;
+    extern crate recordio;
 
     #[test]
     fn test_get_path() {
@@ -639,34 +639,30 @@ mod tests {
     }
 
     //#[test]
-    fn test_write_sstable() {
+    fn test_write_recordio() {
         let access = String::from("abcdef");
         let client = auth_client::AuthClient::new("127.0.0.1", 8888);
         client.global_init(access);
         {
-            let mut f = GFile::create("/cns/colossus/data.sstable").unwrap();
-            let mut t = sstable::SSTableBuilder::new(&mut f);
+            let mut f = GFile::create("/cns/colossus/data.recordio").unwrap();
+            let mut t = recordio::RecordIOWriter::new(&mut f);
             for _ in 0..500000 {
-                t.write_ordered("abcdef", primitive::Primitive::from(0 as u64));
+                t.write(&primitive::Primitive::from(0 as u64));
             }
-            t.finish().unwrap();
         }
     }
 
     //#[test]
-    fn test_read_sstable() {
+    fn test_read_recordio() {
         let access = String::from("abcdef");
         let client = auth_client::AuthClient::new("127.0.0.1", 8888);
         client.global_init(access);
         {
-            let mut f = GFile::open("/cns/colossus/data.sstable").unwrap();
+            let mut f = GFile::open("/cns/colossus/data.recordio").unwrap();
             let mut t =
-                sstable::SSTableReader::<primitive::Primitive<u64>>::new(Box::new(f)).unwrap();
+                recordio::RecordIOReaderOwned::<primitive::Primitive<u64>>::new(Box::new(f));
             let output = t.collect::<Vec<_>>();
-            assert_eq!(
-                output,
-                vec![(String::from("abcdef"), primitive::Primitive::from(0 as u64))]
-            );
+            assert_eq!(output, vec![primitive::Primitive::from(0 as u64)]);
         }
     }
 
@@ -677,7 +673,7 @@ mod tests {
         client.global_init(access);
         {
             let mut list = GFile::read_dir("/cns/colossus").unwrap();
-            assert_eq!(list, vec![String::from("/cns/colossus/data.sstable")]);
+            assert_eq!(list, vec![String::from("/cns/colossus/data.recordio")]);
         }
     }
 
