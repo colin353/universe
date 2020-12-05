@@ -5,10 +5,12 @@
     "environment": "server",
     "long_running": true,
     "arguments": {
-        "data_directory": "/data"
+        "data_directory": "/data",
+        "data_directory_v2": "/data_v2"
     },
     "docker_arguments": [
-      "--mount", "type=bind,source=/mnt/stateful_partition/data,target=/data",
-      "--init"
+        "--mount", "type=bind,source=/mnt/stateful_partition/data,target=/data",
+        "--mount", "type=bind,source=/mnt/stateful_partition/data_v2,target=/data_v2",
+        "--init"
     ]
 }
