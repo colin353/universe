@@ -14,6 +14,7 @@ pub struct LoggerClient {
     logcache: Arc<RwLock<HashMap<Log, Mutex<Vec<EventMessage>>>>>,
     hostname: String,
     port: u16,
+    print: bool,
 }
 
 pub fn get_timestamp() -> u64 {
@@ -76,7 +77,6 @@ pub fn get_logs_with_root_dir(
     loop {
         attempts += 1;
         let dir = get_log_dir(root_dir, log, timestamp);
-        println!("check dir: {}", dir);
 
         match gfile::GFile::read_dir(&dir) {
             Ok(mut filenames) => files_to_read.append(&mut filenames),
@@ -129,6 +129,17 @@ impl LoggerClient {
             logcache: Arc::new(RwLock::new(HashMap::new())),
             hostname: hostname.to_string(),
             port,
+            print: false,
+        }
+    }
+
+    pub fn new_stub() -> Self {
+        Self {
+            client: None,
+            logcache: Arc::new(RwLock::new(HashMap::new())),
+            hostname: String::new(),
+            port: 0,
+            print: false,
         }
     }
 
@@ -138,12 +149,15 @@ impl LoggerClient {
             logcache: Arc::new(RwLock::new(HashMap::new())),
             hostname: String::new(),
             port: 0,
+            print: true,
         }
     }
 
     pub fn log<T: protobuf::Message>(&self, log: Log, input: &T) {
         if self.client.is_none() && self.hostname.is_empty() {
-            println!("{:?}\t{:?}", log, input);
+            if self.print {
+                println!("{:?}\t{:?}", log, input);
+            }
             return;
         }
 

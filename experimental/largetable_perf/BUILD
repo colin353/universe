@@ -7,8 +7,14 @@ rust_binary(
     srcs = [
         "main.rs",
     ],
+    edition = "2018",
     deps = [
         "//largetable:largetable_client",
+        "//largetable:largetable_proto_rust",
+        "//third_party:rand",
+        "//util/flags",
+        "//util/pool",
+        "//util/sstable/v2:sstable2",
         "//weld",
     ],
 )
