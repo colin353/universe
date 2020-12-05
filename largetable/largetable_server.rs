@@ -32,6 +32,11 @@ fn main() {
         String::from("./data"),
         "The directory where data is stored and loaded from."
     );
+    let data_directory_v2 = define_flag!(
+        "data_directory_v2",
+        String::from("./data"),
+        "The directory where sstable v2 data is stored and loaded from."
+    );
     let logger_hostname = define_flag!(
         "logger_hostname",
         String::from(""),
@@ -48,6 +53,7 @@ fn main() {
     parse_flags!(
         port,
         data_directory,
+        data_directory_v2,
         memory_limit,
         logger_hostname,
         logger_port,
