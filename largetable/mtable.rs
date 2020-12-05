@@ -9,7 +9,7 @@
 use keyserializer;
 use largetable_proto_rust::Record;
 
-use sstable;
+use sstable2::SSTableBuilder;
 
 use std::collections::BTreeMap;
 use std::collections::Bound;
@@ -131,7 +131,7 @@ impl<'short, 'long: 'short> MTable {
     }
 
     pub fn write_to_disk(&self, write: &mut io::Write) -> io::Result<()> {
-        let mut table = sstable::SSTableBuilder::new(write);
+        let mut table = SSTableBuilder::new(write);
         for (key, value) in self.tree.iter() {
             table.write_ordered(key, value.clone())?;
         }
@@ -232,7 +232,7 @@ mod tests {
         memtable.write_to_disk(&mut d).unwrap();
 
         d.seek(std::io::SeekFrom::Start(0)).unwrap();
-        let mut disktable = dtable::DTable::new(Box::new(d)).unwrap();
+        let mut disktable = dtable::DTable::from_bytes(&d.into_inner()).unwrap();
 
         assert_eq!(
             disktable.read("row", "column", 9999).unwrap().get_data(),

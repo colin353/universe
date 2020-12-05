@@ -10,7 +10,7 @@ extern crate largetable;
 extern crate largetable_grpc_rust;
 extern crate largetable_proto_rust;
 extern crate logger_client;
-extern crate sstable;
+extern crate sstable2;
 extern crate tls_api;
 extern crate tls_api_stub;
 mod server_service;
@@ -34,7 +34,7 @@ fn main() {
     );
     let data_directory_v2 = define_flag!(
         "data_directory_v2",
-        String::from("./data"),
+        String::new(),
         "The directory where sstable v2 data is stored and loaded from."
     );
     let logger_hostname = define_flag!(
@@ -66,9 +66,14 @@ fn main() {
         logger_client::LoggerClient::new(&logger_hostname.value(), logger_port.value())
     };
 
+    let mut data_dir = data_directory.path();
+    if !data_directory_v2.path().is_empty() {
+        data_dir = data_directory_v2.path();
+    }
+
     let mut handler = server_service::LargeTableServiceHandler::new(
         memory_limit.value(),
-        data_directory.path(),
+        data_dir,
         logger.clone(),
     );
 
@@ -81,7 +86,7 @@ fn main() {
     server.add_service(
         largetable_grpc_rust::LargeTableServiceServer::new_service_def(handler.clone()),
     );
-    server.http.set_cpu_pool_threads(32);
+    server.http.set_cpu_pool_threads(16);
 
     let _server = server.build().expect("server");
 

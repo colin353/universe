@@ -5,7 +5,9 @@
 extern crate keyserializer;
 extern crate largetable_grpc_rust;
 extern crate largetable_proto_rust;
-extern crate sstable;
+extern crate sstable2;
+
+use sstable2::{SSTableBuilder, SSTableReader, ShardedSSTableReader};
 
 use keyserializer::get_colspec;
 use largetable_grpc_rust::CompactionPolicy;
@@ -65,8 +67,8 @@ fn policy_to_key(p: &CompactionPolicy) -> String {
     get_colspec(p.get_row(), p.get_scope())
 }
 
-fn apply_policy(
-    builder: &mut sstable::SSTableBuilder<Record>,
+fn apply_policy<W: std::io::Write>(
+    builder: &mut SSTableBuilder<Record, W>,
     policy: &CompactionPolicy,
     now: u64,
     buffer: Vec<(String, Record)>,
@@ -92,11 +94,11 @@ fn apply_policy(
     }
 }
 
-pub fn compact(
+pub fn compact<W: std::io::Write>(
     mut policies: Vec<CompactionPolicy>,
-    tables: Vec<sstable::SSTableReader<Record>>,
+    tables: Vec<SSTableReader<Record>>,
     now: u64,
-    builder: &mut sstable::SSTableBuilder<Record>,
+    mut builder: SSTableBuilder<Record, W>,
 ) {
     policies.sort_by_key(|p| policy_to_key(&p));
     let mut policy_trie = Trie::new();
@@ -104,7 +106,7 @@ pub fn compact(
         policy_trie.insert_ordered(policy_to_key(&p), p);
     }
 
-    let reader = sstable::ShardedSSTableReader::from_readers(tables, "", String::new());
+    let reader = ShardedSSTableReader::from_readers(tables, "", String::new());
     let mut buffer = Vec::new();
     let mut current_prefix = String::from("");
     let default_policy = CompactionPolicy::new();
@@ -120,7 +122,7 @@ pub fn compact(
                     .unwrap_or(&default_policy);
 
                 apply_policy(
-                    builder,
+                    &mut builder,
                     policy,
                     now,
                     std::mem::replace(&mut buffer, Vec::new()),
@@ -138,7 +140,7 @@ pub fn compact(
         .lookup(&current_prefix)
         .unwrap_or(&default_policy);
     apply_policy(
-        builder,
+        &mut builder,
         policy,
         now,
         std::mem::replace(&mut buffer, Vec::new()),
@@ -150,8 +152,6 @@ pub fn compact(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sstable::SSTableBuilder;
-    use sstable::SSTableReader;
     use std::io::Seek;
 
     #[test]
@@ -190,7 +190,12 @@ mod tests {
         p
     }
 
-    fn write(w: &mut SSTableBuilder<Record>, row: &str, col: &str, timestamp: u64) {
+    fn write<W: std::io::Write>(
+        w: &mut SSTableBuilder<Record, W>,
+        row: &str,
+        col: &str,
+        timestamp: u64,
+    ) {
         let mut r = Record::new();
         r.set_row(row.to_owned());
         r.set_col(col.to_owned());
@@ -202,7 +207,7 @@ mod tests {
     fn test_compaction() {
         let mut d1 = std::io::Cursor::new(Vec::new());
         {
-            let mut t = SSTableBuilder::<Record>::new(&mut d1);
+            let mut t = SSTableBuilder::<Record, _>::new(&mut d1);
             write(&mut t, "a", "aardvark", 100);
             write(&mut t, "a", "baseball", 100);
             write(&mut t, "a", "calendar", 100);
@@ -212,18 +217,20 @@ mod tests {
         d1.seek(std::io::SeekFrom::Start(0)).unwrap();
 
         let mut d2 = std::io::Cursor::new(Vec::new());
+        let bytes = d1.into_inner();
         {
-            let mut r1 = SSTableReader::<Record>::new(Box::new(d1)).unwrap();
+            let mut r1 = SSTableReader::<Record>::from_bytes(&bytes).unwrap();
             compact(
                 Vec::new(),
                 vec![r1],
                 150,
-                &mut SSTableBuilder::<Record>::new(&mut d2),
+                SSTableBuilder::<Record, _>::new(&mut d2),
             );
         }
         d2.seek(std::io::SeekFrom::Start(0)).unwrap();
 
-        let mut s = SSTableReader::<Record>::new(Box::new(d2)).unwrap();
+        let bytes = d2.into_inner();
+        let mut s = SSTableReader::<Record>::from_bytes(&bytes).unwrap();
         let mapped = s.map(|(k, v)| v.get_col().to_owned()).collect::<Vec<_>>();
         assert_eq!(mapped, vec!["aardvark", "baseball", "calendar", "diamond"]);
     }
@@ -242,7 +249,7 @@ mod tests {
 
         let mut d1 = std::io::Cursor::new(Vec::new());
         {
-            let mut t = SSTableBuilder::<Record>::new(&mut d1);
+            let mut t = SSTableBuilder::<Record, _>::new(&mut d1);
             write(&mut t, "a", "aardvark", 100);
             write(&mut t, "a", "aardvark", 125);
             write(&mut t, "a", "baseball", 100);
@@ -258,19 +265,20 @@ mod tests {
             t.finish().unwrap();
         }
         d1.seek(std::io::SeekFrom::Start(0)).unwrap();
+        let bytes = d1.into_inner();
 
         let mut d2 = std::io::Cursor::new(Vec::new());
         {
-            let mut r1 = SSTableReader::<Record>::new(Box::new(d1)).unwrap();
+            let mut r1 = SSTableReader::<Record>::from_bytes(&bytes).unwrap();
             compact(
                 policies,
                 vec![r1],
                 160,
-                &mut SSTableBuilder::<Record>::new(&mut d2),
+                SSTableBuilder::<Record, _>::new(&mut d2),
             );
         }
-        d2.seek(std::io::SeekFrom::Start(0)).unwrap();
-        let mut s = SSTableReader::<Record>::new(Box::new(d2)).unwrap();
+        let bytes = d2.into_inner();
+        let mut s = SSTableReader::<Record>::from_bytes(&bytes).unwrap();
         let mapped = s.map(|(k, v)| v.get_col().to_owned()).collect::<Vec<_>>();
         assert_eq!(
             mapped,

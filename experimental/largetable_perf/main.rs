@@ -36,7 +36,7 @@ fn main() {
         "localhost",
         2020,
     ));
-    let pool = pool::ThreadPool::new(8);
+    let pool = pool::ThreadPool::new(32);
 
     loop {
         let t = std::time::Instant::now();

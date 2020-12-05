@@ -6,41 +6,36 @@
 
 use keyserializer;
 use largetable_proto_rust::Record;
-use sstable;
+use sstable2::{SSTableBuilder, SSTableReader, SpecdSSTableReader};
 
 use std::io;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Mutex;
 
 pub struct DTable {
-    tables: Vec<Mutex<sstable::SSTableReader<Record>>>,
-    next_table: AtomicUsize,
+    table: SSTableReader<Record>,
 }
 
 impl DTable {
-    pub fn new(reader: Box<sstable::SeekableRead>) -> io::Result<DTable> {
+    pub fn new(f: std::fs::File) -> io::Result<DTable> {
         Ok(DTable {
-            tables: vec![Mutex::new(sstable::SSTableReader::new(reader)?)],
-            next_table: AtomicUsize::new(0),
+            table: SSTableReader::new(f)?,
         })
     }
 
-    pub fn add_readers(&mut self, readers: Vec<Box<sstable::SeekableRead>>) {
-        for reader in readers {
-            self.tables
-                .push(Mutex::new(sstable::SSTableReader::new(reader).unwrap()));
-        }
+    pub fn from_sstable(s: SSTableReader<Record>) -> Self {
+        DTable { table: s }
+    }
+
+    pub fn from_bytes(b: &[u8]) -> io::Result<DTable> {
+        Ok(DTable {
+            table: SSTableReader::from_bytes(b)?,
+        })
     }
 
     pub fn read(&self, row: &str, col: &str, timestamp: u64) -> Option<Record> {
         let key_spec = keyserializer::get_keyspec(row, col);
 
-        let mut table = self.tables
-            [self.next_table.fetch_add(1, Ordering::Relaxed) % self.tables.len()]
-        .lock()
-        .unwrap();
-
-        let specd_reader = sstable::SpecdSSTableReader::from_reader(&mut table, key_spec.as_str());
+        let specd_reader = SpecdSSTableReader::from_reader(&self.table, key_spec.as_str());
         let mut target_value = Record::new();
         let mut found = false;
         for (_, value) in specd_reader {
@@ -62,12 +57,7 @@ impl DTable {
     pub fn get_shard_hint(&self, key_spec: &str, min_key: &str, max_key: &str) -> Vec<String> {
         // The SSTable gives shard hints with string keys, but we want to return column keys. So
         // we'll remap the string keys into column keys.
-        let table = self.tables
-            [self.next_table.fetch_add(1, Ordering::Relaxed) % self.tables.len()]
-        .lock()
-        .unwrap();
-
-        table
+        self.table
             .suggest_shards(key_spec, min_key, max_key)
             .iter()
             .map(|s| keyserializer::deserialize_col(s).to_owned())
@@ -91,13 +81,8 @@ impl DTable {
             String::from("")
         };
 
-        let mut table = self.tables
-            [self.next_table.fetch_add(1, Ordering::Relaxed) % self.tables.len()]
-        .lock()
-        .unwrap();
-
-        let specd_reader = sstable::SpecdSSTableReader::from_reader_with_scope(
-            &mut table,
+        let specd_reader = SpecdSSTableReader::from_reader_with_scope(
+            &self.table,
             key_spec.as_str(),
             min_key.as_str(),
             max_key.as_str(),
@@ -145,7 +130,7 @@ mod tests {
     fn read_and_write_dtable() {
         let mut d = std::io::Cursor::new(Vec::new());
         {
-            let mut t = sstable::SSTableBuilder::<Record>::new(&mut d);
+            let mut t = SSTableBuilder::<Record, _>::new(&mut d);
             let mut r = Record::new();
             r.set_timestamp(1234);
             r.set_data(vec![12, 23, 34, 45]);
@@ -166,16 +151,13 @@ mod tests {
 
             t.finish().unwrap();
         }
-        d.seek(std::io::SeekFrom::Start(0)).unwrap();
-        {
-            let mut dt = DTable::new(Box::new(d)).unwrap();
-            assert_eq!(dt.read("row", "column", 5000).unwrap().get_data(), &[99]);
-            assert_eq!(dt.read("non-value", "non-column", 5000), None);
-        }
+        let mut dt = DTable::from_sstable(SSTableReader::from_bytes(&d.into_inner()).unwrap());
+        assert_eq!(dt.read("row", "column", 5000).unwrap().get_data(), &[99]);
+        assert_eq!(dt.read("non-value", "non-column", 5000), None);
     }
 
-    fn add_record(
-        sstable: &mut sstable::SSTableBuilder<Record>,
+    fn add_record<W: std::io::Write>(
+        sstable: &mut SSTableBuilder<Record, W>,
         row: &str,
         col: &str,
         timestamp: u64,
@@ -201,30 +183,27 @@ mod tests {
     fn read_specd() {
         let mut d = std::io::Cursor::new(Vec::new());
         {
-            let mut t = sstable::SSTableBuilder::<Record>::new(&mut d);
+            let mut t = SSTableBuilder::<Record, _>::new(&mut d);
             add_record(&mut t, "people", "calhoun", 1234);
             add_record(&mut t, "people", "colin", 1234);
             add_record(&mut t, "people", "daniel", 1234);
             add_record(&mut t, "people", "elvis", 1234);
             t.finish().unwrap();
         }
-        d.seek(std::io::SeekFrom::Start(0)).unwrap();
-        {
-            let mut dt = DTable::new(Box::new(d)).unwrap();
-            let output = dt.read_range("people", "", "", "", 100, 3000);
-            assert_eq!(output.len(), 4);
-            assert_eq!(output[0], record("people", "calhoun", 1234));
-            assert_eq!(output[1], record("people", "colin", 1234));
-            assert_eq!(output[2], record("people", "daniel", 1234));
-            assert_eq!(output[3], record("people", "elvis", 1234));
-        }
+        let mut dt = DTable::from_sstable(SSTableReader::from_bytes(&d.into_inner()).unwrap());
+        let output = dt.read_range("people", "", "", "", 100, 3000);
+        assert_eq!(output.len(), 4);
+        assert_eq!(output[0], record("people", "calhoun", 1234));
+        assert_eq!(output[1], record("people", "colin", 1234));
+        assert_eq!(output[2], record("people", "daniel", 1234));
+        assert_eq!(output[3], record("people", "elvis", 1234));
     }
 
     #[test]
     fn read_specd_2() {
         let mut d = std::io::Cursor::new(Vec::new());
         {
-            let mut t = sstable::SSTableBuilder::<Record>::new(&mut d);
+            let mut t = SSTableBuilder::<Record, _>::new(&mut d);
             add_record(&mut t, "people", "adam", 1234);
             add_record(&mut t, "people", "calhoun", 1234);
             add_record(&mut t, "people", "colin", 1234);
@@ -232,21 +211,18 @@ mod tests {
             add_record(&mut t, "people", "elvis", 1234);
             t.finish().unwrap();
         }
-        d.seek(std::io::SeekFrom::Start(0)).unwrap();
-        {
-            let mut dt = DTable::new(Box::new(d)).unwrap();
-            let output = dt.read_range("people", "c", "", "", 100, 3000);
-            assert_eq!(output.len(), 2);
-            assert_eq!(output[0], record("people", "calhoun", 1234));
-            assert_eq!(output[1], record("people", "colin", 1234));
-        }
+        let mut dt = DTable::from_sstable(SSTableReader::from_bytes(&d.into_inner()).unwrap());
+        let output = dt.read_range("people", "c", "", "", 100, 3000);
+        assert_eq!(output.len(), 2);
+        assert_eq!(output[0], record("people", "calhoun", 1234));
+        assert_eq!(output[1], record("people", "colin", 1234));
     }
 
     #[test]
     fn read_specd_3() {
         let mut d = std::io::Cursor::new(Vec::new());
         {
-            let mut t = sstable::SSTableBuilder::<Record>::new(&mut d);
+            let mut t = SSTableBuilder::<Record, _>::new(&mut d);
             add_record(&mut t, "people", "adam", 1234);
             add_record(&mut t, "people", "calhoun", 1234);
             add_record(&mut t, "people", "colin", 1234);
@@ -254,21 +230,18 @@ mod tests {
             add_record(&mut t, "people", "elvis", 1234);
             t.finish().unwrap();
         }
-        d.seek(std::io::SeekFrom::Start(0)).unwrap();
-        {
-            let mut dt = DTable::new(Box::new(d)).unwrap();
-            let output = dt.read_range("people", "", "colin", "daniel_", 100, 3000);
-            assert_eq!(output.len(), 2);
-            assert_eq!(output[0], record("people", "colin", 1234));
-            assert_eq!(output[1], record("people", "daniel", 1234));
-        }
+        let mut dt = DTable::from_sstable(SSTableReader::from_bytes(&d.into_inner()).unwrap());
+        let output = dt.read_range("people", "", "colin", "daniel_", 100, 3000);
+        assert_eq!(output.len(), 2);
+        assert_eq!(output[0], record("people", "colin", 1234));
+        assert_eq!(output[1], record("people", "daniel", 1234));
     }
 
     #[test]
     fn read_specd_with_multiple_timestamp() {
         let mut d = std::io::Cursor::new(Vec::new());
         {
-            let mut t = sstable::SSTableBuilder::<Record>::new(&mut d);
+            let mut t = SSTableBuilder::<Record, _>::new(&mut d);
             add_record(&mut t, "people", "adam", 1234);
             // This record shouldn't appear, since there's a later one
             // which replaces it.
@@ -281,8 +254,9 @@ mod tests {
             t.finish().unwrap();
         }
         d.seek(std::io::SeekFrom::Start(0)).unwrap();
+        let bytes = d.into_inner();
         {
-            let mut dt = DTable::new(Box::new(d)).unwrap();
+            let mut dt = DTable::from_sstable(SSTableReader::from_bytes(&bytes).unwrap());
             let output = dt.read_range("people", "", "", "", 100, 3000);
             assert_eq!(output.len(), 3);
             assert_eq!(output[0], record("people", "adam", 1234));

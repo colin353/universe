@@ -5,7 +5,7 @@ use largetable_proto_rust::Record;
 use mtable;
 use protobuf;
 use recordio;
-use sstable;
+use sstable2::SSTableReader;
 
 use std;
 use std::borrow::BorrowMut;
@@ -294,15 +294,14 @@ impl<'a> LargeTable {
             .unwrap();
     }
 
-    pub fn add_dtable(&mut self, reader: Box<sstable::SeekableRead>) {
+    pub fn add_dtable_from_sstable(&mut self, reader: SSTableReader<Record>) {
         self.dtables
-            .push(RwLock::new(dtable::DTable::new(reader).unwrap()));
+            .push(RwLock::new(dtable::DTable::from_sstable(reader)));
     }
 
-    pub fn add_pooled_dtable(&mut self, mut readers: Vec<Box<sstable::SeekableRead>>) {
-        let mut dt = dtable::DTable::new(readers.pop().unwrap()).unwrap();
-        dt.add_readers(readers);
-        self.dtables.push(RwLock::new(dt));
+    pub fn add_dtable(&mut self, reader: std::fs::File) {
+        self.dtables
+            .push(RwLock::new(dtable::DTable::new(reader).unwrap()));
     }
 
     pub fn clear_dtables(&mut self) {
@@ -423,7 +422,7 @@ mod tests {
         // any results.
         assert_eq!(l.read("test", "test", 500), None);
 
-        l.add_dtable(Box::new(f));
+        l.add_dtable_from_sstable(SSTableReader::from_bytes(&f.into_inner()).unwrap());
 
         // Now we should be reading from the dtable, not the mtable.
         assert_eq!(l.read("test", "test", 500).unwrap().get_data(), &[42]);
@@ -457,7 +456,7 @@ mod tests {
         // Write this to a DTable.
         let mut f = std::io::Cursor::new(Vec::new());
         l.write_to_disk(&mut f, 0);
-        l.add_dtable(Box::new(f));
+        l.add_dtable_from_sstable(SSTableReader::from_bytes(&f.into_inner()).unwrap());
 
         write_record(&mut l, "a", "avocado", 1234);
         write_record(&mut l, "a", "couscous", 1234);
@@ -468,7 +467,7 @@ mod tests {
         // Write this to a DTable.
         let mut f = std::io::Cursor::new(Vec::new());
         l.write_to_disk(&mut f, 0);
-        l.add_dtable(Box::new(f));
+        l.add_dtable_from_sstable(SSTableReader::from_bytes(&f.into_inner()).unwrap());
 
         // Read it out again.
         let out = l.read_range("a", "c", "", "", 100, 1234);
@@ -537,7 +536,7 @@ mod tests {
         // Write this to a DTable.
         let mut f = std::io::Cursor::new(Vec::new());
         l.write_to_disk(&mut f, 0);
-        l.add_dtable(Box::new(f));
+        l.add_dtable_from_sstable(SSTableReader::from_bytes(&f.into_inner()).unwrap());
 
         write_record(&mut l, "a", "avocado", 3000);
         write_record(&mut l, "a", "couscous", 1000);
@@ -548,7 +547,7 @@ mod tests {
         // Write this to a DTable.
         let mut f = std::io::Cursor::new(Vec::new());
         l.write_to_disk(&mut f, 0);
-        l.add_dtable(Box::new(f));
+        l.add_dtable_from_sstable(SSTableReader::from_bytes(&f.into_inner()).unwrap());
 
         // Read it out again.
         let out = l.read_range("a", "", "", "", 100, 1234);
@@ -652,7 +651,7 @@ mod tests {
         // Write this to a DTable.
         let mut f = std::io::Cursor::new(Vec::new());
         l.write_to_disk(&mut f, 0);
-        l.add_dtable(Box::new(f));
+        l.add_dtable_from_sstable(SSTableReader::from_bytes(&f.into_inner()).unwrap());
 
         write_record(&mut l, "a", "apple", 1000);
         write_record(&mut l, "a", "secret", 1000);

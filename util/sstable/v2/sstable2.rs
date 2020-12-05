@@ -97,6 +97,16 @@ impl<T: Serializable + Default> SSTableReader<T> {
     pub fn new(file: std::fs::File) -> Result<Self> {
         let dtable = unsafe { mmap::MmapOptions::new().map(&file)? };
 
+        Self::from_mmap(dtable)
+    }
+
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
+        let mut map = mmap::MmapMut::map_anon(bytes.len())?;
+        map.copy_from_slice(bytes);
+        Self::from_mmap(map.make_read_only()?)
+    }
+
+    pub fn from_mmap(dtable: mmap::Mmap) -> Result<Self> {
         let version = LittleEndian::read_u16(&dtable[dtable.len() - 14..dtable.len() - 12]);
         let index_offset =
             LittleEndian::read_u64(&dtable[dtable.len() - 12..dtable.len() - 4]) as usize;
@@ -126,6 +136,10 @@ impl<T: Serializable + Default> SSTableReader<T> {
     pub fn from_filename(filename: &str) -> Result<Self> {
         let f = std::fs::File::open(filename)?;
         Self::new(f)
+    }
+
+    pub fn suggest_shards(&self, key_spec: &str, min_key: &str, max_key: &str) -> Vec<String> {
+        index::suggest_shards(&self.index, key_spec, min_key, max_key)
     }
 
     pub fn get_shard_boundaries(&self, target_shard_count: usize) -> Vec<String> {
@@ -246,7 +260,7 @@ impl<'a, T: Serializable + Default> SpecdSSTableReader<'a, T> {
     }
 
     pub fn from_reader_with_scope(
-        reader: &'a mut SSTableReader<T>,
+        reader: &'a SSTableReader<T>,
         key_spec: &str,
         min_key: &str,
         max_key: &str,

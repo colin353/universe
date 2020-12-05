@@ -11,7 +11,7 @@ use largetable_proto_rust;
 use glob;
 use protobuf;
 use protobuf::Message;
-use sstable;
+use sstable2::{SSTableBuilder, SSTableReader};
 use time;
 
 use std::fs;
@@ -78,13 +78,7 @@ impl LargeTableServiceHandler {
                         .lock()
                         .unwrap()
                         .push(path.to_str().unwrap().to_owned());
-                    let mut bufs: Vec<Box<dyn sstable::SeekableRead>> = Vec::new();
-                    for _ in 0..BUFFER_POOL_SIZE {
-                        let f =
-                            BufReader::with_capacity(BUFFER_SIZE, fs::File::open(&path).unwrap());
-                        bufs.push(Box::new(f));
-                    }
-                    lt.add_pooled_dtable(bufs);
+                    lt.add_dtable(fs::File::open(&path).unwrap());
                 }
                 Err(e) => panic!("{:?}", e),
             }
@@ -186,13 +180,7 @@ impl LargeTableServiceHandler {
                 self.dtables.lock().unwrap().push(filename.clone());
 
                 let mut lt = self.largetable.write().unwrap();
-                let mut bufs: Vec<Box<dyn sstable::SeekableRead>> = Vec::new();
-                for _ in 0..BUFFER_POOL_SIZE {
-                    let f =
-                        BufReader::with_capacity(BUFFER_SIZE, fs::File::open(&filename).unwrap());
-                    bufs.push(Box::new(f));
-                }
-                lt.add_pooled_dtable(bufs);
+                lt.add_dtable(std::fs::File::open(&filename).unwrap());
                 lt.drop_mtables();
             }
 
@@ -230,10 +218,7 @@ impl LargeTableServiceHandler {
         let tables_to_replace = self.dtables.lock().unwrap().clone();
         let tables = tables_to_replace
             .iter()
-            .map(|filename| {
-                let f = BufReader::with_capacity(BUFFER_SIZE, fs::File::open(filename).unwrap());
-                sstable::SSTableReader::new(Box::new(f)).unwrap()
-            })
+            .map(|filename| SSTableReader::new(std::fs::File::open(filename).unwrap()).unwrap())
             .collect();
 
         // First allocate a temporary filename. We don't want to use the sstable filename
@@ -247,8 +232,8 @@ impl LargeTableServiceHandler {
             tmp_filename
         );
 
-        let mut builder = sstable::SSTableBuilder::new(&mut f);
-        compaction::compact(policies, tables, get_timestamp_usec(), &mut builder);
+        let mut builder = SSTableBuilder::new(&mut f);
+        compaction::compact(policies, tables, get_timestamp_usec(), builder);
 
         // Now that compaction is done, rename the temporary file to a new filename.
         let filename = self.get_new_filename(DTABLE_EXT);
@@ -259,14 +244,7 @@ impl LargeTableServiceHandler {
             *self.dtables.lock().unwrap() = vec![filename.clone()];
             let mut lt = self.largetable.write().unwrap();
             lt.clear_dtables();
-            let mut bufs: Vec<Box<dyn sstable::SeekableRead>> = Vec::new();
-            for _ in 0..BUFFER_POOL_SIZE {
-                bufs.push(Box::new(BufReader::with_capacity(
-                    BUFFER_SIZE,
-                    fs::File::open(&filename).unwrap(),
-                )));
-            }
-            lt.add_pooled_dtable(bufs);
+            lt.add_dtable(std::fs::File::open(&filename).unwrap());
         }
 
         // Delete the old dtable files
