@@ -10,7 +10,7 @@ extern crate largetable;
 extern crate largetable_grpc_rust;
 extern crate largetable_proto_rust;
 extern crate logger_client;
-extern crate sstable2;
+extern crate sstable;
 extern crate tls_api;
 extern crate tls_api_stub;
 mod server_service;

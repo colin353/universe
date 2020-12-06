@@ -7,9 +7,9 @@ extern crate plume_proto_rust;
 extern crate primitive;
 extern crate recordio;
 extern crate shard_lib;
-extern crate sstable2;
+extern crate sstable;
 
-use sstable2::{reshard, SSTableBuilder, SSTableReader, ShardedSSTableReader};
+use sstable::{reshard, SSTableBuilder, SSTableReader, ShardedSSTableReader};
 
 #[macro_use]
 extern crate lazy_static;

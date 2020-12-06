@@ -182,7 +182,7 @@ rust_library(
         "//third_party:regex",
         "//util/itertools",
         "//util/pool",
-        "//util/sstable/v2:sstable2",
+        "//util/sstable",
         "@io_bazel_rules_rust//proto/raze:protobuf",
     ],
 )

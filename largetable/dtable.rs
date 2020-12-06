@@ -6,7 +6,7 @@
 
 use keyserializer;
 use largetable_proto_rust::Record;
-use sstable2::{SSTableBuilder, SSTableReader, SpecdSSTableReader};
+use sstable::{SSTableBuilder, SSTableReader, SpecdSSTableReader};
 
 use std::io;
 use std::sync::atomic::{AtomicUsize, Ordering};

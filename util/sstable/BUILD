@@ -19,7 +19,6 @@ rust_library(
     name = "sstable",
     srcs = [
         "index.rs",
-        "mm.rs",
         "sstable.rs",
     ],
     edition = "2018",
@@ -31,19 +30,6 @@ rust_library(
         "//util/primitive",
         "//util/shard_lib",
         "@io_bazel_rules_rust//proto/raze:protobuf",
-    ],
-)
-
-rust_binary(
-    name = "sstable_perf",
-    srcs = [
-        "perf.rs",
-    ],
-    edition = "2018",
-    deps = [
-        ":sstable",
-        "//third_party:rand",
-        "//tools/search:search_proto_rust",
     ],
 )
 

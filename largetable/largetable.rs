@@ -5,7 +5,7 @@ use largetable_proto_rust::Record;
 use mtable;
 use protobuf;
 use recordio;
-use sstable2::SSTableReader;
+use sstable::SSTableReader;
 
 use std;
 use std::borrow::BorrowMut;

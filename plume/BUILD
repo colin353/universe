@@ -28,7 +28,7 @@ rust_library(
         "//util/primitive",
         "//util/recordio",
         "//util/shard_lib",
-        "//util/sstable/v2:sstable2",
+        "//util/sstable",
     ],
 )
 

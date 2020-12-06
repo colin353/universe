@@ -1,382 +1,268 @@
-/*
- * sstable.rs
- *
- * This library implements methods for interacting with sstables. An SSTable is a key-value table
- * which is immutable, and all the keys are ordered. There are two files that compose an SSTable,
- * the keys file and the database file.
- */
-
-extern crate sstable_proto_rust;
-
-extern crate byteorder;
-extern crate itertools;
-extern crate primitive;
-extern crate protobuf;
-extern crate shard_lib;
-pub use primitive::{Primitive, Serializable};
-
-use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use itertools::{MinHeap, StreamingIterator, KV};
-use protobuf::Message;
-use std::collections::BTreeMap;
-use std::default::Default;
-use std::fs::File;
-use std::io;
-use std::io::Read;
-
-use std::io::Seek;
+const BLOCK_SIZE: u64 = 65536;
+const VERSION: u16 = 0;
 
 mod index;
-mod mm;
 
-pub use mm::MMappedSSTableReader;
+use byteorder::{ByteOrder, LittleEndian, WriteBytesExt};
+use itertools::{MinHeap, StreamingIterator, KV};
+use primitive::{Primitive, Serializable};
+use protobuf::Message;
+use std::io::{Error, Result};
 
-// The defualt block size is 64 kilobytes.
-const BLOCK_SIZE: u64 = 64000;
-
-pub struct SSTableBuilder<'a, T: Serializable> {
-    // The index contains a list of pointers into the dtable which we can use
-    // to quickly look up locations in the file. It's written to the end of the dtable,
-    // and loaded into memory when the sstable is read.
+pub struct SSTableBuilder<T, W> {
     index: sstable_proto_rust::Index,
-
-    // The dtable is where the data is actually stored (e.g. the file on disk).
-    dtable: &'a mut dyn std::io::Write,
-
-    // dtable_offset tells us the byte offset where the start of the current struct in the dtable
-    // is. It gets incremented as we write new records.
-    dtable_offset: u64,
-    block_offset: u64,
-    at_start_of_block: bool,
-
-    // We have to explicitly state that the struct uses the type T, or else the rust compiler will
-    // get confused. This is a zero-size type to help the compiler infer the usage of T.
-    data_type: std::marker::PhantomData<T>,
-
-    // We store the last key that was written to the SSTable so we can ensure that it is written in
-    // order. If you write the SSTable out of order, it won't work correctly.
+    writer: W,
     last_key: String,
-
-    // Once the "finish" step has been completed, we should not write any additional keys. This
-    // flag is used to make sure we don't do that.
-    finished: bool,
+    bytes_written: u64,
+    _marker: std::marker::PhantomData<T>,
 }
 
-pub struct SSTableReader<T> {
-    index: sstable_proto_rust::Index,
-    dtable: Box<dyn SeekableRead>,
-
-    // We have to explicitly state that the struct uses the type T, or else the rust compiler will
-    // get confused. This is a zero-size type to help the compiler infer the usage of T.
-    data_type: std::marker::PhantomData<T>,
-
-    // dtable_offset tells us how far we've read in the dtable.
-    dtable_offset: u64,
-
-    // The index_offset is where the data ends and the index starts. It's written to the last eight
-    // bytes of the file.
-    index_offset: u64,
-}
-
-pub struct SpecdSSTableReader<'a, T: 'a> {
-    reader: &'a mut SSTableReader<T>,
-    key_spec: String,
-
-    min_key: String,
-    max_key: String,
-
-    reached_end: bool,
-}
-
-pub struct ShardedSSTableReader<T> {
-    readers: Vec<SSTableReader<T>>,
-    // A max key of "" means no max.
-    max_key: String,
-    heap: MinHeap<KV<KV<String, T>, usize>>,
-    top: Option<KV<String, T>>,
-}
-
-// We write SSTables in a single pass across the disk, but reading
-// requires seeking to get to the index table. So we need both Seek
-// and Read traits.
-pub trait SeekableRead: io::Seek + io::Read + Send + Sync {}
-impl<T: io::Seek + io::Read + Send + Sync> SeekableRead for T {}
-
-impl<'a, T: Serializable + Default> SSTableBuilder<'a, T> {
-    pub fn new(dtable: &'a mut dyn std::io::Write) -> SSTableBuilder<'a, T> {
-        SSTableBuilder {
+impl<W: std::io::Write, T: Serializable> SSTableBuilder<T, W> {
+    pub fn new(writer: W) -> Self {
+        Self {
             index: sstable_proto_rust::Index::new(),
-            dtable: dtable,
-            dtable_offset: 0,
-            block_offset: 0,
-            at_start_of_block: true,
-            data_type: std::marker::PhantomData,
+            writer,
             last_key: String::new(),
-            finished: false,
+            bytes_written: 0,
+            _marker: std::marker::PhantomData,
         }
     }
 
-    pub fn write_ordered(&mut self, key: &str, value: T) -> std::io::Result<()> {
-        // Prepare the data entry proto.
-        let mut buffer = vec![];
+    pub fn write_ordered(&mut self, key: &str, value: T) -> Result<()> {
+        let mut buffer = Vec::new();
         value.write(&mut buffer)?;
-
         self.write_raw(key, &buffer)
     }
 
-    // You can use this to write raw binary data into the sstable, if you don't
-    // want to specify a serializable type. This is helpful if you don't want to
-    // deserialize the data before writing it, and you already have it in binary
-    // form.
-    pub fn write_raw(&mut self, key: &str, value: &[u8]) -> std::io::Result<()> {
+    pub fn write_raw(&mut self, key: &str, value: &[u8]) -> Result<()> {
         assert!(
-            self.dtable_offset == 0 || key >= self.last_key.as_str(),
+            self.bytes_written == 0 || key >= self.last_key.as_str(),
             format!(
                 "Keys must be written in order to the SSTable!\n `{}` (written) < `{}` (previous)",
                 key, self.last_key
             )
         );
-        assert!(
-            !self.finished,
-            "Attempted to write to the sstable after finish()"
-        );
-
-        // If we're at the start of the block, we'll need to write a record into
-        // the index.
-        if self.at_start_of_block {
-            self.at_start_of_block = false;
-            let mut key_entry = sstable_proto_rust::KeyEntry::new();
-            key_entry.set_key(String::from(key));
-            key_entry.set_offset(self.dtable_offset);
-            // Begin by preparing the key entry.
-            let key_entries = self.index.mut_pointers();
-            key_entries.push(key_entry);
-        }
-
         self.last_key = key.to_owned();
 
-        let mut data_entry = sstable_proto_rust::DataEntry::new();
-        data_entry.set_key(String::from(key));
-        data_entry.set_value(value.to_owned());
+        let key_bytes = key.as_bytes();
+        self.writer
+            .write_u16::<LittleEndian>(key_bytes.len() as u16);
+        self.writer.write_all(key_bytes);
+        self.writer.write_u32::<LittleEndian>(value.len() as u32);
+        self.writer.write_all(value);
 
-        // Write the length, then the proto. The length includes the 4 size bytes.
-        let size = data_entry.compute_size();
-        self.dtable.write_u32::<LittleEndian>(size)?;
-        data_entry.write_to_writer(self.dtable).map_err(|e| {
-            std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("Unexpectedly unable to write data record: {}", e),
-            )
-        })?;
-
-        // Update the internal offsets.
-        self.dtable_offset += 4 + size as u64;
-        self.block_offset += 4 + size as u64;
-
-        // If we've crossed a block boundary, we'll write an index for the next entry.
-        if self.block_offset > BLOCK_SIZE {
-            self.block_offset = 0;
-            self.at_start_of_block = true;
+        // If we've written the first entry, or we've crossed a block boundary while writing, write
+        // an index entry
+        let length = (2 + 4 + key_bytes.len() + value.len()) as u64;
+        if self.bytes_written == 0
+            || length >= BLOCK_SIZE
+            || (self.bytes_written + length) % BLOCK_SIZE < (self.bytes_written % BLOCK_SIZE)
+        {
+            let mut key_entry = sstable_proto_rust::KeyEntry::new();
+            key_entry.set_key(key.to_string());
+            key_entry.set_offset(self.bytes_written);
+            self.index.mut_pointers().push(key_entry);
         }
+
+        self.bytes_written += length;
 
         Ok(())
     }
 
-    // When you're done writing, you need to call finish() in order to write the index to the end
-    // of the sstable.
-    pub fn finish(&mut self) -> io::Result<()> {
-        self.index.write_to_writer(self.dtable).map_err(|e| {
+    pub fn finish(mut self) -> Result<()> {
+        self.index.write_to_writer(&mut self.writer).map_err(|e| {
             std::io::Error::new(
                 std::io::ErrorKind::Other,
                 format!("Unexpectedly unable to write index during finish(): {}", e),
             )
         })?;
 
-        // Now that we've written the index, we must finish by writing the index where the
-        // index was written to with respect to  the start of the file. We'll also write the
-        // size of the index. This always consumes the last 16 bytes of the file.
-        self.dtable.write_u64::<LittleEndian>(self.dtable_offset)?;
-        self.dtable
-            .write_u64::<LittleEndian>(self.index.compute_size() as u64)?;
-        self.finished = true;
+        self.writer.write_u16::<LittleEndian>(VERSION)?;
+        self.writer.write_u64::<LittleEndian>(self.bytes_written)?;
+        self.writer
+            .write_u32::<LittleEndian>(self.index.compute_size())?;
+
         Ok(())
     }
+}
 
-    // This function merges a series of sstables into one.
-    pub fn from_sstables(
-        dtable: &'a mut dyn std::io::Write,
-        readers: &mut [SSTableReader<T>],
-    ) -> io::Result<()> {
-        let mut builder = SSTableBuilder::<T>::new(dtable);
-        let mut heap = MinHeap::<KV<String, (usize, Vec<u8>)>>::new();
-
-        // First, we'll construct a BTreeMap using our keys. This will allow us to efficiently
-        // insert while keeping a sorted list.
-        for index in 0..readers.len() {
-            let mut data = match readers[index].read_next_key() {
-                Ok(Some(x)) => x,
-                Ok(None) => continue,
-                Err(e) => return Err(e),
-            };
-
-            heap.push(KV::new(
-                data.get_key().to_owned(),
-                (index as usize, data.take_value()),
-            ));
-        }
-
-        loop {
-            let index = {
-                // Now we'll pop off the lowest key and write it into the output sstable. Then we'll
-                // refresh the key by reading from the sstable the key originated from.
-                //let (key, &(index, ref value)) = match heap.pop() {
-                let kv = match heap.pop() {
-                    Some(x) => x,
-                    None => break,
-                };
-
-                builder.write_raw(kv.key(), &kv.value().1)?;
-
-                kv.value().0
-            };
-
-            let mut data = match readers[index].read_next_key() {
-                Ok(Some(x)) => x,
-                Ok(None) => continue,
-                Err(e) => return Err(e),
-            };
-
-            heap.push(KV::new(
-                data.get_key().to_owned(),
-                (index as usize, data.take_value()),
-            ));
-        }
-
-        builder.finish()?;
-        Ok(())
-    }
+pub struct SSTableReader<T> {
+    index: sstable_proto_rust::Index,
+    dtable: mmap::Mmap,
+    _marker: std::marker::PhantomData<T>,
+    index_offset: usize,
+    version: u16,
+    offset: usize,
 }
 
 impl<T: Serializable + Default> SSTableReader<T> {
-    pub fn new(mut dtable: Box<dyn SeekableRead>) -> io::Result<SSTableReader<T>> {
-        // First, seek directly to the end, which is where we store the location and size of the
-        // index table.
-        dtable.seek(io::SeekFrom::End(-16))?;
-        let index_offset = dtable.read_u64::<LittleEndian>()?;
-        let index_size = dtable.read_u64::<LittleEndian>()?;
+    pub fn new(file: std::fs::File) -> Result<Self> {
+        let dtable = unsafe { mmap::MmapOptions::new().map(&file)? };
 
-        // Now let's jump to the index table and read that...
-        dtable.seek(io::SeekFrom::Start(index_offset))?;
-        let index = protobuf::parse_from_reader::<sstable_proto_rust::Index>(
-            &mut (&mut dtable).take(index_size),
-        )
-        .map_err(|e| {
-            std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!("Unable to read sstable index: {}", e),
-            )
-        })?;
+        Self::from_mmap(dtable)
+    }
 
-        // Reset the cursor to the start of the file, where the data begins. We're ready for
-        // reading.
-        dtable.seek(io::SeekFrom::Start(0))?;
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
+        let mut map = mmap::MmapMut::map_anon(bytes.len())?;
+        map.copy_from_slice(bytes);
+        Self::from_mmap(map.make_read_only()?)
+    }
 
-        Ok(SSTableReader {
-            dtable: dtable,
-            index: index,
-            data_type: std::marker::PhantomData,
-            dtable_offset: 0,
-            index_offset: index_offset,
+    pub fn from_mmap(dtable: mmap::Mmap) -> Result<Self> {
+        let version = LittleEndian::read_u16(&dtable[dtable.len() - 14..dtable.len() - 12]);
+        let index_offset =
+            LittleEndian::read_u64(&dtable[dtable.len() - 12..dtable.len() - 4]) as usize;
+        let index_size = LittleEndian::read_u32(&dtable[dtable.len() - 4..]) as usize;
+
+        let index =
+            match protobuf::parse_from_bytes(&dtable[index_offset..index_offset + index_size]) {
+                Ok(i) => i,
+                Err(_) => {
+                    return Err(Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        "unable to parse sstable index",
+                    ))
+                }
+            };
+
+        Ok(Self {
+            dtable,
+            index,
+            _marker: std::marker::PhantomData,
+            index_offset,
+            version,
+            offset: 0,
         })
     }
 
-    pub fn from_filename(filename: &str) -> io::Result<SSTableReader<T>> {
-        let f = File::open(filename).unwrap();
-        let r = std::io::BufReader::new(f);
-        SSTableReader::new(Box::new(r))
+    pub fn from_filename(filename: &str) -> Result<Self> {
+        let f = std::fs::File::open(filename)?;
+        Self::new(f)
     }
 
-    fn seek_to_min_key(&mut self, key: &str) -> io::Result<()> {
-        let starting_offset = match index::get_block_with_min_key(&self.index, key) {
-            Some(block) => block.get_offset(),
-            None => return Ok(()),
-        };
-        self.seek(starting_offset)?;
-
-        let mut offset_to_reset_to;
-        loop {
-            offset_to_reset_to = self.dtable_offset;
-            let current_key = match self.read_key()? {
-                Some(x) => x,
-                None => return Ok(()),
-            };
-            if current_key.as_str() >= key {
-                break;
-            }
-        }
-
-        self.seek(offset_to_reset_to)?;
-
-        Ok(())
+    pub fn suggest_shards(&self, key_spec: &str, min_key: &str, max_key: &str) -> Vec<String> {
+        index::suggest_shards(&self.index, key_spec, min_key, max_key)
     }
 
-    // Rather than calling seek directly on the dtable, it's better to use self.seek, because
-    // that way we can always keep track of the offset correctly.
-    fn seek(&mut self, offset: u64) -> io::Result<()> {
-        self.dtable.seek(io::SeekFrom::Start(offset))?;
-        self.dtable_offset = offset;
-        Ok(())
+    pub fn get_shard_boundaries(&self, target_shard_count: usize) -> Vec<String> {
+        index::get_shard_boundaries(&self.index, target_shard_count)
     }
 
-    // get looks through the index and tries to find out whether a key is present in the sstable.
-    // It may read a block, if it thinks the key may be in there.
-    pub fn get(&mut self, key: &str) -> io::Result<Option<T>> {
-        // First, conduct a binary search on the keys in the index to find the block to read. Then,
-        // seek to that block, and read until the block is over.
-        let offset = match index::get_block(&self.index, key) {
+    pub fn get(&self, key: &str) -> Result<Option<T>> {
+        let mut offset = match index::get_block(&self.index, key) {
             Some(block) => block.get_offset(),
             None => return Ok(None),
-        };
-
-        self.seek(offset)?;
+        } as usize;
 
         loop {
-            let key_entry = match self.read_next_key() {
-                Ok(Some(de)) => de,
+            let (found_key, value, new_offset) = match self.read_at(offset) {
+                Ok(Some((found_key, value, idx))) => (found_key, value, idx),
                 Ok(None) => return Ok(None),
                 Err(e) => return Err(e),
             };
-            if key_entry.get_key() > key {
-                // We already passed the key, so it doesn't exist.
+
+            offset = new_offset;
+
+            if found_key > key {
                 return Ok(None);
-            } else if key == key_entry.get_key() {
-                let mut value = T::default();
-                value.read_from_bytes(&key_entry.get_value())?;
-                return Ok(Some(value));
+            } else if key == found_key {
+                let mut parsed_value = T::default();
+                parsed_value.read_from_bytes(value)?;
+                return Ok(Some(parsed_value));
             }
         }
     }
+
+    pub fn read_at(&self, mut offset: usize) -> Result<Option<(&str, &[u8], usize)>> {
+        if offset >= self.index_offset {
+            return Ok(None);
+        }
+
+        let key_length = LittleEndian::read_u16(&self.dtable[offset..offset + 2]) as usize;
+        let key = unsafe {
+            std::str::from_utf8_unchecked(&self.dtable[offset + 2..offset + 2 + key_length])
+        };
+
+        offset += key_length + 2;
+
+        let value_length = LittleEndian::read_u32(&self.dtable[offset..offset + 4]) as usize;
+        let value = &self.dtable[offset + 4..offset + 4 + value_length];
+
+        offset += value_length + 4;
+
+        Ok(Some((key, value, offset)))
+    }
+
+    fn get_offset_for_min_key(&self, key: &str) -> Result<usize> {
+        let mut offset = match index::get_block_with_min_key(&self.index, key) {
+            Some(block) => block.get_offset() as usize,
+            None => return Ok(0),
+        };
+
+        loop {
+            let (k, _, new_offset) = match self.read_at(offset)? {
+                Some(x) => x,
+                None => break,
+            };
+
+            if k >= key {
+                break;
+            }
+
+            offset = new_offset;
+        }
+
+        Ok(offset)
+    }
+}
+
+pub struct SpecdSSTableReader<'a, T: 'a> {
+    reader: &'a SSTableReader<T>,
+    key_spec: String,
+
+    min_key: String,
+    max_key: String,
+
+    reached_end: bool,
+
+    offset: usize,
 }
 
 impl<'a, T: Serializable + Default> SpecdSSTableReader<'a, T> {
-    pub fn from_reader(
-        reader: &'a mut SSTableReader<T>,
-        key_spec: &str,
-    ) -> SpecdSSTableReader<'a, T> {
+    pub fn from_reader(reader: &'a SSTableReader<T>, key_spec: &str) -> SpecdSSTableReader<'a, T> {
         let mut specd_reader = SpecdSSTableReader {
             min_key: String::from(""),
             max_key: String::from(""),
             reader: reader,
             key_spec: key_spec.to_owned(),
             reached_end: false,
+            offset: 0,
         };
 
         specd_reader.seek_to_start().unwrap();
         specd_reader
     }
 
+    pub fn seek_to_start(&mut self) -> Result<()> {
+        self.reached_end = false;
+        let maybe_block = match self.min_key > self.key_spec {
+            true => index::get_block_with_min_key(&self.reader.index, self.min_key.as_str()),
+            false => index::get_block_with_keyspec(&self.reader.index, self.key_spec.as_str()),
+        };
+
+        self.offset = match maybe_block {
+            Some(block) => block.get_offset() as usize,
+            None => {
+                self.reached_end = true;
+                return Ok(());
+            }
+        };
+
+        Ok(())
+    }
+
     pub fn from_reader_with_scope(
-        reader: &'a mut SSTableReader<T>,
+        reader: &'a SSTableReader<T>,
         key_spec: &str,
         min_key: &str,
         max_key: &str,
@@ -387,28 +273,10 @@ impl<'a, T: Serializable + Default> SpecdSSTableReader<'a, T> {
             reached_end: false,
             min_key: min_key.to_owned(),
             max_key: max_key.to_owned(),
+            offset: 0,
         };
 
-        specd_reader.seek_to_start().unwrap();
         specd_reader
-    }
-
-    pub fn seek_to_start(&mut self) -> io::Result<()> {
-        self.reached_end = false;
-        let maybe_block = match self.min_key > self.key_spec {
-            true => index::get_block_with_min_key(&self.reader.index, self.min_key.as_str()),
-            false => index::get_block_with_keyspec(&self.reader.index, self.key_spec.as_str()),
-        };
-
-        let offset = match maybe_block {
-            Some(block) => block.get_offset(),
-            None => {
-                self.reached_end = true;
-                return Ok(());
-            }
-        };
-
-        self.reader.seek(offset)
     }
 
     // is_within_scope determines whether a key falls within the range specified by the specd
@@ -435,6 +303,60 @@ impl<'a, T: Serializable + Default> SpecdSSTableReader<'a, T> {
     }
 }
 
+impl<'a, T: Serializable + Default> Iterator for SpecdSSTableReader<'a, T> {
+    type Item = (String, T);
+    fn next(&mut self) -> Option<(String, T)> {
+        if self.reached_end {
+            return None;
+        }
+
+        loop {
+            let (k, v, idx) = match self.reader.read_at(self.offset).unwrap() {
+                Some(x) => x,
+                None => return None,
+            };
+
+            self.offset = idx;
+
+            if k < self.key_spec.as_str() {
+                continue;
+            }
+            let mode = self.is_within_scope(k);
+            return match mode {
+                0 => Some((k.to_string(), T::from_bytes(v).unwrap())),
+                1 => None,
+                _ => continue,
+            };
+        }
+    }
+}
+
+impl<T: Serializable + Default> Iterator for SSTableReader<T> {
+    type Item = (String, T);
+    fn next(&mut self) -> Option<(String, T)> {
+        let (k, v, idx) = match self.read_at(self.offset).unwrap() {
+            Some((k, v, idx)) => {
+                let mut value = T::default();
+                value.read_from_bytes(v).unwrap();
+                (k.to_string(), value, idx)
+            }
+            None => return None,
+        };
+
+        self.offset = idx;
+        Some((k, v))
+    }
+}
+
+pub struct ShardedSSTableReader<T> {
+    readers: Vec<SSTableReader<T>>,
+    offsets: Vec<usize>,
+    // A max key of "" means no max.
+    max_key: String,
+    heap: MinHeap<KV<KV<String, T>, usize>>,
+    top: Option<KV<String, T>>,
+}
+
 impl<'a, T: Serializable + Default> ShardedSSTableReader<T> {
     pub fn from_readers(
         readers: Vec<SSTableReader<T>>,
@@ -443,6 +365,7 @@ impl<'a, T: Serializable + Default> ShardedSSTableReader<T> {
     ) -> ShardedSSTableReader<T> {
         let mut reader = ShardedSSTableReader {
             readers: readers,
+            offsets: Vec::new(),
             max_key: max_key,
             heap: MinHeap::new(),
             top: None,
@@ -454,28 +377,30 @@ impl<'a, T: Serializable + Default> ShardedSSTableReader<T> {
 
     pub fn seek(&mut self, min_key: &str) {
         // First, seek to the starting key in all the SSTables.
-        for r in self.readers.iter_mut() {
-            r.seek_to_min_key(min_key).unwrap();
+        self.offsets.clear();
+        for r in &self.readers {
+            self.offsets
+                .push(r.get_offset_for_min_key(min_key).unwrap());
         }
 
         // Next, we'll construct a heap using our keys. This will allow us to efficiently
         // insert while keeping a sorted list.
         self.heap.clear();
         for index in 0..self.readers.len() {
-            let (k, v) = match self.readers[index].read_next_data().unwrap() {
+            let (k, v, new_offset) = match self.readers[index].read_at(self.offsets[index]).unwrap()
+            {
                 Some(x) => x,
                 None => continue,
             };
 
-            self.heap.push(KV::new(KV::new(k, v), index));
+            self.offsets[index] = new_offset;
+
+            let value = T::from_bytes(v).unwrap();
+            self.heap.push(KV::new(KV::new(k.to_owned(), value), index));
         }
     }
 
-    pub fn from_filenames(
-        filenames: &[String],
-        min_key: &str,
-        max_key: String,
-    ) -> io::Result<Self> {
+    pub fn from_filenames(filenames: &[String], min_key: &str, max_key: String) -> Result<Self> {
         let (successes, failures): (Vec<_>, Vec<_>) = filenames
             .iter()
             .map(|f| SSTableReader::from_filename(f))
@@ -491,6 +416,7 @@ impl<'a, T: Serializable + Default> ShardedSSTableReader<T> {
         let readers = successes.into_iter().map(|r| r.unwrap()).collect();
 
         let mut reader = ShardedSSTableReader {
+            offsets: Vec::new(),
             readers: readers,
             max_key: max_key,
             heap: MinHeap::new(),
@@ -500,7 +426,7 @@ impl<'a, T: Serializable + Default> ShardedSSTableReader<T> {
         Ok(reader)
     }
 
-    pub fn from_filename(filename: &str, min_key: &str, max_key: String) -> io::Result<Self> {
+    pub fn from_filename(filename: &str, min_key: &str, max_key: String) -> Result<Self> {
         let filenames = shard_lib::unshard(filename);
         Self::from_filenames(&filenames, min_key, max_key)
     }
@@ -520,11 +446,14 @@ impl<'a, T: Serializable + Default> ShardedSSTableReader<T> {
             None => return None,
         };
 
-        match self.readers[index].read_next_data().unwrap() {
-            Some((k, v)) => {
-                if self.max_key.as_str() == "" || k.as_str() < self.max_key.as_str() {
-                    self.heap.push(KV::new(KV::new(k, v), index));
+        match self.readers[index].read_at(self.offsets[index]).unwrap() {
+            Some((k, v, new_offset)) => {
+                if self.max_key.as_str() == "" || k < self.max_key.as_str() {
+                    let value = T::from_bytes(v).unwrap();
+                    self.heap.push(KV::new(KV::new(k.to_owned(), value), index));
                 }
+
+                self.offsets[index] = new_offset;
             }
             None => (),
         };
@@ -545,87 +474,6 @@ impl<'a, T: Serializable + Default> Iterator for ShardedSSTableReader<T> {
     }
 }
 
-impl<'a, T: Serializable + Default> Iterator for SpecdSSTableReader<'a, T> {
-    type Item = (String, T);
-    fn next(&mut self) -> Option<(String, T)> {
-        if self.reached_end {
-            return None;
-        }
-
-        while let Some(x) = self.reader.read_next_data().unwrap() {
-            if x.0 < self.key_spec {
-                continue;
-            }
-            let mode = self.is_within_scope(x.0.as_str());
-            return match mode {
-                0 => Some(x),
-                1 => None,
-                _ => continue,
-            };
-        }
-        None
-    }
-}
-
-impl<T: Serializable + Default> SSTableReader<T> {
-    // read_next_key returns the next key and the unserialized bytes corresponding to the value.
-    pub fn read_next_key(&mut self) -> io::Result<Option<sstable_proto_rust::DataEntry>> {
-        if self.dtable_offset >= self.index_offset {
-            return Ok(None);
-        }
-
-        let size = self.dtable.read_u32::<LittleEndian>()?;
-        // Increment the dtable offset. We've read 4 bytes to read the size, plus we're about
-        // to read size bytes, so we want to advance it by size + 4.
-        self.dtable_offset += (size + 4) as u64;
-        Ok(Some(
-            protobuf::parse_from_reader(&mut (&mut self.dtable).take(size as u64)).map_err(
-                |e| {
-                    io::Error::new(
-                        io::ErrorKind::InvalidData,
-                        format!("unable to parse KeyEntry protobuf in sstable: {}", e),
-                    )
-                },
-            )?,
-        ))
-    }
-
-    fn read_key(&mut self) -> io::Result<Option<String>> {
-        let entry = match self.read_next_key()? {
-            Some(e) => e,
-            None => return Ok(None),
-        };
-        Ok(Some(entry.get_key().to_owned()))
-    }
-
-    fn read_next_data(&mut self) -> io::Result<Option<(String, T)>> {
-        let key_entry = match self.read_next_key() {
-            Ok(Some(k)) => k,
-            Ok(None) => return Ok(None),
-            Err(e) => return Err(e),
-        };
-
-        let mut value = T::default();
-        value.read_from_bytes(&key_entry.get_value()).unwrap();
-        Ok(Some((key_entry.get_key().to_owned(), value)))
-    }
-
-    pub fn suggest_shards(&self, key_spec: &str, min_key: &str, max_key: &str) -> Vec<String> {
-        index::suggest_shards(&self.index, key_spec, min_key, max_key)
-    }
-
-    pub fn get_shard_boundaries(&self, target_shard_count: usize) -> Vec<String> {
-        index::get_shard_boundaries(&self.index, target_shard_count)
-    }
-}
-
-impl<T: Serializable + Default> Iterator for SSTableReader<T> {
-    type Item = (String, T);
-    fn next(&mut self) -> Option<(String, T)> {
-        self.read_next_data().unwrap()
-    }
-}
-
 impl<T> StreamingIterator for ShardedSSTableReader<T>
 where
     T: Serializable + Default,
@@ -638,11 +486,15 @@ where
         };
 
         if let Some(index) = idx {
-            match self.readers[index].read_next_data().unwrap() {
-                Some((k, v)) => {
-                    if self.max_key.as_str() == "" || k.as_str() < self.max_key.as_str() {
-                        self.heap.push(KV::new(KV::new(k, v), index));
+            match self.readers[index].read_at(self.offsets[index]).unwrap() {
+                Some((k, v, new_offset)) => {
+                    if self.max_key.as_str() == "" || k < self.max_key.as_str() {
+                        let value = T::from_bytes(v).unwrap();
+                        self.heap
+                            .push(KV::new(KV::new(k.to_string(), value), index));
                     }
+
+                    self.offsets[index] = new_offset;
                 }
                 None => (),
             };
@@ -662,19 +514,6 @@ where
             None => None,
         }
     }
-}
-
-pub fn mem_sstable(data: Vec<(String, u64)>) -> SSTableReader<Primitive<u64>> {
-    let mut d = std::io::Cursor::new(Vec::new());
-    {
-        let mut t = SSTableBuilder::<Primitive<u64>>::new(&mut d);
-        for (key, value) in data {
-            t.write_ordered(key.as_str(), Primitive(value)).unwrap();
-        }
-        t.finish().unwrap();
-    }
-    d.seek(std::io::SeekFrom::Start(0)).unwrap();
-    SSTableReader::<Primitive<u64>>::new(Box::new(d)).unwrap()
 }
 
 #[derive(PartialEq, Debug)]
@@ -733,7 +572,7 @@ pub fn execute_reshard_task(task: ReshardTask) {
             for (boundary, to_filename) in boundaries.iter().zip(to.iter()) {
                 let f = std::fs::File::create(to_filename).unwrap();
                 let mut w = std::io::BufWriter::new(f);
-                let mut builder = SSTableBuilder::<Primitive<Vec<u8>>>::new(&mut w);
+                let mut builder = SSTableBuilder::<Primitive<Vec<u8>>, _>::new(&mut w);
 
                 loop {
                     if let Some((k, _)) = source.peek() {
@@ -777,7 +616,34 @@ pub fn reshard(from: &[String], to: &[String]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use primitive::Primitive;
     use std::io::Seek;
+
+    #[test]
+    fn read_and_write_sstable() {
+        let mut f = std::fs::File::create("/tmp/test.sstable").unwrap();
+        {
+            let mut t = SSTableBuilder::<Primitive<i64>, _>::new(&mut f);
+            for x in 0..100_000 {
+                t.write_ordered(format!("{:9}", x).as_str(), Primitive(x))
+                    .unwrap();
+            }
+            t.finish().unwrap();
+        }
+
+        let f = std::fs::File::open("/tmp/test.sstable").unwrap();
+        let mut r = SSTableReader::<Primitive<i64>>::new(f).unwrap();
+
+        // 100k entries, approx 19 bytes per entry (9 bytes of string, 6 bytes of size/alignment, 3
+        // bytes of integers) / 65536 = 29
+        assert_eq!(r.index.get_pointers().len(), 29);
+
+        for x in 0..100_000 {
+            println!("x = {}", x);
+            assert_eq!(r.next().unwrap(), (format!("{:9}", x), Primitive(x)));
+        }
+        assert_eq!(r.next(), None);
+    }
 
     #[test]
     fn test_reshard_planning() {
@@ -787,7 +653,6 @@ mod tests {
             "x1.sstable".into(),
             "x2.sstable".into(),
         ];
-
         let expected = vec![
             ReshardTask::Split(
                 "a.sstable".into(),
@@ -795,9 +660,7 @@ mod tests {
             ),
             ReshardTask::Copy("b.sstable".into(), "x1.sstable".into()),
         ];
-
         let plans = plan_reshard(&from, &to);
-
         assert_eq!(plans, expected);
     }
 
@@ -805,30 +668,12 @@ mod tests {
     fn test_reshard_planning_2() {
         let from = vec!["a.sstable".into(), "b.sstable".into(), "c.sstable".into()];
         let to = vec!["x.sstable".into()];
-
         let expected = vec![ReshardTask::Merge(
             vec!["a.sstable".into(), "b.sstable".into(), "c.sstable".into()],
             "x.sstable".into(),
         )];
-
         let plans = plan_reshard(&from, &to);
-
         assert_eq!(plans, expected);
-    }
-
-    #[test]
-    fn construct_sstable_builder() {
-        let mut k = std::io::Cursor::new(Vec::new());
-        {
-            let mut t = SSTableBuilder::<Primitive<i64>>::new(&mut k);
-            t.write_ordered("test", 123.into()).unwrap();
-            t.finish().unwrap();
-        }
-        let bytes = k.into_inner();
-        assert_eq!(
-            bytes[bytes.len() - 8] + bytes[bytes.len() - 16] + 16,
-            bytes.len() as u8
-        );
     }
 
     #[test]
@@ -838,12 +683,10 @@ mod tests {
         {
             value.write(&mut k).unwrap();
         }
-
         let mut z: Primitive<i64> = Primitive(9);
         {
             z.read_from_bytes(&k.into_inner()).unwrap();
         }
-
         assert_eq!(z, 5);
     }
 
@@ -852,26 +695,22 @@ mod tests {
         let mut value = sstable_proto_rust::KeyEntry::new();
         value.set_key(String::from("hello world"));
         value.set_offset(1234);
-
         let mut k = std::io::Cursor::new(Vec::new());
         {
             value.write(&mut k).unwrap();
         }
-
         let mut output = sstable_proto_rust::KeyEntry::new();
         {
             output.read_from_bytes(&k.into_inner()).unwrap();
         }
-
         assert_eq!(output.get_key(), "hello world");
         assert_eq!(output.get_offset(), 1234);
     }
-
     #[test]
     #[should_panic]
     fn construct_sstable_builder_backwards() {
         let mut k = std::io::Cursor::new(Vec::new());
-        let mut t = SSTableBuilder::<Primitive<f64>>::new(&mut k);
+        let mut t = SSTableBuilder::<Primitive<f64>, _>::new(&mut k);
         t.write_ordered("camel", Primitive(1.0234)).unwrap();
         // This write is out of order, which should be caught by an assertion.
         t.write_ordered("baboon", Primitive(0.222)).unwrap();
@@ -881,15 +720,15 @@ mod tests {
     fn read_next_key_on_constructed_sstable() {
         let mut d = std::io::Cursor::new(Vec::new());
         {
-            let mut t = SSTableBuilder::<Primitive<i64>>::new(&mut d);
+            let mut t = SSTableBuilder::<Primitive<i64>, _>::new(&mut d);
             t.write_ordered("hello", Primitive(5)).unwrap();
             t.finish().unwrap();
         }
         d.seek(std::io::SeekFrom::Start(0)).unwrap();
         {
-            let mut r = SSTableReader::<Primitive<i64>>::new(Box::new(d)).unwrap();
-            let entry = r.read_next_key().unwrap().unwrap();
-            assert_eq!(entry.get_key(), "hello");
+            let mut r = SSTableReader::<Primitive<i64>>::from_bytes(&d.into_inner()).unwrap();
+            let entry = r.next().unwrap();
+            assert_eq!(&entry.0, "hello");
         }
     }
 
@@ -897,13 +736,13 @@ mod tests {
     fn read_constructed_sstable_with_iter() {
         let mut d = std::io::Cursor::new(Vec::new());
         {
-            let mut t = SSTableBuilder::<Primitive<i64>>::new(&mut d);
+            let mut t = SSTableBuilder::<Primitive<i64>, _>::new(&mut d);
             t.write_ordered("hello", Primitive(5)).unwrap();
             t.finish().unwrap();
         }
         d.seek(std::io::SeekFrom::Start(0)).unwrap();
         {
-            let r = SSTableReader::<Primitive<i64>>::new(Box::new(d)).unwrap();
+            let r = SSTableReader::<Primitive<i64>>::from_bytes(&d.into_inner()).unwrap();
             assert_eq!(
                 r.collect::<Vec<_>>(),
                 vec![(String::from("hello"), Primitive(5))]
@@ -915,14 +754,14 @@ mod tests {
     fn write_a_very_long_sstable() {
         let mut f = std::io::Cursor::new(Vec::new());
         {
-            let mut t = SSTableBuilder::<Primitive<i64>>::new(&mut f);
+            let mut t = SSTableBuilder::<Primitive<i64>, _>::new(&mut f);
             for x in 0..100 {
                 t.write_ordered(format!("{:9}", x).as_str(), Primitive(x))
                     .unwrap();
             }
             t.finish().unwrap();
         }
-        let reader = SSTableReader::<Primitive<i64>>::new(Box::new(f)).unwrap();
+        let reader = SSTableReader::<Primitive<i64>>::from_bytes(&f.into_inner()).unwrap();
         let mut x = 0;
         for (strx, intx) in reader {
             assert_eq!(format!("{:9}", x).as_str(), strx);
@@ -930,36 +769,32 @@ mod tests {
             x += 1;
         }
     }
-
     #[test]
     fn find_a_key() {
         let mut f = std::io::Cursor::new(Vec::new());
         {
-            let mut t = SSTableBuilder::<Primitive<i64>>::new(&mut f);
+            let mut t = SSTableBuilder::<Primitive<i64>, _>::new(&mut f);
             t.write_ordered("a special key", Primitive(500)).unwrap();
             t.write_ordered("special key", Primitive(1234)).unwrap();
             t.write_ordered("zzz key", Primitive(400)).unwrap();
             t.finish().unwrap();
         }
-        let mut reader = SSTableReader::<Primitive<i64>>::new(Box::new(f)).unwrap();
+        let mut reader = SSTableReader::<Primitive<i64>>::from_bytes(&f.into_inner()).unwrap();
         assert_eq!(reader.get("a special key").unwrap(), Some(Primitive(500)));
         assert_eq!(reader.get("nonexistent key").unwrap(), None);
         assert_eq!(reader.get("special key").unwrap(), Some(Primitive(1234)));
         assert_eq!(reader.get("zzz key").unwrap(), Some(Primitive(400)));
     }
-
     fn keyentry(key: &str, offset: u64) -> sstable_proto_rust::KeyEntry {
         let mut k = sstable_proto_rust::KeyEntry::new();
         k.set_key(key.to_owned());
         k.set_offset(offset);
         k
     }
-
     #[test]
     fn find_a_block() {
         let mut t = sstable_proto_rust::Index::new();
         assert_eq!(index::get_block(&t, "asdf"), None);
-
         t.set_pointers(protobuf::RepeatedField::from_vec(vec![keyentry(
             "bloop", 123,
         )]));
@@ -968,13 +803,12 @@ mod tests {
         assert_eq!(index::get_block(&t, "bloop"), Some(keyentry("bloop", 123)));
         assert_eq!(index::get_block(&t, "blooq"), Some(keyentry("bloop", 123)));
     }
-
     #[test]
     fn find_a_key_with_many_keys() {
         let mut f = std::io::Cursor::new(Vec::new());
         let key = "very long key very very long key extremely long key";
         {
-            let mut t = SSTableBuilder::<Primitive<i64>>::new(&mut f);
+            let mut t = SSTableBuilder::<Primitive<i64>, _>::new(&mut f);
             // Write 10k even numbers.
             for i in 0..10000 {
                 t.write_ordered(format!("{}-->{:9}", key, i * 2).as_str(), Primitive(i * 2))
@@ -982,7 +816,7 @@ mod tests {
             }
             t.finish().unwrap();
         }
-        let mut reader = SSTableReader::<Primitive<i64>>::new(Box::new(f)).unwrap();
+        let mut reader = SSTableReader::<Primitive<i64>>::from_bytes(&f.into_inner()).unwrap();
         assert_eq!(
             reader
                 .get(format!("{}-->{:9}", key, 3201).as_str())
@@ -1000,54 +834,11 @@ mod tests {
             Some(Primitive(9000))
         );
     }
-
-    #[test]
-    fn merge_two_sstables() {
-        let mut a = std::io::Cursor::new(Vec::new());
-        let mut b = std::io::Cursor::new(Vec::new());
-        let mut c = std::io::Cursor::new(Vec::new());
-        {
-            let mut t = SSTableBuilder::<Primitive<i64>>::new(&mut a);
-            t.write_ordered("hello", Primitive(1)).unwrap();
-            t.write_ordered("my name is Elder Price", Primitive(3))
-                .unwrap();
-            t.finish().unwrap();
-        }
-        {
-            let mut t = SSTableBuilder::<Primitive<i64>>::new(&mut b);
-            t.write_ordered("and I'd like to tell you...", Primitive(0))
-                .unwrap();
-            t.write_ordered("hello!", Primitive(2)).unwrap();
-            t.finish().unwrap();
-        }
-        a.seek(std::io::SeekFrom::Start(0)).unwrap();
-        b.seek(std::io::SeekFrom::Start(0)).unwrap();
-        {
-            let r1 = SSTableReader::<Primitive<i64>>::new(Box::new(a)).unwrap();
-            let r2 = SSTableReader::<Primitive<i64>>::new(Box::new(b)).unwrap();
-            SSTableBuilder::from_sstables(&mut c, &mut [r1, r2]).unwrap();
-        }
-        c.seek(std::io::SeekFrom::Start(0)).unwrap();
-        {
-            let mut merged = SSTableReader::<Primitive<i64>>::new(Box::new(c)).unwrap();
-            assert_eq!(
-                merged.read_next_key().unwrap().unwrap().get_key(),
-                "and I'd like to tell you..."
-            );
-            assert_eq!(merged.read_next_key().unwrap().unwrap().get_key(), "hello");
-            assert_eq!(merged.read_next_key().unwrap().unwrap().get_key(), "hello!");
-            assert_eq!(
-                merged.read_next_key().unwrap().unwrap().get_key(),
-                "my name is Elder Price"
-            );
-        }
-    }
-
     #[test]
     fn read_with_nonexistent_key_spec() {
         let mut d = std::io::Cursor::new(Vec::new());
         {
-            let mut t = SSTableBuilder::<Primitive<i64>>::new(&mut d);
+            let mut t = SSTableBuilder::<Primitive<i64>, _>::new(&mut d);
             t.write_ordered("allow", Primitive(5)).unwrap();
             t.write_ordered("bellow", Primitive(5)).unwrap();
             t.write_ordered("wallow", Primitive(5)).unwrap();
@@ -1055,7 +846,7 @@ mod tests {
         }
         d.seek(std::io::SeekFrom::Start(0)).unwrap();
         {
-            let mut r = SSTableReader::<Primitive<i64>>::new(Box::new(d)).unwrap();
+            let mut r = SSTableReader::<Primitive<i64>>::from_bytes(&d.into_inner()).unwrap();
             let specd_reader = SpecdSSTableReader::from_reader(&mut r, "hello-");
             assert_eq!(
                 specd_reader.map(|(k, _)| k).collect::<Vec<String>>(),
@@ -1063,12 +854,11 @@ mod tests {
             );
         }
     }
-
     #[test]
     fn read_with_key_spec() {
         let mut d = std::io::Cursor::new(Vec::new());
         {
-            let mut t = SSTableBuilder::<Primitive<i64>>::new(&mut d);
+            let mut t = SSTableBuilder::<Primitive<i64>, _>::new(&mut d);
             t.write_ordered("allow", Primitive(5)).unwrap();
             t.write_ordered("bellow", Primitive(5)).unwrap();
             t.write_ordered("hello-1", Primitive(5)).unwrap();
@@ -1079,7 +869,7 @@ mod tests {
         }
         d.seek(std::io::SeekFrom::Start(0)).unwrap();
         {
-            let mut r = SSTableReader::<Primitive<i64>>::new(Box::new(d)).unwrap();
+            let mut r = SSTableReader::<Primitive<i64>>::from_bytes(&d.into_inner()).unwrap();
             let specd_reader = SpecdSSTableReader::from_reader(&mut r, "hello-");
             assert_eq!(
                 specd_reader.map(|(k, _)| k).collect::<Vec<_>>(),
@@ -1087,39 +877,32 @@ mod tests {
             );
         }
     }
-
     #[test]
     fn test_within_scope() {
         // Construct an empty SSTable.
         let mut d = std::io::Cursor::new(Vec::new());
         {
-            let mut t = SSTableBuilder::<Primitive<i64>>::new(&mut d);
+            let mut t = SSTableBuilder::<Primitive<i64>, _>::new(&mut d);
             t.finish().unwrap();
         }
-        d.seek(std::io::SeekFrom::Start(0)).unwrap();
-
-        let mut r = SSTableReader::<Primitive<i64>>::new(Box::new(d)).unwrap();
+        let mut r = SSTableReader::<Primitive<i64>>::from_bytes(&d.into_inner()).unwrap();
         let specd_reader =
             SpecdSSTableReader::from_reader_with_scope(&mut r, "hello", "hello-co", "hello-te");
-
         // Before scope
         assert_eq!(specd_reader.is_within_scope(""), -1);
         assert_eq!(specd_reader.is_within_scope("hello-apple"), -1);
-
         // Within scope
         // By convention, the min key is included in the scope.
         assert_eq!(specd_reader.is_within_scope("hello-co"), 0);
         assert_eq!(specd_reader.is_within_scope("hello-colin"), 0);
         assert_eq!(specd_reader.is_within_scope("hello-darling"), 0);
         assert_eq!(specd_reader.is_within_scope("hello-tambourine"), 0);
-
         // Beyond scope
         // By convention, the max key is excluded from the scope.
         assert_eq!(specd_reader.is_within_scope("hello-te"), 1);
         assert_eq!(specd_reader.is_within_scope("hello-test"), 1);
         assert_eq!(specd_reader.is_within_scope("world"), 1);
     }
-
     #[test]
     fn get_block_with_min_key() {
         let pointers = vec![
@@ -1128,10 +911,8 @@ mod tests {
             keyentry("cccc", 2),
             keyentry("dddd", 3),
         ];
-
         let mut index = sstable_proto_rust::Index::new();
         index.set_pointers(protobuf::RepeatedField::from_vec(pointers));
-
         assert_eq!(
             index::get_block_with_min_key(&index, "argument"),
             Some(keyentry("aaaa", 0))
@@ -1145,12 +926,11 @@ mod tests {
             Some(keyentry("aaaa", 0))
         );
     }
-
     #[test]
     fn test_jump_to_min_key() {
         let mut d = std::io::Cursor::new(Vec::new());
         {
-            let mut t = SSTableBuilder::<Primitive<i64>>::new(&mut d);
+            let mut t = SSTableBuilder::<Primitive<i64>, _>::new(&mut d);
             t.write_ordered("allow", Primitive(5)).unwrap();
             t.write_ordered("bellow", Primitive(5)).unwrap();
             t.write_ordered("hello-1", Primitive(5)).unwrap();
@@ -1158,21 +938,21 @@ mod tests {
             t.finish().unwrap();
         }
         d.seek(std::io::SeekFrom::Start(0)).unwrap();
-        {
-            let mut r = SSTableReader::<Primitive<i64>>::new(Box::new(d)).unwrap();
-            r.seek_to_min_key("c").unwrap();
-            assert_eq!(
-                r.map(|(k, v)| k).collect::<Vec<_>>(),
-                vec!["hello-1", "hello-2"]
-            );
-        }
+        let mut r = SSTableReader::<Primitive<i64>>::from_bytes(&d.into_inner()).unwrap();
+        let offset = r.get_offset_for_min_key("c").unwrap();
+
+        let (k, v, new_offset) = r.read_at(offset).unwrap().unwrap();
+        assert_eq!(k, "hello-1");
+
+        let (k, v, _) = r.read_at(new_offset).unwrap().unwrap();
+        assert_eq!(k, "hello-2");
     }
 
     #[test]
     fn test_sharded_read() {
         let mut d1 = std::io::Cursor::new(Vec::new());
         {
-            let mut t = SSTableBuilder::<Primitive<i64>>::new(&mut d1);
+            let mut t = SSTableBuilder::<Primitive<i64>, _>::new(&mut d1);
             t.write_ordered("aardvark", Primitive(5)).unwrap();
             t.write_ordered("bee", Primitive(5)).unwrap();
             t.write_ordered("cat", Primitive(5)).unwrap();
@@ -1180,10 +960,9 @@ mod tests {
             t.finish().unwrap();
         }
         d1.seek(std::io::SeekFrom::Start(0)).unwrap();
-
         let mut d2 = std::io::Cursor::new(Vec::new());
         {
-            let mut t = SSTableBuilder::<Primitive<i64>>::new(&mut d2);
+            let mut t = SSTableBuilder::<Primitive<i64>, _>::new(&mut d2);
             t.write_ordered("apple", Primitive(5)).unwrap();
             t.write_ordered("banana", Primitive(5)).unwrap();
             t.write_ordered("cantaloupe", Primitive(5)).unwrap();
@@ -1191,62 +970,54 @@ mod tests {
             t.finish().unwrap();
         }
         d2.seek(std::io::SeekFrom::Start(0)).unwrap();
-
         {
-            let r1 = SSTableReader::<Primitive<i64>>::new(Box::new(d1)).unwrap();
-            let r2 = SSTableReader::<Primitive<i64>>::new(Box::new(d2)).unwrap();
-
+            let r1 = SSTableReader::<Primitive<i64>>::from_bytes(&d1.into_inner()).unwrap();
+            let r2 = SSTableReader::<Primitive<i64>>::from_bytes(&d2.into_inner()).unwrap();
             let s = ShardedSSTableReader::<Primitive<i64>>::from_readers(
                 vec![r1, r2],
                 "c",
                 String::from(""),
             );
-
             assert_eq!(
                 s.map(|(k, _)| k).collect::<Vec<_>>(),
                 vec!["cantaloupe", "cat", "dog", "durian"]
             );
         }
     }
-
     #[test]
     fn test_sharded_read_with_max_key() {
         let mut d1 = std::io::Cursor::new(Vec::new());
         {
-            let mut t = SSTableBuilder::<Primitive<i64>>::new(&mut d1);
+            let mut t = SSTableBuilder::<Primitive<i64>, _>::new(&mut d1);
             t.write_ordered("aardvark", Primitive(5)).unwrap();
             t.write_ordered("bee", Primitive(5)).unwrap();
             t.write_ordered("cat", Primitive(5)).unwrap();
             t.write_ordered("dog", Primitive(5)).unwrap();
             t.finish().unwrap();
         }
-
         let mut d2 = std::io::Cursor::new(Vec::new());
         {
-            let mut t = SSTableBuilder::<Primitive<i64>>::new(&mut d2);
+            let mut t = SSTableBuilder::<Primitive<i64>, _>::new(&mut d2);
             t.write_ordered("apple", Primitive(5)).unwrap();
             t.write_ordered("banana", Primitive(5)).unwrap();
             t.write_ordered("cantaloupe", Primitive(5)).unwrap();
             t.write_ordered("durian", Primitive(5)).unwrap();
             t.finish().unwrap();
         }
-
         {
-            let r1 = SSTableReader::<Primitive<i64>>::new(Box::new(d1)).unwrap();
-            let r2 = SSTableReader::<Primitive<i64>>::new(Box::new(d2)).unwrap();
+            let r1 = SSTableReader::<Primitive<i64>>::from_bytes(&d1.into_inner()).unwrap();
+            let r2 = SSTableReader::<Primitive<i64>>::from_bytes(&d2.into_inner()).unwrap();
             let s = ShardedSSTableReader::<Primitive<i64>>::from_readers(
                 vec![r1, r2],
                 "c",
                 String::from("cucumber"),
             );
-
             assert_eq!(
                 s.map(|(k, v)| k).collect::<Vec<_>>(),
                 vec!["cantaloupe", "cat"]
             );
         }
     }
-
     #[test]
     fn test_shard_suggestion() {
         let pointers = vec![
@@ -1257,20 +1028,16 @@ mod tests {
             keyentry("dddd", 4),
             keyentry("zzzz", 5),
         ];
-
         let mut index = sstable_proto_rust::Index::new();
         index.set_pointers(protobuf::RepeatedField::from_vec(pointers));
-
         let expected = vec![
             String::from("aaaa"),
             String::from("bbbb"),
             String::from("cccc"),
             String::from("dddd"),
         ];
-
         assert_eq!(index::suggest_shards(&index, "", "a", "z"), expected);
     }
-
     #[test]
     fn get_block_with_keyspec() {
         let pointers = vec![
@@ -1285,10 +1052,8 @@ mod tests {
             keyentry("places_toronto", 8),
             keyentry("things_pineapple", 9),
         ];
-
         let mut index = sstable_proto_rust::Index::new();
         index.set_pointers(protobuf::RepeatedField::from_vec(pointers));
-
         assert_eq!(
             index::get_block_with_keyspec(&index, "animals_"),
             Some(keyentry("animals_cat", 0))
@@ -1306,7 +1071,6 @@ mod tests {
             Some(keyentry("places_toronto", 8))
         );
     }
-
     #[test]
     fn test_shard_suggestion_with_keyspec() {
         let pointers = vec![
@@ -1318,19 +1082,15 @@ mod tests {
             keyentry("places_toronto", 2),
             keyentry("things_pineapple", 5),
         ];
-
         let mut index = sstable_proto_rust::Index::new();
         index.set_pointers(protobuf::RepeatedField::from_vec(pointers));
-
         let expected = vec![
             String::from("people_colin"),
             String::from("people_drew"),
             String::from("people_yang"),
         ];
-
         assert_eq!(index::suggest_shards(&index, "people_", "", ""), expected);
     }
-
     #[test]
     fn test_shard_suggestion_with_min_max() {
         let pointers = vec![
@@ -1342,23 +1102,19 @@ mod tests {
             keyentry("places_toronto", 2),
             keyentry("things_pineapple", 5),
         ];
-
         let mut index = sstable_proto_rust::Index::new();
         index.set_pointers(protobuf::RepeatedField::from_vec(pointers));
-
         let expected = vec![
             String::from("people_colin"),
             String::from("people_drew"),
             String::from("people_yang"),
             String::from("places_dubai"),
         ];
-
         assert_eq!(
             index::suggest_shards(&index, "", "people_c", "places_e"),
             expected
         );
     }
-
     #[test]
     fn test_shard_boundaries() {
         let pointers = vec![
@@ -1370,15 +1126,11 @@ mod tests {
             keyentry("places_toronto", 2),
             keyentry("things_pineapple", 5),
         ];
-
         let mut index = sstable_proto_rust::Index::new();
         index.set_pointers(protobuf::RepeatedField::from_vec(pointers));
-
         let expected = vec![String::from("people_yang"), String::from("places_london")];
-
         assert_eq!(index::get_shard_boundaries(&index, 3), expected);
     }
-
     #[test]
     fn test_shard_boundaries_2() {
         let pointers = vec![
@@ -1390,25 +1142,21 @@ mod tests {
             keyentry("places_toronto", 2),
             keyentry("things_pineapple", 5),
         ];
-
         let mut index = sstable_proto_rust::Index::new();
         index.set_pointers(protobuf::RepeatedField::from_vec(pointers));
-
         let expected = vec![
             String::from("people_drew"),
             String::from("people_yang"),
             String::from("places_london"),
             String::from("places_toronto"),
         ];
-
         assert_eq!(index::get_shard_boundaries(&index, 5), expected);
     }
-
     #[test]
     fn test_stream_iterator() {
         let mut d1 = std::io::Cursor::new(Vec::new());
         {
-            let mut t = SSTableBuilder::<Primitive<i64>>::new(&mut d1);
+            let mut t = SSTableBuilder::<Primitive<i64>, _>::new(&mut d1);
             t.write_ordered("a", Primitive(5)).unwrap();
             t.write_ordered("b", Primitive(5)).unwrap();
             t.write_ordered("cat", Primitive(5)).unwrap();
@@ -1417,39 +1165,34 @@ mod tests {
             t.write_ordered("f", Primitive(5)).unwrap();
             t.finish().unwrap();
         }
-
         let mut d2 = std::io::Cursor::new(Vec::new());
         {
-            let mut t = SSTableBuilder::<Primitive<i64>>::new(&mut d2);
+            let mut t = SSTableBuilder::<Primitive<i64>, _>::new(&mut d2);
             t.write_ordered("apple", Primitive(5)).unwrap();
             t.write_ordered("banana", Primitive(5)).unwrap();
             t.write_ordered("cantaloupe", Primitive(5)).unwrap();
             t.write_ordered("durian", Primitive(5)).unwrap();
             t.finish().unwrap();
         }
-
-        let r1 = SSTableReader::<Primitive<i64>>::new(Box::new(d1)).unwrap();
-        let r2 = SSTableReader::<Primitive<i64>>::new(Box::new(d2)).unwrap();
+        let r1 = SSTableReader::<Primitive<i64>>::from_bytes(&d1.into_inner()).unwrap();
+        let r2 = SSTableReader::<Primitive<i64>>::from_bytes(&d2.into_inner()).unwrap();
         let mut s = ShardedSSTableReader::<Primitive<i64>>::from_readers(
             vec![r1, r2],
             "c",
             String::from("cucumber"),
         );
-
         let mut iter: &mut dyn StreamingIterator<Item = KV<String, Primitive<i64>>> = &mut s;
-
         assert_eq!(
             iter.next(),
             Some(&KV::new("cantaloupe".into(), Primitive(5)))
         );
         assert_eq!(iter.next(), Some(&KV::new("cat".into(), Primitive(5))));
     }
-
     #[test]
     fn test_stream_iterator_2() {
         let mut d1 = std::io::Cursor::new(Vec::new());
         {
-            let mut t = SSTableBuilder::<Primitive<i64>>::new(&mut d1);
+            let mut t = SSTableBuilder::<Primitive<i64>, _>::new(&mut d1);
             t.write_ordered("a", Primitive(5)).unwrap();
             t.write_ordered("b", Primitive(5)).unwrap();
             t.write_ordered("cat", Primitive(5)).unwrap();
@@ -1458,85 +1201,23 @@ mod tests {
             t.write_ordered("f", Primitive(5)).unwrap();
             t.finish().unwrap();
         }
-
         let mut d2 = std::io::Cursor::new(Vec::new());
         {
-            let mut t = SSTableBuilder::<Primitive<i64>>::new(&mut d2);
+            let mut t = SSTableBuilder::<Primitive<i64>, _>::new(&mut d2);
             t.write_ordered("apple", Primitive(5)).unwrap();
             t.write_ordered("banana", Primitive(5)).unwrap();
             t.write_ordered("cantaloupe", Primitive(5)).unwrap();
             t.write_ordered("durian", Primitive(5)).unwrap();
             t.finish().unwrap();
         }
-
-        let r1 = SSTableReader::<Primitive<i64>>::new(Box::new(d1)).unwrap();
-        let r2 = SSTableReader::<Primitive<i64>>::new(Box::new(d2)).unwrap();
+        let r1 = SSTableReader::<Primitive<i64>>::from_bytes(&d1.into_inner()).unwrap();
+        let r2 = SSTableReader::<Primitive<i64>>::from_bytes(&d2.into_inner()).unwrap();
         let mut s =
             ShardedSSTableReader::<Primitive<i64>>::from_readers(vec![r1, r2], "a", String::new());
-
         let mut iter: &mut dyn StreamingIterator<Item = KV<String, Primitive<i64>>> = &mut s;
-
         assert_eq!(iter.peek(), Some(&KV::new("a".into(), Primitive(5))));
         assert_eq!(iter.next(), Some(&KV::new("a".into(), Primitive(5))));
         assert_eq!(iter.peek(), Some(&KV::new("apple".into(), Primitive(5))));
         assert_eq!(iter.next(), Some(&KV::new("apple".into(), Primitive(5))));
-    }
-
-    #[test]
-    fn merge_two_sstables_advanced() {
-        let mut a = std::io::Cursor::new(Vec::new());
-        let mut b = std::io::Cursor::new(Vec::new());
-        let mut c = std::io::Cursor::new(Vec::new());
-        {
-            let mut t = SSTableBuilder::<Primitive<i64>>::new(&mut a);
-            t.write_ordered("a", Primitive(1)).unwrap();
-            t.write_ordered("b", Primitive(3)).unwrap();
-            t.finish().unwrap();
-        }
-        {
-            let mut t = SSTableBuilder::<Primitive<i64>>::new(&mut b);
-            t.write_ordered("a", Primitive(0)).unwrap();
-            t.write_ordered("secret", Primitive(2)).unwrap();
-            t.finish().unwrap();
-        }
-        a.seek(std::io::SeekFrom::Start(0)).unwrap();
-        b.seek(std::io::SeekFrom::Start(0)).unwrap();
-        {
-            let r1 = SSTableReader::<Primitive<i64>>::new(Box::new(a)).unwrap();
-            let r2 = SSTableReader::<Primitive<i64>>::new(Box::new(b)).unwrap();
-            SSTableBuilder::from_sstables(&mut c, &mut [r1, r2]).unwrap();
-        }
-        c.seek(std::io::SeekFrom::Start(0)).unwrap();
-        {
-            let mut merged = SSTableReader::<Primitive<i64>>::new(Box::new(c)).unwrap();
-            assert_eq!(merged.read_next_key().unwrap().unwrap().get_key(), "a");
-            assert_eq!(merged.read_next_key().unwrap().unwrap().get_key(), "a");
-            assert_eq!(merged.read_next_key().unwrap().unwrap().get_key(), "b");
-            assert_eq!(merged.read_next_key().unwrap().unwrap().get_key(), "secret");
-        }
-    }
-
-    //#[test]
-    // Disabled because it does disk IO
-    fn test_mmapped_io() {
-        {
-            let mut f = std::fs::File::create("/tmp/test.sstable").unwrap();
-            let mut t = SSTableBuilder::<Primitive<i64>>::new(&mut f);
-            t.write_ordered("a", Primitive(1)).unwrap();
-            t.write_ordered("b", Primitive(2)).unwrap();
-            t.write_ordered("cat", Primitive(3)).unwrap();
-            t.write_ordered("d", Primitive(4)).unwrap();
-            t.write_ordered("e", Primitive(5)).unwrap();
-            t.write_ordered("f", Primitive(6)).unwrap();
-            t.finish().unwrap();
-        }
-
-        let f = std::fs::File::open("/tmp/test.sstable").unwrap();
-        let mut t = MMappedSSTableReader::<Primitive<i64>>::new(f).unwrap();
-
-        assert_eq!(t.get("cat").unwrap(), Some(Primitive(3)));
-        assert_eq!(t.get("f").unwrap(), Some(Primitive(6)));
-        assert_eq!(t.get("a").unwrap(), Some(Primitive(1)));
-        assert_eq!(t.get("bat").unwrap(), None);
     }
 }

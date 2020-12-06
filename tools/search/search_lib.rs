@@ -2,7 +2,7 @@
 extern crate lazy_static;
 
 use search_grpc_rust::*;
-use sstable2::{SSTableReader, SpecdSSTableReader};
+use sstable::{SSTableReader, SpecdSSTableReader};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 

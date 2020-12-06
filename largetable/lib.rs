@@ -3,7 +3,7 @@ extern crate keyserializer;
 extern crate largetable_proto_rust;
 extern crate protobuf;
 extern crate recordio;
-extern crate sstable2;
+extern crate sstable;
 
 mod dtable;
 mod largetable;

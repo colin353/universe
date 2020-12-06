@@ -21,14 +21,14 @@ fn main() {
     let file = define_flag!("file", String::from(""), "The filename to read");
     parse_flags!(file);
     let f = std::fs::File::open(file.value()).unwrap();
-    let mut r = sstable2::SSTableReader::<largetable_proto_rust::Record>::new(f).unwrap();
+    let mut r = sstable::SSTableReader::<largetable_proto_rust::Record>::new(f).unwrap();
     let mut indices = Vec::new();
     for (key, _) in r {
         indices.push(key);
     }
 
     let f = std::fs::File::open(file.value()).unwrap();
-    let mut r = sstable2::SSTableReader::<largetable_proto_rust::Record>::new(f).unwrap();
+    let mut r = sstable::SSTableReader::<largetable_proto_rust::Record>::new(f).unwrap();
     thread_rng().shuffle(&mut indices[0..10000]);
 
     let indices2 = std::sync::Arc::new(indices);

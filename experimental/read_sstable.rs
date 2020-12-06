@@ -1,6 +1,5 @@
 extern crate rand;
 extern crate sstable;
-extern crate sstable2;
 #[macro_use]
 extern crate flags;
 extern crate largetable_proto_rust;
@@ -14,7 +13,7 @@ fn main() {
     parse_flags!(file);
 
     let f = File::open(file.value()).unwrap();
-    let mut r = sstable2::SSTableReader::<largetable_proto_rust::Record>::new(f).unwrap();
+    let mut r = sstable::SSTableReader::<largetable_proto_rust::Record>::new(f).unwrap();
 
     let mut indices = Vec::new();
     for (key, _) in r {
@@ -22,7 +21,7 @@ fn main() {
     }
 
     let f = File::open(file.value()).unwrap();
-    let mut r = sstable2::SSTableReader::<largetable_proto_rust::Record>::new(f).unwrap();
+    let mut r = sstable::SSTableReader::<largetable_proto_rust::Record>::new(f).unwrap();
 
     thread_rng().shuffle(&mut indices[0..10000]);
 

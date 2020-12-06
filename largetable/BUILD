@@ -50,7 +50,7 @@ rust_library(
         "//third_party:time",
         "//util/itertools",
         "//util/recordio",
-        "//util/sstable/v2:sstable2",
+        "//util/sstable",
         "@io_bazel_rules_rust//proto/raze:protobuf",
     ],
 )
@@ -91,7 +91,7 @@ rust_binary(
         "//third_party:time",
         "//tools/logger:logger_client",
         "//util/flags",
-        "//util/sstable/v2:sstable2",
+        "//util/sstable",
         "@io_bazel_rules_rust//proto/raze:grpc",
         "@io_bazel_rules_rust//proto/raze:protobuf",
         "@io_bazel_rules_rust//proto/raze:tls_api",
@@ -116,7 +116,7 @@ rust_image(
         "//third_party:time",
         "//tools/logger:logger_client",
         "//util/flags",
-        "//util/sstable/v2:sstable2",
+        "//util/sstable",
         "@io_bazel_rules_rust//proto/raze:grpc",
         "@io_bazel_rules_rust//proto/raze:protobuf",
         "@io_bazel_rules_rust//proto/raze:tls_api",
@@ -170,7 +170,7 @@ rust_library(
         ":largetable_grpc_rust",
         ":largetable_proto_rust",
         "//third_party:time",
-        "//util/sstable/v2:sstable2",
+        "//util/sstable",
     ],
 )
 

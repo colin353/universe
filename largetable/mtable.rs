@@ -9,7 +9,7 @@
 use keyserializer;
 use largetable_proto_rust::Record;
 
-use sstable2::SSTableBuilder;
+use sstable::SSTableBuilder;
 
 use std::collections::BTreeMap;
 use std::collections::Bound;

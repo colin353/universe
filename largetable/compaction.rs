@@ -5,9 +5,9 @@
 extern crate keyserializer;
 extern crate largetable_grpc_rust;
 extern crate largetable_proto_rust;
-extern crate sstable2;
+extern crate sstable;
 
-use sstable2::{SSTableBuilder, SSTableReader, ShardedSSTableReader};
+use sstable::{SSTableBuilder, SSTableReader, ShardedSSTableReader};
 
 use keyserializer::get_colspec;
 use largetable_grpc_rust::CompactionPolicy;

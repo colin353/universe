@@ -14,7 +14,7 @@ rust_binary(
         "//third_party:rand",
         "//util/flags",
         "//util/pool",
-        "//util/sstable/v2:sstable2",
+        "//util/sstable",
         "//weld",
     ],
 )

@@ -11,7 +11,7 @@ use largetable_proto_rust;
 use glob;
 use protobuf;
 use protobuf::Message;
-use sstable2::{SSTableBuilder, SSTableReader};
+use sstable::{SSTableBuilder, SSTableReader};
 use time;
 
 use std::fs;
