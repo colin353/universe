@@ -32,11 +32,6 @@ fn main() {
         String::from("./data"),
         "The directory where data is stored and loaded from."
     );
-    let data_directory_v2 = define_flag!(
-        "data_directory_v2",
-        String::new(),
-        "The directory where sstable v2 data is stored and loaded from."
-    );
     let logger_hostname = define_flag!(
         "logger_hostname",
         String::from(""),
@@ -53,7 +48,6 @@ fn main() {
     parse_flags!(
         port,
         data_directory,
-        data_directory_v2,
         memory_limit,
         logger_hostname,
         logger_port,
@@ -66,14 +60,9 @@ fn main() {
         logger_client::LoggerClient::new(&logger_hostname.value(), logger_port.value())
     };
 
-    let mut data_dir = data_directory.path();
-    if !data_directory_v2.path().is_empty() {
-        data_dir = data_directory_v2.path();
-    }
-
     let mut handler = server_service::LargeTableServiceHandler::new(
         memory_limit.value(),
-        data_dir,
+        data_directory.path(),
         logger.clone(),
     );
 
