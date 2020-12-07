@@ -124,3 +124,8 @@ alias(
     name = "node",
     actual = "@vendored_node//:node-v14.8.0-linux-x64/bin/node",
 )
+
+alias(
+    name = "snappy",
+    actual = "//third_party/vendor/snappy-1.0.3:snappy",
+)
