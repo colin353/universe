@@ -4,7 +4,7 @@
     }
 </style>
 
-<script type="module" src="{{settings.js_src}}/homepage/js/code_pad.mjs"></script>
+<script defer type="module" src="{{settings.js_src}}/homepage/js/code_pad.mjs"></script>
 <code-pad id="code-pad" language="{{type}}" code="{{content}}" />
 
 <script>
@@ -15,9 +15,9 @@
 
     const codepad = document.getElementById("code-pad");
     codepad.addEventListener("lineSelected", (event) => {
-      if (event.detail.line) {
-        window.location.hash = "#L" + event.detail.line;
-      }
+        if (event.detail.line) {
+            window.location.hash = "#L" + event.detail.line;
+        }
     })
 
     codepad.addEventListener("search", (event) => {

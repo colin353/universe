@@ -95,16 +95,18 @@ where
     }
 
     fn detail(&self, query: &str, path: String, req: Request) -> Response {
-        let file = match self.searcher.get_document(&path[1..]) {
+        let (file, content) = match self.searcher.get_document(&path[1..]) {
             Some(f) => f,
             None => return self.not_found(path, req),
         };
+
+        let content = unsafe { std::str::from_utf8_unchecked(content) };
 
         println!("pagerank: {:?}", file.get_page_rank());
 
         let sidebar = match path[1..].rmatch_indices("/").next() {
             Some((idx, _)) => match self.searcher.get_document(&path[1..idx + 1]) {
-                Some(f) => tmpl::apply(
+                Some((f, _)) => tmpl::apply(
                     SIDEBAR,
                     &content!(
                             "parent_dir" => &path[1..idx+1],
@@ -125,16 +127,16 @@ where
         };
 
         let details = if file.get_is_directory() {
-            tmpl::apply(DETAIL_FOLDER, &render::file(&file))
+            tmpl::apply(DETAIL_FOLDER, &render::file(&file, content))
         } else if file.get_filename().ends_with(".md") {
             tmpl::apply(
                 DETAIL_MD,
                 &content!(
-                    "markdown" => &markdown::to_html(&file.get_content())
+                    "markdown" => &markdown::to_html(&content)
                 ),
             )
         } else {
-            tmpl::apply_with_settings(DETAIL, render::file(&file), &self.settings)
+            tmpl::apply_with_settings(DETAIL, render::file(&file, content), &self.settings)
         };
 
         let mut filename_components = Vec::new();

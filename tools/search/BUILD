@@ -178,10 +178,12 @@ rust_library(
         ":search_grpc_rust",
         ":search_utils",
         "//third_party:aho_corasick",
+        "//third_party:byteorder",
         "//third_party:lazy_static",
         "//third_party:regex",
         "//util/itertools",
         "//util/pool",
+        "//util/primitive",
         "//util/sstable",
         "@io_bazel_rules_rust//proto/raze:protobuf",
     ],
@@ -233,7 +235,9 @@ rust_library(
         ":search_proto_rust",
         ":search_utils",
         "//plume",
+        "//third_party:byteorder",
         "//tools/search/language_specific",
+        "@io_bazel_rules_rust//proto/raze:protobuf",
     ],
 )
 

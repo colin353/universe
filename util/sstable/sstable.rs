@@ -148,7 +148,7 @@ impl<T: Serializable + Default> SSTableReader<T> {
         index::get_shard_boundaries(&self.index, target_shard_count)
     }
 
-    pub fn get(&self, key: &str) -> Result<Option<T>> {
+    pub fn get_bytes(&self, key: &str) -> Result<Option<&[u8]>> {
         let mut offset = match index::get_block(&self.index, key) {
             Some(block) => block.get_offset(),
             None => return Ok(None),
@@ -166,10 +166,20 @@ impl<T: Serializable + Default> SSTableReader<T> {
             if found_key > key {
                 return Ok(None);
             } else if key == found_key {
-                let mut parsed_value = T::default();
-                parsed_value.read_from_bytes(value)?;
-                return Ok(Some(parsed_value));
+                return Ok(Some(value));
             }
+        }
+    }
+
+    pub fn get(&self, key: &str) -> Result<Option<T>> {
+        match self.get_bytes(key) {
+            Ok(Some(bytes)) => {
+                let mut parsed_value = T::default();
+                parsed_value.read_from_bytes(bytes)?;
+                Ok(Some(parsed_value))
+            }
+            Ok(None) => Ok(None),
+            Err(x) => Err(x),
         }
     }
 

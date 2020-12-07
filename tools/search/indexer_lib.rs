@@ -1,6 +1,9 @@
 use pagerank::PageRankFn;
 use plume::{EmitFn, PCollection, Primitive, Stream, StreamingIterator, KV};
+use protobuf::Message;
 use search_proto_rust::*;
+
+use byteorder::{ByteOrder, LittleEndian};
 
 use std::collections::hash_map::DefaultHasher;
 use std::collections::BTreeSet;
@@ -346,6 +349,29 @@ impl plume::JoinFn for JoinRelationshipsFn {
     }
 }
 
+pub struct FormatFilesSSTableFn {}
+impl plume::DoFn for FormatFilesSSTableFn {
+    type Input = KV<String, File>;
+    type Output = KV<String, Primitive<Vec<u8>>>;
+
+    fn do_it(&self, input: &Self::Input, emit: &mut dyn EmitFn<Self::Output>) {
+        let mut file_metadata = input.value().clone();
+        let mut content = file_metadata.take_content().into_bytes();
+
+        // Pre-initialize the output with 32 bytes for metadata size
+        let mut buffer = vec![0, 0, 0, 0];
+        file_metadata.write_to_writer(&mut buffer);
+        let size = buffer.len() as u32;
+        // Write in the size as the first four bytes
+        LittleEndian::write_u32(&mut buffer[0..4], size);
+
+        // Copy in the remaining bytes of the actual file
+        buffer.append(&mut content);
+
+        emit.emit(KV::new(input.key().to_owned(), buffer.into()));
+    }
+}
+
 pub fn run_indexer(code_recordio: &str, output_dir: &str) {
     // Interpret filetypes and process file data
     let code = PCollection::from_recordio(&code_recordio);
@@ -368,15 +394,17 @@ pub fn run_indexer(code_recordio: &str, output_dir: &str) {
     // Run pagerank with several iterations
     let ranked_1 = annotated_files.par_do_side_input(PageRankFn::new(), annotated_files.clone());
     let ranked_2 = ranked_1.par_do_side_input(PageRankFn::new(), ranked_1.clone());
-    let mut ranked_3 = ranked_1.par_do_side_input(PageRankFn::new(), ranked_2.clone());
+    let ranked_3 = ranked_1.par_do_side_input(PageRankFn::new(), ranked_2.clone());
 
     let files_sstable = format!("{}/files.sstable", output_dir);
-    ranked_3.write_to_sstable(&files_sstable);
+    let mut formatted_files = ranked_3.par_do(FormatFilesSSTableFn {});
+    formatted_files.write_to_sstable(&files_sstable);
 
     // Extract file info by file_id
-    let mut candidates = ranked_3.par_do(ExtractCandidatesFn {});
+    let candidates = ranked_3.par_do(ExtractCandidatesFn {});
+    let mut formatted_candidates = candidates.par_do(FormatFilesSSTableFn {});
     let candidates_sstable = format!("{}/candidates.sstable", output_dir);
-    candidates.write_to_sstable(&candidates_sstable);
+    formatted_candidates.write_to_sstable(&candidates_sstable);
 
     // Extract trigrams
     let trigrams = code.par_do(ExtractTrigramsFn {});

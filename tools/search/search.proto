@@ -39,8 +39,8 @@ message ExtractedKeyword {
   // e.g. `colin` matching into `colIndex`.
   bool border_match = 4;
 
- // Complete match indicates that the match started at the edge of a keyword
- // and ended at the edge of a keyword, e.g. `colIndex` matching `col_index`
+  // Complete match indicates that the match started at the edge of a keyword
+  // and ended at the edge of a keyword, e.g. `colIndex` matching `col_index`
   bool complete_match = 5;
 }
 
@@ -78,6 +78,9 @@ message Span {
   uint64 line = 1;
   uint64 offset = 2;
   uint64 length = 3;
+  uint32 keyword_index = 4;
+  bool is_border_match = 5;
+  bool is_complete_match = 6;
 }
 
 message Candidate {

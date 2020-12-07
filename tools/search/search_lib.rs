@@ -1,6 +1,8 @@
 #[macro_use]
 extern crate lazy_static;
 
+use byteorder::{ByteOrder, LittleEndian};
+use primitive::{Primitive, Serializable};
 use search_grpc_rust::*;
 use sstable::{SSTableReader, SpecdSSTableReader};
 use std::collections::{HashMap, HashSet};
@@ -11,6 +13,7 @@ const CANDIDATES_TO_EXPAND: usize = 100;
 const MAX_LINE_LENGTH: usize = 144;
 const SNIPPET_LENGTH: usize = 7;
 const SUGGESTION_LIMIT: usize = 10;
+const SPAN_EXTRACTION_LIMIT: usize = 10;
 
 lazy_static! {
     static ref KEYWORDS_RE: regex::Regex = { regex::Regex::new(r#"("(.*?)")|([^\s]+)"#).unwrap() };
@@ -18,8 +21,8 @@ lazy_static! {
 }
 
 pub struct Searcher {
-    code: SSTableReader<File>,
-    candidates: Arc<SSTableReader<File>>,
+    code: SSTableReader<Primitive<Vec<u8>>>,
+    candidates: Arc<SSTableReader<Primitive<Vec<u8>>>>,
     definitions: SSTableReader<DefinitionMatches>,
     keywords: SSTableReader<ExtractedKeyword>,
     trigrams: SSTableReader<KeywordMatches>,
@@ -33,11 +36,14 @@ pub struct Searcher {
 
 impl Searcher {
     pub fn new(base_dir: &str) -> Self {
-        let mut code =
-            SSTableReader::from_filename(&format!("{}/files.sstable", base_dir)).unwrap();
+        let mut code = SSTableReader::<Primitive<Vec<u8>>>::from_filename(&format!(
+            "{}/files.sstable",
+            base_dir
+        ))
+        .unwrap();
         let mut definitions =
             SSTableReader::from_filename(&format!("{}/definitions.sstable", base_dir)).unwrap();
-        let mut candidates =
+        let mut candidates: SSTableReader<Primitive<Vec<u8>>> =
             SSTableReader::from_filename(&format!("{}/candidates.sstable", base_dir)).unwrap();
         let mut trigrams =
             SSTableReader::from_filename(&format!("{}/trigrams.sstable", base_dir)).unwrap();
@@ -45,8 +51,9 @@ impl Searcher {
             SSTableReader::from_filename(&format!("{}/keywords.sstable", base_dir)).unwrap();
 
         let mut files = HashMap::<u64, File>::new();
-        for (key, file) in &mut candidates {
-            files.insert(key.parse::<u64>().unwrap(), file);
+        for (key, bytes) in &mut candidates {
+            let (f, _) = split_file_bytes(&*bytes);
+            files.insert(key.parse::<u64>().unwrap(), f);
         }
 
         Self {
@@ -138,8 +145,13 @@ impl Searcher {
         response
     }
 
-    pub fn get_document(&self, filename: &str) -> Option<File> {
-        self.code.get(filename).unwrap()
+    pub fn get_document(&self, filename: &str) -> Option<(File, &[u8])> {
+        let bytes = match self.code.get_bytes(filename).unwrap() {
+            Some(b) => b,
+            None => return None,
+        };
+
+        Some(split_file_bytes(bytes))
     }
 
     fn parse_query(&self, query: &str) -> Query {
@@ -250,6 +262,8 @@ impl Searcher {
                     k.clone(),
                     aho_corasick::AhoCorasickBuilder::new()
                         .ascii_case_insensitive(true)
+                        .dfa(true)
+                        .premultiply(true)
                         .build(&[k.get_keyword()]),
                 )
             })
@@ -440,27 +454,33 @@ impl Searcher {
     ) -> Vec<Candidate> {
         let mut scanned = 0;
 
+        // The keywords to match are the search terms plus newline
+        let mut keywords = Vec::new();
+        let mut matcher_keywords = vec!["\n"];
+        for keyword in query.get_keywords() {
+            keywords.push(keyword.get_keyword().to_string());
+            matcher_keywords.push(keyword.get_keyword());
+        }
+        let keywords_arc = Arc::new(keywords);
+
         // Construct regex matchers for each keyword
-        let keyword_matchers: Vec<_> = query
-            .get_keywords()
-            .iter()
-            .map(|k| {
-                (
-                    k.clone(),
-                    aho_corasick::AhoCorasickBuilder::new()
-                        .ascii_case_insensitive(true)
-                        .build(&[k.get_keyword()]),
-                )
-            })
-            .collect();
+        let keyword_matcher = aho_corasick::AhoCorasickBuilder::new()
+            .ascii_case_insensitive(true)
+            .dfa(true)
+            .match_kind(aho_corasick::MatchKind::LeftmostFirst)
+            .premultiply(true)
+            .build(&matcher_keywords);
 
         let pool = pool::ThreadPool::new(8);
 
         for (file_id, candidate) in candidates.into_iter() {
-            let matchers = keyword_matchers.clone();
+            let matcher = keyword_matcher.clone();
             let reader = self.candidates.clone();
+            let keywords = keywords_arc.clone();
             pool.execute(move || {
-                Self::finalize_keyword_matches_for_candidate(&reader, file_id, candidate, matchers)
+                Self::finalize_keyword_matches_for_candidate(
+                    &*reader, file_id, candidate, matcher, keywords,
+                )
             });
             scanned += 1;
         }
@@ -473,13 +493,15 @@ impl Searcher {
     }
 
     fn finalize_keyword_matches_for_candidate(
-        reader: &SSTableReader<File>,
+        reader: &SSTableReader<Primitive<Vec<u8>>>,
         file_id: u64,
         mut candidate: Candidate,
-        keyword_matchers: Vec<(QueryKeyword, aho_corasick::AhoCorasick)>,
+        matcher: aho_corasick::AhoCorasick,
+        keywords: Arc<Vec<String>>,
     ) -> Candidate {
         let start = std::time::Instant::now();
-        let mut file = { reader.get(&file_id.to_string()).unwrap().unwrap() };
+        let (mut file, content) =
+            { split_file_bytes(reader.get_bytes(&file_id.to_string()).unwrap().unwrap()) };
 
         candidate.set_is_test(file.get_is_test());
         candidate.set_page_rank(file.get_page_rank());
@@ -492,61 +514,26 @@ impl Searcher {
 
         let start = std::time::Instant::now();
         let mut matched_keywords = HashMap::new();
-        for (index, (keyword, re)) in keyword_matchers.iter().enumerate() {
-            for (line_number, line) in file.get_content().lines().enumerate() {
-                let mut s = extract_spans(&re, &line);
 
-                if s.len() == 0 {
-                    continue;
-                }
+        let mut s = extract_spans(&matcher, content, keywords.len());
 
-                let mut border_match = false;
-                let mut complete_match = false;
+        let mut border_match = false;
+        let mut complete_match = false;
 
-                for mut span in s.into_iter() {
-                    span.set_line(line_number as u64);
-
-                    let mut span_is_border_match = false;
-                    if span.get_offset() >= 1
-                        && !is_valid_variable_char(
-                            line.chars()
-                                .nth((span.get_offset() - 1) as usize)
-                                .unwrap_or(' '),
-                        )
-                    {
-                        span_is_border_match = true;
-                    }
-                    if let Some(c) = line
-                        .chars()
-                        .nth((span.get_offset() + span.get_length() + 1) as usize)
-                    {
-                        if !is_valid_variable_char(c) {
-                            if span_is_border_match {
-                                complete_match = true;
-                            } else {
-                                border_match = true;
-                            }
-                        }
-                    }
-                    border_match |= span_is_border_match;
-
-                    candidate.mut_spans().push(span);
-                }
-
-                let k = matched_keywords.entry(index).or_insert_with(|| {
+        for mut span in s.into_iter() {
+            let k = matched_keywords
+                .entry(span.get_keyword_index())
+                .or_insert_with(|| {
                     let mut e = ExtractedKeyword::new();
-                    e.set_keyword(keyword.get_keyword().to_owned());
+                    e.set_keyword(keywords[span.get_keyword_index() as usize].to_owned());
                     e
                 });
-                k.set_occurrences(k.get_occurrences() + 1);
-                k.set_border_match(border_match);
-                k.set_complete_match(complete_match);
-
-                if k.get_occurrences() > 20 {
-                    break;
-                }
-            }
+            k.set_border_match(k.get_border_match() || span.get_is_border_match());
+            k.set_complete_match(k.get_complete_match() || span.get_is_complete_match());
+            k.set_occurrences(k.get_occurrences() + 1);
+            candidate.mut_spans().push(span);
         }
+
         if start.elapsed().as_millis() > 10 {
             println!(
                 "scanned {} in {} us",
@@ -558,19 +545,19 @@ impl Searcher {
         for (index, k) in matched_keywords.into_iter() {
             candidate.set_keyword_definite_match_mask(update_mask(
                 candidate.get_keyword_definite_match_mask(),
-                index,
+                index as usize,
             ));
 
-            if (k.get_border_match()) {
+            if k.get_border_match() {
                 candidate.set_keyword_border_match_mask(update_mask(
                     candidate.get_keyword_border_match_mask(),
-                    index,
+                    index as usize,
                 ))
             }
-            if (k.get_complete_match()) {
+            if k.get_complete_match() {
                 candidate.set_keyword_complete_match_mask(update_mask(
                     candidate.get_keyword_complete_match_mask(),
-                    index,
+                    index as usize,
                 ))
             }
             candidate.mut_matched_keywords().push(k);
@@ -808,7 +795,7 @@ impl Searcher {
     }
 
     pub fn expand_candidate(&self, query: &Query, candidate: &mut Candidate) {
-        let doc = match self.get_document(candidate.get_filename()) {
+        let (doc, content) = match self.get_document(candidate.get_filename()) {
             Some(d) => d,
             None => return,
         };
@@ -842,13 +829,9 @@ impl Searcher {
 
         candidate.set_snippet_starting_line(window_start as u32);
 
+        let content_str = unsafe { std::str::from_utf8_unchecked(content) };
         let mut started = false;
-        for line in doc
-            .get_content()
-            .lines()
-            .skip(window_start)
-            .take(SNIPPET_LENGTH)
-        {
+        for line in content_str.lines().skip(window_start).take(SNIPPET_LENGTH) {
             if !started && line.trim().is_empty() {
                 continue;
             }
@@ -949,12 +932,54 @@ fn render_query_keyword(kw: &QueryKeyword) -> String {
     format!("{}{}", prefix, kw.get_keyword())
 }
 
-fn extract_spans(re: &aho_corasick::AhoCorasick, line: &str) -> Vec<Span> {
+fn extract_spans(
+    re: &aho_corasick::AhoCorasick,
+    line: &[u8],
+    matches_to_satisfy: usize,
+) -> Vec<Span> {
     let mut output = Vec::new();
-    if let Some(m) = re.find(line) {
+    let mut line_number = 0;
+
+    let mut satisfied_matches = 0;
+    let mut observations = vec![0; matches_to_satisfy + 1];
+
+    for m in re.find_iter(line) {
+        if satisfied_matches == matches_to_satisfy {
+            break;
+        }
+
+        // The 0th pattern is the newline --> increment line number
+        if m.pattern() == 0 {
+            line_number += 1;
+            continue;
+        }
+
+        observations[m.pattern()] += 1;
+        if observations[m.pattern()] == SPAN_EXTRACTION_LIMIT {
+            satisfied_matches += 1;
+        } else if observations[m.pattern()] > SPAN_EXTRACTION_LIMIT {
+            continue;
+        }
+
         let mut s = Span::new();
+        s.set_line(line_number);
         s.set_offset(m.start() as u64);
         s.set_length((m.end() - m.start()) as u64);
+        s.set_keyword_index((m.pattern() - 1) as u32);
+
+        let mut start_is_border = false;
+        let mut end_is_border = false;
+        if m.start() == 0 || !is_valid_variable_byte(line[m.start() - 1]) {
+            start_is_border = true;
+        }
+
+        if m.end() == line.len() || !is_valid_variable_byte(line[m.end()]) {
+            end_is_border = true;
+        }
+
+        s.set_is_border_match(start_is_border || end_is_border);
+        s.set_is_complete_match(start_is_border && end_is_border);
+
         output.push(s);
     }
     output
@@ -962,6 +987,16 @@ fn extract_spans(re: &aho_corasick::AhoCorasick, line: &str) -> Vec<Span> {
 
 fn is_valid_variable_char(ch: char) -> bool {
     ch.is_alphanumeric() || ch == '_'
+}
+
+fn is_valid_variable_byte(ch: u8) -> bool {
+    match ch {
+        // Alphanumeric
+        48..=57 | 65..=90 | 97..=122 => true,
+        // Underscores
+        95 => true,
+        _ => false,
+    }
 }
 
 fn update_mask(mask: u32, index: usize) -> u32 {
@@ -975,4 +1010,12 @@ fn score_definition_type(def: SymbolType) -> u64 {
         SymbolType::STRUCTURE => 80,
         SymbolType::TRAIT => 40,
     }
+}
+
+fn split_file_bytes(bytes: &[u8]) -> (File, &[u8]) {
+    let content_offset = LittleEndian::read_u32(&bytes[0..4]) as usize;
+    let mut file = File::new();
+    file.read_from_bytes(&bytes[4..content_offset]).unwrap();
+
+    (file, &bytes[content_offset..])
 }
