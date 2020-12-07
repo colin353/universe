@@ -53,6 +53,37 @@ pub trait Server: Sync + Send + Clone + 'static {
         Box::new(future::ok(self.respond(path, req, session_key)))
     }
 
+    fn serve_static_file(&self, path: &str, content: &[u8]) -> Response {
+        let mut response = Response::new(Body::from(Vec::from(content)));
+
+        let mut content_type = None;
+        if path.ends_with(".js") || path.ends_with(".mjs") {
+            content_type = Some("text/javascript");
+        } else if path.ends_with(".css") {
+            content_type = Some("text/css");
+        } else if path.ends_with(".json") {
+            content_type = Some("application/json");
+        } else if path.ends_with(".png") {
+            content_type = Some("image/png");
+        }
+
+        if let Some(c) = content_type {
+            response
+                .headers_mut()
+                .insert(CONTENT_TYPE, HeaderValue::from_bytes(c.as_bytes()).unwrap());
+        }
+
+        response.headers_mut().insert(
+            CACHE_CONTROL,
+            HeaderValue::from_bytes("max-age=100000".as_bytes()).unwrap(),
+        );
+        response.headers_mut().insert(
+            ACCESS_CONTROL_ALLOW_ORIGIN,
+            HeaderValue::from_bytes("*".as_bytes()).unwrap(),
+        );
+        return response;
+    }
+
     fn serve_static_files(&self, path: String, prefix: &str, static_directories: &str) -> Response {
         if !path.starts_with(prefix) || path.contains("..") {
             return self.not_found(path);
@@ -72,36 +103,12 @@ pub trait Server: Sync + Send + Clone + 'static {
                 Ok(f) => f,
                 Err(_) => continue,
             };
-            let mut contents = String::new();
-            if let Err(_) = file.read_to_string(&mut contents) {
+            let mut contents = Vec::new();
+            if let Err(_) = file.read_to_end(&mut contents) {
                 continue;
             }
-            let mut response = Response::new(Body::from(contents));
 
-            let mut content_type = None;
-            if path.ends_with(".js") || path.ends_with(".mjs") {
-                content_type = Some("text/javascript");
-            } else if path.ends_with(".css") {
-                content_type = Some("text/css");
-            } else if path.ends_with(".json") {
-                content_type = Some("application/json");
-            }
-
-            if let Some(c) = content_type {
-                response
-                    .headers_mut()
-                    .insert(CONTENT_TYPE, HeaderValue::from_bytes(c.as_bytes()).unwrap());
-            }
-
-            response.headers_mut().insert(
-                CACHE_CONTROL,
-                HeaderValue::from_bytes("max-age=100000".as_bytes()).unwrap(),
-            );
-            response.headers_mut().insert(
-                ACCESS_CONTROL_ALLOW_ORIGIN,
-                HeaderValue::from_bytes("*".as_bytes()).unwrap(),
-            );
-            return response;
+            return self.serve_static_file(&path, &contents);
         }
 
         self.not_found(path)

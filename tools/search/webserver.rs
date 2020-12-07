@@ -11,6 +11,7 @@ static DETAIL_MD: &str = include_str!("html/markdown.html");
 static DETAIL_FOLDER: &str = include_str!("html/detail_folder.html");
 static DETAIL_TEMPLATE: &str = include_str!("html/detail_template.html");
 static RESULTS: &str = include_str!("html/results.html");
+static FAVICON: &[u8] = include_bytes!("html/favicon.png");
 
 #[derive(Clone)]
 pub struct SearchWebserver<A> {
@@ -197,6 +198,10 @@ where
     A: auth_client::AuthServer,
 {
     fn respond(&self, path: String, req: Request, token: &str) -> Response {
+        if path == "/static/favicon.png" {
+            return self.serve_static_file(&path, FAVICON);
+        }
+
         if path.starts_with("/static/") {
             return self.serve_static_files(path, "/static/", &self.static_dir);
         }
