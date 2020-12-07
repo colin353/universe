@@ -132,7 +132,11 @@
     <div class="header">
         <h2 style="margin-right: 40px;"><a class="invisible-link" href="/">code search</a></h2>
 
-        <search-box query="{{query}}" />
+        <search-box query="{{query}}"></search-box>
+
+        {{request_time != 0}}
+        <p style="margin-top: 28px; font-size: 13px; color: grey; margin-left: 20px;">Search took {{request_time}} ms</p>
+        {{/request_time}}
     </div>
     {{/show_header}}
     {{content}}

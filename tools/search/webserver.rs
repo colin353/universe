@@ -41,19 +41,27 @@ where
         }
     }
 
-    fn wrap_template(&self, header: bool, query: &str, content: String) -> String {
+    fn wrap_template(
+        &self,
+        header: bool,
+        query: &str,
+        content: String,
+        request_time: u32,
+    ) -> String {
         tmpl::apply_with_settings(
             TEMPLATE,
             content!(
                 "title" => "code search",
                 "show_header" => header,
                 "query" => query,
+                "request_time" => request_time,
                 "content" => content),
             &self.settings,
         )
     }
 
     fn results(&self, keywords: &str, path: String, req: Request) -> Response {
+        let start = std::time::Instant::now();
         let mut results = self.searcher.search(keywords);
 
         if results.get_candidates().len() == 1 {
@@ -81,7 +89,12 @@ where
             ),
             &self.settings,
         );
-        Response::new(Body::from(self.wrap_template(true, keywords, page)))
+        Response::new(Body::from(self.wrap_template(
+            true,
+            keywords,
+            page,
+            start.elapsed().as_millis() as u32,
+        )))
     }
 
     fn suggest(&self, query: &str, req: Request) -> Response {
@@ -166,12 +179,12 @@ where
             &self.settings,
         );
 
-        Response::new(Body::from(self.wrap_template(true, query, page)))
+        Response::new(Body::from(self.wrap_template(true, query, page, 0)))
     }
 
     fn index(&self, path: String, req: Request) -> Response {
         let page = tmpl::apply_with_settings(INDEX, content!(), &self.settings);
-        Response::new(Body::from(self.wrap_template(false, "", page)))
+        Response::new(Body::from(self.wrap_template(false, "", page, 0)))
     }
 
     fn not_found(&self, path: String, _req: Request) -> Response {
