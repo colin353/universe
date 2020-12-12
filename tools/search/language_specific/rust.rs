@@ -56,11 +56,61 @@ pub fn extract_keywords(file: &File) -> Vec<ExtractedKeyword> {
     results.into_iter().map(|(_, x)| x).collect()
 }
 
+pub fn find_closure_ending_line(content: &str, open: char, close: char) -> Option<usize> {
+    let mut line = 0;
+    let mut tmp = [0; 4];
+    let close_str = close.encode_utf8(&mut tmp);
+    let mut depth = 0;
+    for m in content.matches(|ch| ch == '\n' || ch == open || ch == close) {
+        if m == "\n" {
+            line += 1;
+        } else if m == close_str {
+            depth -= 1;
+
+            if depth == 0 {
+                return Some(line);
+            }
+        } else {
+            depth += 1;
+        }
+    }
+    None
+}
+
 pub fn extract_definitions(file: &File) -> Vec<SymbolDefinition> {
     let mut results = Vec::new();
-    for (line_number, line) in file.get_content().lines().enumerate() {
+
+    let prefix: Vec<usize> = vec![0];
+    let suffix: Vec<usize> = vec![file.get_content().len()];
+
+    let mut newlines: Vec<_> = prefix
+        .into_iter()
+        .chain(
+            file.get_content()
+                .match_indices("\n")
+                .map(|(index, _)| index),
+        )
+        .chain(suffix.into_iter())
+        .collect();
+
+    for (line_number, window) in newlines.windows(2).enumerate() {
+        let line_start = window[0];
+        let line_end = window[1];
+        let line = &file.get_content()[line_start..line_end];
+
         for captures in STRUCTURE_DEFINITION.captures_iter(line) {
             let mut d = SymbolDefinition::new();
+
+            if let Some(full_capture) = captures.get(0) {
+                if let Some(idx) = line[full_capture.end()..].find('{') {
+                    if let Some(end) =
+                        find_closure_ending_line(&file.get_content()[idx..], '{', '}')
+                    {
+                        d.set_end_line_number((line_number + end) as u32);
+                    }
+                }
+            }
+
             d.set_symbol(captures[captures.len() - 1].to_string());
             d.set_filename(file.get_filename().to_string());
             d.set_line_number(line_number as u32);
@@ -69,6 +119,17 @@ pub fn extract_definitions(file: &File) -> Vec<SymbolDefinition> {
         }
         for captures in FUNCTION_DEFINITION.captures_iter(line) {
             let mut d = SymbolDefinition::new();
+
+            if let Some(full_capture) = captures.get(0) {
+                if let Some(end) = find_closure_ending_line(
+                    &file.get_content()[line_start + full_capture.end() + 1..],
+                    '{',
+                    '}',
+                ) {
+                    d.set_end_line_number((line_number + end) as u32);
+                }
+            }
+
             d.set_symbol(captures[captures.len() - 1].to_string());
             d.set_filename(file.get_filename().to_string());
             d.set_line_number(line_number as u32);
@@ -85,6 +146,16 @@ pub fn extract_definitions(file: &File) -> Vec<SymbolDefinition> {
         }
         for captures in TRAIT_DEFINITION.captures_iter(line) {
             let mut d = SymbolDefinition::new();
+
+            if let Some(full_capture) = captures.get(0) {
+                if let Some(end) = find_closure_ending_line(
+                    &file.get_content()[line_start + full_capture.end()..],
+                    '{',
+                    '}',
+                ) {
+                    d.set_end_line_number((line_number + end) as u32);
+                }
+            }
             d.set_symbol(captures[captures.len() - 1].to_string());
             d.set_filename(file.get_filename().to_string());
             d.set_line_number(line_number as u32);
@@ -110,6 +181,61 @@ mod tests {
         xk.set_keyword(word.to_owned());
         xk.set_occurrences(occ);
         xk
+    }
+
+    fn structure(word: &str, start: u32, end: u32) -> SymbolDefinition {
+        let mut s = SymbolDefinition::new();
+        s.set_symbol(word.to_string());
+        s.set_line_number(start);
+        s.set_end_line_number(end);
+        s.set_symbol_type(SymbolType::STRUCTURE);
+        s
+    }
+
+    fn function(word: &str, start: u32, end: u32) -> SymbolDefinition {
+        let mut s = SymbolDefinition::new();
+        s.set_symbol(word.to_string());
+        s.set_line_number(start);
+        s.set_end_line_number(end);
+        s.set_symbol_type(SymbolType::FUNCTION);
+        s
+    }
+
+    #[test]
+    fn test_extract_struct() {
+        let mut f = File::new();
+        f.set_content(
+            "
+            pub struct ExtractKeywordsFn {
+                data: u64,
+            }
+
+pub fn create_task(
+        &self,
+        mut req: tasks_grpc_rust::CreateTaskRequest,
+    ) -> tasks_grpc_rust::TaskStatus {
+        let mut initial_status = TaskStatus::new();
+        initial_status.set_name(req.take_task_name());
+        initial_status.set_arguments(req.take_arguments());
+        let id = self.client.reserve_task_id();
+        initial_status.set_task_id(id.clone());
+
+        let info_url = format!(\"{}/{}\", self.config.base_url, id);
+        initial_status.set_info_url(info_url);
+
+        self.client.write(&initial_status);
+        self.scheduler.unbounded_send(id);
+        initial_status
+    }
+    "
+            .into(),
+        );
+
+        let extracted = extract_definitions(&f);
+
+        assert_eq!(extracted.len(), 5);
+        assert_eq!(&extracted[0], &structure("ExtractKeywordsFn", 1, 3));
+        assert_eq!(&extracted[1], &function("create_task", 5, 21));
     }
 
     #[test]
@@ -143,11 +269,12 @@ mod tests {
         assert_eq!(&extracted[0], &kw("CreateTaskRequest", 1));
     }
 
-    fn test_fn(symbol: &str, line: u32) -> SymbolDefinition {
+    fn test_fn(symbol: &str, line: u32, end_line: u32) -> SymbolDefinition {
         let mut s = SymbolDefinition::new();
         s.set_symbol(symbol.to_string());
         s.set_symbol_type(SymbolType::FUNCTION);
         s.set_line_number(line);
+        s.set_end_line_number(end_line);
         s
     }
 
@@ -186,7 +313,7 @@ mod tests {
 
         let extracted = extract_definitions(&f);
         let expected = vec![
-            test_fn("create_task", 1),
+            test_fn("create_task", 1, 17),
             test_var("initial_status", 5),
             test_var("id", 8),
             test_var("info_url", 11),

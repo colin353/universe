@@ -75,6 +75,8 @@ message File {
   repeated string dependents = 11;
 
   float page_rank = 12;
+
+  repeated SymbolDefinition symbols = 13;
 }
 
 message Span {
@@ -152,6 +154,7 @@ message SymbolDefinition {
   string filename = 2;
   uint32 line_number = 3;
   SymbolType symbol_type = 4;
+  uint32 end_line_number = 5;
 }
 
 message ImportDefinition {

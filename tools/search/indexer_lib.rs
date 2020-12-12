@@ -50,15 +50,31 @@ impl plume::DoStreamFn for AggregateKeywordsFn {
     }
 }
 
+pub struct AnnotateDefinitionsFn {}
+impl plume::DoFn for AnnotateDefinitionsFn {
+    type Input = KV<String, File>;
+    type Output = KV<String, File>;
+
+    fn do_it(&self, input: &Self::Input, emit: &mut dyn EmitFn<Self::Output>) {
+        let mut f = input.value().clone();
+
+        for definition in language_specific::extract_definitions(&f) {
+            f.mut_symbols().push(definition);
+        }
+
+        emit.emit(KV::new(input.key().to_string(), f));
+    }
+}
+
 pub struct ExtractDefinitionsFn {}
 impl plume::DoFn for ExtractDefinitionsFn {
-    type Input = File;
+    type Input = KV<String, File>;
     type Output = KV<String, SymbolDefinition>;
 
-    fn do_it(&self, input: &File, emit: &mut dyn EmitFn<Self::Output>) {
-        for definition in language_specific::extract_definitions(input) {
+    fn do_it(&self, input: &Self::Input, emit: &mut dyn EmitFn<Self::Output>) {
+        for definition in input.value().get_symbols() {
             let mut normalized_symbol = search_utils::normalize_keyword(definition.get_symbol());
-            emit.emit(KV::new(normalized_symbol, definition));
+            emit.emit(KV::new(normalized_symbol, definition.to_owned()));
         }
     }
 }
@@ -396,8 +412,15 @@ pub fn run_indexer(code_recordio: &str, output_dir: &str) {
     let ranked_2 = ranked_1.par_do_side_input(PageRankFn::new(), ranked_1.clone());
     let ranked_3 = ranked_1.par_do_side_input(PageRankFn::new(), ranked_2.clone());
 
+    // Extract and annotate definitions into the files
+    let annotated_files = ranked_3.par_do(AnnotateDefinitionsFn {});
+    let definitions = annotated_files.par_do(ExtractDefinitionsFn {});
+    let mut index = definitions.group_by_key_and_par_do(AggregateDefinitionsFn {});
+    let definitions_sstable = format!("{}/definitions.sstable", output_dir);
+    index.write_to_sstable(&definitions_sstable);
+
     let files_sstable = format!("{}/files.sstable", output_dir);
-    let mut formatted_files = ranked_3.par_do(FormatFilesSSTableFn {});
+    let mut formatted_files = annotated_files.par_do(FormatFilesSSTableFn {});
     formatted_files.write_to_sstable(&files_sstable);
 
     // Extract file info by file_id
@@ -411,12 +434,6 @@ pub fn run_indexer(code_recordio: &str, output_dir: &str) {
     let mut trigram_matches = trigrams.group_by_key_and_par_do(AggregateTrigramsFn {});
     let trigrams_sstable = format!("{}/trigrams.sstable", output_dir);
     trigram_matches.write_to_sstable(&trigrams_sstable);
-
-    // Extract definitions
-    let keywords = code.par_do(ExtractDefinitionsFn {});
-    let mut index = keywords.group_by_key_and_par_do(AggregateDefinitionsFn {});
-    let definitions_sstable = format!("{}/definitions.sstable", output_dir);
-    index.write_to_sstable(&definitions_sstable);
 
     // Extract keywords
     let keywords = code.par_do(ExtractKeywordsFn {});
@@ -488,9 +505,13 @@ mod tests {
         mario.set_filename("mario.rs".into());
         mario.set_content("let mario = donkey_kong * 5;".into());
 
-        let code = PCollection::from_vec(vec![dk, mario]);
+        let code = PCollection::from_vec(vec![
+            KV::new(String::new(), dk),
+            KV::new(String::new(), mario),
+        ]);
 
-        let definitions = code.par_do(ExtractDefinitionsFn {});
+        let annotated_files = code.par_do(AnnotateDefinitionsFn {});
+        let definitions = annotated_files.par_do(ExtractDefinitionsFn {});
         let mut index = definitions.group_by_key_and_par_do(AggregateDefinitionsFn {});
         index.write_to_vec();
 
