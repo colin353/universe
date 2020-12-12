@@ -23,6 +23,9 @@ message QueryKeyword {
   bool is_prefix = 3;
 
   bool is_language = 4;
+
+  // Anywhere inside filename
+  bool is_filename = 5;
 }
 
 message Query {

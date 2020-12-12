@@ -186,6 +186,12 @@ impl Searcher {
                 keyword.set_is_language(true);
             }
 
+            // Filename search
+            if keyword.get_keyword().starts_with("f:") {
+                keyword.set_keyword(keyword.get_keyword()[2..].to_owned());
+                keyword.set_is_filename(true);
+            }
+
             out.mut_keywords().push(keyword);
         }
 
@@ -211,7 +217,7 @@ impl Searcher {
             .iter()
             .enumerate()
             // Prefix requirements should not match on definitions
-            .filter(|(_, k)| !k.get_is_prefix() && !k.get_is_language())
+            .filter(|(_, k)| !k.get_is_prefix() && !k.get_is_language() && !k.get_is_filename())
         {
             let mut matches = match self
                 .definitions
@@ -380,11 +386,12 @@ impl Searcher {
     ) {
         let mut short_keyword_mask: u32 = 0;
 
-        for (index, keyword) in
-            query.get_keywords().iter().enumerate().filter(|(_, k)| {
-                !k.get_is_definition() && !k.get_is_prefix() && !k.get_is_language()
-            })
-        {
+        for (index, keyword) in query.get_keywords().iter().enumerate().filter(|(_, k)| {
+            !k.get_is_definition()
+                && !k.get_is_prefix()
+                && !k.get_is_language()
+                && !k.get_is_filename()
+        }) {
             // We use a trigram index. If this keyword has fewer than 3 chars, just assume
             // any candidate might match it.
             if keyword.get_keyword().len() < 3 {
@@ -457,7 +464,11 @@ impl Searcher {
         // The keywords to match are the search terms plus newline
         let mut keywords = Vec::new();
         let mut matcher_keywords = vec!["\n"];
-        for keyword in query.get_keywords() {
+        for keyword in query
+            .get_keywords()
+            .iter()
+            .filter(|k| !k.get_is_filename() && !k.get_is_language() && !k.get_is_prefix())
+        {
             keywords.push(keyword.get_keyword().to_string());
             matcher_keywords.push(keyword.get_keyword());
         }
