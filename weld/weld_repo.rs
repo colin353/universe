@@ -559,6 +559,15 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
 
                 // Save to the cache, unless we're reading with index 0 (i.e. latest)
                 if index != 0 {
+                    // File listings just give back file attributes so we can also cache against
+                    // any readattrs for those files
+                    for file in &response {
+                        self.cache.insert(
+                            ReadQuery::ReadAttrs(id, file.get_filename().to_owned(), index),
+                            ReadResponse::ReadAttrs(file.clone()),
+                        );
+                    }
+
                     self.cache
                         .insert(query, ReadResponse::ListFiles(response.clone()));
                 }
