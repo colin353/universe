@@ -1,144 +1,97 @@
 import getLanguageModel from "./syntax_highlighter.mjs";
 import { base64Decode, } from "./utils.mjs";
 import Store from "../../util/js/store.mjs";
+import { diff } from './diff.mjs'
 const attributes = [ "left", "right", "language", "line", "startline", ];
 const store = new Store();
-// Disables chrome's automatic scroll restoration logic, necessary to
-// avoid conflicts w/ the automatic "jump-to-line" behaviour.
-window.history.scrollRestoration = "manual";
-this.shadow.addEventListener("click", () => {
-    this.setState({
-        showMenu: false,
-    });
-});
-const contextMenu = (event) => {
-    const selection = window.getSelection().toString();
-    if(selection == "") return;
-    this.setState({
-        showMenu: true,
-        menuX: event.clientX,
-        menuY: event.clientY,
-        selection,
-    });
-    event.preventDefault();
-};
-const copy = (event) => {
-    navigator.clipboard.writeText(this.state.selection);
-};
-const search = () => {
-    this.dispatchEvent(new CustomEvent("search", {
-        detail: { token: this.state.selection, },
-    }));
-};
-const definition = () => {
-    this.dispatchEvent(new CustomEvent("define", {
-        detail: { token: this.state.selection, },
-    }));
-};
-this.stateMappers = {
-    parsedLines: (code, language) => {
-        if (!code) return [];
-        let parsedLines = [];
-        let model = getLanguageModel(language);
-        for(const line of base64Decode(code).split("\n")) {
-            parsedLines.push(model.extractSyntax(line));
+
+const renderLines = (parsed) => {
+    if(!parsed) return {};
+    const output = [];
+    for(const line of parsed) {
+        const renderedLine = {};
+        const lineNumber = line.lineNumber;
+        
+        if (line.type == BlockType.PLACEHOLDER) {
+          renderedLine.lineNumber = "-";
+          renderedLine.code = "";
+        } else {
+          renderedLine.lineNumber = line.lineNumber;
+          renderedLine.code = line.line;
         }
+        renderedLine.class = "diff-" + line.type;
+        output.push(renderedLine);
+    }
+    return output;
+}
+
+const BlockType = {
+  SAME: 'same',
+  DELETED: 'deleted',
+  ADDED: 'added',
+  PLACEHOLDER: 'placeholder',
+}
+
+this.stateMappers = {
+    diffs: (left, right) => {
+      if (!left || !right) return [];
+
+      return diff(base64Decode(left).split("\n"), base64Decode(right).split("\n"))
+    },
+    parsed: (diffs, language) => {
+        let parsedLines = { left: [], right: [] };
+        if (!diffs) return parsedLines;
+
+        let model = getLanguageModel(language);
+        let leftLineNumber = 1;
+        let rightLineNumber = 1;
+        for(const chunk of diffs) {
+            if (chunk.common) {
+              for (const ch of chunk.common) {
+                const line = model.extractSyntax(ch);
+                parsedLines.left.push({type: BlockType.SAME, line, lineNumber: leftLineNumber});
+                parsedLines.right.push({type: BlockType.SAME, line, lineNumber: rightLineNumber});
+                leftLineNumber += 1;
+                rightLineNumber += 1;
+              }
+            } else {
+              for (const ch of chunk.file1) {
+                const line = model.extractSyntax(ch);
+                parsedLines.left.push({type: BlockType.DELETED, line, lineNumber: leftLineNumber})
+                leftLineNumber += 1;
+              }
+
+              for (const ch of chunk.file2) {
+                const line = model.extractSyntax(ch);
+                parsedLines.right.push({type: BlockType.ADDED, line, lineNumber: rightLineNumber})
+                rightLineNumber += 1;
+              }
+
+
+              for(var i = 0; i < (chunk.file1.length - chunk.file2.length); i++) {
+                parsedLines.right.push({type: BlockType.PLACEHOLDER})
+              }
+
+              for(var i = 0; i < (chunk.file2.length - chunk.file1.length); i++) {
+                parsedLines.left.push({type: BlockType.PLACEHOLDER})
+              }
+            }
+        }
+
         return parsedLines;
     },
-    lines: (parsedLines, language, line) => {
-        if(!parsedLines) return {};
-        const output = {};
-        let lineNumber = 1;
-        const selectedLine = parseInt(line);
-        const topLine = Math.max(1, selectedLine - 5);
-        for(const line of parsedLines) {
-            output[lineNumber] = {};
-            output[lineNumber].lineNumber = this.state.startingLine + lineNumber;
-            output[lineNumber].class = lineNumber == selectedLine ? "selected-line" : "";
-            output[lineNumber].class += lineNumber == topLine ? " top-line" : "";
-            output[lineNumber].code = line;
-            lineNumber += 1;
-        }
-        return output;
-    },
-    _ensureLineVisible: (line) => {
-        focusSelectedLine();
-        this.dispatchEvent(new CustomEvent("lineSelected", {
-            detail: { line, },
-        }));
-    },
-    _updateLineInStore: (line, parsedLines) => {
-        store.setState("currentLineNumber", line);
-        store.setState("currentLine", parsedLines[line-1]);
-    },
-    startingLine: (startline) => {
-        return parseInt(startline) || 0;
-    },
+    leftLines: (parsed) => renderLines(parsed.left),
+    rightLines: (parsed) => renderLines(parsed.right),
 };
-const focusSelectedLine = () => {
-    const elements = this.shadowRoot.querySelectorAll(".top-line");
-    if (elements.length) {
-        elements[0].scrollIntoView({block: "start",});
-    }
-};
-this.componentDidMount = () => {
-    setTimeout(focusSelectedLine, 10);
-};
+
 this.state = {
-    parsedLines: this.stateMappers.parsedLines(this.state.code),
-    lines: this.stateMappers.lines(this.state.code),
-    startingLine: 0,
+  diffs: [],
+  parsed: { left: [], right: [] },
+  leftLines: [],
+  rightLines: [],
 };
-function selectLine(event) {
-    this.setState({
-        line: parseInt(event.srcElement.innerText),
-    });
-}
-let jumpToLine = "";
-let command = "";
-// Keyboard shortcuts for jumping to lines/to top
-window.addEventListener("keydown", (e) => {
-    // Ignore keypresses within inputs
-    if (e.srcElement != window.document.body) {
-        return;
-    }
-    if (e.key == "g") {
-        if (command.length > 0) {
-            // Jump to top
-            this.setState({
-                line: 1,
-            });
-        } else {
-            command = "g";
-        }
-    } else {
-        command = "";
-    }
-    if (e.key == "d") {
-        this.parentElement.scrollBy(0, 350);
-    } else if (e.key == "u") {
-        this.parentElement.scrollBy(0, -350);
-    } else if (e.key == "j") {
-        this.parentElement.scrollBy(0, 100);
-    } else if (e.key == "k") {
-        this.parentElement.scrollBy(0, -100);
-    }
-    if (e.key.length == 1 && e.key >= "0" && e.key <= "9") {
-        jumpToLine += e.key;
-    } else if (e.keyCode == 27) {
-    // Detect escape + clear the jump-to-line
-        jumpToLine = "";
-    } else if (e.key == "G") {
-        if (jumpToLine.length > 0) {
-            const lineToJumpTo = Math.min(parseInt(jumpToLine), Object.keys(this.state.lines).length);
-            this.setState({
-                line: lineToJumpTo,
-            });
-        } else {
-            this.setState({
-                line: Object.keys(this.state.lines).length,
-            });
-        }
-        jumpToLine = "";
-    }
-});
+
+this.setState({
+    diffs: this.stateMappers.diffs(this.state.left, this.state.right),
+})
+

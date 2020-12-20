@@ -62,6 +62,18 @@ span.line {
     display: block;
 }
 
+span.line.diff-deleted {
+  background-color: rgb(255, 238, 240);
+}
+
+span.line.diff-added {
+  background-color: rgb(230, 255, 237);
+}
+
+span.line.diff-placeholder {
+  background-color: rgb(245, 245, 245);
+}
+
 .italic {
     font-style: italic;
 }

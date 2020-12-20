@@ -30,6 +30,7 @@ fe_component(
     ],
     deps = [
         ":syntax_highlighter",
+        ":diff",
         ":utils",
         "//tools/search/js:test",
     ],
@@ -66,12 +67,6 @@ fe_library(
 fe_library(
     name = "diff",
     srcs = ["diff.mjs"],
-)
-
-fe_test(
-    name = "diff_test",
-    srcs = ["diff_test.mjs"],
-    deps = [":diff"],
 )
 
 fe_library(

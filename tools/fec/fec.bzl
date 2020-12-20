@@ -136,7 +136,7 @@ TMP_DIR=$(mktemp -d)
 sh -c 'cd $1; mkdir -p %s' -s $1
 
 printf "%s" | sed -e "s*__BZL_PREFIX__*$1/*g" | entr sh -c 'cd $1; cp --no-preserve=mode,ownership --parents %s $2' -s $1 $TMP_DIR &
-tools/fes/fes --base_dir=$COMPILED_TMP_DIR,$TMP_DIR
+tools/fes/fes --base_dir=$COMPILED_TMP_DIR,$TMP_DIR,$1
 kill $(jobs -p)
 rm -rf $TMP_DIR $COMPILED_TMP_DIR
     """ % (
