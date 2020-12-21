@@ -1,5 +1,3 @@
-<link rel="stylesheet" data-name="static/vs/editor/editor.main" href="static/vs/editor/editor.main.css">
-
 <div style="display: flex">
     <p style="flex: 1">{{filename}} ({{status}})</p>
     {{next_file != ""}}
@@ -9,104 +7,8 @@
     <p><a href="/{{id}}">back to overview</a></p>
     {{/next_file}}
 </div>
-<div id="editor" data-type="{{status}}" data-filename="{{filename}}" data-left="{{original.contents}}" data-right="{{modified.contents}}" style="width:100%;height:500px">
-</div>
 
-<script>
-    var require = {
-        paths: {
-            'vs': '/static/vs'
-        }
-    };
-</script>
-<script src="/static/vs/loader.js"></script>
-<script src="/static/vs/editor/editor.main.nls.js"></script>
-<script src="/static/vs/editor/editor.main.js"></script>
-<script src="/static/extras.js"></script>
-<script>
-    require(["vs/editor/editor.main"], function() {
-        var editorElement = document.getElementById("editor");
-        var changeType = editorElement.getAttribute("data-type");
+<diff-view language="{{language}}" left="{{original.contents}}" right="{{modified.contents}}">
+</diff-view>
 
-        const language_map = {
-            'css': 'css',
-            'md': 'markdown',
-            'js': 'javascript',
-            'ts': 'typescript',
-            'py': 'python',
-            'sh': 'bash',
-            'rs': 'rust',
-            'cc': 'c',
-            'c': 'c',
-            'cpp': 'c',
-            'proto': 'protobuf',
-        };
-        const extension = editorElement.getAttribute("data-filename").split(".").pop();
-        const language = language_map[extension] || 'text/plain';
-
-        // from extras.js
-        window.registerProtobuf(monaco);
-
-        if (changeType == "modified") {
-            var diffEditor = monaco.editor.createDiffEditor(editorElement, {
-                readOnly: true,
-                wordWrap: "bounded",
-                theme: "vs-dark",
-                wordWrapCols: 80,
-            });
-
-            class Comment {
-                allowEditorOverflow = false;
-                suppressMouseDown = true;
-                visible = true;
-
-                getDomNode() {
-                    console.log("comment: get DOM node");
-                    const p = document.createElement("div");
-                    p.className = "lucky";
-                    p.appendChild(document.createTextNode("hello, world"));
-                    return p;
-                }
-
-                getId() {
-                    console.log("comment: get id");
-                    return "asdf";
-                }
-
-                getPosition() {
-                    return {
-                        position: monaco.Position(5, 10),
-                        preference: [1],
-                    };
-                }
-            };
-
-            let c = new Comment();
-            diffEditor.getModifiedEditor().addContentWidget(c);
-            diffEditor.getModifiedEditor().layoutContentWidget(c);
-
-            var originalModel = monaco.editor.createModel(atob(editorElement.getAttribute("data-left")), language);
-            var modifiedModel = monaco.editor.createModel(atob(editorElement.getAttribute("data-right")), language);
-            diffEditor.setModel({
-                original: originalModel,
-                modified: modifiedModel
-            });
-
-            let navi = monaco.editor.createDiffNavigator(diffEditor, {
-                followsCaret: true,
-                ignoreCharChanges: true
-            });
-            navi.next();
-        } else {
-            var content = atob(editorElement.getAttribute("data-right"));
-            monaco.editor.create(editorElement, {
-                readOnly: true,
-                value: content,
-                language: language,
-                wordWrap: "bounded",
-                theme: "vs-dark",
-                wordWrapCols: 80,
-            });
-        }
-    });
-</script>
+<script type=module src="https://js.colinmerkel.xyz/homepage/js/diff_view.mjs"></script>

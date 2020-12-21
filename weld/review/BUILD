@@ -38,12 +38,14 @@ rust_library(
     deps = [
         "//auth:auth_client",
         "//third_party:base64",
+        "//tools/search/language_specific",
         "//tools/queue:queue_client",
         "//util/flags",
         "//util/tmpl",
         "//util/ws",
         "//weld",
     ],
+    edition="2018",
 )
 
 pkg_tar(

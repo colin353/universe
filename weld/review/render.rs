@@ -15,31 +15,34 @@ pub fn file(f: &weld::File) -> tmpl::ContentsMap {
 
 pub fn file_history(fh: &weld::FileHistory, index: u64) -> Option<tmpl::ContentsMap> {
     let mut c = content!(
-        "filename" => fh.get_filename();
+        "filename" => fh.get_filename(),
+        "language" => format!("{:?}", language_specific::get_filetype(fh.get_filename())).to_lowercase()
     );
 
     let mut is_new_file = true;
-    let mut is_deleted = true;
-    for f in fh.get_snapshots().iter().rev() {
-        if f.get_change_id() == 0 {
-            continue;
-        }
+    if let Some(f) = fh
+        .get_snapshots()
+        .iter()
+        .rev()
+        .filter(|f| f.get_change_id() > 0)
+        .next()
+    {
+        c.insert("original", file(f));
+        is_new_file = false;
+    }
 
+    let mut is_deleted = false;
+    if let Some(f) = fh
+        .get_snapshots()
+        .iter()
+        .rev()
+        .filter(|f| f.get_change_id() == 0)
+        .next()
+    {
         if f.get_deleted() {
             is_deleted = true;
         }
-
-        c.insert("original", file(f));
-        is_new_file = false;
-        break;
     }
-
-    let status = match (is_new_file, is_deleted) {
-        (true, true) => "deleted",
-        (true, false) => "new",
-        _ => "modified",
-    };
-    c.insert("status", status);
 
     let mut has_file = false;
     let mut is_directory = false;
@@ -60,6 +63,13 @@ pub fn file_history(fh: &weld::FileHistory, index: u64) -> Option<tmpl::Contents
             is_directory = f.get_directory();
         }
     }
+
+    let status = match (is_new_file, is_deleted) {
+        (_, true) => "deleted",
+        (true, _) => "new",
+        _ => "modified",
+    };
+    c.insert("status", status);
 
     c.insert("directory", is_directory);
 

@@ -64,6 +64,7 @@ fn main() {
         "the hostname of the queue service"
     );
     let queue_port = define_flag!("queue_port", 5554, "the port of the queue service");
+    let disable_auth = define_flag!("disable_auth", false, "whether to disable auth");
 
     parse_flags!(
         server_hostname,
@@ -80,7 +81,8 @@ fn main() {
         task_hostname,
         task_port,
         queue_hostname,
-        queue_port
+        queue_port,
+        disable_auth
     );
 
     let client = weld::WeldServerClient::new(
@@ -90,7 +92,13 @@ fn main() {
     );
 
     let queue = queue_client::QueueClient::new(&queue_hostname.value(), queue_port.value());
-    let auth = auth_client::AuthClient::new(&auth_hostname.value(), auth_port.value());
+
+    let auth = if disable_auth.value() {
+        auth_client::AuthClient::new_fake()
+    } else {
+        auth_client::AuthClient::new(&auth_hostname.value(), auth_port.value())
+    };
+
     server::ReviewServer::new(client, static_files.value(), base_url.value(), auth, queue)
         .serve(port.value());
 }

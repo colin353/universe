@@ -12,12 +12,15 @@ bazel run //auth:server -- \
 
 bazel build //largetable:largetable_server
 
+mkdir -p /tmp/largetable/client
+mkdir -p /tmp/largetable/server
+
 RUST_LOG=debug RUST_BACKTRACE=1 bazel run -c opt //largetable:largetable_server -- \
-  --data_directory="/usr/local/largetable/client/" \
+  --data_directory="/tmp/largetable/client/" \
   --port=60061 &
 
 RUST_LOG=debug RUST_BACKTRACE=1 bazel run -c opt //largetable:largetable_server -- \
-  --data_directory="/usr/local/largetable/server/" \
+  --data_directory="/tmp/largetable/server/" \
   --port=60062 &
 
 sleep 5
@@ -48,5 +51,11 @@ RUST_BACKTRACE=1 bazel run -c opt //weld:weld_client -- \
   --weld_hostname=127.0.0.1 \
   --server_port=60063 \
   --mount_point=~/codefs-local
+
+RUST_BACKTRACE=1 bazel run -c opt //tools/lockserv
+
+RUST_BACKTRACE=1 bazel run -c opt //tools/queue -- \
+  --largetable_port=60061 \
+  --largetable_hostname=localhost
 
 jobs -p | xargs -I{} kill -- {}

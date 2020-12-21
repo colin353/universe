@@ -716,6 +716,11 @@ impl<C: largetable_client::LargeTableClient, W: weld::WeldServer> Repo<C, W> {
             change.mut_changes().push(history);
         }
 
+        // Sort changes to make the ordering deterministic
+        change
+            .mut_changes()
+            .sort_by(|a, b| a.get_filename().cmp(b.get_filename()));
+
         change
     }
 
