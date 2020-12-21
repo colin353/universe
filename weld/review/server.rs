@@ -179,9 +179,9 @@ impl ReviewServer {
                 task_statuses.push(render::get_task_pills(&response));
             }
         }
-        content.insert("tasks", tmpl::ContentsMultiMap::from(task_statuses));
 
         let mut content = render::change(&change);
+        content.insert("tasks", tmpl::ContentsMultiMap::from(task_statuses));
         content.insert("body", diff_view);
         let page = tmpl::apply(CHANGE, &content);
         Response::new(Body::from(self.wrap_template(page)))
