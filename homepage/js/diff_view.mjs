@@ -68,7 +68,7 @@ this.stateMappers = {
         for(const chunk of diffs) {
             if (chunk.common) {
               let common = chunk.common
-              let commons = [];
+              let commons = [common];
               let postChunkCollapseLength = 0;
 
               // Hide long common sequences
