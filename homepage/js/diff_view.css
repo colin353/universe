@@ -78,6 +78,12 @@ span.line.diff-placeholder {
   background-color: rgb(245, 245, 245);
 }
 
+span.line.diff-omission {
+  text-align: center;
+  background-color: rgb(245, 245, 245);
+  color: grey;
+}
+
 .italic {
     font-style: italic;
 }
