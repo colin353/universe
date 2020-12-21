@@ -155,7 +155,7 @@ pub struct AuthWebServer {
     cookie_domain: String,
     client_id: String,
     client_secret: String,
-    email_whitelist: Arc<HashSet<String>>,
+    email_whitelist: Arc<HashMap<String, String>>,
 }
 
 impl AuthWebServer {
@@ -165,7 +165,7 @@ impl AuthWebServer {
         cookie_domain: String,
         client_id: String,
         client_secret: String,
-        email_whitelist: Arc<HashSet<String>>,
+        email_whitelist: Arc<HashMap<String, String>>,
     ) -> Self {
         Self {
             tokens: tokens,
@@ -295,9 +295,10 @@ impl AuthWebServer {
                         }
                     };
 
-                    if !email_whitelist.contains(email_str) {
-                        return future::ok(Response::new(Body::from("invalid")));
-                    }
+                    let username = match email_whitelist.get(email_str) {
+                        Some(x) => x,
+                        None => return future::ok(Response::new(Body::from("invalid"))),
+                    };
 
                     let mut tokens_write = tokens.write().unwrap();
                     let login_record = match tokens_write.get_mut(&key) {
@@ -306,12 +307,12 @@ impl AuthWebServer {
                             return future::ok(Response::new(Body::from("invalid")));
                         }
                     };
-                    if !login_record.username.is_empty()
-                        && login_record.username != email.as_str().unwrap()
-                    {
+
+                    if !login_record.username.is_empty() && &login_record.username != username {
                         return future::ok(Response::new(Body::from("invalid")));
                     }
                     login_record.valid = true;
+                    login_record.username = username.to_owned();
 
                     let mut response = Response::new(Body::from(format!("{}", email)));
                     *response.status_mut() = StatusCode::TEMPORARY_REDIRECT;

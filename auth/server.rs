@@ -28,7 +28,7 @@ fn main() {
     let allowed_emails = define_flag!(
         "allowed_emails",
         String::new(),
-        "a list of allowed emails separated by commas"
+        "a list of allowed emails and usernames separated by colon and commas (example: colin:colin353@gmail.com,tester:tester@test.com)"
     );
     let cookie_domain = define_flag!(
         "cookie_domain",
@@ -54,9 +54,14 @@ fn main() {
         gcp_token_location
     );
 
-    let email_whitelist = std::collections::HashSet::from_iter(
-        allowed_emails.value().split(",").map(|x| x.to_owned()),
-    );
+    let email_whitelist =
+        std::collections::HashMap::from_iter(allowed_emails.value().split(",").map(|x| {
+            let components: Vec<_> = x.split(":").collect();
+            if components.len() == 1 {
+                return (components[0].to_owned(), components[0].to_owned());
+            }
+            (components[1].to_owned(), components[0].to_owned())
+        }));
 
     let mut server = grpc::ServerBuilder::<tls_api_openssl::TlsAcceptor>::new();
     server.http.set_port(grpc_port.value());
