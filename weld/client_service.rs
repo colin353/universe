@@ -568,6 +568,7 @@ impl<C: LargeTableClient> WeldLocalServiceHandler<C> {
                     .trim()
                     .to_owned();
                 println!("dependency query failed: {}", errors);
+                return weld::RunBuildQueryResponse::new();
             }
         }
 

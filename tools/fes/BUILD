@@ -21,10 +21,10 @@ rust_binary(
     srcs = ["fes.rs"],
     data = [
         "//homepage/js:code_pad",
+        "//homepage/js:diff_view",
         "//tools/search/js:flow_card",
         "//tools/search/js:flow_view",
         "//tools/search/js:search_box",
-        "//tools/search/js:diff_view",
     ],
     edition = "2018",
     deps = [
