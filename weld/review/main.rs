@@ -65,6 +65,11 @@ fn main() {
     );
     let queue_port = define_flag!("queue_port", 5554, "the port of the queue service");
     let disable_auth = define_flag!("disable_auth", false, "whether to disable auth");
+    let auth_token = define_flag!(
+        "auth_token",
+        String::new(),
+        "auth token to use when connecting to weld service"
+    );
 
     parse_flags!(
         server_hostname,
@@ -82,7 +87,8 @@ fn main() {
         task_port,
         queue_hostname,
         queue_port,
-        disable_auth
+        disable_auth,
+        auth_token
     );
 
     let client = weld::WeldServerClient::new(
@@ -90,6 +96,7 @@ fn main() {
         String::from(""),
         server_port.value(),
     );
+    client.set_permanent_token(auth_token.value());
 
     let queue = queue_client::QueueClient::new(&queue_hostname.value(), queue_port.value());
 

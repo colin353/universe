@@ -61,6 +61,11 @@ fn main() {
         "the hostname of the queue service"
     );
     let queue_port = define_flag!("queue_port", 5554, "the port of the queue service");
+    let auth_token = define_flag!(
+        "auth_token",
+        String::new(),
+        "the auth token to use for weld client"
+    );
     parse_flags!(
         mount_point,
         mount,
@@ -72,7 +77,8 @@ fn main() {
         queue_hostname,
         queue_port,
         chat_hostname,
-        chat_port
+        chat_port,
+        auth_token
     );
 
     let db = largetable_test::LargeTableMockClient::new();
@@ -91,6 +97,7 @@ fn main() {
 
     let client =
         weld::WeldServerClient::new(&weld_hostname.value(), String::new(), server_port.value());
+    client.set_permanent_token(auth_token.value());
     repo.add_remote_server(client.clone());
 
     // Start gRPC service.

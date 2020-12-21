@@ -18,12 +18,13 @@ use tls_api::TlsConnector;
 use tls_api::TlsConnectorBuilder;
 
 use std::net::SocketAddr;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 #[derive(Clone)]
 pub struct WeldServerClient {
     client: Arc<weld_grpc_rust::WeldServiceClient>,
-    username: String,
+    permanent_token: Arc<RwLock<Option<String>>>,
+    temporary_token: Arc<RwLock<Option<String>>>,
 }
 
 #[derive(Clone)]
@@ -46,107 +47,166 @@ pub trait WeldServer {
 
 impl WeldServerClient {
     pub fn new(hostname: &str, username: String, port: u16) -> Self {
-        WeldServerClient {
+        let c = WeldServerClient {
             client: Arc::new(
                 weld_grpc_rust::WeldServiceClient::new_plain(hostname, port, Default::default())
                     .unwrap(),
             ),
-            username: username,
-        }
+            permanent_token: Arc::new(RwLock::new(None)),
+            temporary_token: Arc::new(RwLock::new(None)),
+        };
+        c.load_token();
+        c
+    }
+
+    pub fn set_permanent_token(&self, token: String) {
+        *self.permanent_token.write().unwrap() = Some(token);
     }
 
     pub fn new_tls(hostname: &str, port: u16) -> Self {
         let grpc_client = grpc_tls::make_tls_client(hostname, port);
-        WeldServerClient {
+        let c = WeldServerClient {
             client: Arc::new(weld_grpc_rust::WeldServiceClient::with_client(Arc::new(
                 grpc_client,
             ))),
-            username: String::new(),
-        }
+            permanent_token: Arc::new(RwLock::new(None)),
+            temporary_token: Arc::new(RwLock::new(None)),
+        };
+        c.load_token();
+        c
     }
 
     fn opts(&self) -> grpc::RequestOptions {
         grpc::RequestOptions::new()
     }
+
+    fn get_token(&self) -> String {
+        if let Some(s) = self.permanent_token.read().unwrap().as_ref() {
+            return s.to_owned();
+        }
+
+        if let Some(s) = self.temporary_token.read().unwrap().as_ref() {
+            return s.to_owned();
+        }
+
+        let temp_token = cli::load_auth();
+        if !temp_token.is_empty() {
+            *self.temporary_token.write().unwrap() = Some(temp_token.clone());
+        } else {
+            eprintln!("couldn't load auth token! have you run prodaccess?");
+        }
+
+        return temp_token;
+    }
+
+    fn load_token(&self) {
+        let temp_token = cli::load_auth();
+        if !temp_token.is_empty() {
+            *self.temporary_token.write().unwrap() = Some(temp_token.clone());
+        } else {
+            eprintln!("auth failed! have you run prodaccess?");
+        }
+    }
 }
 
 impl WeldServer for WeldServerClient {
-    fn read(&self, req: weld::FileIdentifier) -> weld::File {
-        self.client.read(self.opts(), req).wait().expect("rpc").1
+    fn read(&self, mut req: weld::FileIdentifier) -> weld::File {
+        req.set_auth_token(self.get_token());
+
+        if let Ok(x) = self.client.read(self.opts(), req).wait() {
+            return x.1;
+        }
+
+        self.load_token();
+        panic!("read request failed!");
     }
 
-    fn read_attrs(&self, req: weld::FileIdentifier) -> weld::File {
-        self.client
-            .read_attrs(self.opts(), req)
-            .wait()
-            .expect("rpc")
-            .1
+    fn read_attrs(&self, mut req: weld::FileIdentifier) -> weld::File {
+        req.set_auth_token(self.get_token());
+
+        if let Ok(x) = self.client.read_attrs(self.opts(), req).wait() {
+            return x.1;
+        }
+
+        self.load_token();
+        panic!("read_attrs request failed!");
     }
 
-    fn submit(&self, req: weld::Change) -> weld::SubmitResponse {
-        self.client.submit(self.opts(), req).wait().expect("rpc").1
+    fn submit(&self, mut req: weld::Change) -> weld::SubmitResponse {
+        req.set_auth_token(self.get_token());
+        if let Ok(x) = self.client.submit(self.opts(), req).wait() {
+            return x.1;
+        }
+
+        self.load_token();
+        panic!("read_attrs request failed!");
     }
 
-    fn snapshot(&self, req: weld::Change) -> weld::SnapshotResponse {
-        self.client
-            .snapshot(self.opts(), req)
-            .wait()
-            .expect("rpc")
-            .1
+    fn snapshot(&self, mut req: weld::Change) -> weld::SnapshotResponse {
+        req.set_auth_token(self.get_token());
+        if let Ok(x) = self.client.snapshot(self.opts(), req).wait() {
+            return x.1;
+        }
+
+        self.load_token();
+        panic!("snapshot request failed!");
     }
 
-    fn get_change(&self, req: weld::Change) -> weld::Change {
-        self.client
-            .get_change(self.opts(), req)
-            .wait()
-            .expect("rpc")
-            .1
+    fn get_change(&self, mut req: weld::Change) -> weld::Change {
+        req.set_auth_token(self.get_token());
+        if let Ok(x) = self.client.get_change(self.opts(), req).wait() {
+            return x.1;
+        }
+
+        self.load_token();
+        panic!("get_change request failed!");
     }
 
     fn list_changes(&self) -> Vec<Change> {
-        let req = weld::ListChangesRequest::new();
-        self.client
-            .list_changes(self.opts(), req)
-            .wait()
-            .expect("rpc")
-            .1
-            .take_changes()
-            .into_vec()
+        let mut req = weld::ListChangesRequest::new();
+        req.set_auth_token(self.get_token());
+        if let Ok(mut x) = self.client.list_changes(self.opts(), req).wait() {
+            return x.1.take_changes().into_vec();
+        }
+        self.load_token();
+        panic!("list_changes request failed!");
     }
 
     fn get_latest_change(&self) -> weld::Change {
-        self.client
-            .get_latest_change(self.opts(), weld::GetLatestChangeRequest::new())
-            .wait()
-            .expect("rpc")
-            .1
+        let mut req = weld::GetLatestChangeRequest::new();
+        req.set_auth_token(self.get_token());
+        if let Ok(x) = self.client.get_latest_change(self.opts(), req).wait() {
+            return x.1;
+        }
+
+        self.load_token();
+        panic!("get_latest_change request failed!");
     }
 
-    fn list_files(&self, req: weld::FileIdentifier) -> Vec<File> {
-        self.client
-            .list_files(self.opts(), req)
-            .wait()
-            .expect("rpc")
-            .1
-            .take_files()
-            .into_vec()
+    fn list_files(&self, mut req: weld::FileIdentifier) -> Vec<File> {
+        req.set_auth_token(self.get_token());
+        if let Ok(mut x) = self.client.list_files(self.opts(), req).wait() {
+            return x.1.take_files().into_vec();
+        }
+        self.load_token();
+        panic!("list_files request failed!");
     }
 
-    fn get_submitted_changes(&self, req: weld::GetSubmittedChangesRequest) -> Vec<Change> {
-        self.client
-            .get_submitted_changes(self.opts(), req)
-            .wait()
-            .expect("rpc")
-            .1
-            .take_changes()
-            .into_vec()
+    fn get_submitted_changes(&self, mut req: weld::GetSubmittedChangesRequest) -> Vec<Change> {
+        req.set_auth_token(self.get_token());
+        if let Ok(mut x) = self.client.get_submitted_changes(self.opts(), req).wait() {
+            return x.1.take_changes().into_vec();
+        }
+        self.load_token();
+        panic!("get_submitted_changes request failed!");
     }
 
-    fn update_change_metadata(&self, req: weld::Change) {
-        self.client
-            .update_change_metadata(self.opts(), req)
-            .wait()
-            .expect("rpc");
+    fn update_change_metadata(&self, mut req: weld::Change) {
+        req.set_auth_token(self.get_token());
+        if let Err(_) = self.client.update_change_metadata(self.opts(), req).wait() {
+            self.load_token();
+            panic!("update_change_metadata request failed!");
+        }
     }
 }
 

@@ -28,7 +28,9 @@ rust_library(
     srcs = [
         "weld.rs",
     ],
+    edition = "2018",
     deps = [
+        "//util/cli",
         ":weld_grpc_rust",
         ":weld_proto_rust",
         "//third_party:futures",
@@ -183,9 +185,11 @@ rust_library(
     srcs = [
         "server_lib.rs",
     ],
+    edition = "2018",
     deps = [
         ":weld",
         ":weld_repo",
+        "//auth:auth_client",
         "//largetable:largetable_client",
         "//largetable:largetable_test",
         "@io_bazel_rules_rust//proto/raze:grpc",
@@ -201,8 +205,11 @@ rust_test(
 rust_binary(
     name = "weld_server",
     srcs = ["server.rs"],
+    edition = "2018",
     deps = [
         ":weld",
+        "//auth:auth_client",
+        "//util/init",
         ":weld_repo",
         ":weld_server_lib",
         "//largetable:largetable_client",
@@ -221,13 +228,16 @@ rust_image(
     name = "weld_server_img",
     srcs = ["server.rs"],
     base = "@glibc_base//image",
+    edition = "2018",
     deps = [
         ":weld",
         ":weld_repo",
         ":weld_server_lib",
         "//largetable:largetable_client",
+        "//util/init",
         "//largetable:largetable_test",
         "//third_party:native_tls",
+        "//auth:auth_client",
         "//third_party:openssl",
         "//third_party:tls_api_openssl",
         "//util/flags",
@@ -250,6 +260,7 @@ rust_library(
     name = "weld_test",
     srcs = ["weld_test.rs"],
     deps = [
+        "//auth:auth_client",
         ":weld",
         ":weld_server_lib",
         "//largetable:largetable_test",

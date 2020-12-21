@@ -1,3 +1,4 @@
+extern crate auth_client;
 extern crate largetable_test;
 extern crate weld;
 extern crate weld_server_lib;
@@ -14,7 +15,10 @@ impl WeldServerTestClient {
     pub fn new(username: String) -> Self {
         let db = largetable_test::LargeTableMockClient::new();
         WeldServerTestClient {
-            client: Arc::new(weld_server_lib::WeldServiceHandler::new(db)),
+            client: Arc::new(weld_server_lib::WeldServiceHandler::new(
+                db,
+                auth_client::AuthClient::new_fake(),
+            )),
             username: username,
         }
     }

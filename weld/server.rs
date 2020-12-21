@@ -46,6 +46,12 @@ fn main() {
         "Whether to use in-memory mock largetable or RPC"
     );
     let use_tls = define_flag!("use_tls", true, "Whether or not to use TLS encryption");
+    let auth_hostname = define_flag!(
+        "auth_hostname",
+        String::from("auth.colinmerkel.xyz"),
+        "the hostname to use for authentication"
+    );
+    let auth_port = define_flag!("auth_port", 8888, "the port to use for authentication");
     parse_flags!(
         port,
         pkcs12,
@@ -53,12 +59,18 @@ fn main() {
         largetable_port,
         use_mock_largetable,
         use_tls,
-        root_cert
+        root_cert,
+        auth_hostname,
+        auth_port
     );
 
     let mut server = grpc::ServerBuilder::<tls_api_openssl::TlsAcceptor>::new();
     server.http.set_port(port.value());
     server.http.set_cpu_pool_threads(8);
+
+    init::init();
+
+    let auth = auth_client::AuthClient::new_tls(&auth_hostname.value(), auth_port.value());
 
     if use_tls.value() {
         let mut p12_contents = Vec::new();
@@ -78,7 +90,7 @@ fn main() {
     if use_mock_largetable.value() {
         println!("Using in-memory mock largetable...");
         let database = largetable_test::LargeTableMockClient::new();
-        let handler = weld_server_lib::WeldServiceHandler::new(database);
+        let handler = weld_server_lib::WeldServiceHandler::new(database, auth);
 
         server.add_service(weld::WeldServiceServer::new_service_def(handler));
     } else {
@@ -90,7 +102,7 @@ fn main() {
         // During startup it is possible for largetable not to be started yet.
         // Wait a while for the connection to start up.
         database.wait_for_connection();
-        let handler = weld_server_lib::WeldServiceHandler::new(database);
+        let handler = weld_server_lib::WeldServiceHandler::new(database, auth);
 
         server.add_service(weld::WeldServiceServer::new_service_def(handler));
     }

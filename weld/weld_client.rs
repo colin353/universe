@@ -90,9 +90,6 @@ fn main() {
     std::thread::spawn(move || loop {
         std::thread::sleep(std::time::Duration::from_secs(1));
         let count = batching_client.flush();
-        if count > 0 {
-            println!("flushed {}", count);
-        }
     });
 
     if use_tls.value() {

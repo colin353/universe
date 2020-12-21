@@ -3,6 +3,7 @@ extern crate largetable_client;
 extern crate weld;
 extern crate weld_repo;
 
+use auth_client::AuthServer;
 use largetable_client::LargeTableClient;
 use weld::File;
 
@@ -13,13 +14,15 @@ const SUBMITTED: &'static str = "submitted";
 pub struct WeldServiceHandler<C: LargeTableClient> {
     database: C,
     repo: weld_repo::Repo<C, weld::WeldServerClient>,
+    auth: auth_client::AuthClient,
 }
 
 impl<C: LargeTableClient + Clone> WeldServiceHandler<C> {
-    pub fn new(db: C) -> Self {
+    pub fn new(db: C, auth: auth_client::AuthClient) -> Self {
         let mut handler = WeldServiceHandler {
             database: db.clone(),
             repo: weld_repo::Repo::new(db),
+            auth,
         };
         handler.initialize();
         handler
@@ -27,8 +30,16 @@ impl<C: LargeTableClient + Clone> WeldServiceHandler<C> {
 }
 
 impl<C: LargeTableClient> WeldServiceHandler<C> {
-    fn authenticate(&self, _ctx: &grpc::RequestOptions) -> Option<String> {
-        Some(String::from("tester"))
+    fn authenticate(&self, token: String) -> Option<String> {
+        let mut response = self.auth.authenticate(token.clone());
+        if response.get_success() {
+            println!("weld auth success!");
+            return Some(response.take_username());
+        }
+
+        // TODO: enforce auth by returning None
+        println!("weld auth failure! got token: {}", token);
+        Some(String::from("auth-failed"))
     }
 
     fn initialize(&mut self) {
@@ -338,9 +349,9 @@ impl<C: LargeTableClient> weld::WeldService for WeldServiceHandler<C> {
     fn read(
         &self,
         m: grpc::RequestOptions,
-        req: weld::FileIdentifier,
+        mut req: weld::FileIdentifier,
     ) -> grpc::SingleResponse<weld::File> {
-        match self.authenticate(&m) {
+        match self.authenticate(req.take_auth_token()) {
             Some(_username) => grpc::SingleResponse::completed(self.read(req)),
             None => grpc::SingleResponse::err(grpc::Error::Other("unauthenticated")),
         }
@@ -349,9 +360,9 @@ impl<C: LargeTableClient> weld::WeldService for WeldServiceHandler<C> {
     fn read_attrs(
         &self,
         m: grpc::RequestOptions,
-        req: weld::FileIdentifier,
+        mut req: weld::FileIdentifier,
     ) -> grpc::SingleResponse<weld::File> {
-        match self.authenticate(&m) {
+        match self.authenticate(req.take_auth_token()) {
             Some(_username) => grpc::SingleResponse::completed(self.read_attrs(req)),
             None => grpc::SingleResponse::err(grpc::Error::Other("unauthenticated")),
         }
@@ -360,9 +371,9 @@ impl<C: LargeTableClient> weld::WeldService for WeldServiceHandler<C> {
     fn list_changes(
         &self,
         m: grpc::RequestOptions,
-        req: weld::ListChangesRequest,
+        mut req: weld::ListChangesRequest,
     ) -> grpc::SingleResponse<weld::ListChangesResponse> {
-        match self.authenticate(&m) {
+        match self.authenticate(req.take_auth_token()) {
             Some(username) => grpc::SingleResponse::completed(self.list_changes(&username, req)),
             None => grpc::SingleResponse::err(grpc::Error::Other("unauthenticated")),
         }
@@ -371,9 +382,9 @@ impl<C: LargeTableClient> weld::WeldService for WeldServiceHandler<C> {
     fn submit(
         &self,
         m: grpc::RequestOptions,
-        req: weld::Change,
+        mut req: weld::Change,
     ) -> grpc::SingleResponse<weld::SubmitResponse> {
-        match self.authenticate(&m) {
+        match self.authenticate(req.take_auth_token()) {
             Some(username) => grpc::SingleResponse::completed(self.submit(&username, req.get_id())),
             None => grpc::SingleResponse::err(grpc::Error::Other("unauthenticated")),
         }
@@ -382,9 +393,9 @@ impl<C: LargeTableClient> weld::WeldService for WeldServiceHandler<C> {
     fn snapshot(
         &self,
         m: grpc::RequestOptions,
-        req: weld::Change,
+        mut req: weld::Change,
     ) -> grpc::SingleResponse<weld::SnapshotResponse> {
-        match self.authenticate(&m) {
+        match self.authenticate(req.take_auth_token()) {
             Some(username) => grpc::SingleResponse::completed(self.snapshot(&username, req)),
             None => grpc::SingleResponse::err(grpc::Error::Other("unauthenticated")),
         }
@@ -393,9 +404,9 @@ impl<C: LargeTableClient> weld::WeldService for WeldServiceHandler<C> {
     fn get_change(
         &self,
         m: grpc::RequestOptions,
-        req: weld::Change,
+        mut req: weld::Change,
     ) -> grpc::SingleResponse<weld::Change> {
-        match self.authenticate(&m) {
+        match self.authenticate(req.take_auth_token()) {
             Some(_) => grpc::SingleResponse::completed(self.get_change(req)),
             None => grpc::SingleResponse::err(grpc::Error::Other("unauthenticated")),
         }
@@ -404,9 +415,9 @@ impl<C: LargeTableClient> weld::WeldService for WeldServiceHandler<C> {
     fn get_latest_change(
         &self,
         m: grpc::RequestOptions,
-        _req: weld::GetLatestChangeRequest,
+        mut req: weld::GetLatestChangeRequest,
     ) -> grpc::SingleResponse<weld::Change> {
-        match self.authenticate(&m) {
+        match self.authenticate(req.take_auth_token()) {
             Some(_) => grpc::SingleResponse::completed(self.get_latest_change()),
             None => grpc::SingleResponse::err(grpc::Error::Other("unauthenticated")),
         }
@@ -415,9 +426,9 @@ impl<C: LargeTableClient> weld::WeldService for WeldServiceHandler<C> {
     fn list_files(
         &self,
         m: grpc::RequestOptions,
-        req: weld::FileIdentifier,
+        mut req: weld::FileIdentifier,
     ) -> grpc::SingleResponse<weld::ListFilesResponse> {
-        match self.authenticate(&m) {
+        match self.authenticate(req.take_auth_token()) {
             Some(_) => grpc::SingleResponse::completed(self.list_files(req)),
             None => grpc::SingleResponse::err(grpc::Error::Other("unauthenticated")),
         }
@@ -426,9 +437,9 @@ impl<C: LargeTableClient> weld::WeldService for WeldServiceHandler<C> {
     fn get_submitted_changes(
         &self,
         m: grpc::RequestOptions,
-        req: weld::GetSubmittedChangesRequest,
+        mut req: weld::GetSubmittedChangesRequest,
     ) -> grpc::SingleResponse<weld::GetSubmittedChangesResponse> {
-        match self.authenticate(&m) {
+        match self.authenticate(req.take_auth_token()) {
             Some(_) => grpc::SingleResponse::completed(self.get_submitted_changes(&req)),
             None => grpc::SingleResponse::err(grpc::Error::Other("unauthenticated")),
         }
@@ -437,9 +448,9 @@ impl<C: LargeTableClient> weld::WeldService for WeldServiceHandler<C> {
     fn update_change_metadata(
         &self,
         m: grpc::RequestOptions,
-        req: weld::Change,
+        mut req: weld::Change,
     ) -> grpc::SingleResponse<weld::Change> {
-        match self.authenticate(&m) {
+        match self.authenticate(req.take_auth_token()) {
             Some(_) => grpc::SingleResponse::completed(self.update_change_metadata(req)),
             None => grpc::SingleResponse::err(grpc::Error::Other("unauthenticated")),
         }
@@ -456,9 +467,11 @@ mod tests {
     impl WeldServiceHandler<largetable_test::LargeTableMockClient> {
         pub fn create_mock() -> Self {
             let db = largetable_test::LargeTableMockClient::new();
+            let auth = auth_client::AuthClient::new_fake();
             let mut handler = WeldServiceHandler {
                 database: db.clone(),
                 repo: weld_repo::Repo::new(db),
+                auth: auth_client::AuthClient::new_fake(),
             };
             handler.initialize();
             handler
