@@ -1,4 +1,4 @@
-<div class="diff-container">
+<div class="diff-container ${this.state.hideLeft}">
     <div class="line-numbers">
         <control for={this.state.leftLines}>
             <p class="${item.class}">${item.lineNumber}</p>
@@ -10,7 +10,7 @@
         </control>
     </code>
 </div>
-<div class="diff-container">
+<div class="diff-container ${this.state.hideRight}">
     <div class="line-numbers">
         <control for={this.state.rightLines}>
             <p class="${item.class}">${item.lineNumber}</p>

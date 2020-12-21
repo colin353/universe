@@ -8,8 +8,12 @@
 div.diff-container {
     display: flex;
     flex-direction: row;
-    width: 50%;
+    flex: 1;
     overflow: hidden;
+}
+
+div.diff-container.hidden {
+  display: none;
 }
 
 div.line-numbers {
