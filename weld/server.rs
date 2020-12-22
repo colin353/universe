@@ -52,6 +52,7 @@ fn main() {
         "the hostname to use for authentication"
     );
     let auth_port = define_flag!("auth_port", 8888, "the port to use for authentication");
+    let disable_auth = define_flag!("disable_auth", false, "whether to disable authentication");
     parse_flags!(
         port,
         pkcs12,
@@ -61,7 +62,8 @@ fn main() {
         use_tls,
         root_cert,
         auth_hostname,
-        auth_port
+        auth_port,
+        disable_auth
     );
 
     let mut server = grpc::ServerBuilder::<tls_api_openssl::TlsAcceptor>::new();
@@ -70,7 +72,11 @@ fn main() {
 
     init::init();
 
-    let auth = auth_client::AuthClient::new_tls(&auth_hostname.value(), auth_port.value());
+    let auth = if disable_auth.value() {
+        auth_client::AuthClient::new_fake()
+    } else {
+        auth_client::AuthClient::new_tls(&auth_hostname.value(), auth_port.value())
+    };
 
     if use_tls.value() {
         let mut p12_contents = Vec::new();

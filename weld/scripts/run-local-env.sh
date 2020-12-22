@@ -30,6 +30,7 @@ bazel build //weld:weld_server
 RUST_BACKTRACE=1 bazel run //weld:weld_server -- \
   --use_tls=false \
   --port=60063 \
+  --disable_auth \
   --largetable_port=60062 \
   --use_mock_largetable=false &
 

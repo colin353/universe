@@ -9,8 +9,15 @@ impl ContentsMap {
         Self(data)
     }
 
-    fn get(&self, key: &str) -> Option<&Contents> {
+    pub fn get(&self, key: &str) -> Option<&Contents> {
         self.0.get(key)
+    }
+
+    pub fn get_str(&self, key: &str) -> String {
+        if let Some(Contents::Value(x)) = self.0.get(key) {
+            return x.to_owned();
+        }
+        String::new()
     }
 
     pub fn insert<T: Into<Contents>>(&mut self, key: &'static str, data: T) {

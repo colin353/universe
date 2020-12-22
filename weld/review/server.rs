@@ -132,6 +132,7 @@ impl ReviewServer {
     fn change_detail(&self, filename: &str, change: weld::Change, req: Request) -> Response {
         let mut found = false;
         let mut content = content!();
+        let mut change_content = render::change(&change);
 
         let maybe_last_snapshot = change
             .get_changes()
@@ -168,6 +169,7 @@ impl ReviewServer {
         }
 
         content.insert("id", change.get_id());
+        content.insert("summary", change_content.get_str("summary"));
         let diff_view = tmpl::apply(DIFF_VIEW, &content);
 
         let mut task_statuses = Vec::new();
@@ -180,10 +182,9 @@ impl ReviewServer {
             }
         }
 
-        let mut content = render::change(&change);
-        content.insert("tasks", tmpl::ContentsMultiMap::from(task_statuses));
-        content.insert("body", diff_view);
-        let page = tmpl::apply(CHANGE, &content);
+        change_content.insert("tasks", tmpl::ContentsMultiMap::from(task_statuses));
+        change_content.insert("body", diff_view);
+        let page = tmpl::apply(CHANGE, &change_content);
         Response::new(Body::from(self.wrap_template(page)))
     }
 
