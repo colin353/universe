@@ -6,7 +6,8 @@
     "long_running": true,
     "arguments": {
         "weld_hostname": "weld",
-        "port": 8008
+        "port": 8008,
+        "auth_token": "SECRETS::secret_key"
     },
     "docker_arguments": [
         "--init",

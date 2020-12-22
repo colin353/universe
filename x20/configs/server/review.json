@@ -10,7 +10,8 @@
         "base_url": "https://review.colinmerkel.xyz",
         "task_hostname": "tasks",
         "task_port": "7777",
-        "server_hostname": "weld"
+        "server_hostname": "weld",
+        "auth_token": "SECRETS::secret_key"
     },
     "docker_arguments": [
         "--init", "-e", "RUST_BACKTRACE=1"
