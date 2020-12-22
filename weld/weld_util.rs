@@ -140,6 +140,21 @@ fn main() {
             };
             println!("{}", weld::serialize_change(&change, true));
         }
+        "basis" => {
+            let maybe_id = client.lookup_friendly_name(space.value());
+            let change = match maybe_id {
+                Some(id) => {
+                    let mut req = weld::GetChangeRequest::new();
+                    req.mut_change().set_id(id);
+                    client.get_change(req)
+                }
+                None => {
+                    eprintln!("couldn't find change");
+                    std::process::exit(1);
+                }
+            };
+            println!("{}", change.get_based_index());
+        }
         "files" => {
             let maybe_id = client.lookup_friendly_name(space.value());
             let change = match maybe_id {
