@@ -33,13 +33,10 @@ impl<C: LargeTableClient> WeldServiceHandler<C> {
     fn authenticate(&self, token: String) -> Option<String> {
         let mut response = self.auth.authenticate(token.clone());
         if response.get_success() {
-            println!("weld auth success!");
             return Some(response.take_username());
         }
 
-        // TODO: enforce auth by returning None
-        println!("weld auth failure! got token: {}", token);
-        Some(String::from("auth-failed"))
+        None
     }
 
     fn initialize(&mut self) {
