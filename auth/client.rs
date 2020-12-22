@@ -102,7 +102,7 @@ impl AuthServer for AuthClient {
         }
 
         let mut req = AuthenticateRequest::new();
-        req.set_token(token);
+        req.set_token(token.clone());
         let result = self
             .client
             .as_ref()
@@ -111,6 +111,11 @@ impl AuthServer for AuthClient {
             .wait()
             .expect("rpc")
             .1;
+
+        if result.get_success() {
+            self.auth_cache.insert(token, result.clone());
+        }
+
         result
     }
 
