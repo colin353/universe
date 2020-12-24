@@ -204,7 +204,21 @@ impl X20Manager {
             had_success = true;
         }
 
+        let now = std::time::SystemTime::now();
+        let since_epoch = now.duration_since(std::time::UNIX_EPOCH).unwrap();
+        let timestamp = (since_epoch.as_secs() as u64);
+
+        std::fs::create_dir_all(format!("{}/config/backup", self.base_dir));
+
         if had_success {
+            std::fs::rename(
+                format!("{}/config/binaries.recordio", self.base_dir),
+                format!(
+                    "{}/config/backup/binaries.{}.recordio",
+                    self.base_dir, timestamp
+                ),
+            );
+
             self.write_saved_binaries(&updated_binaries);
             println!("✔️ Saved metadata for {} binaries", updated_binaries.len());
         }
@@ -232,9 +246,18 @@ impl X20Manager {
             new_configs.push(config.clone());
         }
 
-        self.write_saved_configs(&new_cfgs);
         if new_configs.len() > 0 {
             println!("✔️ Updated {} configs", new_configs.len());
+
+            std::fs::rename(
+                format!("{}/config/configs.recordio", self.base_dir),
+                format!(
+                    "{}/config/backup/configs.{}.recordio",
+                    self.base_dir, timestamp
+                ),
+            );
+
+            self.write_saved_configs(&new_cfgs);
         }
         println!("✔️ Everything is up to date");
 
