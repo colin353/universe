@@ -5,7 +5,12 @@
 </style>
 
 <script defer type="module" src="{{settings.js_src}}/homepage/js/code_pad.mjs"></script>
-<code-pad id="code-pad" language="{{type}}" code="{{content}}" />
+<code-pad 
+  id="code-pad" 
+  language="{{type}}" 
+  code="{{content}}" 
+  symbols="[{{symbols[]}}{symbol:'{{symbol}}',type:'{{type}}',start:{{start}},end:{{end}}},{{/symbols}}]"
+></code-pad>
 
 <script>
     if (window.location.hash.startsWith("#L")) {

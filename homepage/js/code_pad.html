@@ -7,9 +7,24 @@
         </ul>
     </div>
 </control>
+<control if={this.state.selectedSymbolName}>
+    <div class="infobox" style="position: fixed; top: 200px; right: 200px;">
+      <div class='infotop'>
+        <p><i class='infotype infotype-${this.stateSelectedSymbolType}'>${this.state.selectedSymbolType}</i>&nbsp;${this.state.selectedSymbolName}</p>
+      </div>
+
+      <div class='infobody'>
+      <p><i>usages</i></p>
+      <ul>
+        <li>util/flags/parse.rs#L63</li>
+        <li>util/flags/lib.rs#L21</li>
+      </ul>
+      </div>
+    </div>
+</control>
 <div class="line-numbers">
     <control for={this.state.lines}>
-        <p on:click={selectLine} class="${item.class}">${item.lineNumber}</p>
+    <p on:click={selectLine} class="${item.hasSymbol} ${item.class}">${item.lineNumber}</p>
     </control>
 </div>
 <code ref={code} class="code" on:contextmenu={contextMenu}>

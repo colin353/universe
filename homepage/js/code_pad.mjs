@@ -2,7 +2,7 @@ import getLanguageModel from './syntax_highlighter.mjs';
 import { base64Decode } from './utils.mjs';
 import Store from '../../util/js/store.mjs';
 
-const attributes = [ "code", "language", "line", "startline" ];
+const attributes = [ "code", "language", "line", "startline", "symbols" ];
 const store = new Store();
 
 // Disables chrome's automatic scroll restoration logic, necessary to
@@ -45,6 +45,70 @@ const definition = () => {
   }));
 }
 
+class SymbolSpans {
+  constructor(symbols) {
+    this.lineNumber = 0;
+    this.position = 0;
+    this.sortedSymbols = [];
+
+    if (symbols) {
+      this.sortedSymbols = eval(symbols);
+    }
+    this.sortedSymbols.sort((a, b) => a.start - b.start);
+
+    let position = 0;
+    for (const symbol of this.sortedSymbols) {
+      symbol.position = position;
+      position += 1;
+    }
+
+  }
+
+  reset() {
+    this.position = 0;
+    this.lineNumber = 0;
+  }
+
+  next() {
+    const symbol = this.getCurrentSymbol();
+    this.lineNumber += 1;
+    return symbol;
+  }
+
+  getSymbolForLine(line) {
+    this.lineNumber = line - 1;
+    for (let i=0; i<this.sortedSymbols.length; i++) {
+      this.position = i;
+      const symbol = this.getCurrentSymbol();
+      if (symbol) return symbol;
+    }
+    return null;
+  }
+
+  getCurrentSymbol() {
+    if(this.sortedSymbols.length <= this.position) {
+      return null;
+    }
+
+    // The next symbol is still below us, return null
+    if(this.sortedSymbols[this.position].start > this.lineNumber) {
+      return null;
+    }
+
+    // We are at the last part of a symboldefinition, so increment position
+    if(this.sortedSymbols[this.position].end == this.lineNumber) {
+      this.position += 1;
+      return this.sortedSymbols[this.position - 1];
+    }
+    // We are inside a symbol definition
+    else if(this.sortedSymbols[this.position].end > this.lineNumber) {
+      return this.sortedSymbols[this.position];
+    }
+
+    return null;
+  }
+}
+
 this.stateMappers = {
   parsedLines: (code, language) => {
     if (!code) return [];
@@ -55,14 +119,18 @@ this.stateMappers = {
     }
     return parsedLines;
   },
-  lines: (parsedLines, language, line) => {
-    if(!parsedLines) return {};
+  symbolSpans: (symbols) => {
+    return new SymbolSpans(symbols)
+  },
+  lines: (parsedLines, language, line, symbolSpans) => {
+    if(!symbolSpans || !parsedLines) return {};
 
     const output = {};
     let lineNumber = 1;
     const selectedLine = parseInt(line)
     const topLine = Math.max(1, selectedLine - 5);
 
+    symbolSpans.reset();
     for(const line of parsedLines) {
       output[lineNumber] = {};
       output[lineNumber].lineNumber = this.state.startingLine + lineNumber;
@@ -71,9 +139,39 @@ this.stateMappers = {
       output[lineNumber].class += lineNumber == topLine ? ' top-line' : '';
       output[lineNumber].code = line;
 
+      const symbol = symbolSpans.next();
+      if (lineNumber !== selectedLine) {
+        output[lineNumber].hasSymbol = symbol ? `has-symbol symbol-color-${symbol.position%2}` : '';
+      }
+ 
       lineNumber += 1;
     }
+
     return output;
+  },
+  selectedSymbol: (symbolSpans, line) => {
+    if(!line) return {};
+
+    const x = symbolSpans.getSymbolForLine(parseInt(line))
+    if(x) {
+      return x;
+    } 
+
+    return {}
+  },
+  selectedSymbolName: (selectedSymbol) => {
+    // For now, just return false to disable this from rendering
+    return false;
+    // return selectedSymbol?.symbol
+  },
+  selectedSymbolType: (selectedSymbol) => {
+    if (!selectedSymbol?.type) return '?';
+
+    if (selectedSymbol?.type == 'STRUCTURE') return 'cls';
+    else if(selectedSymbol?.type == 'FUNCTION') return 'fn';
+    else if(selectedSymbol?.type == 'TRAIT') return 'tr';
+
+    return '?';
   },
   _ensureLineVisible: (line) => {
     focusSelectedLine();
@@ -102,6 +200,7 @@ this.componentDidMount = () => {
 }
 
 this.state = {
+  selectedSymbol: {},
   parsedLines: this.stateMappers.parsedLines(this.state.code),
   lines: this.stateMappers.lines(this.state.code),
   startingLine: 0,

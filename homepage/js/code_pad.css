@@ -37,6 +37,48 @@ div.line-numbers p.selected-line {
     background-color: #268bd2;
 }
 
+div.line-numbers p.has-symbol {
+    padding-right: 12px;
+}
+
+div.line-numbers p.symbol-color-0 {
+    border-right: 3px solid #00800057;
+}
+
+div.line-numbers p.symbol-color-1 {
+    border-right: 3px solid #cb4b1675;
+}
+
+.infobox {
+    border: 1px solid black;
+    background-color: white;
+    display: flex;
+    flex-direction: column;
+}
+
+.infotop {
+    padding: 10px;
+    background-color: #eee;
+}
+
+.infobody ul {
+  list-style-type: none;
+  padding-left: 15px;
+}
+
+.infotype {
+    background-color: #268bd2;
+    color: white;
+    padding-right: 3px;
+    padding-left: 1px;
+    font-style: normal;
+    border-radius: 5px;
+}
+
+.infobody {
+    padding: 10px;
+}
+
 .code p.selected-line {
     margin-top:-1px;
     margin-bottom:-1px;

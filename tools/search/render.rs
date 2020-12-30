@@ -21,12 +21,22 @@ pub fn result(c: &Candidate) -> tmpl::ContentsMap {
     )
 }
 
+pub fn symbol(s: &SymbolDefinition) -> tmpl::ContentsMap {
+    content!(
+        "type" => format!("{:?}", s.get_symbol_type()),
+        "symbol" => s.get_symbol(),
+        "start" => s.get_line_number(),
+        "end" => s.get_end_line_number()
+    )
+}
+
 pub fn file(f: &File, content: &str) -> tmpl::ContentsMap {
     content!(
          "filename" => f.get_filename(),
          "type" => format!("{:?}", f.get_file_type()).to_lowercase(),
          "content" => base64::encode(content);
          "child_directories" => f.get_child_directories().iter().map(|s| content!("child" => s)).collect(),
-         "child_files" => f.get_child_files().iter().map(|s| content!("child" => s)).collect()
+         "child_files" => f.get_child_files().iter().map(|s| content!("child" => s)).collect(),
+         "symbols" => f.get_symbols().iter().filter(|s| s.get_end_line_number() != 0 ).map(|s| symbol(s)).collect()
     )
 }
