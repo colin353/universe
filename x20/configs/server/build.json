@@ -12,7 +12,7 @@
     "docker_arguments": [
         "--init",
         "--privileged",
-        "--mount", "type=bind,source=/mnt/stateful_partition/cache,target=/cache",
+        "--mount", "type=bind,source=/mnt/stateful_partition/cache/ttl=24h,target=/cache",
         "-v", "/home/colin/bazel-access.json:/data/bazel-access.json:ro",
         "-v", "/home/colin/id_rsa:/root/.ssh/id_rsa:ro",
         "-v", "/home/colin/id_rsa.pub:/root/.ssh/id_rsa.pub:ro",

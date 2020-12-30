@@ -2,10 +2,10 @@
     "name": "ttl",
     "binary_name": "ttl",
     "priority": 1000,
-    "environment": "desktop",
+    "environment": "server",
     "long_running": false,
     "run_interval": 43200,
     "arguments": {
-      "paths": "~/.cache"
+      "paths": "/mnt/stateful_partition/cache"
     }
 }
