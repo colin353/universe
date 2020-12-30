@@ -2,8 +2,9 @@
 extern crate flags;
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct TTLDirectory {
     path: PathBuf,
     ttl_seconds: u64,
@@ -45,28 +46,50 @@ impl TTLDirectory {
     }
 }
 
-fn traverse_dir(dir: &Path, output: &mut Vec<TTLDirectory>) {
-    let results = match std::fs::read_dir(dir) {
-        Ok(x) => x,
-        Err(_) => return,
-    };
+#[derive(Clone)]
+struct DirectoryTraverser {
+    pool: pool::ThreadPoolScheduler<Vec<TTLDirectory>>,
+}
 
-    for result in results {
-        let result = result.unwrap();
+impl DirectoryTraverser {
+    fn new() -> (Self, pool::ThreadPool<Vec<TTLDirectory>>) {
+        let pool = pool::ThreadPool::new(32);
+        let scheduler = pool.scheduler.clone();
 
-        if !result.file_type().unwrap().is_dir() {
-            continue;
-        }
+        let s = Self { pool: scheduler };
 
-        match TTLDirectory::from_dir(&result) {
-            Ok(d) => {
-                output.push(d);
-                continue;
+        (s, pool)
+    }
+
+    fn traverse_dir(&self, dir: PathBuf) {
+        let _self = self.clone();
+        let mut output = Vec::new();
+
+        self.pool.execute(move || {
+            let results = match std::fs::read_dir(dir) {
+                Ok(x) => x,
+                Err(_) => return output,
+            };
+
+            for result in results {
+                let result = result.unwrap();
+                if !result.file_type().unwrap().is_dir() {
+                    continue;
+                }
+
+                match TTLDirectory::from_dir(&result) {
+                    Ok(d) => {
+                        output.push(d);
+                        continue;
+                    }
+                    Err(_) => (),
+                };
+
+                _self.traverse_dir(result.path());
             }
-            Err(_) => (),
-        };
 
-        traverse_dir(&result.path(), output);
+            return output;
+        })
     }
 }
 
@@ -102,10 +125,11 @@ fn clean_dir(dir: &Path, ttl_seconds: u64) {
 fn main() {
     let args = parse_flags!();
 
-    let mut output = Vec::new();
+    let (t, pool) = DirectoryTraverser::new();
     for arg in args {
-        traverse_dir(Path::new(&arg), &mut output);
+        t.traverse_dir(PathBuf::from(&arg));
     }
+    let output: Vec<_> = pool.join().into_iter().flatten().collect();
 
     for dir in output {
         clean_dir(&dir.path, dir.ttl_seconds);

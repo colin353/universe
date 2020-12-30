@@ -7,5 +7,6 @@ rust_binary(
     ],
     deps = [
         "//util/flags",
+        "//util/pool",
     ],
 )

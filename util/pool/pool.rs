@@ -4,9 +4,28 @@ use std::thread;
 
 pub struct ThreadPool<T> {
     threads: Vec<Worker<T>>,
-    sender: mpsc::Sender<Job<T>>,
     alarm: mpsc::Receiver<T>,
+    pub scheduler: ThreadPoolScheduler<T>,
+}
+
+#[derive(Clone)]
+pub struct ThreadPoolScheduler<T> {
+    sender: mpsc::Sender<Job<T>>,
     in_progress: Arc<AtomicUsize>,
+}
+
+impl<T> ThreadPoolScheduler<T>
+where
+    T: Send + 'static,
+{
+    pub fn execute<F>(&self, f: F)
+    where
+        F: FnOnce() -> T + Send + 'static,
+    {
+        let job = Box::new(f);
+        self.in_progress.fetch_add(1, Ordering::Relaxed);
+        self.sender.send(job).unwrap();
+    }
 }
 
 impl<T> ThreadPool<T>
@@ -32,9 +51,11 @@ where
 
         ThreadPool {
             threads,
-            sender,
             alarm,
-            in_progress,
+            scheduler: ThreadPoolScheduler {
+                sender,
+                in_progress,
+            },
         }
     }
 
@@ -42,14 +63,12 @@ where
     where
         F: FnOnce() -> T + Send + 'static,
     {
-        let job = Box::new(f);
-        self.in_progress.fetch_add(1, Ordering::Relaxed);
-        self.sender.send(job).unwrap();
+        self.scheduler.execute(f);
     }
 
     // blocks until at least one job completes
     pub fn block_until_job_completes(&self) -> Option<T> {
-        if self.in_progress.load(Ordering::Relaxed) > 0 {
+        if self.scheduler.in_progress.load(Ordering::Relaxed) > 0 {
             return Some(self.alarm.recv().unwrap());
         }
         None
@@ -57,7 +76,7 @@ where
 
     pub fn join(&self) -> Vec<T> {
         let mut output = Vec::new();
-        while self.in_progress.load(Ordering::Relaxed) > 0 {
+        while self.scheduler.in_progress.load(Ordering::Relaxed) > 0 {
             output.push(self.alarm.recv().unwrap());
         }
 
@@ -70,7 +89,7 @@ where
     }
 
     pub fn get_in_progress(&self) -> usize {
-        self.in_progress.load(Ordering::Relaxed)
+        self.scheduler.in_progress.load(Ordering::Relaxed)
     }
 }
 
