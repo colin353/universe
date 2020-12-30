@@ -1,6 +1,7 @@
 package(default_visibility = ["//visibility:public"])
 
 load("//tools/fec:fec.bzl", "fe_library")
+load("//tools/fec:fec.bzl", "fe_test")
 
 fe_library(
     name = "store",
@@ -10,4 +11,15 @@ fe_library(
 fe_library(
     name = "debounce",
     srcs = ["debounce.mjs"],
+)
+
+fe_library(
+    name = "truncate",
+    srcs = ["truncate.mjs"],
+)
+
+fe_test(
+    name = "truncate_test",
+    srcs = [ "truncate_test.mjs" ],
+    deps = [ ":truncate" ],
 )
