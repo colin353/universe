@@ -606,7 +606,7 @@ impl X20Manager {
 
         configs.sort_by(|a, b| a.get_priority().cmp(&b.get_priority()));
         let mut children = Vec::new();
-        let mut periodic_children = HashMap::new();
+        let mut periodic_children = Vec::new();
         let mut failed = false;
         for config in configs {
             let binary = match binaries.get(config.get_binary_name()) {
@@ -637,10 +637,7 @@ impl X20Manager {
                 }
 
                 if child.config.get_run_interval() > 0 {
-                    periodic_children.insert(
-                        child.config.get_name().to_string(),
-                        std::time::Instant::now(),
-                    );
+                    periodic_children.push((child, std::time::Instant::now()));
                 }
             }
         }
@@ -662,20 +659,23 @@ impl X20Manager {
                 };
             }
 
-            for child in &mut children {
-                if let Some(interval) = periodic_children.get_mut(child.config.get_name()) {
-                    if (child.config.get_run_interval() as u64) < interval.elapsed().as_secs() {
-                        let success = child.run_to_completion();
-                        if success {
-                            eprintln!("✔️ Ran `{}`", child.config.get_name());
-                        } else {
-                            eprintln!("❌Failed periodic run of `{}`!", child.config.get_name());
-                        }
+            for item in periodic_children.iter_mut() {
+                let child = &mut item.0;
+                let mut interval = &mut item.1;
 
-                        *interval = std::time::Instant::now();
+                if (child.config.get_run_interval() as u64) < interval.elapsed().as_secs() {
+                    let success = child.run_to_completion();
+                    if success {
+                        eprintln!("✔️ Ran `{}`", child.config.get_name());
+                    } else {
+                        eprintln!("❌Failed periodic run of `{}`!", child.config.get_name());
                     }
-                }
 
+                    *interval = std::time::Instant::now();
+                }
+            }
+
+            for child in &mut children {
                 child.tail_logs();
                 if !child.check_alive() {
                     if !child.retry() {
