@@ -22,6 +22,9 @@ message Configuration {
   uint64 version = 6;
   string environment = 7;
   repeated string docker_arguments = 8;
+
+  // Time interval between runs, in seconds. Can't be set along with long_running
+  uint32 run_interval = 9;
 }
 
 message Argument {

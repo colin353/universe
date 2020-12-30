@@ -1,0 +1,8 @@
+{
+    "name": "ttl",
+    "binary_name": "ttl",
+    "priority": 1000,
+    "environment": "desktop",
+    "long_running": false,
+    "run_interval": 60
+}

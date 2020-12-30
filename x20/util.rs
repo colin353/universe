@@ -206,7 +206,7 @@ impl X20Manager {
 
         let now = std::time::SystemTime::now();
         let since_epoch = now.duration_since(std::time::UNIX_EPOCH).unwrap();
-        let timestamp = (since_epoch.as_secs() as u64);
+        let timestamp = since_epoch.as_secs() as u64;
 
         std::fs::create_dir_all(format!("{}/config/backup", self.base_dir));
 
@@ -606,6 +606,7 @@ impl X20Manager {
 
         configs.sort_by(|a, b| a.get_priority().cmp(&b.get_priority()));
         let mut children = Vec::new();
+        let mut periodic_children = HashMap::new();
         let mut failed = false;
         for config in configs {
             let binary = match binaries.get(config.get_binary_name()) {
@@ -627,13 +628,22 @@ impl X20Manager {
                 std::thread::sleep(std::time::Duration::from_millis(500));
             } else {
                 let success = child.run_to_completion();
-                if !success {
+                if success {
+                    eprintln!("✔️ Ran `{}`", child.config.get_name());
+                } else {
+                    eprintln!("❌Failed to run `{}`!", child.config.get_name());
                     failed = true;
                     break;
                 }
+
+                if child.config.get_run_interval() > 0 {
+                    periodic_children.insert(
+                        child.config.get_name().to_string(),
+                        std::time::Instant::now(),
+                    );
+                }
             }
         }
-
         let mut last_update_check = 0;
         let mut updated_binaries = HashMap::new();
         let mut updated_configs = HashMap::new();
@@ -653,6 +663,19 @@ impl X20Manager {
             }
 
             for child in &mut children {
+                if let Some(interval) = periodic_children.get_mut(child.config.get_name()) {
+                    if (child.config.get_run_interval() as u64) < interval.elapsed().as_secs() {
+                        let success = child.run_to_completion();
+                        if success {
+                            eprintln!("✔️ Ran `{}`", child.config.get_name());
+                        } else {
+                            eprintln!("❌Failed periodic run of `{}`!", child.config.get_name());
+                        }
+
+                        *interval = std::time::Instant::now();
+                    }
+                }
+
                 child.tail_logs();
                 if !child.check_alive() {
                     if !child.retry() {

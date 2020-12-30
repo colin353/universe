@@ -53,6 +53,14 @@ pub fn generate_config(text: &str) -> Result<x20::Configuration, String> {
         config.set_long_running(true);
     }
 
+    if !config.get_long_running()
+        && !parsed["run_interval"].is_null()
+        && parsed["run_interval"].as_u32().is_some()
+    {
+        let run_interval = parsed["run_interval"].as_u32().unwrap();
+        config.set_run_interval(run_interval);
+    }
+
     Ok(config)
 }
 
@@ -68,6 +76,7 @@ mod tests {
                 "binary_name": "asdf",
                 "environment": "australia",
                 "priority": 250,
+                "run_interval": 123,
                 "arguments": {
                     "port": 523,
                     "secret": "SECRETS::asdf"
@@ -84,6 +93,7 @@ mod tests {
         expected.mut_docker_arguments().push(String::from("a"));
         expected.mut_docker_arguments().push(String::from("b"));
         expected.mut_docker_arguments().push(String::from("c"));
+        expected.set_run_interval(123);
 
         let mut arg = x20::Argument::new();
         arg.set_name(String::from("port"));
