@@ -123,10 +123,29 @@ fn clean_dir(dir: &Path, ttl_seconds: u64) {
 }
 
 fn main() {
-    let args = parse_flags!();
+    let paths = define_flag!(
+        "paths",
+        String::new(),
+        "The paths to search for TTL'd directories (comma separated)"
+    );
+    let args = parse_flags!(paths);
+    let paths = paths.value();
+
+    let paths = paths
+        .split(",")
+        .chain(args.iter().map(|x| x.as_str()))
+        .map(|path| {
+            if path.starts_with("~") {
+                match std::env::var("HOME") {
+                    Ok(h) => return format!("{}{}", h, &path[1..]),
+                    Err(_) => (),
+                };
+            }
+            path.to_string()
+        });
 
     let (t, pool) = DirectoryTraverser::new();
-    for arg in args {
+    for arg in paths {
         t.traverse_dir(PathBuf::from(&arg));
     }
     let output: Vec<_> = pool.join().into_iter().flatten().collect();

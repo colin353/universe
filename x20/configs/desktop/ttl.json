@@ -4,5 +4,8 @@
     "priority": 1000,
     "environment": "desktop",
     "long_running": false,
-    "run_interval": 60
+    "run_interval": 60,
+    "arguments": {
+      "paths": "~/.cache"
+    }
 }

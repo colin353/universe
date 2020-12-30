@@ -127,7 +127,25 @@ impl ChildProcess {
     }
 
     pub fn run_to_completion(&mut self) -> bool {
-        let output = match std::process::Command::new(&self.binary_file).output() {
+        let mut cmd = std::process::Command::new(&self.binary_file);
+
+        for arg in self.config.get_arguments() {
+            let value = if !arg.get_secret_name().is_empty() {
+                match self.get_secret_value(arg.get_secret_name()) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        eprintln!("{}", e);
+                        return false;
+                    }
+                }
+            } else {
+                arg.get_value().to_string()
+            };
+
+            cmd.arg(format!("--{}={}", arg.get_name(), value));
+        }
+
+        let output = match cmd.output() {
             Ok(o) => o,
             Err(e) => {
                 eprintln!(
