@@ -52,10 +52,6 @@ class SymbolSpans {
     this.position = 0;
     this.sortedSymbols = symbols;
     let position = 0;
-    for (const symbol of this.sortedSymbols) {
-      symbol.position = position;
-      position += 1;
-    }
   }
 
   reset() {
@@ -109,6 +105,26 @@ class NestedSymbolSpans {
     else symbols = eval(symbols);
 
     symbols.sort((a, b) => a.start - b.start);
+
+    // Check for overlaps. Don't want to render two overlapping sidebars since
+    // that looks weird.
+    let position = 0;
+    for (var i=0; i<symbols.length; i++) {
+      if(i < symbols.length-1) {
+        if(symbols[i+1].start < symbols[i].end) {
+          symbols[i].overlapping = true;
+        } else {
+          symbols[i].overlapping = false;
+        }
+      }
+
+      if(!symbols[i].overlapping) {
+        symbols[i].position = position;
+        position += 1;
+      }
+
+    }
+
     this.functions = new SymbolSpans(symbols.filter(x => x.type == 'FUNCTION'))
     this.structures = new SymbolSpans(symbols.filter(x => x.type == 'STRUCTURE' || x.type == 'TRAIT'))
   }
@@ -119,7 +135,7 @@ class NestedSymbolSpans {
   }
 
   join(fn, st) {
-    if (fn && !st || !fn && st) return fn || st;
+    if (fn && !st || !fn && st && !st.overlapping) return fn || st;
     else if (fn && st) {
       return { 
         ...fn,
