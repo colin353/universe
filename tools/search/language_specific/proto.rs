@@ -1,3 +1,4 @@
+use crate::default::find_closure_ending_line;
 use search_proto_rust::*;
 
 static MIN_KEYWORD_LENGTH: usize = 3;
@@ -57,13 +58,41 @@ pub fn extract_keywords(file: &File) -> Vec<ExtractedKeyword> {
 
 pub fn extract_definitions(file: &File) -> Vec<SymbolDefinition> {
     let mut results = Vec::new();
-    for (line_number, line) in file.get_content().lines().enumerate() {
+
+    let prefix: Vec<usize> = vec![0];
+    let suffix: Vec<usize> = vec![file.get_content().len()];
+    let mut newlines: Vec<_> = prefix
+        .into_iter()
+        .chain(
+            file.get_content()
+                .match_indices("\n")
+                .map(|(index, _)| index),
+        )
+        .chain(suffix.into_iter())
+        .collect();
+
+    for (line_number, window) in newlines.windows(2).enumerate() {
+        let line_start = window[0];
+        let line_end = window[1];
+        let line = &file.get_content()[line_start..line_end];
+
         for captures in MESSAGE_DEFINITION.captures_iter(line) {
             let mut d = SymbolDefinition::new();
             d.set_symbol(captures[captures.len() - 1].to_string());
             d.set_filename(file.get_filename().to_string());
             d.set_line_number(line_number as u32);
             d.set_symbol_type(SymbolType::STRUCTURE);
+
+            if let Some(full_capture) = captures.get(0) {
+                if let Some(end) = find_closure_ending_line(
+                    &file.get_content()[line_start + full_capture.end() + 1..],
+                    '{',
+                    '}',
+                ) {
+                    d.set_end_line_number((line_number + end) as u32);
+                }
+            }
+
             results.push(d);
         }
         for captures in FIELD_DEFINITION.captures_iter(line) {
@@ -122,11 +151,12 @@ mod tests {
         assert_eq!(&extracted[0], &kw("File", 1));
     }
 
-    fn test_s(symbol: &str, line: u32) -> SymbolDefinition {
+    fn test_s(symbol: &str, line: u32, end_line: u32) -> SymbolDefinition {
         let mut s = SymbolDefinition::new();
         s.set_symbol(symbol.to_string());
         s.set_symbol_type(SymbolType::STRUCTURE);
         s.set_line_number(line);
+        s.set_end_line_number(end_line);
         s
     }
 
@@ -148,13 +178,14 @@ mod tests {
   // Whether the file was found or not.
   bool found = 2;
   bool deleted = 3;
+  }
     "
             .into(),
         );
 
         let extracted = extract_definitions(&f);
         let expected = vec![
-            test_s("File", 0),
+            test_s("File", 0, 6),
             test_var("filename", 1),
             test_var("found", 4),
             test_var("deleted", 5),

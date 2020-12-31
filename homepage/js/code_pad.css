@@ -61,10 +61,10 @@ div.line-numbers p.symbol-color-1 {
 }
 
 .infobox {
-    border: 1px solid black;
     background-color: white;
     display: flex;
     flex-direction: column;
+    box-shadow: 2px 2px 4px #ccc;
 }
 
 .infotop {

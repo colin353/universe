@@ -3,6 +3,27 @@ use search_proto_rust::*;
 static MIN_KEYWORD_LENGTH: usize = 4;
 static SPLIT_CHARS: &'static [char] = &[' ', ',', '.', '?', ':'];
 
+pub fn find_closure_ending_line(content: &str, open: char, close: char) -> Option<usize> {
+    let mut line = 0;
+    let mut tmp = [0; 4];
+    let close_str = close.encode_utf8(&mut tmp);
+    let mut depth = 0;
+    for m in content.matches(|ch| ch == '\n' || ch == open || ch == close) {
+        if m == "\n" {
+            line += 1;
+        } else if m == close_str {
+            depth -= 1;
+
+            if depth == 0 {
+                return Some(line);
+            }
+        } else {
+            depth += 1;
+        }
+    }
+    None
+}
+
 pub fn extract_keywords(file: &File) -> Vec<ExtractedKeyword> {
     let mut results = std::collections::BTreeMap::<String, ExtractedKeyword>::new();
     for keyword in file

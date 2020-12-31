@@ -1,10 +1,11 @@
+use crate::default::find_closure_ending_line;
 use search_proto_rust::*;
 
 lazy_static! {
     static ref CLASS_BINDING: regex::Regex =
         { regex::Regex::new(r"\s*(export\s)?\s*(default\s)?\s*(class)\s+(\w+)").unwrap() };
     static ref ANONYMOUS_FUNCTION: regex::Regex = {
-        regex::Regex::new(r"^\s*(export\s)?\s*(default\s)?\s*(const|let|var|static)?\s*(\w+)\s*=\s*\([\w\s,=]*\)\s*[=-]>\s*\{").unwrap()
+        regex::Regex::new(r"^\s*(export\s)?\s*(default\s)?\s*(const|let|var|static)?\s*(\w+)\s*[=:]\s*\([\w\s,=]*\)\s*[=-]>\s*\{").unwrap()
     };
     static ref FUNCTION_DEFINITION: regex::Regex =
         { regex::Regex::new(r"\s*(export\s)?\s*(default\s)?\s*(function)\s+(\w+)").unwrap() };
@@ -37,7 +38,45 @@ pub fn annotate_file(file: &mut File) {
 
 pub fn extract_definitions(file: &File) -> Vec<SymbolDefinition> {
     let mut results = Vec::new();
-    'outer: for (line_number, line) in file.get_content().lines().enumerate() {
+
+    let prefix: Vec<usize> = vec![0];
+    let suffix: Vec<usize> = vec![file.get_content().len()];
+
+    let mut newlines: Vec<_> = prefix
+        .into_iter()
+        .chain(
+            file.get_content()
+                .match_indices("\n")
+                .map(|(index, _)| index),
+        )
+        .chain(suffix.into_iter())
+        .collect();
+
+    'outer: for (line_number, window) in newlines.windows(2).enumerate() {
+        let line_start = window[0];
+        let line_end = window[1];
+        let line = &file.get_content()[line_start..line_end];
+
+        for captures in ANONYMOUS_FUNCTION.captures_iter(line) {
+            let mut d = SymbolDefinition::new();
+            d.set_symbol(captures[captures.len() - 1].to_string());
+            d.set_filename(file.get_filename().to_string());
+            d.set_line_number(line_number as u32);
+            d.set_symbol_type(SymbolType::FUNCTION);
+
+            if let Some(full_capture) = captures.get(0) {
+                if let Some(end) = find_closure_ending_line(
+                    &file.get_content()[line_start + full_capture.end() - 2..],
+                    '{',
+                    '}',
+                ) {
+                    d.set_end_line_number((line_number + end) as u32);
+                }
+            }
+
+            results.push(d);
+            continue 'outer;
+        }
         for captures in PROPERTY_DEFINITION.captures_iter(line) {
             let mut d = SymbolDefinition::new();
             d.set_symbol(captures[captures.len() - 1].to_string());
@@ -52,15 +91,19 @@ pub fn extract_definitions(file: &File) -> Vec<SymbolDefinition> {
             d.set_filename(file.get_filename().to_string());
             d.set_line_number(line_number as u32);
             d.set_symbol_type(SymbolType::STRUCTURE);
-            results.push(d);
-            continue 'outer;
-        }
-        for captures in ANONYMOUS_FUNCTION.captures_iter(line) {
-            let mut d = SymbolDefinition::new();
-            d.set_symbol(captures[captures.len() - 1].to_string());
-            d.set_filename(file.get_filename().to_string());
-            d.set_line_number(line_number as u32);
-            d.set_symbol_type(SymbolType::FUNCTION);
+
+            if let Some(full_capture) = captures.get(0) {
+                if let Some(idx) = line[full_capture.end()..].find('{') {
+                    if let Some(end) = find_closure_ending_line(
+                        &file.get_content()[line_start + full_capture.end() + 1..],
+                        '{',
+                        '}',
+                    ) {
+                        d.set_end_line_number((line_number + end) as u32);
+                    }
+                }
+            }
+
             results.push(d);
             continue 'outer;
         }
@@ -70,15 +113,44 @@ pub fn extract_definitions(file: &File) -> Vec<SymbolDefinition> {
             d.set_filename(file.get_filename().to_string());
             d.set_line_number(line_number as u32);
             d.set_symbol_type(SymbolType::FUNCTION);
+
+            if let Some(full_capture) = captures.get(0) {
+                if let Some(end) = find_closure_ending_line(
+                    &file.get_content()[line_start + full_capture.end() - 2..],
+                    '{',
+                    '}',
+                ) {
+                    d.set_end_line_number((line_number + end) as u32);
+                }
+            }
+
             results.push(d);
             continue 'outer;
         }
         for captures in FUNCTION_DEFINITION_IN_CLASS.captures_iter(line) {
             let mut d = SymbolDefinition::new();
             d.set_symbol(captures[captures.len() - 1].to_string());
+
+            // Sometimes this function def in class picks up non-function constructions like
+            // if, while, for, etc. Let's skip those
+            if d.get_symbol() == "for" || d.get_symbol() == "while" || d.get_symbol() == "if" {
+                continue 'outer;
+            }
+
             d.set_filename(file.get_filename().to_string());
             d.set_line_number(line_number as u32);
             d.set_symbol_type(SymbolType::FUNCTION);
+
+            if let Some(full_capture) = captures.get(0) {
+                if let Some(end) = find_closure_ending_line(
+                    &file.get_content()[line_start + full_capture.end() - 2..],
+                    '{',
+                    '}',
+                ) {
+                    d.set_end_line_number((line_number + end) as u32);
+                }
+            }
+
             results.push(d);
             continue 'outer;
         }
@@ -120,11 +192,12 @@ pub fn extract_imports(file: &File) -> Vec<String> {
 mod tests {
     use super::*;
 
-    fn kw(word: &str, typ: SymbolType, line: u32) -> SymbolDefinition {
+    fn kw(word: &str, typ: SymbolType, line: u32, end_line: u32) -> SymbolDefinition {
         let mut xk = SymbolDefinition::new();
         xk.set_symbol(word.to_owned());
         xk.set_symbol_type(typ);
         xk.set_line_number(line);
+        xk.set_end_line_number(end_line);
         xk
     }
 
@@ -173,9 +246,18 @@ mod tests {
     this.clipboard.destroy();
   }}
 
+  const bloogo = (abc) => {
+      exception.log()
+  }
+
   export function exploder(x, y, z) {
       const garble = 5;
-      const xyz = { gorble: true, sporgle: 9 };
+      const xyz = { gorble: true, 
+        sporgle: 9,
+        schwoop: () => {
+            fail();
+        }
+     };
   }
   "
             .into(),
@@ -183,21 +265,26 @@ mod tests {
 
         let extracted = extract_definitions(&f);
 
-        assert_eq!(&extracted[0], &kw("EmojiResults", SymbolType::STRUCTURE, 1));
-        assert_eq!(&extracted[1], &kw("propTypes", SymbolType::VARIABLE, 2));
-        assert_eq!(&extracted[2], &kw("emojiData", SymbolType::VARIABLE, 3));
+        assert_eq!(
+            &extracted[0],
+            &kw("EmojiResults", SymbolType::STRUCTURE, 1, 12)
+        );
+        assert_eq!(&extracted[1], &kw("propTypes", SymbolType::VARIABLE, 2, 0));
+        assert_eq!(&extracted[2], &kw("emojiData", SymbolType::VARIABLE, 3, 0));
         assert_eq!(
             &extracted[3],
-            &kw("componentDidMount", SymbolType::FUNCTION, 6)
+            &kw("componentDidMount", SymbolType::FUNCTION, 6, 8)
         );
         assert_eq!(
             &extracted[4],
-            &kw("componentWillUnmount", SymbolType::FUNCTION, 10)
+            &kw("componentWillUnmount", SymbolType::FUNCTION, 10, 12)
         );
-        assert_eq!(&extracted[5], &kw("exploder", SymbolType::FUNCTION, 14));
-        assert_eq!(&extracted[6], &kw("garble", SymbolType::VARIABLE, 15));
-        assert_eq!(&extracted[7], &kw("gorble", SymbolType::VARIABLE, 16));
-        assert_eq!(&extracted[8], &kw("sporgle", SymbolType::VARIABLE, 16));
-        assert_eq!(&extracted[9], &kw("xyz", SymbolType::VARIABLE, 16));
+        assert_eq!(&extracted[5], &kw("bloogo", SymbolType::FUNCTION, 14, 16));
+        assert_eq!(&extracted[6], &kw("exploder", SymbolType::FUNCTION, 18, 26));
+        assert_eq!(&extracted[7], &kw("garble", SymbolType::VARIABLE, 19, 0));
+        assert_eq!(&extracted[8], &kw("gorble", SymbolType::VARIABLE, 20, 0));
+        assert_eq!(&extracted[9], &kw("xyz", SymbolType::VARIABLE, 20, 0));
+        assert_eq!(&extracted[10], &kw("sporgle", SymbolType::VARIABLE, 21, 0));
+        assert_eq!(&extracted[11], &kw("schwoop", SymbolType::FUNCTION, 22, 24));
     }
 }
