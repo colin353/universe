@@ -834,7 +834,7 @@ impl Searcher {
             line_number
         } else {
             let n = find_max_span_window(candidate.get_spans());
-            candidate.set_jump_to_line(n as u32);
+            candidate.set_jump_to_line((n + SNIPPET_LENGTH / 2) as u32);
             n
         };
 
