@@ -11,6 +11,8 @@ lazy_static! {
         { regex::Regex::new(r"\s*let\s*(mut)?\s+(\w+)").unwrap() };
     static ref TRAIT_DEFINITION: regex::Regex =
         { regex::Regex::new(r"\s*(pub)?\s*trait\s+(\w+)").unwrap() };
+    static ref STRUCT_IMPL: regex::Regex =
+        { regex::Regex::new(r"\s*impl(<.*?>)?\s+(\w+)(<.*?>)?(\s+for\s+(\w+))?").unwrap() };
     static ref STOPWORDS: std::collections::HashSet<String> = {
         let mut s = std::collections::HashSet::new();
         s.insert("let".into());
@@ -103,9 +105,11 @@ pub fn extract_definitions(file: &File) -> Vec<SymbolDefinition> {
 
             if let Some(full_capture) = captures.get(0) {
                 if let Some(idx) = line[full_capture.end()..].find('{') {
-                    if let Some(end) =
-                        find_closure_ending_line(&file.get_content()[idx..], '{', '}')
-                    {
+                    if let Some(end) = find_closure_ending_line(
+                        &file.get_content()[line_start + full_capture.end() + 1..],
+                        '{',
+                        '}',
+                    ) {
                         d.set_end_line_number((line_number + end) as u32);
                     }
                 }
@@ -121,12 +125,23 @@ pub fn extract_definitions(file: &File) -> Vec<SymbolDefinition> {
             let mut d = SymbolDefinition::new();
 
             if let Some(full_capture) = captures.get(0) {
-                if let Some(end) = find_closure_ending_line(
-                    &file.get_content()[line_start + full_capture.end() + 1..],
-                    '{',
-                    '}',
-                ) {
-                    d.set_end_line_number((line_number + end) as u32);
+                // Check if the function HAS a body. Some don't (e.g. within trait definitions).
+                let has_body = match file.get_content()[line_start + full_capture.end()..]
+                    .matches(&[';', '}', '{'][..])
+                    .next()
+                {
+                    Some("{") => true,
+                    _ => false,
+                };
+
+                if has_body {
+                    if let Some(end) = find_closure_ending_line(
+                        &file.get_content()[line_start + full_capture.end() + 1..],
+                        '{',
+                        '}',
+                    ) {
+                        d.set_end_line_number((line_number + end) as u32);
+                    }
                 }
             }
 
@@ -134,6 +149,38 @@ pub fn extract_definitions(file: &File) -> Vec<SymbolDefinition> {
             d.set_filename(file.get_filename().to_string());
             d.set_line_number(line_number as u32);
             d.set_symbol_type(SymbolType::FUNCTION);
+            results.push(d);
+        }
+        for captures in STRUCT_IMPL.captures_iter(line) {
+            let mut d = SymbolDefinition::new();
+
+            if let Some(full_capture) = captures.get(0) {
+                // Check if the function HAS a body. Some don't (e.g. within trait definitions).
+                let has_body = match file.get_content()[line_start + full_capture.end()..]
+                    .matches(&[';', '}', '{'][..])
+                    .next()
+                {
+                    Some("{") => true,
+                    _ => false,
+                };
+
+                if has_body {
+                    if let Some(end) = find_closure_ending_line(
+                        &file.get_content()[line_start + full_capture.end() + 1..],
+                        '{',
+                        '}',
+                    ) {
+                        d.set_end_line_number((line_number + end) as u32);
+                    }
+                }
+            }
+
+            let symbol_name = captures.get(5).or(captures.get(2)).unwrap().as_str();
+
+            d.set_symbol(symbol_name.to_string());
+            d.set_filename(file.get_filename().to_string());
+            d.set_line_number(line_number as u32);
+            d.set_symbol_type(SymbolType::STRUCTURE);
             results.push(d);
         }
         for captures in LET_BINDING.captures_iter(line) {
@@ -149,7 +196,7 @@ pub fn extract_definitions(file: &File) -> Vec<SymbolDefinition> {
 
             if let Some(full_capture) = captures.get(0) {
                 if let Some(end) = find_closure_ending_line(
-                    &file.get_content()[line_start + full_capture.end()..],
+                    &file.get_content()[line_start + full_capture.end() + 1..],
                     '{',
                     '}',
                 ) {
@@ -201,16 +248,74 @@ mod tests {
         s
     }
 
+    fn _trait(word: &str, start: u32, end: u32) -> SymbolDefinition {
+        let mut s = SymbolDefinition::new();
+        s.set_symbol(word.to_string());
+        s.set_line_number(start);
+        s.set_end_line_number(end);
+        s.set_symbol_type(SymbolType::TRAIT);
+        s
+    }
+
+    #[test]
+    fn test_extract_trait_impl() {
+        let mut f = File::new();
+        f.set_content(
+            "
+impl<T: std::clone::Clone + std::str::FromStr> Flag<T> {
+    pub fn parse(&self, value: &str) -> Result<T, Error> {
+        match value.parse() {
+            Ok(x) => Ok(x),
+            Err(_) => Err(Error::new(
+                ErrorKind::InvalidData,
+            )),
+        }
+    }
+}
+
+impl Flag<String> {
+    pub fn path(&self) -> String {
+        if value.starts_with() {
+            Err(_) => ()
+        };
+    }
+}
+            "
+            .into(),
+        );
+
+        let extracted = extract_definitions(&f);
+
+        assert_eq!(extracted.len(), 4);
+        assert_eq!(&extracted[0], &structure("Flag", 1, 10));
+        assert_eq!(&extracted[1], &function("parse", 2, 9));
+        assert_eq!(&extracted[2], &structure("Flag", 12, 18));
+        assert_eq!(&extracted[3], &function("path", 13, 17));
+    }
+
     #[test]
     fn test_extract_struct() {
         let mut f = File::new();
         f.set_content(
             "
-            pub struct ExtractKeywordsFn {
-                data: u64,
-            }
+    pub struct ExtractKeywordsFn {
+        data: u64,
+    }
 
-pub fn create_task(
+    #[derive(Clone)]
+    pub struct Flag<T: std::str::FromStr> {
+        pub name: &'static str,
+        pub usage: &'static str,
+        pub default: T,
+    }
+
+    pub trait ParseableFlag {
+        fn validate(&self, &str) -> Result<(), Error>;
+        fn get_usage_string(&self) -> &str;
+        fn get_default_value(&self) -> String;
+    }
+
+    pub fn create_task(
         &self,
         mut req: tasks_grpc_rust::CreateTaskRequest,
     ) -> tasks_grpc_rust::TaskStatus {
@@ -233,9 +338,14 @@ pub fn create_task(
 
         let extracted = extract_definitions(&f);
 
-        assert_eq!(extracted.len(), 5);
+        assert_eq!(extracted.len(), 10);
         assert_eq!(&extracted[0], &structure("ExtractKeywordsFn", 1, 3));
-        assert_eq!(&extracted[1], &function("create_task", 5, 21));
+        assert_eq!(&extracted[1], &structure("Flag", 6, 10));
+        assert_eq!(&extracted[2], &_trait("ParseableFlag", 12, 16));
+        assert_eq!(&extracted[3], &function("validate", 13, 0));
+        assert_eq!(&extracted[4], &function("get_usage_string", 14, 0));
+        assert_eq!(&extracted[5], &function("get_default_value", 15, 0));
+        assert_eq!(&extracted[6], &function("create_task", 18, 34));
     }
 
     #[test]

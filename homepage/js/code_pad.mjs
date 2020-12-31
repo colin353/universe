@@ -110,7 +110,7 @@ class NestedSymbolSpans {
 
     symbols.sort((a, b) => a.start - b.start);
     this.functions = new SymbolSpans(symbols.filter(x => x.type == 'FUNCTION'))
-    this.structures = new SymbolSpans(symbols.filter(x => x.type == 'STRUCTURE'))
+    this.structures = new SymbolSpans(symbols.filter(x => x.type == 'STRUCTURE' || x.type == 'TRAIT'))
   }
 
   reset() {
