@@ -108,6 +108,24 @@ where
         Response::new(Body::from(json::stringify(output)))
     }
 
+    fn info(&self, query: &str, req: Request) -> Response {
+        let mut response = self.searcher.search(query);
+        let mut output = Vec::new();
+        for candidate in response.get_candidates() {
+            if candidate.get_jump_to_line() > 0 {
+                output.push(format!(
+                    "{}#L{}",
+                    candidate.get_filename(),
+                    candidate.get_jump_to_line() + 1
+                ));
+            } else {
+                output.push(candidate.get_filename().to_owned());
+            }
+        }
+
+        Response::new(Body::from(json::stringify(output)))
+    }
+
     fn detail(&self, query: &str, path: String, req: Request) -> Response {
         let (file, content) = match self.searcher.get_document(&path[1..]) {
             Some(f) => f,
@@ -224,6 +242,10 @@ where
                 query = keywords.replace("+", " ");
             }
         };
+
+        if path == "/info" {
+            return self.info(&query, req);
+        }
 
         if path == "/suggest" {
             return self.suggest(&query, req);

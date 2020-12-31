@@ -5,6 +5,11 @@
     overflow: hidden;
 }
 
+a.invisible-link {
+  color: black;
+  text-decoration: none;
+}
+
 div.line-numbers {
     background-color: white;
     text-align: right;

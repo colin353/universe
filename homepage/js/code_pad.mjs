@@ -1,8 +1,9 @@
 import getLanguageModel from './syntax_highlighter.mjs';
 import { base64Decode } from './utils.mjs';
 import Store from '../../util/js/store.mjs';
+import truncate from '../../util/js/truncate.mjs';
 
-const attributes = [ "code", "language", "line", "startline", "symbols" ];
+const attributes = [ "code", "language", "line", "startline", "symbols", "filename" ];
 const store = new Store();
 
 // Disables chrome's automatic scroll restoration logic, necessary to
@@ -49,19 +50,12 @@ class SymbolSpans {
   constructor(symbols) {
     this.lineNumber = 0;
     this.position = 0;
-    this.sortedSymbols = [];
-
-    if (symbols) {
-      this.sortedSymbols = eval(symbols);
-    }
-    this.sortedSymbols.sort((a, b) => a.start - b.start);
-
+    this.sortedSymbols = symbols;
     let position = 0;
     for (const symbol of this.sortedSymbols) {
       symbol.position = position;
       position += 1;
     }
-
   }
 
   reset() {
@@ -96,17 +90,60 @@ class SymbolSpans {
     }
 
     // We are at the last part of a symboldefinition, so increment position
-    if(this.sortedSymbols[this.position].end == this.lineNumber) {
+    if(this.lineNumber == this.sortedSymbols[this.position].end) {
       this.position += 1;
       return this.sortedSymbols[this.position - 1];
     }
     // We are inside a symbol definition
-    else if(this.sortedSymbols[this.position].end > this.lineNumber) {
+    else if(this.lineNumber < this.sortedSymbols[this.position].end) {
       return this.sortedSymbols[this.position];
     }
 
-    return null;
+    return null
   }
+}
+
+class NestedSymbolSpans {
+  constructor(symbols) {
+    if(!symbols) symbols = [];
+    else symbols = eval(symbols);
+
+    symbols.sort((a, b) => a.start - b.start);
+    this.functions = new SymbolSpans(symbols.filter(x => x.type == 'FUNCTION'))
+    this.structures = new SymbolSpans(symbols.filter(x => x.type == 'STRUCTURE'))
+  }
+
+  reset() {
+    this.functions.reset();
+    this.structures.reset();
+  }
+
+  join(fn, st) {
+    if (fn && !st || !fn && st) return fn || st;
+    else if (fn && st) {
+      return { 
+        ...fn,
+        symbol: st.symbol + "::" + fn.symbol,
+      }
+    }
+
+    return fn
+  }
+
+  next() {
+    return this.join(this.functions.next(), this.structures.next());
+  }
+
+  getSymbolForLine(line) {
+    return this.join(this.functions.getSymbolForLine(line), this.structures.getSymbolForLine(line))
+  }
+}
+
+const updateInfoBox = async () => {
+  const result = await fetch("/info?q=" + encodeURIComponent(this.state.selectedSymbolName));
+  const usages = await result.json();
+
+  this.setState({usages: usages.filter(x => !x.startsWith(this.state.filename)).slice(0, 8)});
 }
 
 this.stateMappers = {
@@ -120,7 +157,7 @@ this.stateMappers = {
     return parsedLines;
   },
   symbolSpans: (symbols) => {
-    return new SymbolSpans(symbols)
+    return new NestedSymbolSpans(symbols)
   },
   lines: (parsedLines, language, line, symbolSpans) => {
     if(!symbolSpans || !parsedLines) return {};
@@ -160,9 +197,14 @@ this.stateMappers = {
     return {}
   },
   selectedSymbolName: (selectedSymbol) => {
-    // For now, just return false to disable this from rendering
-    return false;
-    // return selectedSymbol?.symbol
+    return selectedSymbol?.symbol
+  },
+  usages: (selectedSymbolName) => {
+    if(this && selectedSymbolName) updateInfoBox();
+    return [];
+  },
+  showUsages: (usages) => {
+    return usages && usages.length > 0 
   },
   selectedSymbolType: (selectedSymbol) => {
     if (!selectedSymbol?.type) return '?';
@@ -204,6 +246,7 @@ this.state = {
   parsedLines: this.stateMappers.parsedLines(this.state.code),
   lines: this.stateMappers.lines(this.state.code),
   startingLine: 0,
+  usages: [],
 };
 
 function selectLine(event) {

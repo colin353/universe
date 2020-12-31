@@ -8,18 +8,21 @@
     </div>
 </control>
 <control if={this.state.selectedSymbolName}>
-    <div class="infobox" style="position: fixed; top: 200px; right: 200px;">
+    <div class="infobox" style="position: fixed; top: 200px; right: 100px;">
       <div class='infotop'>
         <p><i class='infotype infotype-${this.stateSelectedSymbolType}'>${this.state.selectedSymbolType}</i>&nbsp;${this.state.selectedSymbolName}</p>
       </div>
 
-      <div class='infobody'>
-      <p><i>usages</i></p>
-      <ul>
-        <li>util/flags/parse.rs#L63</li>
-        <li>util/flags/lib.rs#L21</li>
-      </ul>
-      </div>
+      <control if={this.state.showUsages}>
+        <div class='infobody'>
+        <p><i>references</i></p>
+        <ul>
+          <control for={this.state.usages}>
+          <li><a style="font-size:11pt" class='invisible-link' href="/${item}">${truncate(item, 50)}</a></li>
+          </control>
+        </ul>
+        </div>
+      </control>
     </div>
 </control>
 <div class="line-numbers">
