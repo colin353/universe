@@ -14,10 +14,10 @@ fe_component(
         "code_pad.mjs",
     ],
     deps = [
-        "//util/js:truncate",
         ":syntax_highlighter",
         ":utils",
         "//tools/search/js:test",
+        "//tools/search/js:info_box",
         "//util/js:store",
     ],
 )

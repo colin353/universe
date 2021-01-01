@@ -47,6 +47,19 @@ fe_component(
     ],
 )
 
+fe_component(
+    name = "info_box",
+    srcs = [
+      "info_box.css",
+      "info_box.html",
+      "info_box.mjs",
+    ],
+    deps = [ 
+      "//util/js:truncate",
+    ],
+)
+
+
 fe_devenv(
     name = "search_devenv",
     deps = [

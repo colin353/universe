@@ -1,7 +1,6 @@
 import getLanguageModel from './syntax_highlighter.mjs';
 import { base64Decode } from './utils.mjs';
 import Store from '../../util/js/store.mjs';
-import truncate from '../../util/js/truncate.mjs';
 
 const attributes = [ "code", "language", "line", "startline", "symbols", "filename" ];
 const store = new Store();
@@ -134,12 +133,13 @@ class NestedSymbolSpans {
     this.structures.reset();
   }
 
-  join(fn, st) {
-    if (fn && !st || !fn && st && !st.overlapping) return fn || st;
+  join(fn, st, skipOverlapping=true) {
+    if (fn && !st || !fn && st && (!skipOverlapping || !st.overlapping)) return fn || st;
     else if (fn && st) {
       return { 
         ...fn,
-        symbol: st.symbol + "::" + fn.symbol,
+        structure: st,
+        symbol: fn.symbol,
       }
     }
 
@@ -151,15 +151,8 @@ class NestedSymbolSpans {
   }
 
   getSymbolForLine(line) {
-    return this.join(this.functions.getSymbolForLine(line), this.structures.getSymbolForLine(line))
+    return this.join(this.functions.getSymbolForLine(line), this.structures.getSymbolForLine(line), false)
   }
-}
-
-const updateInfoBox = async () => {
-  const result = await fetch("/info?q=" + encodeURIComponent(this.state.selectedSymbolName));
-  const usages = await result.json();
-
-  this.setState({usages: usages.filter(x => !x.startsWith(this.state.filename)).slice(0, 8)});
 }
 
 this.stateMappers = {
@@ -202,34 +195,22 @@ this.stateMappers = {
 
     return output;
   },
+  showInfoBox: (selectedSymbol) => {
+    return selectedSymbol != '{}'
+  },
   selectedSymbol: (symbolSpans, line) => {
     if(!line) return {};
 
     const x = symbolSpans.getSymbolForLine(parseInt(line))
+
     if(x) {
-      return x;
+      return JSON.stringify(x);
     } 
 
-    return {}
-  },
-  selectedSymbolName: (selectedSymbol) => {
-    return selectedSymbol?.symbol
-  },
-  usages: (selectedSymbolName) => {
-    if(this && selectedSymbolName) updateInfoBox();
-    return [];
+    return '{}'
   },
   showUsages: (usages) => {
     return usages && usages.length > 0 
-  },
-  selectedSymbolType: (selectedSymbol) => {
-    if (!selectedSymbol?.type) return '?';
-
-    if (selectedSymbol?.type == 'STRUCTURE') return 'cls';
-    else if(selectedSymbol?.type == 'FUNCTION') return 'fn';
-    else if(selectedSymbol?.type == 'TRAIT') return 'tr';
-
-    return '?';
   },
   _ensureLineVisible: (line) => {
     focusSelectedLine();
@@ -273,6 +254,15 @@ function selectLine(event) {
 
 let jumpToLine = '';
 let command = '';
+
+window.addEventListener('hashchange', () => {
+  if (window.location.hash.startsWith("#L")) {
+    debugger
+    this.setState({
+      line: parseInt(window.location.hash.slice(2))
+    })
+  }
+})
 
 // Keyboard shortcuts for jumping to lines/to top
 window.addEventListener('keydown', (e) => {

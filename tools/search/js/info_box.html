@@ -1,0 +1,23 @@
+<div class="infobox" style="position: fixed; top: 200px; right: 100px;">
+  <div class='infotop'>
+    <p><i class='infotype infotype-${this.state.type}'>${this.state.type}</i>
+    <control if={this.state.className}>
+    &nbsp;<a href="#L${this.state.classLine}" class='invisible-link'>${this.state.className}</a>::<a href="#L${this.state.symbolLine}" class='invisible-link'>${this.state.name}</a>
+    </control>
+    <control if={!this.state.className}>
+      &nbsp;${this.state.name}
+    </control>
+    </p>
+  </div>
+
+  <control if={this.state.showUsages}>
+    <div class='infobody'>
+    <p><i>references</i></p>
+    <ul>
+      <control for={this.state.usages}>
+      <li><a style="font-size:11pt" class='invisible-link' href="/${item}">${truncate(item, 50)}</a></li>
+      </control>
+    </ul>
+    </div>
+  </control>
+</div>

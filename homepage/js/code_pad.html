@@ -7,23 +7,8 @@
         </ul>
     </div>
 </control>
-<control if={this.state.selectedSymbolName}>
-    <div class="infobox" style="position: fixed; top: 200px; right: 100px;">
-      <div class='infotop'>
-        <p><i class='infotype infotype-${this.stateSelectedSymbolType}'>${this.state.selectedSymbolType}</i>&nbsp;${this.state.selectedSymbolName}</p>
-      </div>
-
-      <control if={this.state.showUsages}>
-        <div class='infobody'>
-        <p><i>references</i></p>
-        <ul>
-          <control for={this.state.usages}>
-          <li><a style="font-size:11pt" class='invisible-link' href="/${item}">${truncate(item, 50)}</a></li>
-          </control>
-        </ul>
-        </div>
-      </control>
-    </div>
+<control if={this.state.showInfoBox}>
+<info-box symbol="${this.state.selectedSymbol}" filename="${this.state.filename}"></info-box>
 </control>
 <div class="line-numbers">
     <control for={this.state.lines}>
