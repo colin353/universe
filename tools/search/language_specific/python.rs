@@ -79,13 +79,36 @@ pub fn extract_keywords(file: &File) -> Vec<ExtractedKeyword> {
 
 pub fn extract_definitions(file: &File) -> Vec<SymbolDefinition> {
     let mut results = Vec::new();
-    for (line_number, line) in file.get_content().lines().enumerate() {
+
+    let prefix: Vec<usize> = vec![0];
+    let suffix: Vec<usize> = vec![file.get_content().len()];
+
+    let mut newlines: Vec<_> = prefix
+        .into_iter()
+        .chain(
+            file.get_content()
+                .match_indices("\n")
+                .map(|(index, _)| index),
+        )
+        .chain(suffix.into_iter())
+        .collect();
+
+    for (line_number, window) in newlines.windows(2).enumerate() {
+        let line_start = window[0];
+        let line_end = window[1];
+        let line = &file.get_content()[line_start..line_end];
+
         for captures in CLASS_DEFINITION.captures_iter(line) {
             let mut d = SymbolDefinition::new();
             d.set_symbol(captures[1].to_string());
             d.set_filename(file.get_filename().to_string());
             d.set_line_number(line_number as u32);
             d.set_symbol_type(SymbolType::STRUCTURE);
+
+            let end_line =
+                line_number + take_until_whitespace(&file.get_content()[line_start + 1..]);
+            d.set_end_line_number(end_line as u32);
+
             results.push(d);
         }
         for captures in FUNCTION_DEFINITION.captures_iter(line) {
@@ -94,6 +117,11 @@ pub fn extract_definitions(file: &File) -> Vec<SymbolDefinition> {
             d.set_filename(file.get_filename().to_string());
             d.set_line_number(line_number as u32);
             d.set_symbol_type(SymbolType::FUNCTION);
+
+            let end_line =
+                line_number + take_until_whitespace(&file.get_content()[line_start + 1..]);
+            d.set_end_line_number(end_line as u32);
+
             results.push(d);
         }
         for captures in VARIABLE_DEFINITION.captures_iter(line) {
@@ -119,15 +147,56 @@ pub fn annotate_file(file: &mut File) {
     }
 }
 
+fn count_whitespace(line: &str) -> usize {
+    let mut count = 0;
+    for ch in line.chars() {
+        count += match ch {
+            '\t' => 8,
+            ' ' => 1,
+            _ => break,
+        }
+    }
+
+    count
+}
+
+fn take_until_whitespace(text: &str) -> usize {
+    let mut lines = text.lines();
+
+    let initial_indent = match lines.next() {
+        Some(x) => count_whitespace(x),
+        None => return 0,
+    };
+
+    let mut line_number = 0;
+    let mut whitespace_lines = 0;
+
+    while let Some(line) = lines.next() {
+        // Skip if the entire line is whitespace
+        if line.find(|c| !char::is_whitespace(c)).is_none() {
+            whitespace_lines += 1;
+            continue;
+        }
+
+        if count_whitespace(line) <= initial_indent {
+            break;
+        }
+        line_number += whitespace_lines + 1;
+        whitespace_lines = 0;
+    }
+    line_number
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn test_fn(symbol: &str, line: u32) -> SymbolDefinition {
+    fn test_fn(symbol: &str, line: u32, end_line: u32) -> SymbolDefinition {
         let mut s = SymbolDefinition::new();
         s.set_symbol(symbol.to_string());
         s.set_symbol_type(SymbolType::FUNCTION);
         s.set_line_number(line);
+        s.set_end_line_number(end_line);
         s
     }
 
@@ -137,6 +206,53 @@ mod tests {
         s.set_symbol_type(SymbolType::VARIABLE);
         s.set_line_number(line);
         s
+    }
+
+    #[test]
+    fn test_take_until_whitespace() {
+        let text = "def my_function(a, b, c):
+    print(a)
+    if b:
+        print(c)
+
+def another_function(c, d, e):
+    pass
+        ";
+
+        assert_eq!(take_until_whitespace(text), 3);
+    }
+
+    #[test]
+    fn test_extract_definitions() {
+        let mut f = File::new();
+        f.set_content(
+            "def my_function(a, b, c):
+    print(a)
+    if b:
+        print(c)
+
+    class Borg(object):
+        def another_function(c, d, e):
+            pass
+
+def final_fn():
+    return 3
+        "
+            .into(),
+        );
+
+        let result = extract_definitions(&f);
+        assert_eq!(result[0].get_symbol(), "my_function");
+        assert_eq!(result[0].get_line_number(), 0);
+        assert_eq!(result[0].get_end_line_number(), 7);
+
+        assert_eq!(result[1].get_symbol(), "Borg");
+        assert_eq!(result[1].get_line_number(), 5);
+        assert_eq!(result[1].get_end_line_number(), 7);
+
+        assert_eq!(result[2].get_symbol(), "another_function");
+        assert_eq!(result[2].get_line_number(), 6);
+        assert_eq!(result[2].get_end_line_number(), 7);
     }
 
     #[test]
@@ -177,6 +293,13 @@ def fact(self):
     # check if the number is negative, positive or zero
     for i in range(1,num + 1):
        factorial = factorial*i
+
+    def xyz(self):
+        # test
+        if x:
+           y
+
+    return z
         ",
         ));
 
@@ -185,9 +308,13 @@ def fact(self):
             test_var("num", 1),
             test_var("num", 4),
             test_var("factorial", 6),
-            test_fn("fact", 8),
+            test_fn("fact", 8, 18),
             test_var("factorial", 11),
+            test_fn("xyz", 13, 16),
         ];
-        assert_eq!(extracted, expected);
+        assert_eq!(extracted.len(), expected.len());
+        for i in 0..extracted.len() {
+            assert_eq!(extracted[i], expected[i]);
+        }
     }
 }
