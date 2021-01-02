@@ -1,6 +1,7 @@
 import getLanguageModel from './syntax_highlighter.mjs';
 import { base64Decode } from './utils.mjs';
 import Store from '../../util/js/store.mjs';
+import debounce from '../../util/js/debounce.mjs';
 
 const attributes = [ "code", "language", "line", "startline", "symbols", "filename" ];
 const store = new Store();
@@ -253,6 +254,21 @@ const focusSelectedLine = () => {
 
 this.componentDidMount = () => {
   setTimeout(focusSelectedLine, 10);
+
+  const updateScrollPositionDebounced = debounce((scrollInfo) => {
+    store.setState("codePadScrollInfo", scrollInfo)
+  }, 16)
+
+  this.parentElement.addEventListener("scroll", (e) => {
+    updateScrollPositionDebounced({
+      top: e.srcElement.scrollTop / e.srcElement.scrollHeight,
+      height: e.srcElement.clientHeight / e.srcElement.scrollHeight
+    })
+  })
+
+  store.addWatcher("codePadScrollOffsetWriteOnly", (offset) => {
+    this.parentElement.scrollTo(0, offset * this.parentElement.scrollHeight - this.parentElement.clientHeight / 2);
+  })
 }
 
 this.state = {

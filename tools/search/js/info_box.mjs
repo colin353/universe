@@ -1,6 +1,8 @@
 import truncate from '../../../util/js/truncate.mjs';
-
+import Store from '../../../util/js/store.mjs';
 const attributes = [ "symbol", "filename", "matches" ]
+
+const store = new Store();
 
 const updateInfoBox = async () => {
   const result = await fetch("/info?q=" + encodeURIComponent(this.state.name));
@@ -11,6 +13,8 @@ const updateInfoBox = async () => {
 
 this.stateMappers = {
   _extractSymbolInfo: (symbol) => {
+    if(!symbol) return;
+
     const s = JSON.parse(symbol)
     this.setState({
       name: s.symbol,
@@ -65,4 +69,21 @@ this.state = {
     matchingLines: [],
     totalLines: 0,
     usages: [],
+    scrollTop: 0,
+    scrollHeight: 0,
+}
+
+store.addWatcher("codePadScrollInfo", (scrollInfo) => {
+  if (!scrollInfo) return;
+
+  this.setState({
+    scrollTop: 100*scrollInfo.top,
+    scrollHeight: 100*scrollInfo.height,
+  })
+})
+
+// When clicked, jump the scroll position to that place
+function onClickScope(e) {
+  const rect = this.refs.scope.getBoundingClientRect();
+  store.setState("codePadScrollOffsetWriteOnly", (e.clientX - rect.x) / rect.width);
 }

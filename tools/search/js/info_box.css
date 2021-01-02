@@ -43,6 +43,16 @@ p, span.line {
   position: absolute;
 }
 
+.scope-visible-range {
+  border: 1px solid #aaa;
+  display:block;
+  height: 25px;
+  position: absolute;
+  padding-top:3px;
+  padding-bottom:3px;
+  margin-top:-4px;
+}
+
 .infobox {
     background-color: white;
     display: flex;

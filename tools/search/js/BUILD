@@ -56,6 +56,7 @@ fe_component(
     ],
     deps = [ 
       "//util/js:truncate",
+      "//util/js:store",
     ],
 )
 

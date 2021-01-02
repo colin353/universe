@@ -19,6 +19,7 @@ fe_component(
         "//tools/search/js:test",
         "//tools/search/js:info_box",
         "//util/js:store",
+        "//util/js:debounce",
     ],
 )
 

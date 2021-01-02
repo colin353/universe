@@ -14,9 +14,10 @@
    <div class='infobody'>
      <p><i>in this file</i></p>
 
-     <div class='scope'>
+     <div ref={scope} on:click={onClickScope} class='scope'>
        <control if={this.state.start}>
        <div class='scope-range' style="width: ${this.state.rangeExtent}%; left: ${this.state.rangeStart}%"></div>
+       <div class='scope-visible-range' style="width: ${this.state.scrollHeight}%; left: ${this.state.scrollTop}%"></div>
        </control>
 
        <control for={this.state.matchingLines}>
