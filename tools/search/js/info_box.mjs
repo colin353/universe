@@ -1,6 +1,6 @@
 import truncate from '../../../util/js/truncate.mjs';
 
-const attributes = [ "symbol", "filename" ]
+const attributes = [ "symbol", "filename", "matches" ]
 
 const updateInfoBox = async () => {
   const result = await fetch("/info?q=" + encodeURIComponent(this.state.name));
@@ -18,8 +18,25 @@ this.stateMappers = {
       rawType: s.type,
       symbolLine: s.start + 1,
       classLine: s?.structure?.start + 1,
+      start: s.start,
+      end: s.end,
     })
   },
+  _extractMatchInfo: (matches, start, end) => {
+    const m = JSON.parse(matches)
+    this.setState({
+      totalLines: m.totalLines,
+      matchingLines: m.matches.filter((x) => {
+        return !start || !end || x > end || x < start
+      }).map((x) => {
+        return {
+          lineNumber: x,
+          percentage: 100 * x/m.totalLines,
+        }
+      })
+    })
+  },
+  showMatches: (matchingLines) => matchingLines.length,
   type: (rawType) => {
     if (!rawType) return '?';
 
@@ -29,6 +46,12 @@ this.stateMappers = {
 
     return '?';
   },
+  rangeExtent: (start, end, totalLines) => {
+    return 100*(end-start)/totalLines
+  },
+  rangeStart: (start, totalLines) => {
+    return 100*(start)/totalLines
+  },
   usages: (name) => {
     if(name) updateInfoBox();
     return [];
@@ -37,5 +60,9 @@ this.stateMappers = {
 }
 
 this.state = {
+    showMatches: false,
+    matches: [],
+    matchingLines: [],
+    totalLines: 0,
     usages: [],
 }

@@ -10,6 +10,22 @@
     </p>
   </div>
 
+  <control if={this.state.showMatches}>
+   <div class='infobody'>
+     <p><i>in this file</i></p>
+
+     <div class='scope'>
+       <control if={this.state.start}>
+       <div class='scope-range' style="width: ${this.state.rangeExtent}%; left: ${this.state.rangeStart}%"></div>
+       </control>
+
+       <control for={this.state.matchingLines}>
+       <div class='scope-match' style="left: ${item.percentage}%"></div>
+       </control>
+     </div>
+   </div>
+  </control>
+
   <control if={this.state.showUsages}>
     <div class='infobody'>
     <p><i>references</i></p>

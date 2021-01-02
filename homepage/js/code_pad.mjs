@@ -195,8 +195,25 @@ this.stateMappers = {
 
     return output;
   },
+  matchingLines: (selectedSymbol, parsedLines) => {
+    if (!selectedSymbol || Object.keys(selectedSymbol).length == 0  || selectedSymbol == '{}') return '{}'
+    const symbol = JSON.parse(selectedSymbol)
+    symbol.symbol;
+    const regex = new RegExp(`[^\\w]${symbol.symbol}[^\\w]`)
+    let matches = [];
+    let lineNumber = 0;
+    for (const line of parsedLines) {
+      if (regex.exec(line) !== null) matches.push(lineNumber);
+      lineNumber += 1;
+    }
+
+    return JSON.stringify({
+      totalLines: parsedLines.length,
+      matches
+    });
+  },
   showInfoBox: (selectedSymbol) => {
-    return selectedSymbol != '{}'
+    return Object.keys(selectedSymbol).length > 0 && selectedSymbol != '{}'
   },
   selectedSymbol: (symbolSpans, line) => {
     if(!line) return {};
@@ -239,7 +256,7 @@ this.componentDidMount = () => {
 }
 
 this.state = {
-  selectedSymbol: {},
+  selectedSymbol: '{}',
   parsedLines: this.stateMappers.parsedLines(this.state.code),
   lines: this.stateMappers.lines(this.state.code),
   startingLine: 0,
@@ -257,7 +274,6 @@ let command = '';
 
 window.addEventListener('hashchange', () => {
   if (window.location.hash.startsWith("#L")) {
-    debugger
     this.setState({
       line: parseInt(window.location.hash.slice(2))
     })
