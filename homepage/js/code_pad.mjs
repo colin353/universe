@@ -30,6 +30,19 @@ const contextMenu = (event) => {
   event.preventDefault();
 }
 
+function updateCodeSelection(event) {
+  const selection = window.getSelection().toString()
+  if(!selection) {
+    return
+  }
+
+  this.setState({
+    selectedSymbol: JSON.stringify({
+      symbol: selection,
+    })
+  })
+}
+
 const copy = (event) => {
   navigator.clipboard.writeText(this.state.selection)
 }
@@ -164,13 +177,16 @@ this.stateMappers = {
     for(const line of base64Decode(code).split("\n")) {
       parsedLines.push(model.extractSyntax(line));
     }
+
+    this.setState({renderedLines: parsedLines})
+
     return parsedLines;
   },
   symbolSpans: (symbols) => {
     return new NestedSymbolSpans(symbols)
   },
-  lines: (parsedLines, language, line, symbolSpans) => {
-    if(!symbolSpans || !parsedLines) return {};
+  lines: (renderedLines, language, line, symbolSpans) => {
+    if(!symbolSpans || !renderedLines) return {};
 
     const output = {};
     let lineNumber = 1;
@@ -178,7 +194,7 @@ this.stateMappers = {
     const topLine = Math.max(1, selectedLine - 5);
 
     symbolSpans.reset();
-    for(const line of parsedLines) {
+    for(const line of renderedLines) {
       output[lineNumber] = {};
       output[lineNumber].lineNumber = this.state.startingLine + lineNumber;
 
@@ -196,20 +212,38 @@ this.stateMappers = {
 
     return output;
   },
-  matchingLines: (selectedSymbol, parsedLines) => {
-    if (!selectedSymbol || Object.keys(selectedSymbol).length == 0  || selectedSymbol == '{}') return '{}'
+  matchingLines: (selectedSymbol) => {
+    if (!selectedSymbol || Object.keys(selectedSymbol).length == 0  || selectedSymbol == '{}') {
+      this.setState({
+        renderedLines: this.state.parsedLines
+      })
+      return '{}'
+    }
     const symbol = JSON.parse(selectedSymbol)
     symbol.symbol;
-    const regex = new RegExp(`[^\\w]${symbol.symbol}[^\\w]`)
+    const regex = new RegExp(`(^|[^\\w])(${symbol.symbol})([^\\w]|$)`)
     let matches = [];
     let lineNumber = 0;
-    for (const line of parsedLines) {
-      if (regex.exec(line) !== null) matches.push(lineNumber);
+    let renderedLines = [];
+    for (const line of this.state.parsedLines) {
+      let match = regex.exec(line);
+      if (match !== null) {
+        renderedLines.push(line.replace(regex, (match, p1, p2, p3, offset, string) => {
+          return `${p1}<span class="highlight">${p2}</span>${p3}`
+        }))
+        matches.push(lineNumber);
+      } else {
+        renderedLines.push(line)
+      }
       lineNumber += 1;
     }
 
+    this.setState({
+      renderedLines
+    })
+
     return JSON.stringify({
-      totalLines: parsedLines.length,
+      totalLines: renderedLines.length,
       matches
     });
   },
@@ -231,10 +265,12 @@ this.stateMappers = {
     return usages && usages.length > 0 
   },
   _ensureLineVisible: (line) => {
-    focusSelectedLine();
-    this.dispatchEvent(new CustomEvent('lineSelected', {
-      detail: { line }
-    }));
+    setTimeout(() => {
+      focusSelectedLine();
+      this.dispatchEvent(new CustomEvent('lineSelected', {
+        detail: { line }
+      }));
+    }, 0);
   },
   _updateLineInStore: (line, parsedLines) => {
     store.setState("currentLineNumber", line);
@@ -264,6 +300,11 @@ this.componentDidMount = () => {
       top: e.srcElement.scrollTop / e.srcElement.scrollHeight,
       height: e.srcElement.clientHeight / e.srcElement.scrollHeight
     })
+  })
+
+  updateScrollPositionDebounced({
+    top: this.parentElement.scrollTop / this.parentElement.scrollHeight,
+    height: this.parentElement.clientHeight / this.parentElement.scrollHeight
   })
 
   store.addWatcher("codePadScrollOffsetWriteOnly", (offset) => {

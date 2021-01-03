@@ -16,6 +16,8 @@ class {{class_name}} extends HTMLElement {
           this.__selectors = {};
 
           this.refs = {};
+          this.currentlySettingState = false;
+          this.pendingStateDifferences = new Set([]);
 
           this.initialize();
     }
@@ -37,13 +39,56 @@ class {{class_name}} extends HTMLElement {
       })
     }
 
+    _hasStateChanged(oldState, newState) {
+      if (typeof oldState !== typeof newState) return true;
+
+      // Not smart enough to introspect into objects so just assume different
+      if (typeof oldState === "object") return true;
+
+      return oldState != newState
+    }
+
     initialize() {
       this.setState = (newState) => {
+        let isOuter = !this.currentlySettingState;
+        if (isOuter) {
+          this.currentlySettingState = true;
+        }
+
         for (const k of Object.keys(newState)) {
-          this.state[k] = newState[k];
-          this.triggerMappings(k);
+          if (this._hasStateChanged(this.state[k], newState[k])) {
+            this.state[k] = newState[k];
+            this.pendingStateDifferences.add(k);
+          }
+        }
+
+        if (!isOuter) {
+          return
+        }
+
+        const unrenderedStateDifferences = new Set(this.pendingStateDifferences);
+        let iterations = 0;
+        while(this.pendingStateDifferences.size > 0) {
+          iterations += 1;
+          if (iterations > 1024) {
+            console.error("setState trigger depth exceeded!");
+            break;
+          }
+
+          const unmappedStateDifferences = this.pendingStateDifferences
+          this.pendingStateDifferences = new Set()
+          this.triggerAllMappings(unmappedStateDifferences);
+
+          for (const k of unmappedStateDifferences) {
+            unrenderedStateDifferences.add(k)
+          }
+        }
+
+        for (const k of unrenderedStateDifferences) {
           this.triggerRenders("this.state." + k);
         }
+
+        this.currentlySettingState = false;
       }
       
       {{javascript}}
@@ -94,12 +139,18 @@ class {{class_name}} extends HTMLElement {
 
     render(keys) {}
 
-    triggerMappings(key) {
-      if(!this.__mappings[key]) {
-        return;
-      }
+    triggerAllMappings(keys) {
+      let allMappings = new Set([])
 
-      for(const m of this.__mappings[key]) {
+      for(const key of keys) {
+        if (!this.__mappings[key]) continue;
+
+        for(const m of this.__mappings[key]) {
+          allMappings.add(m);
+        }
+      }
+      
+      for (const m of allMappings) {
         this.setState({
           [m]: this.stateMappers[m](...this.__selectors[m](this.state))
         })

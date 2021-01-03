@@ -15,7 +15,7 @@
     <p on:click={selectLine} class="${item.hasSymbol} ${item.class}">${item.lineNumber}</p>
     </control>
 </div>
-<code ref={code} class="code" on:contextmenu={contextMenu}>
+<code ref={code} class="code" on:dblclick={updateCodeSelection} on:contextmenu={contextMenu}>
     <control for={this.state.lines}>
         <span class="line ${item.class}">${item.code}</span>
     </control>

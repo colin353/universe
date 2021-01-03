@@ -28,6 +28,8 @@ this.stateMappers = {
   },
   _extractMatchInfo: (matches, start, end) => {
     const m = JSON.parse(matches)
+    if (!m.matches) return;
+
     this.setState({
       totalLines: m.totalLines,
       matchingLines: m.matches.filter((x) => {
@@ -71,6 +73,7 @@ this.state = {
     usages: [],
     scrollTop: 0,
     scrollHeight: 0,
+    type: '?',
 }
 
 store.addWatcher("codePadScrollInfo", (scrollInfo) => {
@@ -81,6 +84,50 @@ store.addWatcher("codePadScrollInfo", (scrollInfo) => {
     scrollHeight: 100*scrollInfo.height,
   })
 })
+
+const findMatchInZone = (start, end, reverse) => {
+  for(var i=0; i<this.state.matchingLines.length; i++) {
+    let index = i;
+    if (reverse) index = this.state.matchingLines.length - 1 - i;
+
+    const item = this.state.matchingLines[index];
+
+    if (item.percentage < start || item.percentage > end) {
+      continue;
+    }
+
+    return item;
+  }
+}
+
+const jumpToPrevReference = () => {
+  let match = findMatchInZone(0, (this.state.scrollTop + this.state.scrollHeight/2) - 2, true);
+  if (match) {
+    store.setState("codePadScrollOffsetWriteOnly", match.percentage/100);
+    return;
+  }
+
+  match = findMatchInZone(0, 100, true);
+  if (match) {
+    store.setState("codePadScrollOffsetWriteOnly", match.percentage/100);
+    return;
+  }
+}
+
+function jumpToNextReference() {
+  debugger
+  let match = findMatchInZone((this.state.scrollTop + this.state.scrollHeight/2) + 2, 100, false);
+  if (match) {
+    store.setState("codePadScrollOffsetWriteOnly", match.percentage/100);
+    return;
+  }
+
+  match = findMatchInZone(0, 100, false);
+  if (match) {
+    store.setState("codePadScrollOffsetWriteOnly", match.percentage/100);
+    return;
+  }
+}
 
 // When clicked, jump the scroll position to that place
 function onClickScope(e) {

@@ -1,4 +1,4 @@
-<div class="infobox" style="position: fixed; top: 200px; right: 100px;">
+<div class="infobox" style="position: fixed; top: 150px; right: 50px;">
   <div class='infotop'>
     <p><i class='infotype infotype-${this.state.type}'>${this.state.type}</i>
     <control if={this.state.className}>
@@ -17,12 +17,16 @@
      <div ref={scope} on:click={onClickScope} class='scope'>
        <control if={this.state.start}>
        <div class='scope-range' style="width: ${this.state.rangeExtent}%; left: ${this.state.rangeStart}%"></div>
-       <div class='scope-visible-range' style="width: ${this.state.scrollHeight}%; left: ${this.state.scrollTop}%"></div>
        </control>
+       <div class='scope-visible-range' style="width: ${this.state.scrollHeight}%; left: ${this.state.scrollTop}%"></div>
 
        <control for={this.state.matchingLines}>
        <div class='scope-match' style="left: ${item.percentage}%"></div>
        </control>
+     </div>
+
+     <div class='scope-controls'>
+       <div class='filler'></div><a on:click={jumpToPrevReference} href="#">prev</a>&nbsp;<a on:click={jumpToNextReference} href="#">next</a>
      </div>
    </div>
   </control>

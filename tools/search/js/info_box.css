@@ -28,6 +28,15 @@ p, span.line {
   position: relative;
 }
 
+.scope-controls {
+  display: flex;
+  flex-direction: row;
+}
+
+.scope-controls .filler {
+  flex: 1;
+}
+
 .scope-match {
   border-right: 2px solid #00800057;
   display: block;

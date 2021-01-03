@@ -90,6 +90,10 @@ span.literal {
     font-weight: 500;
 }
 
+span.highlight {
+    background-color: #0080002e;
+    box-shadow: 0px 0px 8px #0080002e;
+}
 
 span.comment {
     color: #657b83;
