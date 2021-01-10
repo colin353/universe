@@ -463,16 +463,20 @@ impl Searcher {
 
         // The keywords to match are the search terms plus newline
         let mut keywords = Vec::new();
+        let mut keyword_index_mapping = Vec::new();
         let mut matcher_keywords = vec!["\n"];
-        for keyword in query
+        for (index, keyword) in query
             .get_keywords()
             .iter()
-            .filter(|k| !k.get_is_filename() && !k.get_is_language() && !k.get_is_prefix())
+            .enumerate()
+            .filter(|(_, k)| !k.get_is_filename() && !k.get_is_language() && !k.get_is_prefix())
         {
             keywords.push(keyword.get_keyword().to_string());
             matcher_keywords.push(keyword.get_keyword());
+            keyword_index_mapping.push(index);
         }
         let keywords_arc = Arc::new(keywords);
+        let keyword_index_mapping_arc = Arc::new(keyword_index_mapping);
 
         // Construct regex matchers for each keyword
         let keyword_matcher = aho_corasick::AhoCorasickBuilder::new()
@@ -488,9 +492,15 @@ impl Searcher {
             let matcher = keyword_matcher.clone();
             let reader = self.candidates.clone();
             let keywords = keywords_arc.clone();
+            let keyword_index_mapping = keyword_index_mapping_arc.clone();
             pool.execute(move || {
                 Self::finalize_keyword_matches_for_candidate(
-                    &*reader, file_id, candidate, matcher, keywords,
+                    &*reader,
+                    file_id,
+                    candidate,
+                    matcher,
+                    keywords,
+                    keyword_index_mapping,
                 )
             });
             scanned += 1;
@@ -509,6 +519,7 @@ impl Searcher {
         mut candidate: Candidate,
         matcher: aho_corasick::AhoCorasick,
         keywords: Arc<Vec<String>>,
+        keyword_index_mapping: Arc<Vec<usize>>,
     ) -> Candidate {
         let start = std::time::Instant::now();
         let (mut file, content) =
@@ -533,7 +544,7 @@ impl Searcher {
 
         for mut span in s.into_iter() {
             let k = matched_keywords
-                .entry(span.get_keyword_index())
+                .entry(keyword_index_mapping[span.get_keyword_index() as usize])
                 .or_insert_with(|| {
                     let mut e = ExtractedKeyword::new();
                     e.set_keyword(keywords[span.get_keyword_index() as usize].to_owned());
@@ -542,6 +553,13 @@ impl Searcher {
             k.set_border_match(k.get_border_match() || span.get_is_border_match());
             k.set_complete_match(k.get_complete_match() || span.get_is_complete_match());
             k.set_occurrences(k.get_occurrences() + 1);
+
+            // Remap the span's keyword index. We only search inside files with some keyword
+            // types, so non-file-searching keywords are omitted from extract_spans. This means
+            // we need to remap the indices we get back so they map back to the index within the
+            // set of ALL keywords.
+            span.set_keyword_index(keyword_index_mapping[span.get_keyword_index() as usize] as u32);
+
             candidate.mut_spans().push(span);
         }
 
