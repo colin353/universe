@@ -65,6 +65,8 @@ pub trait Server: Sync + Send + Clone + 'static {
             content_type = Some("application/json");
         } else if path.ends_with(".png") {
             content_type = Some("image/png");
+        } else if path.ends_with(".xml") {
+            content_type = Some("text/xml");
         }
 
         if let Some(c) = content_type {

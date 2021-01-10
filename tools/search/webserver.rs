@@ -12,6 +12,7 @@ static DETAIL_FOLDER: &str = include_str!("html/detail_folder.html");
 static DETAIL_TEMPLATE: &str = include_str!("html/detail_template.html");
 static RESULTS: &str = include_str!("html/results.html");
 static FAVICON: &[u8] = include_bytes!("html/favicon.png");
+static OPENSEARCH: &str = include_str!("html/opensearch.xml");
 
 #[derive(Clone)]
 pub struct SearchWebserver<A> {
@@ -98,11 +99,21 @@ where
         )))
     }
 
-    fn suggest(&self, query: &str, req: Request) -> Response {
+    fn suggest(&self, query: &str, is_opensearch: bool, req: Request) -> Response {
         let mut response = self.searcher.suggest(query);
         let mut output = Vec::new();
         for keyword in response.take_suggestions().into_iter() {
-            output.push(keyword);
+            output.push(json::JsonValue::String(keyword));
+        }
+
+        if is_opensearch {
+            // The opensearch format (for whatever reason) is an array where the first
+            // element is a string with the original query and the second element is an
+            // array of suggestions.
+            let mut container = Vec::new();
+            container.push(json::JsonValue::String(query.to_owned()));
+            container.push(json::JsonValue::Array(output));
+            return Response::new(Body::from(json::stringify(container)));
         }
 
         Response::new(Body::from(json::stringify(output)))
@@ -235,11 +246,17 @@ where
         }
 
         let mut query = String::new();
+        let mut is_opensearch = false;
+
         if let Some(q) = req.uri().query() {
             let params = ws_utils::parse_params(q);
             if let Some(keywords) = params.get("q") {
                 // Chrome's search engine plugin turns + into space
                 query = keywords.replace("+", " ");
+            }
+
+            if params.get("opensearch").is_some() {
+                is_opensearch = true;
             }
         };
 
@@ -247,8 +264,19 @@ where
             return self.info(&query, req);
         }
 
+        if path == "/opensearch.xml" {
+            let output = tmpl::apply(
+                OPENSEARCH,
+                &content!(
+                    "base_url" => &self.base_url
+                ),
+            );
+
+            return self.serve_static_file(&path, output.as_bytes());
+        }
+
         if path == "/suggest" {
-            return self.suggest(&query, req);
+            return self.suggest(&query, is_opensearch, req);
         }
 
         if path.len() > 1 {

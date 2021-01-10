@@ -31,6 +31,7 @@ rust_binary(
         "webserver.rs",
     ],
     data = [
+        "html/opensearch.xml",
         "html/detail.html",
         "html/detail_folder.html",
         "html/detail_template.html",
@@ -70,6 +71,7 @@ rust_binary(
         "webserver.rs",
     ],
     data = [
+        "html/opensearch.xml",
         "html/detail.html",
         "html/detail_folder.html",
         "html/detail_template.html",
