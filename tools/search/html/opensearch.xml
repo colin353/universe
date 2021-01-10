@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <OpenSearchDescription xmlns="http://a9.com/-/spec/opensearch/1.1/">
-    <ShortName>code search - from xml</ShortName>
-    <Description>search code - from xml</Description>
+    <ShortName>code search</ShortName>
+    <Description>search code</Description>
     <Url type="text/html" template="{{base_url}}/?q={searchTerms}"/>
     <Url type="application/x-suggestions+json" template="{{base_url}}/suggest?opensearch=true&amp;q={searchTerms}"/>
 </OpenSearchDescription>
