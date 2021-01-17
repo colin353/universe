@@ -213,7 +213,7 @@ this.stateMappers = {
     return output;
   },
   matchingLines: (selectedSymbol) => {
-    if (!selectedSymbol || Object.keys(selectedSymbol).length == 0  || selectedSymbol == '{}') {
+    if (Object.keys(selectedSymbol).length == 0) {
       this.setState({
         renderedLines: this.state.parsedLines
       })
@@ -252,9 +252,6 @@ this.stateMappers = {
     if(!line) return {};
 
     return symbolSpans.getSymbolForLine(parseInt(line)) || {}
-  },
-  showUsages: (usages) => {
-    return usages && usages.length > 0 
   },
   _ensureLineVisible: (line) => {
     setTimeout(() => {
@@ -305,7 +302,7 @@ this.componentDidMount = () => {
 }
 
 this.state = {
-  selectedSymbol: '{}',
+  selectedSymbol: {},
   parsedLines: this.stateMappers.parsedLines(this.state.code),
   lines: this.stateMappers.lines(this.state.code),
   startingLine: 0,

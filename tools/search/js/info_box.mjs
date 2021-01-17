@@ -40,7 +40,6 @@ this.stateMappers = {
       })
     })
   },
-  showMatches: (matchingLines) => matchingLines.length,
   type: (rawType) => {
     if (!rawType) return '?';
 
@@ -60,11 +59,9 @@ this.stateMappers = {
     if(name) updateInfoBox();
     return [];
   },
-  showUsages: (usages) => usages.length > 0,
 }
 
 this.state = {
-    showMatches: false,
     matches: [],
     matchingLines: [],
     totalLines: 0,

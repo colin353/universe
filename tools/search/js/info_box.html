@@ -10,7 +10,7 @@
     </p>
   </div>
 
-  <control if={this.state.showMatches}>
+  <control if={this.state.matchingLines.length}>
    <div class='infobody'>
      <p><i>in this file</i></p>
 
@@ -31,7 +31,7 @@
    </div>
   </control>
 
-  <control if={this.state.showUsages}>
+  <control if={this.state.usages.length}>
     <div class='infobody'>
     <p><i>references</i></p>
     <ul>

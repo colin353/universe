@@ -301,7 +301,7 @@ impl HTMLElement {
                 }
 
                 // Remove old entries mutator
-                let mut op = format!(
+                let op = format!(
                     r#"
                     for(const {name}__key of Object.keys({prefix}{name}_elements)) {{
                         if(!{array}[{name}__key]) {{
@@ -390,16 +390,25 @@ pub struct Mutator {
     pub operation: String,
 }
 
+fn normalize_dependency(dep: &str) -> &str {
+    if dep.starts_with("this.state.") {
+        if let Some(idx) = dep[11..].find(".") {
+            return &dep[..11 + idx];
+        }
+    }
+
+    dep
+}
+
 fn extract_dependencies(input: &str) -> Vec<String> {
     let mut output = Vec::new();
     for (idx, _) in input.match_indices("this.state.") {
-        output.push(
-            input
-                .chars()
-                .skip(idx)
-                .take_while(|x| return x.is_alphanumeric() || *x == '.' || *x == '_')
-                .collect(),
-        );
+        let dep: String = input
+            .chars()
+            .skip(idx)
+            .take_while(|x| return x.is_alphanumeric() || *x == '.' || *x == '_')
+            .collect();
+        output.push(normalize_dependency(&dep).to_owned());
     }
     output
 }
@@ -410,7 +419,7 @@ fn parse_fmtstring(fmt: &str) -> Vec<String> {
         let substr = &fmt[idx + 2..];
         if let Some(end) = substr.find("}") {
             for dep in parse_expression(&fmt[idx + 2..(end + idx + 2)]) {
-                output.push(dep);
+                output.push(dep.to_owned());
             }
         }
     }
@@ -418,12 +427,10 @@ fn parse_fmtstring(fmt: &str) -> Vec<String> {
 }
 
 fn parse_expression(expr: &str) -> Vec<String> {
-    // TODO: more correctly implement this
-    if expr.trim().is_empty() {
-        return Vec::new();
-    }
-
-    vec![expr.trim().to_string()]
+    expr.split(|c: char| !(c.is_alphanumeric() || c == '.' || c == '_'))
+        .map(|x| normalize_dependency(x.trim()).to_string())
+        .filter(|x| !x.is_empty())
+        .collect()
 }
 
 pub fn parse(html: &str) -> Result<Vec<HTMLElement>, String> {
@@ -692,12 +699,24 @@ mod tests {
     fn test_fmtstring_parsing_2() {
         let result = parse_fmtstring("top: ${this.state.menuY}px; left: ${this.state.menuX}px");
         assert_eq!(result, vec!["this.state.menuY", "this.state.menuX"]);
+
+        let result = parse_fmtstring("${this.state.test.length}");
+        assert_eq!(result, vec!["this.state.test"]);
     }
 
     #[test]
     fn test_parse_expression() {
         let result = parse_expression("x");
         assert_eq!(result, vec!["x"]);
+
+        let result = parse_expression("x + y");
+        assert_eq!(result, vec!["x", "y"]);
+
+        let result = parse_expression("JSON.parse(this.state.test)");
+        assert_eq!(result, vec!["JSON.parse", "this.state.test"]);
+
+        let result = parse_expression("this.state.test.length + 1");
+        assert_eq!(result, vec!["this.state.test", "1"]);
     }
 
     #[test]
