@@ -29,8 +29,17 @@ class {{class_name}} extends HTMLElement {
       for (const k of this.props) {
         propState[k] = this.getAttribute(k);
       }
+      for (const k of Object.keys(this.__rawAttributes || {})) {
+        propState[k] = this.__rawAttributes[k]
+      }
       this.setState(propState);
       this.componentDidMount();
+    }
+
+    setRawAttribute(name, value) {
+      this.setState({
+        [name]: value,
+      })
     }
 
     attributeChangedCallback(name, oldValue, newValue) {

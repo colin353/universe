@@ -13,31 +13,29 @@ const updateInfoBox = async () => {
 
 this.stateMappers = {
   _extractSymbolInfo: (symbol) => {
-    if(!symbol) return;
+    if (!symbol) return;
 
-    const s = JSON.parse(symbol)
     this.setState({
-      name: s.symbol,
-      className: s?.structure?.symbol,
-      rawType: s.type,
-      symbolLine: s.start + 1,
-      classLine: s?.structure?.start + 1,
-      start: s.start,
-      end: s.end,
+      name: symbol.symbol,
+      className: symbol?.structure?.symbol,
+      rawType: symbol.type,
+      symbolLine: symbol.start + 1,
+      classLine: symbol?.structure?.start + 1,
+      start: symbol.start,
+      end: symbol.end,
     })
   },
   _extractMatchInfo: (matches, start, end) => {
-    const m = JSON.parse(matches)
-    if (!m.matches) return;
+    if (!matches.matches) return;
 
     this.setState({
-      totalLines: m.totalLines,
-      matchingLines: m.matches.filter((x) => {
+      totalLines: matches.totalLines,
+      matchingLines: matches.matches.filter((x) => {
         return !start || !end || x > end || x < start
       }).map((x) => {
         return {
           lineNumber: x,
-          percentage: 100 * x/m.totalLines,
+          percentage: 100 * x/matches.totalLines,
         }
       })
     })

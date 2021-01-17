@@ -1,8 +1,21 @@
 #[derive(Debug, PartialEq)]
+pub enum HTMLAttributeKind {
+    Quoted,
+    Raw,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct HTMLAttribute {
+    pub key: String,
+    pub value: String,
+    pub kind: HTMLAttributeKind,
+}
+
+#[derive(Debug, PartialEq)]
 pub struct HTMLElement {
     pub name: String,
     prefix: String,
-    pub attributes: Vec<(String, String)>,
+    pub attributes: Vec<HTMLAttribute>,
     tag_name: String,
     constructor: String,
     pub children: Vec<HTMLElement>,
@@ -57,7 +70,10 @@ impl HTMLElement {
                 {parent_name}.appendChild({prefix}{name});
             }}
             "#,
-            cond=add_dom_condition, parent_name=parent_name, prefix=self.prefix, name=self.name
+            cond = add_dom_condition,
+            parent_name = parent_name,
+            prefix = self.prefix,
+            name = self.name
         ));
         output
     }
@@ -92,10 +108,7 @@ impl HTMLElement {
                         "const {} = {}[{}__key];\n",
                         item, array, self.name
                     ));
-                    output.push_str(&format!(
-                        "const key = {}__key;\n",
-                        self.name
-                    ));
+                    output.push_str(&format!("const key = {}__key;\n", self.name));
 
                     child.set_prefix(format!(
                         "{}{}_elements[{}__key].",
@@ -105,7 +118,7 @@ impl HTMLElement {
                     output.push_str(&child.to_js(parent_name, "true"));
                     output.push_str("}\n");
                 }
-            },
+            }
             ControlStatement::Condition(cond) => {
                 for child in &mut self.children {
                     output.push_str(&child.to_js(parent_name, &cond));
@@ -124,20 +137,20 @@ impl HTMLElement {
 
     pub fn parse_control(&self) -> ControlStatement {
         // First, determine what kind of control statement it is
-        for (key, value) in &self.attributes {
-            if key == "for" {
+        for attr in &self.attributes {
+            if attr.key == "for" {
                 let mut item = String::from("item");
-                for (key, item_name) in &self.attributes {
-                    if key == "item" {
-                        item = item_name.clone();
+                for item_attr in &self.attributes {
+                    if item_attr.key == "item" {
+                        item = item_attr.key.clone();
                     }
                 }
 
-                return ControlStatement::ForEach(value.clone(), item);
+                return ControlStatement::ForEach(attr.value.clone(), item);
             }
 
-            if key == "if" {
-                return ControlStatement::Condition(value.clone());
+            if attr.key == "if" {
+                return ControlStatement::Condition(attr.value.clone());
             }
         }
 
@@ -163,7 +176,16 @@ impl HTMLElement {
 
     fn set_attributes(&self) -> String {
         let mut output = String::new();
-        for (k, v) in &self.attributes {
+
+        output.push_str(&format!(
+            "{}{}.__rawAttributes ||= {{}}\n",
+            self.prefix, self.name,
+        ));
+
+        for attr in &self.attributes {
+            let k = &attr.key;
+            let v = &attr.value;
+
             if k.starts_with("on:") {
                 let event = &k[3..];
                 let mut callback = v.as_str();
@@ -177,11 +199,20 @@ impl HTMLElement {
                     "{}{}.addEventListener('{}', {}.bind(this));\n",
                     self.prefix, self.name, event, callback
                 ));
+            } else if k == "ref" {
+                continue;
             } else {
-                output.push_str(&format!(
-                    "{}{}.setAttribute('{}', `{}`);\n",
-                    self.prefix, self.name, k, v
-                ));
+                if attr.kind == HTMLAttributeKind::Quoted {
+                    output.push_str(&format!(
+                        "{}{}.setAttribute('{}', `{}`);\n",
+                        self.prefix, self.name, k, v
+                    ));
+                } else {
+                    output.push_str(&format!(
+                        "{}{}.__rawAttributes['{}'] = {};\n",
+                        self.prefix, self.name, k, v
+                    ));
+                }
             }
         }
         output
@@ -202,24 +233,23 @@ impl HTMLElement {
         }
 
         for attr in &self.attributes {
-            if attr.1.starts_with("{") && attr.1.ends_with("}") {
-                let expr = &attr.1[1..attr.1.len() - 2];
+            if attr.kind == HTMLAttributeKind::Quoted {
+                let deps = parse_fmtstring(&attr.value);
+                if deps.len() > 0 {
+                    mutators.push(Mutator {
+                        inputs: deps,
+                        operation: format!(
+                            "{}{}.setAttribute('{}', `{}`);",
+                            self.prefix, self.name, attr.key, attr.value
+                        ),
+                    });
+                }
+            } else if attr.value.starts_with("this.state.") {
                 mutators.push(Mutator {
-                    inputs: vec![expr.to_string()],
+                    inputs: vec![attr.value.to_owned()],
                     operation: format!(
-                        "{}{}.setAttribute('{}', {});",
-                        self.prefix, self.name, attr.0, expr
-                    ),
-                });
-            }
-
-            let deps = parse_fmtstring(&attr.1);
-            if deps.len() > 0 {
-                mutators.push(Mutator {
-                    inputs: deps,
-                    operation: format!(
-                        "{}{}.setAttribute('{}', `{}`);",
-                        self.prefix, self.name, attr.0, attr.1
+                        "{prefix}{name}.__rawAttributes['{key}'] = {value};\nif ({prefix}{name}.setRawAttribute) {prefix}{name}.setRawAttribute('{key}', {value});\n",
+                        prefix=self.prefix, name=self.name, key=attr.key, value=attr.value,
                     ),
                 });
             }
@@ -239,15 +269,21 @@ impl HTMLElement {
             }
             ControlStatement::Condition(cond) => {
                 for child in &mut self.children {
-                    mutators.push(Mutator{
+                    mutators.push(Mutator {
                         inputs: extract_dependencies(&cond),
-                        operation: format!(r#"
+                        operation: format!(
+                            r#"
                             if({cond}) {{
                                 {parent_name}.appendChild({prefix}{name});
                             }} else {{
                                 {prefix}{name}.remove();
                             }}
-                        "#, cond=cond, parent_name=parent_name, prefix=child.prefix, name=child.name),
+                        "#,
+                            cond = cond,
+                            parent_name = parent_name,
+                            prefix = child.prefix,
+                            name = child.name
+                        ),
                     });
 
                     child.extract_mutators(parent_name, mutators);
@@ -256,8 +292,11 @@ impl HTMLElement {
             ControlStatement::ForEach(array, item) => {
                 let mut removals = String::new();
                 for child in &self.children {
-                    removals.push_str(&format!("{prefix}{name}_elements[{name}__key].{child_name}.remove();\n",
-                        prefix=self.prefix, name=self.name, child_name=child.name,
+                    removals.push_str(&format!(
+                        "{prefix}{name}_elements[{name}__key].{child_name}.remove();\n",
+                        prefix = self.prefix,
+                        name = self.name,
+                        child_name = child.name,
                     ));
                 }
 
@@ -270,7 +309,10 @@ impl HTMLElement {
                             delete {prefix}{name}_elements[{name}__key];
                         }}
                     }}"#,
-                    name=self.name, array=array, prefix=self.prefix, removals=removals,
+                    name = self.name,
+                    array = array,
+                    prefix = self.prefix,
+                    removals = removals,
                 );
 
                 mutators.push(Mutator {
@@ -282,7 +324,6 @@ impl HTMLElement {
                 for child in &mut self.children {
                     child.extract_mutators(parent_name, &mut child_mutators);
                 }
-
 
                 for mut mutator in child_mutators {
                     mutator.operation = format!(
@@ -297,7 +338,7 @@ impl HTMLElement {
                             break;
                         }
                     }
-                    if array_dep { 
+                    if array_dep {
                         mutator.inputs.push(array.clone());
                     }
 
@@ -312,7 +353,7 @@ impl HTMLElement {
 
                 // New entry mutator with additional comment
                 let op = format!(
-                        r#"
+                    r#"
                         for(const {name}__key of Object.keys({array})) {{
                             if(!{prefix}{name}_elements[{name}__key]) {{
                                 const key = {name}__key;
@@ -321,7 +362,12 @@ impl HTMLElement {
                                 {definitions}
                             }}
                         }}"#,
-                        name=self.name, array=array, prefix=self.prefix, item=item, definitions=definitions);
+                    name = self.name,
+                    array = array,
+                    prefix = self.prefix,
+                    item = item,
+                    definitions = definitions
+                );
 
                 mutators.push(Mutator {
                     inputs: vec![array.clone()],
@@ -347,9 +393,13 @@ pub struct Mutator {
 fn extract_dependencies(input: &str) -> Vec<String> {
     let mut output = Vec::new();
     for (idx, _) in input.match_indices("this.state.") {
-        output.push(input.chars().skip(idx).take_while(|x| {
-            return x.is_alphanumeric() || *x == '.' || *x == '_'
-        }).collect());
+        output.push(
+            input
+                .chars()
+                .skip(idx)
+                .take_while(|x| return x.is_alphanumeric() || *x == '.' || *x == '_')
+                .collect(),
+        );
     }
     output
 }
@@ -455,17 +505,19 @@ pub fn take_one_element(
     Ok(None)
 }
 
-pub fn read_string(chars: &mut std::iter::Peekable<std::str::Chars>) -> String {
+pub fn read_string(chars: &mut std::iter::Peekable<std::str::Chars>) -> (String, bool) {
     let mut output = String::new();
     let mut termchar = '"';
     let mut quoted = false;
     let mut escaped = false;
     let mut started = false;
+    let mut raw = true;
     while let Some(ch) = chars.peek() {
         if !started && (*ch == '\'' || *ch == '"') {
             termchar = *ch;
             started = true;
             quoted = true;
+            raw = false;
             chars.next();
             continue;
         }
@@ -487,6 +539,7 @@ pub fn read_string(chars: &mut std::iter::Peekable<std::str::Chars>) -> String {
             if termchar == '}' {
                 output.push('}');
             }
+
             chars.next();
             break;
         }
@@ -501,7 +554,7 @@ pub fn read_string(chars: &mut std::iter::Peekable<std::str::Chars>) -> String {
         chars.next();
     }
 
-    output
+    (output, raw)
 }
 
 pub fn read_tag(chars: &mut std::iter::Peekable<std::str::Chars>) -> Result<HTMLElement, String> {
@@ -551,25 +604,36 @@ pub fn read_tag(chars: &mut std::iter::Peekable<std::str::Chars>) -> Result<HTML
         if started_attr && *ch == '=' {
             chars.next();
             let len = element.attributes.len();
-            element.attributes[len - 1].1 = read_string(chars);
+            let (value, raw) = read_string(chars);
+            element.attributes[len - 1].value = value;
+
+            if !raw {
+                element.attributes[len - 1].kind = HTMLAttributeKind::Quoted;
+            }
+
             started_attr = false;
             continue;
         }
 
         if !started_attr {
             started_attr = true;
-            element.attributes.push((String::new(), String::new()));
+            let attr = HTMLAttribute {
+                key: String::new(),
+                value: String::new(),
+                kind: HTMLAttributeKind::Raw,
+            };
+            element.attributes.push(attr);
         }
 
         let len = element.attributes.len();
-        element.attributes[len - 1].0.push(*ch);
+        element.attributes[len - 1].key.push(*ch);
         chars.next();
     }
 
     for attr in &mut element.attributes {
         // Strip off enclosing braces
-        if attr.1.starts_with("{") && attr.1.ends_with("}") {
-            attr.1 = attr.1[1..attr.1.len() - 1].to_string();
+        if attr.value.starts_with("{") && attr.value.ends_with("}") {
+            attr.value = attr.value[1..attr.value.len() - 1].to_string();
         }
     }
 
@@ -603,8 +667,8 @@ mod tests {
         let result = parse("<p style=\"color: red\">red text</p>").unwrap();
         assert_eq!(result[0].name, "__el0");
         assert_eq!(result[0].tag_name, "p");
-        assert_eq!(result[0].attributes[0].0, "style");
-        assert_eq!(result[0].attributes[0].1, "color: red");
+        assert_eq!(result[0].attributes[0].key, "style");
+        assert_eq!(result[0].attributes[0].value, "color: red");
         assert_eq!(result[0].children[0].inner, "red text");
     }
 
@@ -613,8 +677,8 @@ mod tests {
         let result = parse("<p on:click={fn}>red text</p>").unwrap();
         assert_eq!(result[0].name, "__el0");
         assert_eq!(result[0].tag_name, "p");
-        assert_eq!(result[0].attributes[0].0, "on:click");
-        assert_eq!(result[0].attributes[0].1, "fn");
+        assert_eq!(result[0].attributes[0].key, "on:click");
+        assert_eq!(result[0].attributes[0].value, "fn");
         assert_eq!(result[0].children[0].inner, "red text");
     }
 

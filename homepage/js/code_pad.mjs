@@ -31,15 +31,15 @@ const contextMenu = (event) => {
 }
 
 function updateCodeSelection(event) {
-  const selection = window.getSelection().toString()
+  const selection = window.getSelection();
   if(!selection) {
     return
   }
 
   this.setState({
-    selectedSymbol: JSON.stringify({
-      symbol: selection,
-    })
+    selectedSymbol: {
+      symbol: selection.toString(),
+    }
   })
 }
 
@@ -219,9 +219,7 @@ this.stateMappers = {
       })
       return '{}'
     }
-    const symbol = JSON.parse(selectedSymbol)
-    symbol.symbol;
-    const regex = new RegExp(`(^|[^\\w])(${symbol.symbol})([^\\w]|$)`)
+    const regex = new RegExp(`(^|[^\\w])(${selectedSymbol.symbol})([^\\w]|$)`)
     let matches = [];
     let lineNumber = 0;
     let renderedLines = [];
@@ -242,10 +240,10 @@ this.stateMappers = {
       renderedLines
     })
 
-    return JSON.stringify({
+    return {
       totalLines: renderedLines.length,
       matches
-    });
+    };
   },
   showInfoBox: (selectedSymbol) => {
     return Object.keys(selectedSymbol).length > 0 && selectedSymbol != '{}'
@@ -253,13 +251,7 @@ this.stateMappers = {
   selectedSymbol: (symbolSpans, line) => {
     if(!line) return {};
 
-    const x = symbolSpans.getSymbolForLine(parseInt(line))
-
-    if(x) {
-      return JSON.stringify(x);
-    } 
-
-    return '{}'
+    return symbolSpans.getSymbolForLine(parseInt(line)) || {}
   },
   showUsages: (usages) => {
     return usages && usages.length > 0 

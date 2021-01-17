@@ -295,9 +295,10 @@ impl FECompiler {
     }
 
     fn extract_refs(&mut self, element: &htmlc::HTMLElement) {
-        for (key, value) in &element.attributes {
-            if key == "ref" {
-                self.refs.push((element.name.clone(), value.to_owned()));
+        for attr in &element.attributes {
+            if attr.key == "ref" {
+                self.refs
+                    .push((element.name.clone(), attr.value.to_owned()));
             }
         }
 
