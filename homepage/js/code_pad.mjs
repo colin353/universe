@@ -32,15 +32,24 @@ const contextMenu = (event) => {
 
 function updateCodeSelection(event) {
   const selection = window.getSelection();
-  if(!selection) {
+   
+  if(!selection || selection.toString().trim() === "") {
     return
   }
 
-  this.setState({
-    selectedSymbol: {
-      symbol: selection.toString(),
-    }
-  })
+  const matchingSpan = this.state.symbolSpans.getSymbolForTerm(selection.toString())
+
+  if (matchingSpan) {
+    this.setState({
+      selectedSymbol: matchingSpan
+    })
+  } else {
+    this.setState({
+      selectedSymbol: {
+        symbol: selection.toString()
+      }
+    })
+  }
 }
 
 const copy = (event) => {
@@ -76,6 +85,16 @@ class SymbolSpans {
     const symbol = this.getCurrentSymbol();
     this.lineNumber += 1;
     return symbol;
+  }
+
+  getSymbolForTerm(term) {
+    for (const symbol of this.sortedSymbols) {
+      if (symbol.symbol === term) {
+        return symbol;
+      }
+    }
+
+    return null;
   }
 
   getSymbolForLine(line) {
@@ -145,6 +164,13 @@ class NestedSymbolSpans {
   reset() {
     this.functions.reset();
     this.structures.reset();
+  }
+
+  getSymbolForTerm(term) {
+    const match = this.functions.getSymbolForTerm(term) || this.structures.getSymbolForTerm(term)
+    if (!match) return null;
+
+    return this.getSymbolForLine(match.start + 1);
   }
 
   join(fn, st, skipOverlapping=true) {

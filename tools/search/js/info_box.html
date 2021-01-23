@@ -5,7 +5,7 @@
     &nbsp;<a href="#L${this.state.classLine}" class='invisible-link'>${this.state.className}</a>::<a href="#L${this.state.symbolLine}" class='invisible-link'>${this.state.name}</a>
     </control>
     <control if={!this.state.className}>
-      &nbsp;${this.state.name}
+    &nbsp;<a class='invisible-link' href="#L${this.state.symbolLine}">${this.state.name}</a>
     </control>
     </p>
   </div>
