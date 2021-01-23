@@ -541,6 +541,10 @@ pub fn should_ignore_file(filename: &str) -> bool {
     if filename.ends_with("~") {
         return true;
     }
+    // Filenames with these characters cause problems with fuse for some reason
+    if filename.contains("]") || filename.contains("[") {
+        return true;
+    }
 
     false
 }
