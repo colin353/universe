@@ -35,7 +35,7 @@ static LAST_ID: AtomicU64 = AtomicU64::new(1);
 static MAX_SSTABLE_HEAP_SIZE: usize = 100 * 1000 * 1000;
 
 static TARGET_SHARDS: usize = 8;
-static IN_MEMORY_RECORD_THRESHOLD: u64 = 100 * 1000;
+static IN_MEMORY_RECORD_THRESHOLD: usize = 100 * 1000;
 static IN_MEMORY_BYTES_THRESHOLD: u64 = 100 * 1000 * 1000;
 
 lazy_static! {
@@ -473,6 +473,13 @@ pub fn update_stage(stage: &mut Stage) {
         *input = latest_input.clone();
     }
 
+    for input in stage.mut_side_inputs().iter_mut() {
+        let reg = PCOLLECTION_REGISTRY.read().unwrap();
+        let latest_input = reg.get(&input.get_id()).unwrap();
+
+        *input = latest_input.clone();
+    }
+
     for output in stage.mut_outputs().iter_mut() {
         let reg = PCOLLECTION_REGISTRY.read().unwrap();
         let latest_input = reg.get(&output.get_id()).unwrap();
@@ -501,6 +508,12 @@ pub fn run() {
 
             let mut ready = true;
             for input in stage.get_inputs() {
+                if !input.get_resolved() {
+                    ready = false;
+                }
+            }
+
+            for input in stage.get_side_inputs() {
                 if !input.get_resolved() {
                     ready = false;
                 }
@@ -836,6 +849,7 @@ where
         let mut mem_src;
         let mut rec_src;
         let mut rec_iter;
+        let mut sst_src;
         let mut dyn_src: &mut dyn StreamingIterator<Item = TSideInput>;
         match side_input.get_format() {
             DataFormat::IN_MEMORY => {
@@ -847,6 +861,10 @@ where
                 rec_src = source.recordio_source();
                 rec_iter = rec_src.streaming_iter();
                 dyn_src = &mut rec_iter;
+            }
+            DataFormat::SSTABLE => {
+                sst_src = source.sstable_source_or_panic();
+                dyn_src = Box::leak(sst_src);
             }
             _ => {
                 panic!("idk how to deal with side input {:?}", side_input);
@@ -878,6 +896,45 @@ where
                         }
                     }
                     x => panic!("I don't know how to execute format: {:?}!", x),
+                }
+            }
+            sink.finish();
+        }
+    }
+}
+
+impl<TInput, TSideInput, TOutput> PFn
+    for DoSideInputFnWrapper<KV<String, TInput>, TSideInput, TOutput>
+where
+    TInput: PlumeTrait + Default,
+    TSideInput: PlumeTrait + Default,
+    TOutput: PlumeTrait + Default,
+{
+    default fn execute(&self, shard: &Shard) {
+        for input in shard.get_inputs() {
+            let source = Source::<KV<String, TInput>>::new(input.clone());
+            let producer = SinkProducer::<TOutput>::new();
+            let mut sink = producer.make_sink(shard.get_outputs());
+            {
+                let sink_ref: &mut dyn EmitFn<TOutput> = &mut *sink;
+                match input.get_format() {
+                    DataFormat::IN_MEMORY => {
+                        let memtable = source.mem_table_source();
+                        let mut iter = memtable.iter();
+                        while let Some(item) = iter.next() {
+                            self.function.do_it(item, sink_ref);
+                        }
+                    }
+                    DataFormat::SSTABLE => {
+                        let mut iter = source.sstable_source();
+                        while let Some((key, value)) = iter.next() {
+                            let kv = KV(key, value);
+                            self.function.do_it(&kv, sink_ref);
+                        }
+                    }
+                    x => {
+                        panic!("I don't know how to execute with source type: {:?}", x);
+                    }
                 }
             }
             sink.finish();
@@ -928,46 +985,6 @@ where
                         }
                     }
                     x => panic!("I don't know how to execute format: {:?}!", x),
-                }
-            }
-            sink.finish();
-        }
-    }
-}
-
-impl<TInput, TSideInput, TOutput> PFn
-    for DoSideInputFnWrapper<KV<String, TInput>, TSideInput, TOutput>
-where
-    TInput: PlumeTrait + Default,
-    TSideInput: PlumeTrait + Default,
-    TOutput: PlumeTrait + Default,
-{
-    default fn execute(&self, shard: &Shard) {
-        for input in shard.get_inputs() {
-            let source = Source::<KV<String, TInput>>::new(input.clone());
-            let producer = SinkProducer::<TOutput>::new();
-            let mut sink = producer.make_sink(shard.get_outputs());
-            {
-                let sink_ref: &mut dyn EmitFn<TOutput> = &mut *sink;
-
-                match input.get_format() {
-                    DataFormat::IN_MEMORY => {
-                        let memtable = source.mem_table_source();
-                        let mut iter = memtable.iter();
-                        while let Some(item) = iter.next() {
-                            self.function.do_it(item, sink_ref);
-                        }
-                    }
-                    DataFormat::SSTABLE => {
-                        let mut iter = source.sstable_source();
-                        while let Some((key, value)) = iter.next() {
-                            let kv = KV(key, value);
-                            self.function.do_it(&kv, sink_ref);
-                        }
-                    }
-                    x => {
-                        panic!("I don't know how to execute with source type: {:?}", x);
-                    }
                 }
             }
             sink.finish();
@@ -1045,7 +1062,8 @@ where
     fn execute(&self, shard: &Shard) {
         if shard.get_inputs().len() != 2 {
             panic!(
-                "I don't know how to join {} inputs!",
+                "[{}] I don't know how to join {} inputs!",
+                self.name(),
                 shard.get_inputs().len()
             );
         }
@@ -1072,8 +1090,10 @@ where
                 dyn_left_iter = &mut s_left_sst;
             } else {
                 panic!(
-                    "I don't know how to join with data format {:?}!",
-                    left.get_format()
+                    "[{}] I don't know how to join with left input data format {:?}!\n{:?}",
+                    self.name(),
+                    left.get_format(),
+                    shard,
                 );
             }
 
@@ -1095,8 +1115,10 @@ where
                 dyn_right_iter = &mut s_right_sst;
             } else {
                 panic!(
-                    "I don't know how to join with data format {:?}!",
-                    right.get_format()
+                    "[{}] I don't know how to join with right input data format {:?}!\n{:?}",
+                    self.name(),
+                    right.get_format(),
+                    shard
                 );
             }
 
@@ -1161,7 +1183,7 @@ where
 
 struct Planner {
     target_shards: usize,
-    in_memory_record_threshold: u64,
+    in_memory_record_threshold: usize,
     in_memory_bytes_threshold: u64,
 
     temp_data_folder: String,
@@ -1207,7 +1229,11 @@ impl Planner {
             // If the output is not defined, we should decide what to use. If the
             // data is not too big, we will keep it in memory, else write to disk
             let size = Self::estimate_size(stage.get_inputs());
-            if self.keep_in_memory(size) {
+            if self.keep_in_memory(&size) {
+                println!(
+                    "Kept {:?} in memory because of small size estimate {:?}",
+                    output, size
+                );
                 output.set_format(DataFormat::IN_MEMORY);
             } else {
                 output.set_format(DataFormat::SSTABLE);
@@ -1260,19 +1286,29 @@ impl Planner {
         }
 
         if output.get_format() == DataFormat::SSTABLE {
-            let mut sharded_filename = output.get_filenames()[0].to_string();
-            if sharded_filename.is_empty() {
-                sharded_filename = format!(
+            let mut sharded_filenames = if let Some(s) = output.get_filenames().get(0) {
+                shard_lib::unshard(s)
+            } else {
+                // We haven't determined a filename for this output. That means it will be resolved
+                // now, and we have to update the pcollection registry with the concrete output
+                // info.
+
+                let mut pcoll_write = PCOLLECTION_REGISTRY.write().unwrap();
+                let mut config = pcoll_write.get_mut(&output.get_id()).unwrap();
+                let filenames = shard_lib::unshard(&format!(
                     "{}/output{:02}.sstable@{}",
                     self.temp_data_folder,
                     output.get_id(),
                     target_shards
-                );
-            }
-            for (index, filename) in shard_lib::unshard(&sharded_filename)
-                .into_iter()
-                .enumerate()
-            {
+                ));
+
+                for filename in &filenames {
+                    config.mut_filenames().push(filename.clone());
+                }
+                filenames
+            };
+
+            for (index, filename) in sharded_filenames.into_iter().enumerate() {
                 let mut s = output.clone();
                 s.mut_filenames().clear();
                 s.mut_filenames().push(filename);
@@ -1314,8 +1350,12 @@ impl Planner {
         );
     }
 
-    fn keep_in_memory(&self, size: SizeEstimate) -> bool {
-        if size.get_records() > self.in_memory_record_threshold {
+    fn keep_in_memory(&self, size: &SizeEstimate) -> bool {
+        if size.get_very_big() {
+            return false;
+        }
+
+        if size.get_records() > self.in_memory_record_threshold as u64 {
             return false;
         }
 
@@ -1335,6 +1375,12 @@ impl Planner {
                     let mem_reader = IN_MEMORY_DATASETS.read().unwrap();
                     count += mem_reader.get(memory_id).unwrap().len();
                 }
+            }
+            if input.get_format() == DataFormat::SSTABLE
+                || input.get_format() == DataFormat::RECORDIO
+            {
+                // TODO: look at the filesize and use that to estimate size
+                out.set_very_big(true);
             }
         }
         out.set_records(count as u64);
@@ -1669,6 +1715,7 @@ where
         let mut pcoll_write = PCOLLECTION_REGISTRY.write().unwrap();
         let mut config = pcoll_write.get_mut(&self.configs[0].get_id()).unwrap();
         config.set_is_ptable(true);
+        config.set_format(DataFormat::SSTABLE);
         config.set_num_resolved_shards(config.get_num_resolved_shards() + 1);
         if config.get_num_resolved_shards() == config.get_num_shards() {
             config.set_resolved(true);
@@ -1694,6 +1741,16 @@ where
         let idx = self.write_count % self.outputs.len();
         self.outputs[idx].emit(value);
         self.write_count += 1;
+
+        if self.write_count > IN_MEMORY_RECORD_THRESHOLD
+            && self.write_count % IN_MEMORY_RECORD_THRESHOLD == 1
+        {
+            println!(
+                "warning: ordered memory sink for {} got {} elements, might OOM",
+                std::any::type_name::<T>().split("::").last().unwrap(),
+                self.write_count
+            );
+        }
     }
 
     fn finish(self: Box<Self>) {
@@ -1732,6 +1789,16 @@ where
         let idx = self.write_count % self.outputs.len();
         self.outputs[idx].emit(value);
         self.write_count += 1;
+
+        if self.write_count > IN_MEMORY_RECORD_THRESHOLD
+            && self.write_count % IN_MEMORY_RECORD_THRESHOLD == 1
+        {
+            println!(
+                "warning: memory sink for {} got {} elements, might OOM",
+                std::any::type_name::<T>().split("::").last().unwrap(),
+                self.write_count
+            );
+        }
     }
 }
 
@@ -1904,10 +1971,40 @@ where
     }
 }
 
+trait MakeKVReader<T> {
+    fn make(config: &PCollectionProto) -> Box<dyn StreamingIterator<Item = T>>;
+}
+
+impl<T> MakeKVReader<T> for Source<T> {
+    default fn make(config: &PCollectionProto) -> Box<dyn StreamingIterator<Item = T>> {
+        panic!("can't make sstable reader with unknown type T")
+    }
+}
+
+impl<T> MakeKVReader<KV<String, T>> for Source<KV<String, T>>
+where
+    T: PlumeTrait + Default,
+{
+    default fn make(config: &PCollectionProto) -> Box<dyn StreamingIterator<Item = KV<String, T>>> {
+        let reader = ShardedSSTableReader::from_filenames(
+            config.get_filenames(),
+            config.get_starting_key(),
+            config.get_ending_key().to_string(),
+        )
+        .unwrap();
+
+        Box::new(reader)
+    }
+}
+
 impl<T> Source<T>
 where
     T: PlumeTrait + Default,
 {
+    pub fn sstable_source_or_panic(&self) -> Box<dyn StreamingIterator<Item = T>> {
+        Self::make(&self.config)
+    }
+
     pub fn recordio_source(&self) -> recordio::RecordIOReaderOwned<T> {
         let filenames = self.config.get_filenames();
         assert!(

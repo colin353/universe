@@ -410,7 +410,7 @@ pub fn run_indexer(code_recordio: &str, output_dir: &str) {
     // Run pagerank with several iterations
     let ranked_1 = annotated_files.par_do_side_input(PageRankFn::new(), annotated_files.clone());
     let ranked_2 = ranked_1.par_do_side_input(PageRankFn::new(), ranked_1.clone());
-    let ranked_3 = ranked_1.par_do_side_input(PageRankFn::new(), ranked_2.clone());
+    let ranked_3 = ranked_2.par_do_side_input(PageRankFn::new(), ranked_2.clone());
 
     // Extract and annotate definitions into the files
     let annotated_files = ranked_3.par_do(AnnotateDefinitionsFn {});

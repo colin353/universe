@@ -12,6 +12,7 @@ enum DataFormat {
 message SizeEstimate {
   uint64 records = 1;
   uint64 data_bytes = 2;
+  bool very_big = 3;
 }
 
 message PCollectionProto {
