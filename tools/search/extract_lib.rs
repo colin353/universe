@@ -21,7 +21,7 @@ pub fn extract_code(root_dir: &Path, output_filename: &str) {
 fn should_ignore_path(path: &str) -> bool {
     if let Some(x) = path.split("/").last() {
         // Ignore all file/directories that start with . (i.e. hidden stuff)
-        if x.starts_with(".") {
+        if x.starts_with(".") && !x.ends_with("rc") {
             return true;
         }
 
