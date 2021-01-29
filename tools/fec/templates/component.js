@@ -9,7 +9,7 @@ class {{class_name}} extends HTMLElement {
           this.shadow.innerHTML = `<style>{{css}}</style>`
 
           this.props = [{{props}}];
-          this.state = [];
+          this.state = {};
           this.stateMappers = {};
 
           this.__mappings = {};
@@ -19,20 +19,19 @@ class {{class_name}} extends HTMLElement {
           this.currentlySettingState = false;
           this.pendingStateDifferences = new Set([]);
 
+          for (const k of this.props) {
+            this.state[k] = this.getAttribute(k);
+          }
+          for (const k of Object.keys(this.__rawAttributes || {})) {
+            this.state[k] = this.__rawAttributes[k]
+          }
+
           this.initialize();
     }
 
     static observedAttributes = [{{props}}];
 
     connectedCallback() {
-      let propState = {};
-      for (const k of this.props) {
-        propState[k] = this.getAttribute(k);
-      }
-      for (const k of Object.keys(this.__rawAttributes || {})) {
-        propState[k] = this.__rawAttributes[k]
-      }
-      this.setState(propState);
       this.componentDidMount();
     }
 
@@ -178,6 +177,20 @@ class {{class_name}} extends HTMLElement {
       }
     }
 
+    setElementAttribute(element, key, value) {
+      if (typeof value === "string") {
+        element.setAttribute(key, value);
+      } else if (typeof value === "boolean") {
+        if (value) {
+          element.setAttribute(key, true);
+        } else {
+          element.removeAttribute(key);
+        }
+      } else {
+        element.__rawAttributes[key] = value;
+        if(element.setRawAttribute) element.setRawAttribute(key, value);
+      }
+    }
     
     static get observedAttributes() {
       return [];

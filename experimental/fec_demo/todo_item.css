@@ -1,0 +1,7 @@
+input[type='checkbox'] {
+  margin-right: 10px;
+}
+
+p.checked {
+  text-decoration: line-through;
+}

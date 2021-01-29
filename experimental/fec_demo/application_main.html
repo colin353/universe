@@ -1,0 +1,14 @@
+<h1>to do list</h1> 
+
+<input ref="textbox" type="text" placeholder="new item..." />
+<button on:click={addItem}>add item</button>
+
+<div>
+  <control for={this.state.items}> 
+    <todo-item id={key} on:toggle={markItemDone} done={item.done} text={item.text} />
+  </control>
+</div>
+
+<control if={this.state.hasCheckedItems}>
+  <a href="#" on:click={clearChecked}>clear checked items</a>
+</control>

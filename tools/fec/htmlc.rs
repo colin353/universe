@@ -204,12 +204,12 @@ impl HTMLElement {
             } else {
                 if attr.kind == HTMLAttributeKind::Quoted {
                     output.push_str(&format!(
-                        "{}{}.setAttribute('{}', `{}`);\n",
+                        "this.setElementAttribute({}{}, '{}', `{}`);\n",
                         self.prefix, self.name, k, v
                     ));
                 } else {
                     output.push_str(&format!(
-                        "{}{}.__rawAttributes['{}'] = {};\n",
+                        "this.setElementAttribute({}{}, '{}', {});\n",
                         self.prefix, self.name, k, v
                     ));
                 }
@@ -239,17 +239,20 @@ impl HTMLElement {
                     mutators.push(Mutator {
                         inputs: deps,
                         operation: format!(
-                            "{}{}.setAttribute('{}', `{}`);",
+                            "this.setElementAttribute({}{}, '{}', `{}`);",
                             self.prefix, self.name, attr.key, attr.value
                         ),
                     });
                 }
-            } else if attr.value.starts_with("this.state.") {
+            } else if attr.value.starts_with("this.state.") || attr.value.starts_with("item") {
                 mutators.push(Mutator {
                     inputs: vec![attr.value.to_owned()],
                     operation: format!(
-                        "{prefix}{name}.__rawAttributes['{key}'] = {value};\nif ({prefix}{name}.setRawAttribute) {prefix}{name}.setRawAttribute('{key}', {value});\n",
-                        prefix=self.prefix, name=self.name, key=attr.key, value=attr.value,
+                        "this.setElementAttribute({prefix}{name}, '{key}', {value});\n",
+                        prefix = self.prefix,
+                        name = self.name,
+                        key = attr.key,
+                        value = attr.value,
                     ),
                 });
             }
