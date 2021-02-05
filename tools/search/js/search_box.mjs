@@ -95,7 +95,9 @@ function handleBlur() {
 }
 
 this.componentDidMount = () => {
-  this.refs.search_input.value = this.state.query;
+  if (this.state.query) {
+    this.refs.search_input.value = this.state.query;
+  }
 
   // Only enable autofocus when not on a detail page
   if (window.location.pathname.length <= 1) {

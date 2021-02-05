@@ -204,6 +204,9 @@ this.stateMappers = {
       parsedLines.push(model.extractSyntax(line));
     }
 
+    // The reason for the parsedLines --> renderedLines distinction is because
+    // parsedLines is the raw HTML after syntax extraction, whereas the
+    // renderedLines also contains extra markup from highlighting selected text.
     this.setState({renderedLines: parsedLines})
 
     return parsedLines;
@@ -240,12 +243,10 @@ this.stateMappers = {
   },
   matchingLines: (selectedSymbol) => {
     if (Object.keys(selectedSymbol).length == 0) {
-      this.setState({
-        renderedLines: this.state.parsedLines
-      })
       return '{}'
     }
-    const regex = new RegExp(`(^|[^\\w])(${selectedSymbol.symbol})([^\\w]|$)`)
+    const sanitizedSymbol = selectedSymbol.symbol.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const regex = new RegExp(`(^|[^\\w])(${sanitizedSymbol})([^\\w]|$)`)
     let matches = [];
     let lineNumber = 0;
     let renderedLines = [];
@@ -328,9 +329,10 @@ this.componentDidMount = () => {
 }
 
 this.state = {
+  symbolSpans: new NestedSymbolSpans([]),
   selectedSymbol: {},
-  parsedLines: this.stateMappers.parsedLines(this.state.code),
-  lines: this.stateMappers.lines(this.state.code),
+  renderedLines: [],
+  lines: [],
   startingLine: 0,
   usages: [],
 };

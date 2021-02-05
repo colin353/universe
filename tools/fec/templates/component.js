@@ -29,8 +29,6 @@ class {{class_name}} extends HTMLElement {
           this.initialize();
     }
 
-    static observedAttributes = [{{props}}];
-
     connectedCallback() {
       this.componentDidMount();
     }
@@ -56,47 +54,51 @@ class {{class_name}} extends HTMLElement {
       return oldState != newState
     }
 
+    renderStateDifferences() {
+      const unrenderedStateDifferences = new Set(this.pendingStateDifferences);
+      let iterations = 0;
+      while(this.pendingStateDifferences.size > 0) {
+        iterations += 1;
+        if (iterations > 1024) {
+          console.error("setState trigger depth exceeded!");
+          break;
+        }
+
+        const unmappedStateDifferences = this.pendingStateDifferences
+        this.pendingStateDifferences = new Set()
+        this.triggerAllMappings(unmappedStateDifferences);
+
+        for (const k of unmappedStateDifferences) {
+          unrenderedStateDifferences.add(k)
+        }
+      }
+
+      for (const k of unrenderedStateDifferences) {
+        this.triggerRenders("this.state." + k);
+      }
+
+      this.currentlySettingState = false;
+    }
+
     initialize() {
       this.setState = (newState) => {
-        let isOuter = !this.currentlySettingState;
-        if (isOuter) {
-          this.currentlySettingState = true;
-        }
-
-        for (const k of Object.keys(newState)) {
-          if (this._hasStateChanged(this.state[k], newState[k])) {
-            this.state[k] = newState[k];
-            this.pendingStateDifferences.add(k);
-          }
-        }
-
-        if (!isOuter) {
-          return
-        }
-
-        const unrenderedStateDifferences = new Set(this.pendingStateDifferences);
-        let iterations = 0;
-        while(this.pendingStateDifferences.size > 0) {
-          iterations += 1;
-          if (iterations > 1024) {
-            console.error("setState trigger depth exceeded!");
-            break;
+          let isOuter = !this.currentlySettingState;
+          if (isOuter) {
+            this.currentlySettingState = true;
           }
 
-          const unmappedStateDifferences = this.pendingStateDifferences
-          this.pendingStateDifferences = new Set()
-          this.triggerAllMappings(unmappedStateDifferences);
-
-          for (const k of unmappedStateDifferences) {
-            unrenderedStateDifferences.add(k)
+          for (const k of Object.keys(newState)) {
+            if (this._hasStateChanged(this.state[k], newState[k])) {
+              this.state[k] = newState[k];
+              this.pendingStateDifferences.add(k);
+            }
           }
-        }
 
-        for (const k of unrenderedStateDifferences) {
-          this.triggerRenders("this.state." + k);
-        }
+          if (!isOuter) {
+            return
+          }
 
-        this.currentlySettingState = false;
+          setTimeout(this.renderStateDifferences.bind(this), 16);
       }
       
       {{javascript}}
@@ -143,6 +145,8 @@ class {{class_name}} extends HTMLElement {
           return output;
         }
       }
+
+      this.triggerAllMappings(Object.keys(this.__mappings))
     }
 
     render(keys) {}
@@ -193,7 +197,7 @@ class {{class_name}} extends HTMLElement {
     }
     
     static get observedAttributes() {
-      return [];
+      return [{{props}}]
     }
 }
 
