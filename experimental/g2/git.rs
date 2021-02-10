@@ -183,7 +183,7 @@ pub fn commit() -> Result<(), GitError> {
     c.arg("commit");
     c.arg("-n");
     c.arg("-m");
-    c.arg(format!("fix:{}", branch_name));
+    c.arg(format!("fix: {}", branch_name));
 
     match get_stdout(c) {
         Ok(_) => Ok(()),
