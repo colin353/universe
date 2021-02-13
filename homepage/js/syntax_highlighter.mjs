@@ -174,6 +174,23 @@ class LanguageModel {
                 continue;
             }
 
+            if(this.isAlphanumericUnderscore(ch)) {
+                acc += ch;
+                ch = this.next();
+                continue;
+            } else if(acc.length > 0) {
+                if (this.keywords.has(acc)) {
+                    output += `<span class='keyword'>${escapeHtml(acc)}</span>${escapeHtml(ch)}`;
+                } else if (!isNaN(acc)) {
+                    output += `<span class='literal'>${escapeHtml(acc)}</span>${escapeHtml(ch)}`;
+                } else {
+                    output += escapeHtml(acc + ch);
+                }
+                acc = "";
+                ch = this.next();
+                continue;
+            }
+
             if(this.isCommentCharacter(ch)) {
                 commentAcc += ch;
                 if(this.isInterminableComment(commentAcc)) {
@@ -194,23 +211,11 @@ class LanguageModel {
             } else if(commentAcc.length > 0) {
                 output += commentAcc;
                 commentAcc = "";
+                ch = this.next();
+                continue;
             }
 
-            if(this.isAlphanumericUnderscore(ch)) {
-                acc += ch;
-            } else if(acc.length > 0) {
-                if (this.keywords.has(acc)) {
-                    output += `<span class='keyword'>${escapeHtml(acc)}</span>${escapeHtml(ch)}`;
-                } else if (!isNaN(acc)) {
-                    output += `<span class='literal'>${escapeHtml(acc)}</span>${escapeHtml(ch)}`;
-                } else {
-                    output += escapeHtml(acc + ch);
-                }
-                acc = "";
-            } else {
-                output += escapeHtml(ch);
-            }
-
+            output += escapeHtml(ch);
             ch = this.next();
         }
 

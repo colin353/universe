@@ -10,7 +10,7 @@ export function assert_eq(left, right) {
   const leftStr = JSON.stringify(left, null, 4);
   const rightStr = JSON.stringify(right, null, 4);
 
-  console.log(`assert_eq failed, provided: ${leftStr}\n\ndoes not equal expected: ${rightStr}`);
+  console.log(`assert_eq failed, provided: ${leftStr}\n\ndoes not equal expected   : ${rightStr}`);
   console.trace();
   throw 'assertion failed'
 }

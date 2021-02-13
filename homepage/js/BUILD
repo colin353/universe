@@ -66,6 +66,12 @@ fe_library(
     deps = [":utils"],
 )
 
+fe_test(
+    name = "syntax_highlighter_test",
+    srcs = [ "syntax_highlighter_test.mjs" ],
+    deps = [ ":syntax_highlighter" ],
+)
+
 fe_library(
     name = "diff",
     srcs = ["diff.mjs"],
