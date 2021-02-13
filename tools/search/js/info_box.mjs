@@ -61,7 +61,7 @@ this.stateMappers = {
   },
 }
 
-this.state = {
+this.setInitialState({
     matches: [],
     matchingLines: [],
     totalLines: 0,
@@ -69,7 +69,7 @@ this.state = {
     scrollTop: 0,
     scrollHeight: 0,
     type: '?',
-}
+})
 
 store.addWatcher("codePadScrollInfo", (scrollInfo) => {
   if (!scrollInfo) return;

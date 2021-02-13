@@ -39,6 +39,12 @@ class {{class_name}} extends HTMLElement {
       })
     }
 
+    setInitialState(state) {
+      for (const key of Object.keys(state)) {
+        if (!(key in this.state)) this.state[key] = state[key];
+      }
+    }
+
     attributeChangedCallback(name, oldValue, newValue) {
       this.setState({
         [name]: newValue,
