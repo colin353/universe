@@ -160,8 +160,8 @@ this.stateMappers = {
     },
     leftLines: (parsed) => renderLines(parsed.left),
     rightLines: (parsed) => renderLines(parsed.right),
-    hideLeft: (left) => left.length == 0 ? "hidden" : "",
-    hideRight: (right) => right.length == 0 ? "hidden" : "",
+    hideLeft: (left) => !left || left.length == 0 ? "hidden" : "",
+    hideRight: (right) => !right || right.length == 0 ? "hidden" : "",
 };
 
 this.state = {
