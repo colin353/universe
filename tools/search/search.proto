@@ -162,6 +162,32 @@ message ImportDefinition {
   string to_filename = 2;
 }
 
+enum EntityKind {
+  E_UNKNOWN = 0;
+  E_TARGET = 1;
+  E_FUNCTION = 2;
+  E_STRUCT = 3;
+  E_PROJECT = 4;
+  E_TRAIT = 5;
+}
+
+message EntityInfo {
+  string name = 1;
+  EntityKind kind = 2;
+  repeated string keywords = 3;
+  string file = 4;
+  uint32 line_number = 5;
+  FileType file_type = 6;
+  string description = 7;
+  repeated EntitySubInfo subinfos = 8;
+}
+
+message EntitySubInfo {
+  string name = 1;
+  repeated string item_texts = 2;
+  repeated string links = 3;
+}
+
 message SearchRequest {
   string query = 1;
   string token = 2;

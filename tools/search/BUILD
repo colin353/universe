@@ -216,6 +216,23 @@ rust_binary(
     ],
 )
 
+rust_library(
+    name = "entity_lib",
+    srcs = ["entity_lib.rs"],
+    edition = "2018",
+    deps = [
+        ":extract_lib",
+        ":search_proto_rust",
+        "//plume",
+    ],
+)
+
+rust_test(
+    name = "entity_test",
+    crate = ":entity_lib",
+)
+
+
 rust_image(
     name = "indexer_img",
     base = "@glibc_base//image",
@@ -236,6 +253,7 @@ rust_library(
     edition = "2018",
     deps = [
         ":pagerank",
+        ":entity_lib",
         ":search_proto_rust",
         ":search_utils",
         "//plume",

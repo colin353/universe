@@ -404,7 +404,7 @@ pub fn run_indexer(code_recordio: &str, output_dir: &str) {
 
     // Annotate imports with bazel target info
     let relationships = targets.par_do(ExtractTargetRelationshipsFn {});
-    let imports = relationships.join(targets, JoinRelationshipsFn {});
+    let imports = relationships.join(targets.clone(), JoinRelationshipsFn {});
     let mut annotated_files = imports.join(partially_annotated_files, ImportsJoinFn {});
 
     // Run pagerank with several iterations
@@ -440,6 +440,13 @@ pub fn run_indexer(code_recordio: &str, output_dir: &str) {
     let mut extracted_keywords = keywords.group_by_key_and_par_do(AggregateKeywordsFn {});
     let keywords_sstable = format!("{}/keywords.sstable", output_dir);
     extracted_keywords.write_to_sstable(&keywords_sstable);
+
+    // Extract entity info
+    entity_lib::extract_and_write_entity_info(
+        &targets,
+        &format!("{}/file_entities.sstable", output_dir),
+        &format!("{}/keyword_entities.sstable", output_dir),
+    );
 
     plume::run();
 }
