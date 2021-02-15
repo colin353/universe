@@ -4,6 +4,7 @@ const attributes = ["query"];
 
 this.state = {
   baseQuery: '',
+  entitySuggestions: [],
   suggestions: [],
   suggestionMap: {},
   selectedIndex: -1,
@@ -16,7 +17,10 @@ this.stateMappers = {
     let key = 0;
     for(const suggestion of suggestions) {
       output[key] = {
-        suggestion,
+        suggestion: suggestion.name,
+        left: suggestion.file_type ? `${suggestion.file_type} ${suggestion.kind}` : '',
+        filename: suggestion.file || '',
+        line_number: suggestion.line_number,
         className: key == selectedIndex ? 'selected' : '',
       }
       key += 1;
@@ -27,7 +31,7 @@ this.stateMappers = {
     if(this.state.selectedIndex == -1) {
       this.refs.search_input.value = this.state.baseQuery;
     } else {
-      this.refs.search_input.value = this.state.suggestions[this.state.selectedIndex];
+      this.refs.search_input.value = this.state.suggestions[this.state.selectedIndex].name;
     }
 
     setTimeout(() => {
@@ -52,8 +56,27 @@ const getSuggestionsDebounced = debounce(getSuggestions.bind(this), 250);
 
 function handleKeyPress(e) {
   if(e.key === 'Enter') {
-      window.location.href = '/?q=' + encodeURIComponent(this.refs.search_input.value);
-      return event.preventDefault();
+      let usedEntityInfo = false;
+
+      if (this.state.selectedIndex !== -1) {
+        let filename = this.state.suggestionMap[this.state.selectedIndex].filename
+        if (filename) {
+          let destination = `/${filename}`
+          let line_number = this.state.suggestionMap[this.state.selectedIndex].line_number
+          if (line_number) {
+            destination += `#L${line_number + 1}`
+          }
+          window.location.href = destination;
+          usedEntityInfo = true;
+
+          this.setState({suggestedIndex: -1, suggestions: []});
+        }
+      } 
+
+      if (!usedEntityInfo) {
+        window.location.href = '/?q=' + encodeURIComponent(this.refs.search_input.value);
+      }
+      return e.preventDefault();
   }
 
   if(e.keyCode == 40) {

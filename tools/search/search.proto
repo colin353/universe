@@ -147,6 +147,8 @@ message Target {
   string canonical_name = 2;
   repeated string files = 3;
   repeated string dependencies = 4;
+  string filename = 5;
+  uint32 line_number = 6;
 }
 
 message SymbolDefinition {
@@ -207,6 +209,8 @@ message SuggestRequest {
 message SuggestResponse {
   repeated string suggestions = 1;
   Error error = 2;
+
+  repeated EntityInfo entities = 3;
 }
 
 service SearchService {

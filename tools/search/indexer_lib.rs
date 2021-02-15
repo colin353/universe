@@ -314,7 +314,7 @@ impl plume::DoFn for ExtractTargetsFn {
     fn do_it(&self, input: &File, emit: &mut dyn EmitFn<Self::Output>) {
         let targets = language_specific::extract_targets(input);
         for target in targets {
-            emit.emit(KV::new(target.get_name().to_owned(), target));
+            emit.emit(KV::new(target.get_canonical_name().to_owned(), target));
         }
     }
 }

@@ -10,7 +10,10 @@ impl plume::DoFn for ExtractEntityInfoFromTargetsFn {
         let target = &input.1;
         let mut entity = EntityInfo::new();
         entity.set_kind(EntityKind::E_TARGET);
+        entity.set_file_type(FileType::BAZEL);
         entity.set_name(target.get_canonical_name().to_string());
+        entity.set_file(target.get_filename().to_string());
+        entity.set_line_number(target.get_line_number());
         entity
             .mut_keywords()
             .push(target.get_canonical_name().to_string());
@@ -48,7 +51,10 @@ impl plume::DoFn for KeyEntitiesByKeywordFn {
     fn do_it(&self, input: &KV<String, EntityInfo>, emit: &mut dyn EmitFn<Self::Output>) {
         let entity = &input.1;
         for keyword in entity.get_keywords() {
-            emit.emit(KV::new(keyword.to_string(), entity.clone()));
+            emit.emit(KV::new(
+                search_utils::normalize_keyword(keyword),
+                entity.clone(),
+            ));
         }
     }
 }
@@ -105,6 +111,9 @@ mod tests {
         let entity = &entities[0].1;
         assert_eq!(entity.get_name(), String::from("//weld/review"));
         assert_eq!(entity.get_subinfos().len(), 1);
+
+        assert_eq!(&kentities[0].0, "//weld/review");
+        assert_eq!(&kentities[1].0, "review");
 
         let file_subinfo = &entity.get_subinfos()[0];
         assert_eq!(file_subinfo.get_name(), String::from("files"));

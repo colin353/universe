@@ -3,7 +3,18 @@
 <control if="this.state.showSuggestions">
     <ul class="suggestions">
         <control for="this.state.suggestionMap">
-            <li on:click="handleClick.bind(this, key)" class="${item.className}">${item.suggestion}</li>
+            <li on:click="handleClick.bind(this, key)" class="${item.className}">
+              <div class='suggestion'>${item.suggestion}</div>
+              <div class='entity-info'>
+              <div class='left-description'>
+                ${item.left}
+              </div>
+              <div class='spacer'></div>
+              <div class='right-description'>
+                ${item.filename}
+              </div>
+              </div>
+            </li>
         </control>
     </ul>
 </control>

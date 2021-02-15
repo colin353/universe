@@ -40,3 +40,13 @@ pub fn file(f: &File, content: &str) -> tmpl::ContentsMap {
          "symbols" => f.get_symbols().iter().filter(|s| s.get_end_line_number() != 0 ).map(|s| symbol(s)).collect()
     )
 }
+
+pub fn entity_info(e: &EntityInfo) -> json::JsonValue {
+    let mut obj = json::object::Object::new();
+    obj["name"] = e.get_name().into();
+    obj["kind"] = format!("{:?}", e.get_kind()).into();
+    obj["file_type"] = format!("{:?}", e.get_file_type()).into();
+    obj["file"] = e.get_file().into();
+    obj["line_number"] = e.get_line_number().into();
+    obj.into()
+}

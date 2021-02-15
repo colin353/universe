@@ -102,8 +102,15 @@ where
     fn suggest(&self, query: &str, is_opensearch: bool, req: Request) -> Response {
         let mut response = self.searcher.suggest(query);
         let mut output = Vec::new();
+
+        for entity in response.take_entities().into_iter() {
+            output.push(render::entity_info(&entity));
+        }
+
         for keyword in response.take_suggestions().into_iter() {
-            output.push(json::JsonValue::String(keyword));
+            let mut obj = json::object::Object::new();
+            obj["name"] = keyword.into();
+            output.push(obj.into());
         }
 
         if is_opensearch {

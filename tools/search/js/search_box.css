@@ -40,3 +40,14 @@ input:focus {
 .suggestions li.selected {
     background-color: #eee;
 }
+
+.entity-info {
+  font-size: 10pt;
+  display: flex;
+  flex-direction: row;
+  color: grey;
+}
+
+.entity-info .spacer {
+  flex: 1;
+}

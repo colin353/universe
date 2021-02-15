@@ -29,6 +29,9 @@ pub struct Searcher {
 
     files: HashMap<u64, File>,
 
+    // Entity info
+    keyword_entities: SSTableReader<EntityInfo>,
+
     // Configuration options
     pub candidates_to_return: usize,
     pub candidates_to_expand: usize,
@@ -50,6 +53,10 @@ impl Searcher {
         let mut keywords =
             SSTableReader::from_filename(&format!("{}/keywords.sstable", base_dir)).unwrap();
 
+        let mut keyword_entities =
+            SSTableReader::from_filename(&format!("{}/keyword_entities.sstable", base_dir))
+                .unwrap();
+
         let mut files = HashMap::<u64, File>::new();
         for (key, bytes) in &mut candidates {
             let (f, _) = split_file_bytes(&*bytes);
@@ -65,7 +72,39 @@ impl Searcher {
             candidates_to_return: CANDIDATES_TO_RETURN,
             candidates_to_expand: CANDIDATES_TO_EXPAND,
             files: files,
+            keyword_entities,
         }
+    }
+
+    pub fn suggest_entities(&self, query: &Query) -> Vec<EntityInfo> {
+        // Search for entities using the last keyword as a prefix
+        let last_keyword = match query.get_keywords().iter().last() {
+            Some(x) => x,
+            None => return Vec::new(),
+        };
+
+        if last_keyword.get_is_definition()
+            || last_keyword.get_is_prefix()
+            || last_keyword.get_is_language()
+            || last_keyword.get_is_filename()
+        {
+            return Vec::new();
+        }
+
+        let keyword = search_utils::normalize_keyword(last_keyword.get_keyword());
+
+        let specd_reader = SpecdSSTableReader::from_reader(&self.keyword_entities, &keyword);
+        let mut count = 0;
+        let mut suggestions = Vec::new();
+        for (_, keyword) in specd_reader {
+            suggestions.push(keyword);
+            count += 1;
+            if count > SUGGESTION_LIMIT {
+                break;
+            }
+        }
+
+        suggestions
     }
 
     pub fn suggest(&self, keyword: &str) -> SuggestResponse {
@@ -120,6 +159,11 @@ impl Searcher {
                 render_query_keyword(&expanded_keyword)
             ));
         }
+
+        for entity in self.suggest_entities(&query) {
+            output.mut_entities().push(entity);
+        }
+
         output
     }
 

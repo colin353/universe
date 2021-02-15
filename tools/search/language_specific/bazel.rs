@@ -2,7 +2,7 @@ use search_proto_rust::*;
 
 lazy_static! {
     static ref TARGET_DEFINITION: regex::Regex =
-        { regex::Regex::new(r#"\w+\((?s:.*?name\s*=\s*"(\w+)".*?)\)"#).unwrap() };
+        { regex::Regex::new(r#"\w+\((?s:[^)]*?name\s*=\s*"(\w+)".*?)\)"#).unwrap() };
     static ref SRCS_DEFINITION: regex::Regex =
         { regex::Regex::new(r#"srcs\s*=\s*\[((?s:.*?))\]"#).unwrap() };
     static ref DEPS_DEFINITION: regex::Regex =
@@ -14,10 +14,21 @@ pub fn extract_targets(file: &File) -> Vec<Target> {
         return Vec::new();
     }
 
+    let mut newlines: Vec<_> = file
+        .get_content()
+        .match_indices("\n")
+        .map(|(index, _)| index)
+        .collect();
+
     let mut results = Vec::new();
     for captures in TARGET_DEFINITION.captures_iter(file.get_content()) {
         let target_content = &captures[0];
         let mut target = Target::new();
+
+        let line_number = match newlines.binary_search(&captures.get(0).unwrap().start()) {
+            Ok(x) => x,
+            Err(x) => x,
+        };
 
         let mut file_directory: Vec<_> = file.get_filename().split("/").collect();
         file_directory.pop();
@@ -38,10 +49,14 @@ pub fn extract_targets(file: &File) -> Vec<Target> {
         let mut build_dir: Vec<_> = file.get_filename().split("/").collect();
         build_dir.pop();
 
+        target.set_name(captures[1].to_string());
+        target.set_filename(file.get_filename().to_string());
+        target.set_line_number(line_number as u32);
+
         if build_dir.len() > 0 && build_dir[build_dir.len() - 1] == &captures[1] {
-            target.set_name(format!("//{}", build_dir.join("/")));
+            target.set_canonical_name(format!("//{}", build_dir.join("/")));
         } else {
-            target.set_name(format!("//{}:{}", build_dir.join("/"), &captures[1]));
+            target.set_canonical_name(format!("//{}:{}", build_dir.join("/"), &captures[1]));
         }
 
         for srcs in DEPS_DEFINITION.captures_iter(&captures[0]) {
@@ -78,6 +93,9 @@ mod tests {
         let mut f = File::new();
         f.set_content(
             r#"
+            package(default_visibility = ["//visibility:public"])
+            load("@io_bazel_rules_rust//rust:rust.bzl", "rust_library")
+
             rust_library(
                 name="test",
             )
@@ -101,10 +119,13 @@ mod tests {
 
         let result = extract_targets(&f);
 
-        assert_eq!(result[0].get_name(), "//home/test");
+        assert_eq!(result[0].get_canonical_name(), "//home/test");
+        assert_eq!(result[0].get_filename(), "home/test/BUILD");
+        assert_eq!(result[0].get_line_number(), 4);
 
-        assert_eq!(result[1].get_name(), "//home/test:ltui");
+        assert_eq!(result[1].get_canonical_name(), "//home/test:ltui");
         assert_eq!(result[1].get_files(), &["home/test/main.rs"]);
+        assert_eq!(result[1].get_line_number(), 8);
         assert_eq!(
             result[1].get_dependencies(),
             &[

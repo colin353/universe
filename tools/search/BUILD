@@ -222,6 +222,7 @@ rust_library(
     edition = "2018",
     deps = [
         ":extract_lib",
+        ":search_utils",
         ":search_proto_rust",
         "//plume",
     ],
