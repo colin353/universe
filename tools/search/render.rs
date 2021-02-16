@@ -41,11 +41,53 @@ pub fn file(f: &File, content: &str) -> tmpl::ContentsMap {
     )
 }
 
+pub fn entity(e: &EntityInfo) -> tmpl::ContentsMap {
+    content!(
+        "name" => e.get_name(),
+        "kind" => entity_kind(e.get_kind()),
+        "filename" => e.get_file(),
+        "line_number" => e.get_line_number() + 1,
+        "language" => entity_language(e.get_file_type());
+        "subinfos" => e.get_subinfos().iter().map(|s| subinfo(s)).collect()
+    )
+}
+
+pub fn subinfo(e: &EntitySubInfo) -> tmpl::ContentsMap {
+    content!(
+        "name" => e.get_name();
+        "infos" => e.get_item_texts().iter().zip(e.get_links().iter()).take(5).map(|(text, link)| {
+            content!(
+                "text" => text,
+                "link" => link
+            )
+        }).collect()
+    )
+}
+
+fn entity_kind(e: EntityKind) -> &'static str {
+    match e {
+        EntityKind::E_UNKNOWN => "",
+        EntityKind::E_TARGET => "target",
+        EntityKind::E_FUNCTION => "function",
+        EntityKind::E_STRUCT => "structure",
+        EntityKind::E_PROJECT => "project",
+        EntityKind::E_TRAIT => "trait",
+    }
+}
+
+fn entity_language(f: FileType) -> String {
+    match f {
+        FileType::UNKNOWN => String::new(),
+        x => format!("{:?}", x).to_lowercase(),
+    }
+}
+
 pub fn entity_info(e: &EntityInfo) -> json::JsonValue {
     let mut obj = json::object::Object::new();
     obj["name"] = e.get_name().into();
-    obj["kind"] = format!("{:?}", e.get_kind()).into();
-    obj["file_type"] = format!("{:?}", e.get_file_type()).into();
+    obj["kind"] = entity_kind(e.get_kind()).into();
+    obj["file_type"] = entity_language(e.get_file_type()).into();
+
     obj["file"] = e.get_file().into();
     obj["line_number"] = e.get_line_number().into();
     obj.into()

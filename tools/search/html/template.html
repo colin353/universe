@@ -55,6 +55,10 @@
             margin-right: auto;
         }
 
+        .header.left-aligned {
+            margin-left: 120px;
+        }
+
         .search-input {
             height: 30px;
             padding-left: 10px;
@@ -88,6 +92,10 @@
             margin-left: auto;
             margin-right: auto;
             height: calc(100% - 100px);
+        }
+
+        .content.left-aligned {
+           margin-left: 120px;
         }
 
         a.invisible-link {
@@ -131,7 +139,7 @@
 
 <body>
     {{show_header==true}}
-    <div class="header">
+    <div class="header{{align_left}}">
         <h2 style="margin-right: 40px;"><a class="invisible-link" href="/">code search</a></h2>
 
         <search-box query="{{query}}"></search-box>

@@ -49,12 +49,17 @@ where
         query: &str,
         content: String,
         request_time: u32,
+        align_left: bool,
     ) -> String {
         tmpl::apply_with_settings(
             TEMPLATE,
             content!(
                 "title" => "code search",
                 "show_header" => header,
+                "align_left" => match align_left {
+                    true => " left-aligned",
+                    false => "",
+                },
                 "query" => query,
                 "request_time" => request_time,
                 "content" => content),
@@ -81,21 +86,26 @@ where
             return response;
         }
 
-        let page = tmpl::apply_with_settings(
-            RESULTS,
-            content!(
-                "query" => keywords;
-                "results" => results.get_candidates().iter().map(|r| render::result(r)).collect(),
-                "languages" => results.take_languages().iter().map(|x| content!("name" => x)).collect(),
-                "prefixes" => results.take_prefixes().iter().map(|x| content!("name" => x)).collect()
-            ),
-            &self.settings,
+        let mut content = content!(
+            "has_feature_entity" => false,
+            "query" => keywords;
+            "results" => results.get_candidates().iter().map(|r| render::result(r)).collect(),
+            "languages" => results.take_languages().iter().map(|x| content!("name" => x)).collect(),
+            "prefixes" => results.take_prefixes().iter().map(|x| content!("name" => x)).collect()
         );
+
+        if results.get_entities().len() > 0 {
+            content.insert("has_feature_entity", true);
+            content.insert("feature_entity", render::entity(&results.get_entities()[0]));
+        }
+
+        let page = tmpl::apply_with_settings(RESULTS, content, &self.settings);
         Response::new(Body::from(self.wrap_template(
             true,
             keywords,
             page,
             start.elapsed().as_millis() as u32,
+            true,
         )))
     }
 
@@ -103,7 +113,7 @@ where
         let mut response = self.searcher.suggest(query);
         let mut output = Vec::new();
 
-        for entity in response.take_entities().into_iter() {
+        for entity in response.take_entities().into_iter().take(3) {
             output.push(render::entity_info(&entity));
         }
 
@@ -111,6 +121,10 @@ where
             let mut obj = json::object::Object::new();
             obj["name"] = keyword.into();
             output.push(obj.into());
+
+            if output.len() > 10 {
+                break;
+            }
         }
 
         if is_opensearch {
@@ -216,12 +230,12 @@ where
             &self.settings,
         );
 
-        Response::new(Body::from(self.wrap_template(true, query, page, 0)))
+        Response::new(Body::from(self.wrap_template(true, query, page, 0, false)))
     }
 
     fn index(&self, path: String, req: Request) -> Response {
         let page = tmpl::apply_with_settings(INDEX, content!(), &self.settings);
-        Response::new(Body::from(self.wrap_template(false, "", page, 0)))
+        Response::new(Body::from(self.wrap_template(false, "", page, 0, false)))
     }
 
     fn not_found(&self, path: String, _req: Request) -> Response {

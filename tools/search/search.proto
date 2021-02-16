@@ -200,6 +200,7 @@ message SearchResponse {
 
   repeated string languages = 3;
   repeated string prefixes = 4;
+  repeated EntityInfo entities = 5;
 }
 
 message SuggestRequest {

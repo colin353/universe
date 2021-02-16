@@ -30,6 +30,11 @@
         flex: 1;
     }
 
+    .results {
+      min-width: 900px;
+      max-width: 900px;
+    }
+
     .refine-header {
         color: grey;
         width: 120px;
@@ -43,11 +48,36 @@
         padding: 5px;
         white-space: nowrap;
     }
+
+    .serp {
+        display: flex;
+        flex-direction: row;
+    }
+
+    .entity-info-sidebar {
+        border: 1px solid #dfe1e5;
+        margin-left: 20px;
+        border-radius: 4px;
+        padding: 20px;
+        min-height: 250px;
+        min-width: 250px;
+    }
+
+    .entity-sidebar-container {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .subinfo {
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
 </style>
 
 <script async type="module" src="{{settings.js_src}}/homepage/js/code_pad.mjs"></script>
 
-<div class='content'>
+<div class='content left-aligned'>
     <div class="refine-section">
 
         {{languages != 0}}
@@ -73,6 +103,9 @@
         {{/prefixes}}
     </div>
 
+    <div class='serp'>
+
+    <div class='results'>
     {{results[]}}
     <a href='{{filename}}?q={{query}}#L{{jump_to_line}}' class='invisible-link result-link'>
         <div class='result-filename'>{{filename}}</div>
@@ -102,4 +135,26 @@
         <p>No results!</p>
     </div>
     {{/results}}
+    </div>
+
+    {{has_feature_entity == true}}
+    <div class='entity-sidebar-container'>
+    <div class='entity-info-sidebar'>
+      <span style="font-size: 24px">{{feature_entity.name}}</span>
+      <p style="color: grey">{{feature_entity.language}} {{feature_entity.kind}}</p>
+      <a href="/{{feature_entity.filename}}#L{{feature_entity.line_number}}">{{feature_entity.filename}}#L{{feature_entity.line_number}}</a>
+      {{feature_entity.subinfos[]}}
+        <p style="font-weight: bold">{{name}}</p>
+        <ul>
+          {{infos[]}}
+          <li class='subinfo'><a class='invisible-link' href="{{link}}">{{text}}</a></li>
+          {{/infos}}
+        </ul>
+      {{/feature_entity.subinfos}}
+      <p>
+    </div>
+    <div style='flex: 1;'></div>
+    </div>
+    {{/has_feature_entity}}
+    </div>
 </div>

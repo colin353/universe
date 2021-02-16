@@ -76,6 +76,47 @@ impl Searcher {
         }
     }
 
+    pub fn get_entities(&self, query: &Query, response: &mut SearchResponse) {
+        let mut entities = Vec::new();
+        for keyword in query.get_keywords() {
+            let normalized_keyword = search_utils::normalize_keyword(keyword.get_keyword());
+            let mut specd_reader = SpecdSSTableReader::from_reader_with_scope(
+                &self.keyword_entities,
+                &normalized_keyword,
+                "",
+                "",
+            );
+            for (key, result) in &mut specd_reader {
+                if key > normalized_keyword {
+                    break;
+                }
+                entities.push(result);
+            }
+        }
+
+        if query.get_keywords().len() > 1 {
+            for entity in entities {
+                let mut compatible = 0;
+                for query_keyword in query.get_keywords() {
+                    // Check for compatibility with keywords
+                    for entity_keyword in entity.get_keywords() {
+                        if entity_keyword.contains(query_keyword.get_keyword()) {
+                            compatible += 1;
+                        }
+                    }
+                }
+
+                if compatible == query.get_keywords().len() {
+                    response.mut_entities().push(entity);
+                }
+            }
+        } else {
+            for entity in entities {
+                response.mut_entities().push(entity);
+            }
+        }
+    }
+
     pub fn suggest_entities(&self, query: &Query) -> Vec<EntityInfo> {
         // Search for entities using the last keyword as a prefix
         let last_keyword = match query.get_keywords().iter().last() {
@@ -178,6 +219,7 @@ impl Searcher {
         self.expand_candidates(&query, &mut candidates);
         self.final_rank(&query, &mut candidates);
         self.cutoff(&mut candidates, self.candidates_to_return);
+        self.get_entities(&query, &mut response);
 
         #[cfg(debug_scoring)]
         self.print_debug_scoring(&query, &candidates);
