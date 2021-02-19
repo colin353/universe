@@ -3,7 +3,6 @@ extern crate grpc;
 extern crate largetable_grpc_rust;
 extern crate protobuf;
 
-mod client_service;
 use grpc::ClientStubExt;
 
 pub use largetable_grpc_rust::{

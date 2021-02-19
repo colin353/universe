@@ -58,7 +58,6 @@ rust_library(
 rust_library(
     name = "largetable_client",
     srcs = [
-        "client_service.rs",
         "largetable_client.rs",
     ],
     deps = [
