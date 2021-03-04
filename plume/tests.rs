@@ -379,6 +379,154 @@ mod tests {
         assert_eq!(*(iter.next().unwrap()), "Paul, who is a ghost".to_string());
     }
 
+    #[test]
+    fn test_concatenation() {
+        let mut _runlock = plume::RUNLOCK.lock();
+        plume::cleanup();
+
+        let shard1 = PTable::<String, Primitive<String>>::from_table(vec![
+            KV::new(String::from("1"), String::from("janitor").into()),
+            KV::new(String::from("2"), String::from("sales").into()),
+        ]);
+
+        let shard2 = PTable::<String, Primitive<String>>::from_table(vec![
+            KV::new(String::from("3"), String::from("marketing").into()),
+            KV::new(String::from("4"), String::from("engineering").into()),
+        ]);
+
+        let mut out = PTable::concatenate(vec![shard1, shard2]);
+        out.write_to_vec();
+
+        plume::run();
+
+        let result = out.into_vec();
+
+        assert_eq!(
+            result.iter().map(|x| (x.1.to_string())).collect::<Vec<_>>(),
+            vec!["janitor", "sales", "marketing", "engineering"]
+        );
+    }
+
+    #[test]
+    fn test_concatenation_mem_dest() {
+        let mut _runlock = plume::RUNLOCK.lock();
+        plume::cleanup();
+
+        let shard1 = PTable::<String, Primitive<String>>::from_table(vec![
+            KV::new(String::from("1"), String::from("janitor").into()),
+            KV::new(String::from("2"), String::from("sales").into()),
+        ]);
+
+        std::fs::remove_dir_all("/tmp/test-write-to-disk");
+        std::fs::create_dir_all("/tmp/test-write-to-disk").unwrap();
+
+        {
+            let f = std::fs::File::create("/tmp/test-write-to-disk/input.sstable-00000-of-00002")
+                .unwrap();
+            let mut writer = std::io::BufWriter::new(f);
+            let mut builder = sstable::SSTableBuilder::new(&mut writer);
+
+            builder.write_ordered("3", Primitive::from(String::from("marketing")));
+            builder.write_ordered("4", Primitive::from(String::from("engineering")));
+            builder.finish().unwrap();
+        }
+
+        {
+            let f = std::fs::File::create("/tmp/test-write-to-disk/input.sstable-00001-of-00002")
+                .unwrap();
+            let mut writer = std::io::BufWriter::new(f);
+            let mut builder = sstable::SSTableBuilder::new(&mut writer);
+
+            builder.write_ordered("5", Primitive::from(String::from("finance")));
+            builder.write_ordered("6", Primitive::from(String::from("human resource")));
+            builder.finish().unwrap();
+        }
+
+        let shard2 = PTable::<String, Primitive<String>>::from_sstable(
+            "/tmp/test-write-to-disk/input.sstable@2",
+        );
+
+        let mut out = PTable::concatenate(vec![shard1, shard2]);
+        out.write_to_vec();
+
+        plume::run();
+
+        let result = out.into_vec();
+
+        assert_eq!(
+            result.iter().map(|x| (x.1.to_string())).collect::<Vec<_>>(),
+            vec![
+                "janitor",
+                "sales",
+                "marketing",
+                "engineering",
+                "finance",
+                "human resource"
+            ]
+        );
+    }
+
+    //#[test]
+    fn test_concatenation_disk_dest() {
+        let mut _runlock = plume::RUNLOCK.lock();
+        plume::cleanup();
+
+        let shard1 = PTable::<String, Primitive<String>>::from_table(vec![
+            KV::new(String::from("1"), String::from("janitor").into()),
+            KV::new(String::from("2"), String::from("sales").into()),
+        ]);
+
+        std::fs::remove_dir_all("/tmp/test-write-to-disk");
+        std::fs::create_dir_all("/tmp/test-write-to-disk").unwrap();
+
+        {
+            let f = std::fs::File::create("/tmp/test-write-to-disk/input.sstable-00000-of-00002")
+                .unwrap();
+            let mut writer = std::io::BufWriter::new(f);
+            let mut builder = sstable::SSTableBuilder::new(&mut writer);
+
+            builder.write_ordered("3", Primitive::from(String::from("marketing")));
+            builder.write_ordered("4", Primitive::from(String::from("engineering")));
+            builder.finish().unwrap();
+        }
+
+        {
+            let f = std::fs::File::create("/tmp/test-write-to-disk/input.sstable-00001-of-00002")
+                .unwrap();
+            let mut writer = std::io::BufWriter::new(f);
+            let mut builder = sstable::SSTableBuilder::new(&mut writer);
+
+            builder.write_ordered("5", Primitive::from(String::from("finance")));
+            builder.write_ordered("6", Primitive::from(String::from("human resource")));
+            builder.finish().unwrap();
+        }
+
+        let shard2 = PTable::<String, Primitive<String>>::from_sstable(
+            "/tmp/test-write-to-disk/input.sstable@2",
+        );
+
+        let mut out = PTable::concatenate(vec![shard1, shard2]);
+        out.write_to_sstable("/tmp/test-write-to-disk/output.sstable");
+
+        plume::run();
+
+        let reader = sstable::SSTableReader::<Primitive<String>>::from_filename(
+            "/tmp/test-write-to-disk/output.sstable",
+        )
+        .unwrap();
+        assert_eq!(
+            reader.map(|(k, x)| x.to_string()).collect::<Vec<_>>(),
+            vec![
+                "janitor",
+                "sales",
+                "marketing",
+                "engineering",
+                "finance",
+                "human resource"
+            ]
+        )
+    }
+
     // This is a very slow test which writes to disk, so let's not turn it on
     // by default
     //#[test]

@@ -48,6 +48,7 @@ message PCollectionProto {
 message PFnProto {
   uint64 id = 1;
   string description = 2;
+  bool skip_planning = 3;
 }
 
 message Stage {

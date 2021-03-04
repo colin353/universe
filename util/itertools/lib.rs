@@ -18,7 +18,7 @@ pub trait StreamingIterator {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct KV<K, V>(pub K, pub V);
 
 impl<K, V> KV<K, V> {

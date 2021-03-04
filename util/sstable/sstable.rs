@@ -606,7 +606,7 @@ pub fn execute_reshard_task(task: ReshardTask) {
                 String::new(),
             )
             .unwrap();
-            let f = std::fs::File::open(to).unwrap();
+            let f = std::fs::File::create(to).unwrap();
             let mut w = std::io::BufWriter::new(f);
             let mut builder = SSTableBuilder::new(&mut w);
             for (k, v) in reader {

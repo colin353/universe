@@ -23,7 +23,7 @@ where
         F: FnOnce() -> T + Send + 'static,
     {
         let job = Box::new(f);
-        self.in_progress.fetch_add(1, Ordering::Relaxed);
+        self.in_progress.fetch_add(1, Ordering::SeqCst);
         self.sender.send(job).unwrap();
     }
 }
@@ -68,7 +68,7 @@ where
 
     // blocks until at least one job completes
     pub fn block_until_job_completes(&self) -> Option<T> {
-        if self.scheduler.in_progress.load(Ordering::Relaxed) > 0 {
+        if self.scheduler.in_progress.load(Ordering::SeqCst) > 0 {
             return Some(self.alarm.recv().unwrap());
         }
         None
@@ -76,7 +76,7 @@ where
 
     pub fn join(&self) -> Vec<T> {
         let mut output = Vec::new();
-        while self.scheduler.in_progress.load(Ordering::Relaxed) > 0 {
+        while self.scheduler.in_progress.load(Ordering::SeqCst) > 0 {
             output.push(self.alarm.recv().unwrap());
         }
 
@@ -89,7 +89,7 @@ where
     }
 
     pub fn get_in_progress(&self) -> usize {
-        self.scheduler.in_progress.load(Ordering::Relaxed)
+        self.scheduler.in_progress.load(Ordering::SeqCst)
     }
 }
 
@@ -121,7 +121,7 @@ where
                 }
             };
             let result = job.call_box();
-            in_progress.fetch_sub(1, Ordering::Relaxed);
+            in_progress.fetch_sub(1, Ordering::SeqCst);
             waker.send(result).unwrap();
         });
         Worker {

@@ -30,7 +30,7 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::{Arc, Mutex, RwLock};
 
-static ORDER: std::sync::atomic::Ordering = std::sync::atomic::Ordering::Relaxed;
+static ORDER: std::sync::atomic::Ordering = std::sync::atomic::Ordering::SeqCst;
 static LAST_ID: AtomicU64 = AtomicU64::new(1);
 static MAX_SSTABLE_HEAP_SIZE: usize = 100 * 1000 * 1000;
 
@@ -384,7 +384,9 @@ where
 {
     pub fn from_sstable(filename: &str) -> Self {
         let mut config = PCollectionProto::new();
-        config.mut_filenames().push(filename.to_string());
+        for f in shard_lib::unshard(filename) {
+            config.mut_filenames().push(f);
+        }
         config.set_resolved(true);
         config.set_format(DataFormat::SSTABLE);
         config.set_is_ptable(true);
@@ -443,6 +445,28 @@ where
         }
 
         STAGES.write().unwrap().append(&mut self.stages());
+    }
+}
+
+impl<V> PCollection<KV<String, V>>
+where
+    V: PlumeTrait + Clone + Default,
+    KV<String, V>: PlumeTrait + Default,
+{
+    pub fn concatenate(inputs: Vec<PCollection<KV<String, V>>>) -> Self {
+        let mut config = PCollectionProto::new();
+        config.set_is_ptable(true);
+
+        PCollection {
+            underlying: Arc::new(PCollectionUnderlying::<KV<String, V>> {
+                id: AtomicU64::new(0),
+                dependency: Some(Arc::new(ConcatenateFn {
+                    dependencies: inputs,
+                })),
+                proto: config,
+                _marker: std::marker::PhantomData {},
+            }),
+        }
     }
 }
 
@@ -687,6 +711,183 @@ pub struct DoSideInputFnWrapper<TInput, TSideInput, TOutput> {
     dependency: PCollection<TInput>,
     side_input_dependency: PCollection<TSideInput>,
     function: Box<DoSideInputFn<Input = TInput, SideInput = TSideInput, Output = TOutput>>,
+}
+
+pub struct ConcatenateFn<T> {
+    dependencies: Vec<PCollection<T>>,
+}
+
+impl<T> PFn for ConcatenateFn<T>
+where
+    T: PlumeTrait + Clone + Default,
+{
+    fn stages(&self, id: u64) -> (Stage, Vec<Stage>) {
+        let mut s = Stage::new();
+        let mut dep_stages = Vec::new();
+        for dep in &self.dependencies {
+            dep_stages.append(&mut dep.stages());
+            s.mut_inputs().push(dep.to_proto());
+        }
+
+        s.mut_function()
+            .set_description(String::from("ConcatenateFn"));
+        s.mut_function().set_id(id);
+        s.mut_function().set_skip_planning(true);
+
+        (s, dep_stages)
+    }
+
+    fn name(&self) -> &'static str {
+        "ContatenateFn"
+    }
+
+    fn execute(&self, shard: &Shard) {
+        let mut all_in_memory = false;
+        match shard.get_outputs()[0].get_format() {
+            DataFormat::IN_MEMORY => self.execute_in_memory(shard),
+            DataFormat::SSTABLE => self.execute_sstable(shard),
+            x => panic!("I don't know how to concatenate format {:?}!", x),
+        }
+    }
+}
+
+trait ConcatenateFnTrait {
+    fn execute_in_memory(&self, shard: &Shard);
+    fn execute_sstable(&self, shard: &Shard);
+}
+
+impl<T> ConcatenateFnTrait for ConcatenateFn<T>
+where
+    T: PlumeTrait + Clone + Default,
+{
+    default fn execute_sstable(&self, shard: &Shard) {
+        panic!("SSTables must have a KV type!")
+    }
+
+    default fn execute_in_memory(&self, shard: &Shard) {
+        let producer = SinkProducer::<T>::new();
+        let mut sink = producer.make_sink(shard.get_outputs());
+        for input in shard.get_inputs() {
+            let source = Source::<T>::new(input.clone());
+            let emit: &mut dyn EmitFn<T> = &mut *sink;
+            match input.get_format() {
+                DataFormat::IN_MEMORY => {
+                    let mut memsource = source.mem_source();
+                    let mut source_iter = memsource.iter();
+                    while let Some(item) = source_iter.next() {
+                        emit.emit(item.clone());
+                    }
+                }
+                DataFormat::RECORDIO => {
+                    let mut recordio_source = source.recordio_source();
+                    while let Some(item) = recordio_source.next() {
+                        emit.emit(item.clone());
+                    }
+                }
+                x => panic!("I don't know how to concatenate format: {:?}!", x),
+            }
+        }
+        sink.finish();
+    }
+}
+
+impl<T> ConcatenateFnTrait for ConcatenateFn<KV<String, T>>
+where
+    T: PlumeTrait + Clone + Default,
+{
+    default fn execute_sstable(&self, shard: &Shard) {
+        // Collect up a list of filenames of input sstables
+        let mut inputs = Vec::new();
+        let output = &shard.get_outputs()[0];
+
+        let mut has_mem_shards = false;
+        for input in shard.get_inputs() {
+            match input.get_format() {
+                DataFormat::SSTABLE => {
+                    for filename in input.get_filenames() {
+                        inputs.push(filename.to_string());
+                    }
+
+                    if !input.get_starting_key().is_empty() || !input.get_ending_key().is_empty() {
+                        panic!("I don't know how to concatenate subsets of sstables!");
+                    }
+                }
+                DataFormat::IN_MEMORY => {
+                    has_mem_shards = true;
+                }
+                x => panic!("I don't know how to concatenate data format {:?}", x),
+            }
+        }
+
+        // If there are in-memory shards, we need to persist them to disk. Let's just concat
+        // all of the mem shards into a single disk shard
+        if has_mem_shards {
+            let mut heap = MinHeap::new();
+
+            for input in shard
+                .get_inputs()
+                .iter()
+                .filter(|x| x.get_format() == DataFormat::IN_MEMORY)
+            {
+                let source = Source::<KV<String, T>>::new(input.clone());
+                let mut memsource = source.mem_source();
+                let mut source_iter = memsource.iter();
+                while let Some(item) = source_iter.next() {
+                    heap.push(item.clone());
+                }
+            }
+
+            std::fs::create_dir_all(output.get_temporary_path()).unwrap();
+            let path = format!("{}/memshard.sstable", output.get_temporary_path());
+            let file = std::fs::File::create(&path).unwrap();
+            let mut writer = std::io::BufWriter::new(file);
+            let mut builder = SSTableBuilder::new(&mut writer);
+            while let Some(item) = heap.pop() {
+                builder.write_ordered(&item.0, item.1);
+            }
+
+            builder.finish();
+
+            inputs.push(path);
+        }
+
+        reshard(&inputs, &output.get_filenames());
+
+        let mut pcoll_write = PCOLLECTION_REGISTRY.write().unwrap();
+        let mut config = pcoll_write.get_mut(&output.get_id()).unwrap();
+        config.set_is_ptable(true);
+        config.set_format(DataFormat::SSTABLE);
+        config.set_num_resolved_shards(output.get_filenames().len() as u64);
+        config.set_resolved(true);
+    }
+
+    default fn execute_in_memory(&self, shard: &Shard) {
+        let producer = SinkProducer::<KV<String, T>>::new();
+        let mut sink = producer.make_sink(shard.get_outputs());
+        for input in shard.get_inputs() {
+            let source = Source::<KV<String, T>>::new(input.clone());
+            let emit: &mut dyn EmitFn<KV<String, T>> = &mut *sink;
+            match input.get_format() {
+                DataFormat::IN_MEMORY => {
+                    let mut memsource = source.mem_source();
+                    let mut source_iter = memsource.iter();
+                    while let Some(item) = source_iter.next() {
+                        let owned_item = item.clone();
+                        emit.emit(KV(owned_item.0, owned_item.1));
+                    }
+                }
+                DataFormat::SSTABLE => {
+                    let mut sstable_source = source.sstable_source();
+                    while let Some(item) = sstable_source.next() {
+                        let owned_item = item.clone();
+                        emit.emit(KV(owned_item.0, owned_item.1));
+                    }
+                }
+                x => panic!("I don't know how to concatenate KV format: {:?}!", x),
+            }
+        }
+        sink.finish();
+    }
 }
 
 pub struct DoFnWrapper<T1, T2> {
@@ -1242,6 +1443,16 @@ impl Planner {
 
         let sharded_inputs = self.shard_inputs(stage.get_inputs(), target_shards);
         let sharded_outputs = self.shard_output(&output, sharded_inputs.len());
+
+        if stage.get_function().get_skip_planning() {
+            let mut shard = Shard::new();
+            shard.set_inputs(stage.get_inputs().to_owned().into_iter().collect());
+            shard.set_side_inputs(stage.get_side_inputs().to_owned().into_iter().collect());
+            shard.set_function(stage.get_function().clone());
+            shard.set_outputs(sharded_outputs.into_iter().collect());
+
+            return vec![shard];
+        }
 
         if sharded_inputs.len() != sharded_outputs.len() {
             panic!(
@@ -2351,7 +2562,7 @@ mod tests {
                 .iter()
                 .map(|i| pcoll_to_string(i))
                 .collect::<Vec<_>>(),
-            vec![pcoll(DataFormat::IN_MEMORY, 0, 5, 1)]
+            vec![pcoll(DataFormat::IN_MEMORY, 0, 0, 3)]
         );
 
         assert_eq!(
