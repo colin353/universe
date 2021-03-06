@@ -444,6 +444,7 @@ pub fn run_indexer(code_recordio: &str, output_dir: &str) {
     // Extract entity info
     entity_lib::extract_and_write_entity_info(
         &targets,
+        &annotated_files,
         &format!("{}/file_entities.sstable", output_dir),
         &format!("{}/keyword_entities.sstable", output_dir),
     );

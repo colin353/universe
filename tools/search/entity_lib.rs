@@ -43,6 +43,81 @@ impl plume::DoFn for ExtractEntityInfoFromTargetsFn {
     }
 }
 
+struct ExtractEntityInfoFromFilesFn {}
+impl plume::DoFn for ExtractEntityInfoFromFilesFn {
+    type Input = KV<String, File>;
+    type Output = KV<String, EntityInfo>;
+
+    fn do_it(&self, input: &KV<String, File>, emit: &mut dyn EmitFn<Self::Output>) {
+        let file = &input.1;
+
+        // Determine struct spans
+        let mut struct_spans = Vec::new();
+        for symbol in file.get_symbols() {
+            if symbol.get_symbol_type() != SymbolType::STRUCTURE {
+                continue;
+            }
+
+            if symbol.get_end_line_number() == 0 {
+                continue;
+            }
+
+            struct_spans.push((
+                symbol.get_symbol(),
+                symbol.get_line_number(),
+                symbol.get_end_line_number(),
+            ));
+        }
+        struct_spans.sort_by_key(|x| x.1);
+
+        for symbol in file.get_symbols() {
+            if symbol.get_symbol_type() == SymbolType::VARIABLE {
+                continue;
+            }
+
+            let mut container = None;
+            if symbol.get_symbol_type() == SymbolType::FUNCTION {
+                let idx =
+                    match struct_spans.binary_search_by_key(&symbol.get_line_number(), |x| x.1) {
+                        Ok(x) => x,
+                        Err(x) => x,
+                    };
+
+                if idx == 0 {
+                    continue;
+                }
+
+                if symbol.get_line_number() < struct_spans[idx - 1].2 {
+                    container = Some(struct_spans[idx - 1].0);
+                }
+            }
+
+            let mut entity = EntityInfo::new();
+
+            if let Some(c) = container {
+                let name = format!("{}::{}", c, symbol.get_symbol());
+                entity.set_name(name.clone());
+                entity.mut_keywords().push(name);
+            } else {
+                entity.set_name(symbol.get_symbol().to_string());
+            }
+
+            entity.mut_keywords().push(symbol.get_symbol().to_string());
+            entity.set_file(file.get_filename().to_string());
+            entity.set_line_number(symbol.get_line_number());
+            entity.set_kind(match symbol.get_symbol_type() {
+                SymbolType::VARIABLE => continue,
+                SymbolType::FUNCTION => EntityKind::E_FUNCTION,
+                SymbolType::STRUCTURE => EntityKind::E_STRUCT,
+                SymbolType::TRAIT => EntityKind::E_TRAIT,
+            });
+            entity.set_file_type(file.get_file_type());
+
+            emit.emit(KV::new(entity.get_file().to_string(), entity));
+        }
+    }
+}
+
 struct KeyEntitiesByKeywordFn {}
 impl plume::DoFn for KeyEntitiesByKeywordFn {
     type Input = KV<String, EntityInfo>;
@@ -62,9 +137,15 @@ impl plume::DoFn for KeyEntitiesByKeywordFn {
 #[cfg(test)]
 pub fn extract_entity_info_to_vec(
     targets: &PTable<String, Target>,
+    files: &PTable<String, File>,
 ) -> (PTable<String, EntityInfo>, PTable<String, EntityInfo>) {
-    let mut file_keyed_entities = targets.par_do(ExtractEntityInfoFromTargetsFn {});
+    let mut file_keyed_entities = PTable::concatenate(vec![
+        targets.par_do(ExtractEntityInfoFromTargetsFn {}),
+        files.par_do(ExtractEntityInfoFromFilesFn {}),
+    ]);
+
     file_keyed_entities.write_to_vec();
+
     let mut keyword_keyed_entities = file_keyed_entities.par_do(KeyEntitiesByKeywordFn {});
     keyword_keyed_entities.write_to_vec();
 
@@ -73,11 +154,16 @@ pub fn extract_entity_info_to_vec(
 
 pub fn extract_and_write_entity_info(
     targets: &PTable<String, Target>,
+    files: &PTable<String, File>,
     file_dest: &str,
     keyword_dest: &str,
 ) {
-    let mut file_keyed_entities = targets.par_do(ExtractEntityInfoFromTargetsFn {});
+    let mut file_keyed_entities = PTable::concatenate(vec![
+        targets.par_do(ExtractEntityInfoFromTargetsFn {}),
+        files.par_do(ExtractEntityInfoFromFilesFn {}),
+    ]);
     file_keyed_entities.write_to_sstable(file_dest);
+
     let mut keyword_keyed_entities = file_keyed_entities.par_do(KeyEntitiesByKeywordFn {});
     keyword_keyed_entities.write_to_sstable(keyword_dest);
 }
@@ -98,7 +184,8 @@ mod tests {
         t1.mut_files().push(String::from("/abcdef/test_file.rs"));
 
         let p = PCollection::from_table(vec![KV::new(String::new(), t1)]);
-        let (mut fout, mut kout) = extract_entity_info_to_vec(&p);
+        let f = PCollection::from_table(vec![]);
+        let (mut fout, mut kout) = extract_entity_info_to_vec(&p, &f);
 
         plume::run();
 

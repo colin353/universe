@@ -93,13 +93,17 @@ where
             return Vec::new();
         }
 
-        (1..(target_shards))
+        let mut keyranges: Vec<_> = (1..(target_shards))
             .map(|i| {
                 self.data[i * self.data.len() / target_shards]
                     .key()
                     .to_string()
             })
-            .collect()
+            .filter(|k| !k.is_empty())
+            .collect();
+
+        keyranges.dedup();
+        keyranges
     }
 }
 
@@ -450,8 +454,8 @@ where
 
 impl<V> PCollection<KV<String, V>>
 where
-    V: PlumeTrait + Clone + Default,
-    KV<String, V>: PlumeTrait + Default,
+    V: PlumeTrait + Clone + Default + std::fmt::Debug,
+    KV<String, V>: PlumeTrait + Default + std::fmt::Debug,
 {
     pub fn concatenate(inputs: Vec<PCollection<KV<String, V>>>) -> Self {
         let mut config = PCollectionProto::new();
@@ -719,7 +723,7 @@ pub struct ConcatenateFn<T> {
 
 impl<T> PFn for ConcatenateFn<T>
 where
-    T: PlumeTrait + Clone + Default,
+    T: PlumeTrait + Clone + Default + std::fmt::Debug,
 {
     fn stages(&self, id: u64) -> (Stage, Vec<Stage>) {
         let mut s = Stage::new();
@@ -758,7 +762,7 @@ trait ConcatenateFnTrait {
 
 impl<T> ConcatenateFnTrait for ConcatenateFn<T>
 where
-    T: PlumeTrait + Clone + Default,
+    T: PlumeTrait + Clone + Default + std::fmt::Debug,
 {
     default fn execute_sstable(&self, shard: &Shard) {
         panic!("SSTables must have a KV type!")
@@ -793,7 +797,7 @@ where
 
 impl<T> ConcatenateFnTrait for ConcatenateFn<KV<String, T>>
 where
-    T: PlumeTrait + Clone + Default,
+    T: PlumeTrait + Clone + Default + std::fmt::Debug,
 {
     default fn execute_sstable(&self, shard: &Shard) {
         // Collect up a list of filenames of input sstables
