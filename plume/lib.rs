@@ -82,7 +82,7 @@ pub struct InMemoryPTableUnderlying<T> {
 
 impl<T> InMemoryPCollectionWrapper for InMemoryPTableUnderlying<T>
 where
-    T: PlumeTrait + Default,
+    T: PlumeTrait,
 {
     fn len(&self) -> usize {
         self.data.len()
@@ -127,7 +127,7 @@ pub struct InMemoryPCollection {
 impl InMemoryPCollection {
     pub fn from_vec<T>(data: Vec<T>) -> Self
     where
-        T: PlumeTrait + Default,
+        T: PlumeTrait,
     {
         Self {
             data: Arc::new(InMemoryPCollectionUnderlying {
@@ -138,7 +138,7 @@ impl InMemoryPCollection {
 
     pub fn from_table<T>(data: Vec<KV<String, T>>) -> Self
     where
-        T: PlumeTrait + Default,
+        T: PlumeTrait,
     {
         Self {
             data: Arc::new(InMemoryPTableUnderlying {
@@ -167,7 +167,7 @@ pub struct PCollectionUnderlying<T> {
 
 impl<T> PCollection<T>
 where
-    T: PlumeTrait + Default,
+    T: PlumeTrait,
 {
     fn new() -> Self {
         Self {
@@ -226,7 +226,7 @@ where
     pub fn par_do<O, DoType>(&self, f: DoType) -> PCollection<O>
     where
         DoType: DoFn<Input = T, Output = O> + 'static,
-        O: PlumeTrait + Default,
+        O: PlumeTrait,
     {
         let mut out: PCollection<O> = PCollection::<O>::new();
         Arc::get_mut(&mut out.underlying).unwrap().dependency = Some(Arc::new(DoFnWrapper {
@@ -243,8 +243,8 @@ where
     ) -> PCollection<O>
     where
         DoType: DoSideInputFn<Input = T, SideInput = TSideInput, Output = O> + 'static,
-        TSideInput: PlumeTrait + Default,
-        O: PlumeTrait + Default,
+        TSideInput: PlumeTrait,
+        O: PlumeTrait,
     {
         let mut out: PCollection<O> = PCollection::<O>::new();
         Arc::get_mut(&mut out.underlying).unwrap().dependency =
@@ -345,7 +345,7 @@ where
 impl<T> PCollection<Primitive<T>>
 where
     T: PrimitiveType,
-    Primitive<T>: PlumeTrait + Default,
+    Primitive<T>: PlumeTrait,
 {
     pub fn from_primitive_vec(data: Vec<T>) -> Self {
         let converted: Vec<Primitive<T>> = data.into_iter().map(|x| x.into()).collect();
@@ -363,13 +363,13 @@ where
 
 impl<V> PCollection<KV<String, V>>
 where
-    V: PlumeTrait + Default,
+    V: PlumeTrait,
 {
     pub fn join<V2, O, JoinType>(self, right: PTable<String, V2>, f: JoinType) -> PCollection<O>
     where
         JoinType: JoinFn<ValueLeft = V, ValueRight = V2, Output = O> + 'static,
-        V2: PlumeTrait + Default,
-        O: PlumeTrait + Default,
+        V2: PlumeTrait,
+        O: PlumeTrait,
     {
         let mut out = PCollection::<O>::new();
         Arc::get_mut(&mut out.underlying).unwrap().dependency = Some(Arc::new(JoinFnWrapper {
@@ -383,8 +383,8 @@ where
 
 impl<V> PCollection<KV<String, V>>
 where
-    V: PlumeTrait + Default,
-    KV<String, V>: PlumeTrait + Default,
+    V: PlumeTrait,
+    KV<String, V>: PlumeTrait,
 {
     pub fn from_sstable(filename: &str) -> Self {
         let mut config = PCollectionProto::new();
@@ -454,8 +454,8 @@ where
 
 impl<V> PCollection<KV<String, V>>
 where
-    V: PlumeTrait + Clone + Default + std::fmt::Debug,
-    KV<String, V>: PlumeTrait + Default + std::fmt::Debug,
+    V: PlumeTrait + Clone,
+    KV<String, V>: PlumeTrait,
 {
     pub fn concatenate(inputs: Vec<PCollection<KV<String, V>>>) -> Self {
         let mut config = PCollectionProto::new();
@@ -476,13 +476,13 @@ where
 
 impl<'a, V> PCollection<KV<String, V>>
 where
-    V: PlumeTrait + Default,
+    V: PlumeTrait,
     KV<String, Stream<'a, V>>: Send + Sync + 'static,
 {
     pub fn group_by_key_and_par_do<O, DoType>(&self, f: DoType) -> PCollection<O>
     where
         DoType: DoStreamFn<Input = V, Output = O> + 'static,
-        O: PlumeTrait + Default,
+        O: PlumeTrait,
     {
         let mut out: PCollection<O> = PCollection::<O>::new();
         Arc::get_mut(&mut out.underlying).unwrap().dependency = Some(Arc::new(DoStreamFnWrapper {
@@ -723,7 +723,7 @@ pub struct ConcatenateFn<T> {
 
 impl<T> PFn for ConcatenateFn<T>
 where
-    T: PlumeTrait + Clone + Default + std::fmt::Debug,
+    T: PlumeTrait + Clone,
 {
     fn stages(&self, id: u64) -> (Stage, Vec<Stage>) {
         let mut s = Stage::new();
@@ -762,7 +762,7 @@ trait ConcatenateFnTrait {
 
 impl<T> ConcatenateFnTrait for ConcatenateFn<T>
 where
-    T: PlumeTrait + Clone + Default + std::fmt::Debug,
+    T: PlumeTrait + Clone,
 {
     default fn execute_sstable(&self, shard: &Shard) {
         panic!("SSTables must have a KV type!")
@@ -797,7 +797,7 @@ where
 
 impl<T> ConcatenateFnTrait for ConcatenateFn<KV<String, T>>
 where
-    T: PlumeTrait + Clone + Default + std::fmt::Debug,
+    T: PlumeTrait + Clone,
 {
     default fn execute_sstable(&self, shard: &Shard) {
         // Collect up a list of filenames of input sstables
@@ -941,8 +941,8 @@ pub trait DoStreamFn: Send + Sync {
 
 impl<T1, T2> PFn for DoStreamFnWrapper<T1, T2>
 where
-    T1: PlumeTrait + Default,
-    T2: PlumeTrait + Default,
+    T1: PlumeTrait,
+    T2: PlumeTrait,
 {
     fn stages(&self, id: u64) -> (Stage, Vec<Stage>) {
         let dep_stages = self.dependency.stages();
@@ -1016,9 +1016,9 @@ where
 
 impl<TInput, TSideInput, TOutput> PFn for DoSideInputFnWrapper<TInput, TSideInput, TOutput>
 where
-    TInput: PlumeTrait + Default,
-    TSideInput: PlumeTrait + Default,
-    TOutput: PlumeTrait + Default,
+    TInput: PlumeTrait,
+    TSideInput: PlumeTrait,
+    TOutput: PlumeTrait,
 {
     fn stages(&self, id: u64) -> (Stage, Vec<Stage>) {
         let mut dep_stages = self.dependency.stages();
@@ -1111,9 +1111,9 @@ where
 impl<TInput, TSideInput, TOutput> PFn
     for DoSideInputFnWrapper<KV<String, TInput>, TSideInput, TOutput>
 where
-    TInput: PlumeTrait + Default,
-    TSideInput: PlumeTrait + Default,
-    TOutput: PlumeTrait + Default,
+    TInput: PlumeTrait,
+    TSideInput: PlumeTrait,
+    TOutput: PlumeTrait,
 {
     default fn execute(&self, shard: &Shard) {
         for input in shard.get_inputs() {
@@ -1149,8 +1149,8 @@ where
 
 impl<T1, T2> PFn for DoFnWrapper<T1, T2>
 where
-    T1: PlumeTrait + Default,
-    T2: PlumeTrait + Default,
+    T1: PlumeTrait,
+    T2: PlumeTrait,
 {
     fn stages(&self, id: u64) -> (Stage, Vec<Stage>) {
         let dep_stages = self.dependency.stages();
@@ -1199,8 +1199,8 @@ where
 
 impl<T1, T2> PFn for DoFnWrapper<KV<String, T1>, T2>
 where
-    T1: PlumeTrait + Default,
-    T2: PlumeTrait + Default,
+    T1: PlumeTrait,
+    T2: PlumeTrait,
 {
     default fn execute(&self, shard: &Shard) {
         for input in shard.get_inputs() {
@@ -1243,9 +1243,9 @@ enum JoinTask {
 
 impl<V1, V2, O> PFn for JoinFnWrapper<V1, V2, O>
 where
-    V1: PlumeTrait + Default,
-    V2: PlumeTrait + Default,
-    O: PlumeTrait + Default,
+    V1: PlumeTrait,
+    V2: PlumeTrait,
+    O: PlumeTrait,
 {
     fn stages(&self, id: u64) -> (Stage, Vec<Stage>) {
         let mut s = Stage::new();
@@ -1819,7 +1819,7 @@ trait SinkProducerTrait<T> {
 
 impl<T> SinkProducerTrait<T> for SinkProducer<T>
 where
-    T: PlumeTrait + Default,
+    T: PlumeTrait,
 {
     default fn make_sink(&self, outputs: &[PCollectionProto]) -> Box<dyn EmitFn<T>> {
         if outputs.len() == 0 {
@@ -1839,7 +1839,7 @@ where
 
 impl<T> SinkProducerTrait<KV<String, T>> for SinkProducer<KV<String, T>>
 where
-    T: PlumeTrait + Default,
+    T: PlumeTrait,
 {
     fn make_sink(&self, outputs: &[PCollectionProto]) -> Box<dyn EmitFn<KV<String, T>>> {
         if outputs.len() == 0 {
@@ -1869,7 +1869,7 @@ struct SSTableSink<T> {
 
 impl<T> SSTableSink<T>
 where
-    T: PlumeTrait + Default,
+    T: PlumeTrait,
 {
     pub fn new(configs: &[PCollectionProto]) -> Self {
         if configs.len() == 0 {
@@ -1905,7 +1905,7 @@ where
 
 impl<T> EmitFn<KV<String, T>> for SSTableSink<T>
 where
-    T: PlumeTrait + Default,
+    T: PlumeTrait,
 {
     fn emit(&mut self, value: KV<String, T>) {
         self.heap.push(value);
@@ -1950,7 +1950,7 @@ struct OrderedMemorySink<T> {
 
 impl<T> EmitFn<KV<String, T>> for OrderedMemorySink<T>
 where
-    T: PlumeTrait + Default,
+    T: PlumeTrait,
 {
     fn emit(&mut self, value: KV<String, T>) {
         let idx = self.write_count % self.outputs.len();
@@ -1977,7 +1977,7 @@ where
 
 impl<T> OrderedMemorySink<T>
 where
-    T: PlumeTrait + Default,
+    T: PlumeTrait,
 {
     pub fn new(outputs: &[PCollectionProto]) -> Self {
         Self {
@@ -1992,7 +1992,7 @@ where
 
 impl<T> EmitFn<T> for MemorySink<T>
 where
-    T: PlumeTrait + Default,
+    T: PlumeTrait,
 {
     fn finish(self: Box<Self>) {
         for out in self.outputs {
@@ -2019,7 +2019,7 @@ where
 
 impl<T> MemorySink<T>
 where
-    T: PlumeTrait + Default,
+    T: PlumeTrait,
 {
     pub fn new(outputs: &[PCollectionProto]) -> Self {
         Self {
@@ -2039,7 +2039,7 @@ struct OrderedMemorySinkSingleOutput<T> {
 
 impl<T> OrderedMemorySinkSingleOutput<T>
 where
-    T: PlumeTrait + Default,
+    T: PlumeTrait,
 {
     fn new(config: &PCollectionProto) -> Self {
         Self {
@@ -2081,7 +2081,7 @@ struct MemorySinkSingleOutput<T> {
 
 impl<T> MemorySinkSingleOutput<T>
 where
-    T: PlumeTrait + Default,
+    T: PlumeTrait,
 {
     pub fn new(config: &PCollectionProto) -> Self {
         Self {
@@ -2198,7 +2198,7 @@ impl<T> MakeKVReader<T> for Source<T> {
 
 impl<T> MakeKVReader<KV<String, T>> for Source<KV<String, T>>
 where
-    T: PlumeTrait + Default,
+    T: PlumeTrait,
 {
     default fn make(config: &PCollectionProto) -> Box<dyn StreamingIterator<Item = KV<String, T>>> {
         let reader = ShardedSSTableReader::from_filenames(
@@ -2214,7 +2214,7 @@ where
 
 impl<T> Source<T>
 where
-    T: PlumeTrait + Default,
+    T: PlumeTrait,
 {
     pub fn sstable_source_or_panic(&self) -> Box<dyn StreamingIterator<Item = T>> {
         Self::make(&self.config)
@@ -2234,7 +2234,7 @@ where
 
 impl<T> Source<KV<String, T>>
 where
-    T: PlumeTrait + Default,
+    T: PlumeTrait,
 {
     pub fn sstable_source(&self) -> ShardedSSTableReader<T> {
         ShardedSSTableReader::from_filenames(
@@ -2273,7 +2273,7 @@ where
 
 impl<'b, T> Source<KV<String, Stream<'b, T>>>
 where
-    T: PlumeTrait + Default,
+    T: PlumeTrait,
 {
     pub fn sstable_source(&self) -> ShardedSSTableReader<T> {
         ShardedSSTableReader::from_filenames(

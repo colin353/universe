@@ -95,7 +95,7 @@ pub struct SSTableReader<T> {
     offset: usize,
 }
 
-impl<T: Serializable + Default> SSTableReader<T> {
+impl<T: Serializable> SSTableReader<T> {
     pub fn new(file: std::fs::File) -> Result<Self> {
         let dtable = unsafe { mmap::MmapOptions::new().map(&file)? };
 
@@ -174,8 +174,7 @@ impl<T: Serializable + Default> SSTableReader<T> {
     pub fn get(&self, key: &str) -> Result<Option<T>> {
         match self.get_bytes(key) {
             Ok(Some(bytes)) => {
-                let mut parsed_value = T::default();
-                parsed_value.read_from_bytes(bytes)?;
+                let parsed_value = T::from_bytes(bytes)?;
                 Ok(Some(parsed_value))
             }
             Ok(None) => Ok(None),
@@ -238,7 +237,7 @@ pub struct SpecdSSTableReader<'a, T: 'a> {
     offset: usize,
 }
 
-impl<'a, T: Serializable + Default> SpecdSSTableReader<'a, T> {
+impl<'a, T: Serializable> SpecdSSTableReader<'a, T> {
     pub fn from_reader(reader: &'a SSTableReader<T>, key_spec: &str) -> SpecdSSTableReader<'a, T> {
         let mut specd_reader = SpecdSSTableReader {
             min_key: String::from(""),
@@ -313,7 +312,7 @@ impl<'a, T: Serializable + Default> SpecdSSTableReader<'a, T> {
     }
 }
 
-impl<'a, T: Serializable + Default> Iterator for SpecdSSTableReader<'a, T> {
+impl<'a, T: Serializable> Iterator for SpecdSSTableReader<'a, T> {
     type Item = (String, T);
     fn next(&mut self) -> Option<(String, T)> {
         if self.reached_end {
@@ -341,13 +340,12 @@ impl<'a, T: Serializable + Default> Iterator for SpecdSSTableReader<'a, T> {
     }
 }
 
-impl<T: Serializable + Default> Iterator for SSTableReader<T> {
+impl<T: Serializable> Iterator for SSTableReader<T> {
     type Item = (String, T);
     fn next(&mut self) -> Option<(String, T)> {
         let (k, v, idx) = match self.read_at(self.offset).unwrap() {
             Some((k, v, idx)) => {
-                let mut value = T::default();
-                value.read_from_bytes(v).unwrap();
+                let value = T::from_bytes(v).unwrap();
                 (k.to_string(), value, idx)
             }
             None => return None,
@@ -367,7 +365,7 @@ pub struct ShardedSSTableReader<T> {
     top: Option<KV<String, T>>,
 }
 
-impl<'a, T: Serializable + Default> ShardedSSTableReader<T> {
+impl<'a, T: Serializable> ShardedSSTableReader<T> {
     pub fn from_readers(
         readers: Vec<SSTableReader<T>>,
         min_key: &str,
@@ -477,7 +475,7 @@ impl<'a, T: Serializable + Default> ShardedSSTableReader<T> {
     }
 }
 
-impl<'a, T: Serializable + Default> Iterator for ShardedSSTableReader<T> {
+impl<'a, T: Serializable> Iterator for ShardedSSTableReader<T> {
     type Item = (String, T);
     fn next(&mut self) -> Option<(String, T)> {
         return self.next();
@@ -486,7 +484,7 @@ impl<'a, T: Serializable + Default> Iterator for ShardedSSTableReader<T> {
 
 impl<T> StreamingIterator for ShardedSSTableReader<T>
 where
-    T: Serializable + Default,
+    T: Serializable,
 {
     type Item = KV<String, T>;
     fn next(&mut self) -> Option<&Self::Item> {
