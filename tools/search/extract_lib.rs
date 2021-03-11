@@ -56,6 +56,19 @@ fn should_ignore_path(path: &str) -> bool {
     false
 }
 
+fn is_ugly_path(path: &str) -> bool {
+    if let Some(x) = path.split("/").last() {
+        let ugly_extensions = &[".data", ".csv", ".tsv", ".dat", ".log"];
+        for ext in ugly_extensions {
+            if x.ends_with(ext) {
+                return true;
+            }
+        }
+    }
+
+    false
+}
+
 fn extract_from_dir(
     prefix: usize,
     root_dir: &str,
@@ -112,6 +125,10 @@ fn extract_from_dir(
             if contents.len() < 1_000_000 {
                 f.set_content(contents);
             } else {
+                f.set_is_ugly(true);
+            }
+
+            if is_ugly_path(&path) {
                 f.set_is_ugly(true);
             }
 

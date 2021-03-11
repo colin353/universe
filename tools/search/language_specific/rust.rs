@@ -7,7 +7,7 @@ lazy_static! {
     static ref FUNCTION_DEFINITION: regex::Regex =
         { regex::Regex::new(r"\s*(pub)?\s*fn\s+(\w+)").unwrap() };
     static ref STRUCTURE_DEFINITION: regex::Regex =
-        { regex::Regex::new(r"\s*(pub)?\s*struct\s+(\w+)").unwrap() };
+        { regex::Regex::new(r"\s*(pub)?\s*(struct|enum|type)\s+(\w+)").unwrap() };
     static ref LET_BINDING: regex::Regex =
         { regex::Regex::new(r"\s*let\s*(mut)?\s+(\w+)").unwrap() };
     static ref TRAIT_DEFINITION: regex::Regex =
