@@ -346,6 +346,10 @@ function selectLine(event) {
 let jumpToLine = '';
 let command = '';
 
+function clearSelectedLine() {
+  this.setState({ selectedSymbol: {} })
+}
+
 window.addEventListener('hashchange', () => {
   if (window.location.hash.startsWith("#L")) {
     this.setState({

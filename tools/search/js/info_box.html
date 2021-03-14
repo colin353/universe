@@ -1,5 +1,6 @@
 <div class="infobox" style="position: fixed; top: 150px; right: 50px;">
   <div class='infotop'>
+    <span on:click={closeInfoBox} style="float: right">✕</span>
     <p><i class='infotype infotype-${this.state.type}'>${this.state.type}</i>
     <control if={this.state.className}>
     &nbsp;<a href="#L${this.state.classLine}" class='invisible-link'>${this.state.className}</a>::<a href="#L${this.state.symbolLine}" class='invisible-link'>${this.state.name}</a>

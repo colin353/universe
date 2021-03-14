@@ -8,7 +8,7 @@
     </div>
 </control>
 <control if={this.state.showInfoBox}>
-<info-box matches={this.state.matchingLines} symbol={this.state.selectedSymbol} filename="${this.state.filename}"></info-box>
+<info-box on:closeInfoBox={clearSelectedLine} matches={this.state.matchingLines} symbol={this.state.selectedSymbol} filename="${this.state.filename}"></info-box>
 </control>
 <div class="line-numbers">
     <control for={this.state.lines}>

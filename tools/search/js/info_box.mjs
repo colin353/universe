@@ -129,3 +129,7 @@ function onClickScope(e) {
   const rect = this.refs.scope.getBoundingClientRect();
   store.setState("codePadScrollOffsetWriteOnly", (e.clientX - rect.x) / rect.width);
 }
+
+function closeInfoBox() {
+  this.dispatchEvent(new CustomEvent('closeInfoBox'))
+}
