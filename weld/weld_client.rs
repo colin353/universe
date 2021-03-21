@@ -126,7 +126,6 @@ fn main() {
             "fsname=hello",
             "async_read=true",
             "negative_timeout=5",
-            "debug=true",
         ]
         .iter()
         .map(|o| o.as_ref())
