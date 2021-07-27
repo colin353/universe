@@ -19,9 +19,16 @@ export function getUser() {
   }
 
   return fetch(`https://api.github.com/user`, {headers}).then((resp) => resp.json()).then((user) => {
+    user.cachedAt = Date.now();
     window.localStorage.setItem('user', JSON.stringify(user))
     return user
   })
+}
+
+function isRecent(time) {
+  console.log("cached at", time);
+  if (!time) return false;
+  return Date.now() - time < 60*1000
 }
 
 export function getPulls() {
@@ -30,7 +37,10 @@ export function getPulls() {
 
   const cachedResult = window.localStorage.getItem('pulls')
   if (cachedResult) {
-    return Promise.resolve(JSON.parse(cachedResult))
+    let value = JSON.parse(cachedResult)
+    if (isRecent(value.cachedAt)) {
+      return Promise.resolve(value.pulls)
+    }
   }
 
   const headers = new Headers();
@@ -49,7 +59,7 @@ export function getPulls() {
     const output = values.flat();
 
     // Cache output
-    window.localStorage.setItem('pulls', JSON.stringify(output))
+    window.localStorage.setItem('pulls', JSON.stringify({cachedAt: Date.now(), pulls: output}))
 
     return output;
   })
@@ -61,7 +71,10 @@ export function getMerged() {
 
   const cachedResult = window.localStorage.getItem('merged')
   if (cachedResult) {
-    return Promise.resolve(JSON.parse(cachedResult))
+    let value = JSON.parse(cachedResult)
+    if (isRecent(value.cachedAt)) {
+      return Promise.resolve(value.pulls)
+    }
   }
 
   const headers = new Headers();
@@ -85,7 +98,7 @@ export function getMerged() {
     output.sort((a, b) => a.merged_at > b.merged_at);
 
     // Cache output
-    window.localStorage.setItem('merged', JSON.stringify(output))
+    window.localStorage.setItem('merged', JSON.stringify({cachedAt: Date.now(), pulls: output}))
 
     return output;
   })
@@ -96,7 +109,10 @@ export function getReviewState(pr) {
 
   const cachedResult = window.localStorage.getItem(key)
   if (cachedResult) {
-    return Promise.resolve(JSON.parse(cachedResult))
+    let value = JSON.parse(cachedResult)
+    if (isRecent(value.cachedAt)) {
+      return Promise.resolve(value.reviews)
+    }
   }
 
   const headers = new Headers();
@@ -106,7 +122,7 @@ export function getReviewState(pr) {
   }
 
   return fetch(`https://api.github.com/repos/${pr.base.repo.full_name}/pulls/${pr.number}/reviews`, {headers}).then((resp) => resp.json()).then((reviewState) => {
-    window.localStorage.setItem(key, JSON.stringify(reviewState))
+    window.localStorage.setItem(key, JSON.stringify({cachedAt: Date.now(), reviews: reviewState}))
     return reviewState
   })
 }

@@ -10,6 +10,9 @@ function save() {
   this.setState({
     token: this.refs.token.value,
   })
+  window.localStorage.removeItem('user')
+  window.localStorage.removeItem('pulls')
+  window.localStorage.removeItem('merged')
 }
 
 function remove(index) {
@@ -27,4 +30,6 @@ function addRepo() {
 
 const saveRepos = () => {
   window.localStorage.setItem('repos', JSON.stringify(this.state.repos))
+  window.localStorage.removeItem('pulls')
+  window.localStorage.removeItem('merged')
 }
