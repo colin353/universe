@@ -23,3 +23,14 @@ fe_test(
     srcs = [ "truncate_test.mjs" ],
     deps = [ ":truncate" ],
 )
+
+fe_library(
+    name = "human_date",
+    srcs = ["human_date.mjs"],
+)
+
+fe_test(
+    name = "human_date_test",
+    srcs = [ "test_human_date.mjs" ],
+    deps = [ ":human_date" ],
+)
