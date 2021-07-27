@@ -2,8 +2,8 @@
 
 import { getUser, getPulls, getMerged } from './github.mjs'
 
-// For <settings-ui />
 import './settings_ui.mjs'
+import './pr_row.mjs'
 
 const MAX_PRS_PER_SECTION = 15;
 const RECENCY_LIMIT = 86400 * 10 * 1000; // 10 days
@@ -41,3 +41,11 @@ getMerged().then(async (merged) => {
     myMerged, otherMerged
   })
 })
+
+function hideSettings() {
+  this.setState({ settingsVisible: false })
+}
+
+function showSettings() {
+  this.setState({ settingsVisible: true })
+}

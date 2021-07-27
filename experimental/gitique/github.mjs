@@ -91,3 +91,22 @@ export function getMerged() {
   })
 }
 
+export function getReviewState(pr) {
+  const key = `reviewState${pr.number}`
+
+  const cachedResult = window.localStorage.getItem(key)
+  if (cachedResult) {
+    return Promise.resolve(JSON.parse(cachedResult))
+  }
+
+  const headers = new Headers();
+  const token = getToken();
+  if (token !== null) {
+    headers.append('Authorization', `token ${getToken()}`)
+  }
+
+  return fetch(`https://api.github.com/repos/${pr.base.repo.full_name}/pulls/${pr.number}/reviews`, {headers}).then((resp) => resp.json()).then((reviewState) => {
+    window.localStorage.setItem(key, JSON.stringify(reviewState))
+    return reviewState
+  })
+}

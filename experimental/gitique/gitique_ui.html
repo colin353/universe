@@ -1,35 +1,32 @@
-<control if={this.state.settingsVisible}>
-<settings-ui />
-</control>
-<control if={!this.state.settingsVisible}>
-        <p>[settings]</p>
-</control>
-
 <strong>in progress</strong>
 <ul>
   <control for={this.state.pulls}>
-  <li>#${item.number} by ${item.user.login} ${item.title}</li>
+  <pr-row pr={item} />
   </control>
 </ul>
 
 <strong>review requests</strong>
 <ul>
   <control for={this.state.reviews}>
-  <li>#${item.number} by ${item.user.login} ${item.title}</li>
+  <pr-row pr={item} />
   </control>
 </ul>
 
 <strong>submitted by me</strong>
 <ul>
   <control for={this.state.myMerged}>
-  <li>#${item.number} by ${item.user.login} ${item.title}</li>
+  <pr-row pr={item} />
   </control>
 </ul>
 
 <strong>submitted by others</strong>
 <ul>
   <control for={this.state.otherMerged}>
-  <li>#${item.number} by ${item.user.login} ${item.title}</li>
+  <pr-row pr={item} />
   </control>
 </ul>
 
+<div>
+  <p><strong>settings</strong></p>
+  <settings-ui></settings-ui>
+</div>

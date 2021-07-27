@@ -1,0 +1,52 @@
+li {
+  list-style-type:none;
+  margin-bottom: 2px;
+}
+
+div.info {
+  min-width: 200px;
+  color: #444;
+  display: inline-block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+div.outer {
+  height: 15px;
+}
+
+div.reviewers {
+  height: 15px;
+  display: inline-block;
+  min-width: 200px;
+  max-width: 200px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  margin-right: 10px;
+}
+
+
+div.title {
+  height: 15px;
+  display: inline-block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  margin-right: 10px;
+}
+
+span.reviewer {
+  margin-left: 10px;
+}
+
+span.reviewer.APPROVED {
+  color: #2b9348;
+  font-weight: bold;
+}
+
+a.invisible {
+  color: inherit;
+  text-decoration: inherit;
+}

@@ -1,0 +1,15 @@
+<a class="invisible" href={this.state.link}>
+<li>
+  <div class="outer">
+  <div class="info">#${this.state.pr.number} by ${this.state.pr.user.login}</div>
+
+  <div class="reviewers">
+    <control for={this.state.reviewers}>
+    <span class="reviewer ${item.approved}">${item.name}</span>
+    </control>
+  </div>
+
+  <div class="title">${this.state.pr.title}</div>
+  </div>
+</li>
+</a>

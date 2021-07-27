@@ -12,6 +12,7 @@ fe_component(
    ],
    deps = [
        ":settings_ui",
+       ":pr_row",
    ]
 )
 
@@ -19,7 +20,17 @@ fe_component(
    name = "settings_ui",
    srcs = [
        "settings_ui.mjs",
+       "settings_ui.css",
        "settings_ui.html",
+   ],
+)
+
+fe_component(
+   name = "pr_row",
+   srcs = [
+       "pr_row.mjs",
+       "pr_row.html",
+       "pr_row.css",
    ],
 )
 
