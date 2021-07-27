@@ -1,15 +1,22 @@
 <a target="_blank" class="invisible" href={this.state.link}>
 <li>
   <div class="outer">
-  <div class="info">#${this.state.pr.number} by ${this.state.pr.user.login}</div>
-
-  <div class="reviewers">
+  <div class="info"><span class="repo_name">${this.state.pr.base.repo.name}</span></div>
+  <div class="author">${this.state.author}</div>
+  <div>
+  <control if={this.state.hasReviewers}>
+    <div class="reviewers">
     <control for={this.state.reviewers}>
     <span class="reviewer ${item.approved}">${item.name}</span>
+    </control>
+    </div>
     </control>
   </div>
 
   <div class="title">${this.state.pr.title}</div>
+  <control if={this.state.suffix}>
+  <div class="suffix">${this.state.suffix}</div>
+  </control>
   </div>
 </li>
 </a>

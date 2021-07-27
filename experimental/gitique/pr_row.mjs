@@ -1,7 +1,11 @@
-// Do something here
+const attributes = ['review'];
+
 import { getReviewState } from './github.mjs'
+import renderDate from '../../util/js/human_date.mjs' 
 
 function formatUsername(username) {
+  if (!username) return username;
+
   if (username.endsWith("[bot]")) {
     return username.slice(0, -5)
   }
@@ -9,11 +13,12 @@ function formatUsername(username) {
 }
 
 this.state = {
-  pr: { user: {} },
+  pr: { base: { repo: {} }, user: {} },
+  author: "",
   reviewState: [],
-  link: "#",
   reviewers: [],
-  hasReviewers: false,
+  link: "#",
+  suffix: "",
 }
 
 this.stateMappers = {
@@ -47,8 +52,16 @@ this.stateMappers = {
     }
     return output
   },
-  hasReviewers: (reviewers) => reviewers.length > 0,
   link: (pr) => pr?._links?.html?.href,
+  author: (pr) => formatUsername(pr.user.login),
+  suffix: (pr) => {
+    if (pr.merged_at) {
+      return `merged ${renderDate(new Date(pr.updated_at))}`
+    } else {
+      return `updated ${renderDate(new Date(pr.updated_at))}`
+    }
+  },
+  hasReviewers: (review) => review == "true",
 }
 
 function mergeReviews(a, b) {

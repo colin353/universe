@@ -1,25 +1,42 @@
+<div class="container">
+<div>
+<control if={this.state.hasPulls}>
 <strong>in progress</strong>
+</control>
+</div>
 <ul>
   <control for={this.state.pulls}>
-  <pr-row pr={item} />
+  <pr-row review="true" pr={item} />
   </control>
 </ul>
 
+<div>
+<control if={this.state.hasReviews}>
 <strong>review requests</strong>
+</control>
+</div>
 <ul>
   <control for={this.state.reviews}>
-  <pr-row pr={item} />
+  <pr-row review="true" pr={item} />
   </control>
 </ul>
 
+<div>
+<control if={this.state.hasMyMerged}>
 <strong>submitted by me</strong>
+</control>
+</div>
 <ul>
   <control for={this.state.myMerged}>
   <pr-row pr={item} />
   </control>
 </ul>
 
+<div>
+<control if={this.state.hasOtherMerged}>
 <strong>submitted by others</strong>
+</control>
+</div>
 <ul>
   <control for={this.state.otherMerged}>
   <pr-row pr={item} />
@@ -27,6 +44,7 @@
 </ul>
 
 <div>
-  <p><strong>settings</strong></p>
+  <p><strong>settings</strong> &nbsp;(only stored in localstorage)</p>
   <settings-ui></settings-ui>
+</div>
 </div>

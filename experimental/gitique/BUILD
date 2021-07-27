@@ -9,6 +9,7 @@ fe_component(
    srcs = [
        "gitique_ui.mjs",
        "gitique_ui.html",
+       "gitique_ui.css",
    ],
    deps = [
        ":settings_ui",
@@ -32,6 +33,9 @@ fe_component(
        "pr_row.html",
        "pr_row.css",
    ],
+   deps = [
+       "//util/js:human_date",
+   ]
 )
 
 fe_devenv(

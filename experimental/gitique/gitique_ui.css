@@ -1,0 +1,10 @@
+ul {
+  padding-left: 0;
+}
+
+.container {
+  max-width: 1024px;
+  display: block;
+  margin-left: auto;
+  margin-right: auto;
+}

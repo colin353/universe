@@ -31,7 +31,7 @@ function isRecent(time) {
   return Date.now() - time < 60*1000
 }
 
-export function getPulls() {
+export function getPulls(forceCache=false) {
   const repositories = getRepositories()
   let promises = [];
 
@@ -42,6 +42,8 @@ export function getPulls() {
       return Promise.resolve(value.pulls)
     }
   }
+
+  if (forceCache) return Promise.resolve([]);
 
   const headers = new Headers();
   const token = getToken();
@@ -58,6 +60,17 @@ export function getPulls() {
   return Promise.all(promises).then((values) => {
     const output = values.flat();
 
+    // Sort by last update
+    output.sort((a, b) => {
+      if (new Date(a.updated_at) > new Date(b.updated_at)) {
+        return -1
+      } else if (a.updated_at == b.updated_at) {
+        return 0;
+      } else {
+        return 1;
+      }
+    });
+
     // Cache output
     window.localStorage.setItem('pulls', JSON.stringify({cachedAt: Date.now(), pulls: output}))
 
@@ -65,7 +78,7 @@ export function getPulls() {
   })
 }
 
-export function getMerged() {
+export function getMerged(forceCache=false) {
   const repositories = getRepositories()
   let promises = [];
 
@@ -76,6 +89,8 @@ export function getMerged() {
       return Promise.resolve(value.pulls)
     }
   }
+
+  if (forceCache) return Promise.resolve([]);
 
   const headers = new Headers();
   const token = getToken();
@@ -95,7 +110,15 @@ export function getMerged() {
       .filter(item => item.merged_at !== null);
 
     // Sort by merge date
-    output.sort((a, b) => a.merged_at > b.merged_at);
+    output.sort((a, b) => {
+      if (new Date(a.merged_at) > new Date(b.merged_at)) {
+        return -1
+      } else if (a.updated_at == b.updated_at) {
+        return 0;
+      } else {
+        return 1;
+      }
+    });
 
     // Cache output
     window.localStorage.setItem('merged', JSON.stringify({cachedAt: Date.now(), pulls: output}))
@@ -104,16 +127,18 @@ export function getMerged() {
   })
 }
 
-export function getReviewState(pr) {
+export function getReviewState(pr, forceCache=false) {
   const key = `reviewState${pr.number}`
 
   const cachedResult = window.localStorage.getItem(key)
   if (cachedResult) {
     let value = JSON.parse(cachedResult)
-    if (isRecent(value.cachedAt)) {
+    if (new Date(pr.updated_at) < value.cachedAt && isRecent(value.cachedAt)) {
       return Promise.resolve(value.reviews)
     }
   }
+
+  if (forceCache) return Promise.resolve([]);
 
   const headers = new Headers();
   const token = getToken();

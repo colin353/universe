@@ -13,12 +13,14 @@ function save() {
   window.localStorage.removeItem('user')
   window.localStorage.removeItem('pulls')
   window.localStorage.removeItem('merged')
+  window.location.reload();
 }
 
 function remove(index) {
   this.state.repos.splice(index, 1)
   this.setState({repos: this.state.repos})
   saveRepos()
+  window.location.reload();
 }
 
 function addRepo() {
@@ -26,6 +28,7 @@ function addRepo() {
   this.setState({repos: this.state.repos})
   this.refs.add_repo.value = ""
   saveRepos()
+  window.location.reload();
 }
 
 const saveRepos = () => {

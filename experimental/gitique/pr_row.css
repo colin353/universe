@@ -4,23 +4,35 @@ li {
 }
 
 div.info {
-  min-width: 200px;
-  color: #444;
+  flex-shrink: 0;
+  width: 100px;
   display: inline-block;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+  height: 15px;
+}
+
+div.author {
+  margin-left: 15px;
+  width: 75px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow:hidden;
+  flex-shrink: 0;
 }
 
 div.outer {
+  display: flex;
   height: 15px;
+  overflow: hidden;
 }
 
 div.reviewers {
+  flex-shrink: 1;
   height: 15px;
   display: inline-block;
-  min-width: 200px;
-  max-width: 200px;
+  width: 200px;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -34,7 +46,16 @@ div.title {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  margin-right: 10px;
+  margin-left: 10px;
+}
+
+div.suffix {
+  height: 15px;
+  display: inline-block;
+  overflow: hidden;
+  color: #666;
+  margin-left: 20px;
+  flex-shrink: 10;
 }
 
 span.reviewer {
@@ -49,4 +70,18 @@ span.reviewer.APPROVED {
 a.invisible {
   color: inherit;
   text-decoration: inherit;
+}
+
+@media only screen and (max-width: 1024px) {
+  span.repo_name {
+    display: none;
+  }
+
+  div.info {
+    display:none;
+  }
+
+  div.reviewers {
+    width: 100px;
+  }
 }
