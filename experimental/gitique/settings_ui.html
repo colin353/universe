@@ -1,0 +1,19 @@
+<strong>settings</strong>
+
+<p>token<input ref={token} type="text" value={this.state.token} /></p>
+<p>
+  <button on:click="save">save</button>
+</p>
+
+<p>repos</p>
+<ul>
+  <control for={this.state.repos}>
+  <li>${item} &nbsp;<a href="#" on:click="remove.bind(this, key)">(remove)</a></li>
+  </control>
+</ul>
+
+<p>add repo <input ref={add_repo} type="text" /></p>
+
+<p>
+  <button on:click="addRepo">add</button>
+</p>
