@@ -18,15 +18,15 @@ def _implementation(ctx):
     path = maybe_remove_prefix(path, "bazel-out/k8-opt/bin/")
     paths_to_copy.append(path.replace('"', "\\\""))
 
+  index_src = [ p.path for p in ctx.attr.index.files.to_list() ][0]
+
   script = """
 #!/bin/bash
 
-echo $PWD
+cp $0.runfiles/%s/%s ./index.html
 
-$0.runfiles/%s/homepage/sync/sync --destination=/cns/colinmerkel-website %s
-""" % (ctx.workspace_name, " ".join(paths_to_copy))
-
-  print("script = %s" % script)
+$0.runfiles/%s/homepage/sync/sync index.html %s
+""" % (ctx.workspace_name, index_src, ctx.workspace_name, " ".join(paths_to_copy))
 
   ctx.actions.write(
       output = out_shell,
@@ -39,7 +39,7 @@ $0.runfiles/%s/homepage/sync/sync --destination=/cns/colinmerkel-website %s
          executable = out_shell,
          runfiles = ctx.runfiles([
              ctx.file._sync_bin
-         ] + files_to_copy)
+         ] + files_to_copy + ctx.attr.index.files.to_list() )
      ),
   ]
 
@@ -48,6 +48,7 @@ bucket_sync = rule(
     attrs = {
         "deps": attr.label_list(),
         "srcs": attr.label_list(allow_files = True),
+        "index": attr.label(allow_single_file = True),
         "_sync_bin": attr.label(
             allow_single_file = True,
             default = Label("//homepage/sync:sync"),

@@ -54,9 +54,14 @@ rust_binary(
 
 bucket_sync(
     name = "sync_homepage",
-    srcs = glob([
+    index = "index.html",
+    srcs =
+        glob([
         "static/**",
-    ]),
+        ]) + 
+        [
+          "//experimental/gitique:index.html",
+        ],
     deps = [
         "//experimental/gitique:gitique_ui",
         "//experimental/gitique:github",

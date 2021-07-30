@@ -200,13 +200,18 @@ impl GoogleCloudFile {
     }
 
     fn create(token: &str, bucket: &str, object: &str) -> std::io::Result<Self> {
+        let content_type = ws_utils::content_type(object).unwrap_or("application/octet-stream");
+
         let req = hyper::Request::post(format!(
             "{}/{}/o?uploadType=resumable&name={}",
             UPLOAD_API, bucket, object
         ))
         .header(hyper::header::AUTHORIZATION, format!("Bearer {}", token))
         .header(hyper::header::CONTENT_TYPE, "application/json")
-        .body(hyper::Body::from("{}".to_string()))
+        .body(hyper::Body::from(format!(
+            r#"{{"contentType": "{}"}}"#,
+            content_type
+        )))
         .unwrap();
 
         let https = hyper_tls::HttpsConnector::new(1).unwrap();

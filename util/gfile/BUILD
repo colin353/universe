@@ -15,6 +15,7 @@ rust_library(
         "//third_party:json",
         "//third_party:tokio",
         "//util/requests",
+        "//util/ws:ws_utils",
     ],
 )
 

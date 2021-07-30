@@ -8,7 +8,7 @@ fn main() {
 
     let destination = define_flag!(
         "destination",
-        String::from("/cns/colinmerkel-website"),
+        String::from("/cns/static.colinmerkel.xyz"),
         "The destination to sync files to"
     );
     let auth_hostname = define_flag!(
