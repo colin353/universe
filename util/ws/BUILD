@@ -11,6 +11,7 @@ rust_library(
     ],
     edition = "2018",
     deps = [
+        ":ws_utils",
         "//third_party:futures",
         "//third_party:hyper",
         "//third_party:rand",
