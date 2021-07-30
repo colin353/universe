@@ -7,6 +7,7 @@ load("@io_bazel_rules_docker//rust:image.bzl", "rust_image")
 load("@io_bazel_rules_docker//container:container.bzl", "container_image")
 load("@bazel_tools//tools/build_defs/pkg:pkg.bzl", "pkg_tar")
 load("@io_bazel_rules_docker//docker:docker.bzl", "docker_push")
+load("//homepage/sync:sync.bzl", "bucket_sync")
 
 pkg_tar(
     name = "static_files",
@@ -48,5 +49,16 @@ rust_binary(
         "//auth:auth_client",
         "//util/flags",
         "//util/ws",
+    ],
+)
+
+bucket_sync(
+    name = "sync_homepage",
+    srcs = glob([
+        "static/**",
+    ]),
+    deps = [
+        "//experimental/gitique:gitique_ui",
+        "//experimental/gitique:github",
     ],
 )

@@ -403,6 +403,10 @@ impl GoogleCloudFile {
 
     fn flush(&mut self, finished: bool) -> std::io::Result<()> {
         let end_range = self.size + self.buf.len() as u64;
+        if finished && end_range == 0 {
+            return Ok(());
+        }
+
         let content_range = if finished {
             format!("bytes {}-{}/{}", self.size, end_range - 1, end_range)
         } else {

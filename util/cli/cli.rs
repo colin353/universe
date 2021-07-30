@@ -57,6 +57,7 @@ pub fn load_and_check_auth(auth: auth_client::AuthClient) -> String {
         Ok(token) => {
             let response = auth.authenticate(token.clone());
             if response.get_success() {
+                auth.global_init(token.clone());
                 return token;
             }
         }
@@ -76,6 +77,7 @@ pub fn load_and_check_auth(auth: auth_client::AuthClient) -> String {
         let response = auth.authenticate(challenge.get_token().to_string());
         if response.get_success() {
             std::fs::write(&auth_path, challenge.get_token());
+            auth.global_init(challenge.get_token().to_owned());
             return challenge.take_token();
         }
 
