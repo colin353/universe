@@ -56,19 +56,7 @@ pub trait Server: Sync + Send + Clone + 'static {
     fn serve_static_file(&self, path: &str, content: &[u8]) -> Response {
         let mut response = Response::new(Body::from(Vec::from(content)));
 
-        let mut content_type = None;
-        if path.ends_with(".js") || path.ends_with(".mjs") {
-            content_type = Some("text/javascript");
-        } else if path.ends_with(".css") {
-            content_type = Some("text/css");
-        } else if path.ends_with(".json") {
-            content_type = Some("application/json");
-        } else if path.ends_with(".png") {
-            content_type = Some("image/png");
-        } else if path.ends_with(".xml") {
-            content_type = Some("text/xml");
-        }
-
+        let content_type = ws_utils::content_type(path);
         if let Some(c) = content_type {
             response
                 .headers_mut()

@@ -133,6 +133,24 @@ pub fn escape_htmlentities(html: &str) -> String {
     output
 }
 
+pub fn content_type(path: &str) -> Option<&str> {
+    if path.ends_with(".js") || path.ends_with(".mjs") {
+        Some("text/javascript")
+    } else if path.ends_with(".css") {
+        Some("text/css")
+    } else if path.ends_with(".json") {
+        Some("application/json")
+    } else if path.ends_with(".png") {
+        Some("image/png")
+    } else if path.ends_with(".xml") {
+        Some("text/xml")
+    } else if path.ends_with(".html") {
+        Some("text/html")
+    } else {
+        None
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
