@@ -12,10 +12,10 @@ macro_rules! sequence {
         impl $crate::GrammarUnit for $name {
             fn try_match(content: &str, offset: usize) -> Option<(Self, usize)> {
                 let mut taken = 0;
-                let remaining = content;
+                let _remaining = content;
 
                 $(
-                    let $term_name = match <$term>::try_match(remaining, offset + taken) {
+                    let $term_name = match <$term>::try_match(_remaining, offset + taken) {
                         Some((t, took)) => {
                             taken += took;
                             t
@@ -23,7 +23,7 @@ macro_rules! sequence {
                         None => return None,
                     };
 
-                    let remaining = &content[taken..];
+                    let _remaining = &content[taken..];
                 )*
 
                 Some(($name{
@@ -39,12 +39,6 @@ macro_rules! sequence {
                 (self._start, self._end)
             }
         }
-    };
-}
-
-macro_rules! term_type {
-    ( $term_name:ident, $term:ty ) => {
-        pub $term_name: $term,
     };
 }
 
@@ -81,15 +75,16 @@ macro_rules! one_of {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::{BareWord, GrammarUnit, QuotedString, Whitespace};
 
-    fn assert_range<G: GrammarUnit>(unit: &G, _content: &str, expected: &str) {
-        let (start, end) = unit.range();
-        assert_eq!(
-            expected,
-            format!("{}{}", " ".repeat(start), "^".repeat(end - start),)
-        );
+    macro_rules! assert_range {
+        ($unit:expr, $content:expr, $expected:expr,) => {
+            let (start, end) = $unit.range();
+            assert_eq!(
+                $expected,
+                format!("{}{}", " ".repeat(start), "^".repeat(end - start),)
+            );
+        };
     }
 
     #[test]
@@ -103,13 +98,13 @@ mod tests {
 
         let (unit, _) = StringWithWhitespace::try_match(r#"    "grammar"  "#, 0).unwrap();
 
-        assert_range(
+        assert_range!(
             &unit,
             r#"    "grammar"  "#,
             r#"^^^^^^^^^^^^^^^"#, // comment to keep formatting
         );
 
-        assert_range(
+        assert_range!(
             &unit.string,
             r#"    "grammar"  "#,
             r#"    ^^^^^^^^^"#, // comment to keep formatting
@@ -128,7 +123,7 @@ mod tests {
 
         let (unit, _) = StringOrWhitespace::try_match("   xyz", 0).unwrap();
 
-        assert_range(
+        assert_range!(
             &unit,    //
             "   xyz", //
             "^^^",
@@ -146,17 +141,56 @@ mod tests {
         );
 
         let (unit, _) = PaddedTerm::try_match("   xyz  ", 0).unwrap();
-        assert_range(
+        assert_range!(
             &unit.term, //
             "   xyz",   //
             "   ^^^",
         );
 
         let (unit, _) = PaddedTerm::try_match(r#"   "term"  "#, 0).unwrap();
-        assert_range(
+        assert_range!(
             &unit.term, //
             r#"   "term"  "#,
             r#"   ^^^^^^"#,
+        );
+    }
+
+    #[test]
+    fn test_optional() {
+        one_of!(Term, QuotedString: QuotedString, BareWord: BareWord);
+        sequence!(
+            MaybePaddedTerm,
+            _prefix: Option<Whitespace>,
+            term: Term,
+            _suffix: Option<Whitespace>
+        );
+
+        let (unit, _) = MaybePaddedTerm::try_match("xyz", 0).unwrap();
+        assert_range!(
+            &unit.term, //
+            "xyz",      //
+            "^^^",
+        );
+
+        let (unit, _) = MaybePaddedTerm::try_match("   xyz", 0).unwrap();
+        assert_range!(
+            &unit.term, //
+            "   xyz",   //
+            "   ^^^",
+        );
+
+        let (unit, _) = MaybePaddedTerm::try_match("xyz   ", 0).unwrap();
+        assert_range!(
+            &unit.term, //
+            "xyz   ",   //
+            "^^^",
+        );
+
+        let (unit, _) = MaybePaddedTerm::try_match("   xyz   ", 0).unwrap();
+        assert_range!(
+            &unit.term,  //
+            "   xyz   ", //
+            "   ^^^",
         );
     }
 }
