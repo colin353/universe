@@ -8,6 +8,12 @@ pub trait GrammarUnit: Sized + std::fmt::Debug {
     fn range(&self) -> (usize, usize);
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct RepeatWithSeparator<Unit, Separator> {
+    pub inner: Vec<Unit>,
+    _marker: std::marker::PhantomData<Separator>,
+}
+
 impl<G: GrammarUnit> GrammarUnit for Option<G> {
     fn try_match(content: &str, offset: usize) -> Option<(Self, usize)> {
         match G::try_match(content, offset) {
@@ -37,6 +43,64 @@ impl<G: GrammarUnit> GrammarUnit for Vec<G> {
 
     fn range(&self) -> (usize, usize) {
         match (self.first(), self.last()) {
+            (Some(first), Some(last)) => (first.range().0, last.range().1),
+            (Some(x), None) | (None, Some(x)) => x.range(),
+            (None, None) => (0, 0),
+        }
+    }
+}
+
+impl<Unit: GrammarUnit, Separator: GrammarUnit> RepeatWithSeparator<Unit, Separator> {
+    pub fn new(inner: Vec<Unit>) -> Self {
+        Self {
+            inner,
+            _marker: std::marker::PhantomData,
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.inner.is_empty()
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &Unit> {
+        self.into_iter()
+    }
+}
+
+impl<'a, U, S> IntoIterator for &'a RepeatWithSeparator<U, S> {
+    type Item = &'a U;
+    type IntoIter = std::slice::Iter<'a, U>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        (&self.inner).into_iter()
+    }
+}
+
+impl<Unit: GrammarUnit, Separator: GrammarUnit> GrammarUnit
+    for RepeatWithSeparator<Unit, Separator>
+{
+    fn try_match(content: &str, offset: usize) -> Option<(Self, usize)> {
+        let mut took = 0;
+        let mut output = Vec::new();
+        while let Some((unit, t)) = Unit::try_match(&content[took..], offset + took) {
+            took += t;
+            output.push(unit);
+
+            if let Some((sep, t)) = Separator::try_match(&content[took..], offset + took) {
+                took += t;
+            } else {
+                break;
+            }
+        }
+        Some((RepeatWithSeparator::new(output), took))
+    }
+
+    fn range(&self) -> (usize, usize) {
+        match (self.inner.first(), self.inner.last()) {
             (Some(first), Some(last)) => (first.range().0, last.range().1),
             (Some(x), None) | (None, Some(x)) => x.range(),
             (None, None) => (0, 0),

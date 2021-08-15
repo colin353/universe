@@ -2,9 +2,9 @@ use crate::{take_char_while, take_while, GrammarUnit};
 
 #[derive(Debug, PartialEq)]
 pub struct QuotedString {
+    pub value: String,
     start: usize,
     end: usize,
-    pub inner: String,
 }
 
 #[derive(Debug, PartialEq)]
@@ -21,14 +21,14 @@ pub struct Whitespace {
 
 #[derive(Debug, PartialEq)]
 pub struct Numeric {
-    value: f64,
+    pub value: f64,
     start: usize,
     end: usize,
 }
 
 #[derive(Debug, PartialEq)]
 pub struct Integer {
-    value: i64,
+    pub value: i64,
     start: usize,
     end: usize,
 }
@@ -61,13 +61,13 @@ impl QuotedString {
             None => return None,
         }
 
-        let inner = content[inside_start..inside_end].replace("\\\"", "\"");
+        let value = content[inside_start..inside_end].replace("\\\"", "\"");
 
         Some((
             QuotedString {
+                value,
                 start: offset,
                 end: end + offset,
-                inner,
             },
             end,
         ))
@@ -208,12 +208,12 @@ mod tests {
     fn test_quoted_string_match() {
         let (qs, took) = QuotedString::try_match(r#""hello, world" test"#, 0).unwrap();
         assert_eq!(took, 14);
-        assert_eq!(&qs.inner, "hello, world");
+        assert_eq!(&qs.value, "hello, world");
 
         assert_eq!(QuotedString::try_match("", 0), None);
         let (qs, took) = QuotedString::try_match(r#""my ' string \" test""#, 0).unwrap();
         assert_eq!(took, 21);
-        assert_eq!(&qs.inner, "my ' string \" test");
+        assert_eq!(&qs.value, "my ' string \" test");
 
         assert_range::<QuotedString>(
             r#""hello, world" test"#,

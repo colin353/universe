@@ -1,7 +1,7 @@
 #[macro_export]
 macro_rules! define_unit {
     ( $name:ident, $($term_name:ident: $term:ty,)* ; ) => {
-        #[derive(Debug)]
+        #[derive(Debug, PartialEq)]
         struct $name {
             $(
                 $term_name: $term,
@@ -39,10 +39,10 @@ macro_rules! create_unit {
 
 #[macro_export]
 macro_rules! impl_subunits {
-    ( $remaining:expr, $offset:expr, $term_name:ident: $term:ty, $($rest:tt)* ) => {
-        let $term_name = match <$term>::try_match($remaining, $offset) {
+    ( $remaining:expr, $taken:expr, $offset:expr, $term_name:ident: $term:ty, $($rest:tt)* ) => {
+        let $term_name = match <$term>::try_match($remaining, $offset + $taken) {
             Some((t, took)) => {
-                $offset += took;
+                $taken += took;
                 $remaining = &$remaining[took..];
                 t
             }
@@ -50,18 +50,18 @@ macro_rules! impl_subunits {
                 return None
             },
         };
-        $crate::impl_subunits!($remaining, $offset, $($rest)*);
+        $crate::impl_subunits!($remaining, $taken, $offset, $($rest)*);
     };
-    ( $remaining:expr, $offset:expr, $value:literal, $($rest:tt)* ) => {
+    ( $remaining:expr, $taken:expr, $offset:expr, $value:literal, $($rest:tt)* ) => {
         if $remaining.starts_with($value) {
-            $offset += $value.len();
+            $taken += $value.len();
             $remaining = &$remaining[$value.len()..];
         } else {
             return None;
         }
-        $crate::impl_subunits!($remaining, $offset, $($rest)*);
+        $crate::impl_subunits!($remaining, $taken, $offset, $($rest)*);
     };
-    ( $remaining:expr, $offset:expr, ) => {};
+    ( $remaining:expr, $taken:expr, $offset:expr, ) => {};
 }
 
 #[macro_export]
@@ -74,7 +74,7 @@ macro_rules! sequence {
                 let mut taken = 0;
                 let mut _remaining = content;
 
-                $crate::impl_subunits!(_remaining, taken, $( $args )*);
+                $crate::impl_subunits!(_remaining, taken, offset, $( $args )*);
 
                 let mut unit = $crate::create_unit!($name, ; $( $args )*);
                 unit._start = offset;
@@ -93,7 +93,7 @@ macro_rules! sequence {
 #[macro_export]
 macro_rules! one_of {
     ( $name:ident, $( $term_name:ident: $term:ty ),* ) => {
-        #[derive(Debug)]
+        #[derive(Debug, PartialEq)]
         enum $name {
             $(
                 $term_name($term),
@@ -120,6 +120,37 @@ macro_rules! one_of {
             }
         }
     }
+}
+
+#[macro_export]
+macro_rules! unit {
+    ( $name:ident, $value:literal ) => {
+        #[derive(Debug, PartialEq)]
+        struct $name {
+            _start: usize,
+            _end: usize,
+        }
+
+        impl $crate::GrammarUnit for $name {
+            fn try_match(content: &str, offset: usize) -> Option<(Self, usize)> {
+                if !content.starts_with($value) {
+                    return None;
+                }
+
+                Some((
+                    $name {
+                        _start: offset,
+                        _end: offset + $value.len(),
+                    },
+                    $value.len(),
+                ))
+            }
+
+            fn range(&self) -> (usize, usize) {
+                (self._start, self._end)
+            }
+        }
+    };
 }
 
 #[cfg(test)]
@@ -159,7 +190,7 @@ mod tests {
             r#"    ^^^^^^^^^"#, // comment to keep formatting
         );
 
-        assert_eq!(unit.string.inner, "grammar");
+        assert_eq!(unit.string.value, "grammar");
     }
 
     #[test]
@@ -254,5 +285,16 @@ mod tests {
 
         assert!(Colin::try_match("   colin   ", 0).is_some());
         assert!(Colin::try_match("   ballin   ", 0).is_none());
+    }
+
+    #[test]
+    fn test_unit_literal() {
+        unit!(BooleanTrue, "true");
+        unit!(BooleanFalse, "false");
+
+        one_of!(Boolean, True: BooleanTrue, False: BooleanFalse);
+
+        assert!(Boolean::try_match("true", 0).is_some());
+        assert!(Boolean::try_match("false", 0).is_some());
     }
 }
