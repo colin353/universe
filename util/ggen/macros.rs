@@ -2,7 +2,7 @@
 macro_rules! define_unit {
     ( $name:ident, $($term_name:ident: $term:ty,)* ; ) => {
         #[derive(Debug, PartialEq)]
-        struct $name {
+        pub struct $name {
             $(
                 $term_name: $term,
             )*
@@ -94,7 +94,7 @@ macro_rules! sequence {
 macro_rules! one_of {
     ( $name:ident, $( $term_name:ident: $term:ty ),* ) => {
         #[derive(Debug, PartialEq)]
-        enum $name {
+        pub enum $name {
             $(
                 $term_name($term),
             )*
@@ -126,7 +126,7 @@ macro_rules! one_of {
 macro_rules! unit {
     ( $name:ident, $value:literal ) => {
         #[derive(Debug, PartialEq)]
-        struct $name {
+        pub struct $name {
             _start: usize,
             _end: usize,
         }
