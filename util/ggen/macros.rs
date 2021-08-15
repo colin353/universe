@@ -1,5 +1,6 @@
-macro_rules! sequence {
-    ( $name:ident, $( $term_name:ident: $term:ty ),* ) => {
+#[macro_export]
+macro_rules! define_unit {
+    ( $name:ident, $($term_name:ident: $term:ty,)* ; ) => {
         #[derive(Debug)]
         struct $name {
             $(
@@ -8,31 +9,78 @@ macro_rules! sequence {
             _start: usize,
             _end: usize,
         }
+    };
+    ( $name:ident, $($tn:ident: $tt:ty,)* ; $value:literal, $($rest:tt)*) => {
+        $crate::define_unit!($name, $($tn: $tt, )* ; $($rest)*);
+    };
+    ( $name:ident, $($tn:ident: $tt:ty,)* ; $term_name:ident: $term:ty, $($rest:tt)*) => {
+        $crate::define_unit!($name, $($tn: $tt, )* $term_name: $term, ; $($rest)*);
+    };
+}
+
+#[macro_export]
+macro_rules! create_unit {
+    ( $name:ident, $($term_name:ident: $term:ty,)* ; ) => {
+        $name {
+            $(
+                $term_name,
+            )*
+            _start: 0,
+            _end: 0,
+        }
+    };
+    ( $name:ident, $($tn:ident: $tt:ty,)* ; $value:literal, $($rest:tt)*) => {
+        $crate::create_unit!($name, $($tn: $tt, )* ; $($rest)*)
+    };
+    ( $name:ident, $($tn:ident: $tt:ty,)* ; $term_name:ident: $term:ty, $($rest:tt)*) => {
+        $crate::create_unit!($name, $($tn: $tt, )* $term_name: $term, ; $($rest)*)
+    };
+}
+
+#[macro_export]
+macro_rules! impl_subunits {
+    ( $remaining:expr, $offset:expr, $term_name:ident: $term:ty, $($rest:tt)* ) => {
+        let $term_name = match <$term>::try_match($remaining, $offset) {
+            Some((t, took)) => {
+                $offset += took;
+                $remaining = &$remaining[took..];
+                t
+            }
+            None => {
+                return None
+            },
+        };
+        $crate::impl_subunits!($remaining, $offset, $($rest)*);
+    };
+    ( $remaining:expr, $offset:expr, $value:literal, $($rest:tt)* ) => {
+        if $remaining.starts_with($value) {
+            $offset += $value.len();
+            $remaining = &$remaining[$value.len()..];
+        } else {
+            return None;
+        }
+        $crate::impl_subunits!($remaining, $offset, $($rest)*);
+    };
+    ( $remaining:expr, $offset:expr, ) => {};
+}
+
+#[macro_export]
+macro_rules! sequence {
+    ( $name:ident, $( $args:tt )* ) => {
+        $crate::define_unit!($name, ; $( $args )*);
 
         impl $crate::GrammarUnit for $name {
             fn try_match(content: &str, offset: usize) -> Option<(Self, usize)> {
                 let mut taken = 0;
-                let _remaining = content;
+                let mut _remaining = content;
 
-                $(
-                    let $term_name = match <$term>::try_match(_remaining, offset + taken) {
-                        Some((t, took)) => {
-                            taken += took;
-                            t
-                        },
-                        None => return None,
-                    };
+                $crate::impl_subunits!(_remaining, taken, $( $args )*);
 
-                    let _remaining = &content[taken..];
-                )*
+                let mut unit = $crate::create_unit!($name, ; $( $args )*);
+                unit._start = offset;
+                unit._end = taken + offset;
 
-                Some(($name{
-                    $(
-                        $term_name,
-                    )*
-                    _start: offset,
-                    _end: taken + offset,
-                }, taken))
+                Some((unit, taken))
             }
 
             fn range(&self) -> (usize, usize) {
@@ -42,6 +90,7 @@ macro_rules! sequence {
     };
 }
 
+#[macro_export]
 macro_rules! one_of {
     ( $name:ident, $( $term_name:ident: $term:ty ),* ) => {
         #[derive(Debug)]
@@ -93,7 +142,7 @@ mod tests {
             StringWithWhitespace,
             _ws1: Whitespace,
             string: QuotedString,
-            _ws2: Whitespace
+            _ws2: Whitespace,
         );
 
         let (unit, _) = StringWithWhitespace::try_match(r#"    "grammar"  "#, 0).unwrap();
@@ -137,7 +186,7 @@ mod tests {
             PaddedTerm,
             _prefix: Whitespace,
             term: Term,
-            _suffix: Whitespace
+            _suffix: Whitespace,
         );
 
         let (unit, _) = PaddedTerm::try_match("   xyz  ", 0).unwrap();
@@ -162,7 +211,7 @@ mod tests {
             MaybePaddedTerm,
             _prefix: Option<Whitespace>,
             term: Term,
-            _suffix: Option<Whitespace>
+            _suffix: Option<Whitespace>,
         );
 
         let (unit, _) = MaybePaddedTerm::try_match("xyz", 0).unwrap();
@@ -192,5 +241,18 @@ mod tests {
             "   xyz   ", //
             "   ^^^",
         );
+    }
+
+    #[test]
+    fn test_sequence_literal() {
+        sequence!(
+            Colin,
+            _prefix: Option<Whitespace>,
+            "colin",
+            _suffix: Option<Whitespace>,
+        );
+
+        assert!(Colin::try_match("   colin   ", 0).is_some());
+        assert!(Colin::try_match("   ballin   ", 0).is_none());
     }
 }

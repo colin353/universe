@@ -19,6 +19,20 @@ pub struct Whitespace {
     end: usize,
 }
 
+#[derive(Debug, PartialEq)]
+pub struct Numeric {
+    value: f64,
+    start: usize,
+    end: usize,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct Integer {
+    value: i64,
+    start: usize,
+    end: usize,
+}
+
 impl QuotedString {
     fn try_match(content: &str, offset: usize) -> Option<(Self, usize)> {
         if !content.starts_with('"') {
@@ -102,6 +116,62 @@ impl GrammarUnit for BareWord {
             BareWord {
                 start: offset,
                 end: offset + size,
+            },
+            size,
+        ))
+    }
+
+    fn range(&self) -> (usize, usize) {
+        (self.start, self.end)
+    }
+}
+
+impl GrammarUnit for Numeric {
+    fn try_match(content: &str, offset: usize) -> Option<(Self, usize)> {
+        let size = take_char_while(content, |c| {
+            char::is_numeric(c) || c == '+' || c == '-' || c == '.' || c == 'e' || c == 'E'
+        });
+        if size == 0 {
+            return None;
+        }
+
+        let value = match content[..size].parse::<f64>() {
+            Ok(val) => val,
+            Err(_) => return None,
+        };
+
+        Some((
+            Numeric {
+                start: offset,
+                end: offset + size,
+                value,
+            },
+            size,
+        ))
+    }
+
+    fn range(&self) -> (usize, usize) {
+        (self.start, self.end)
+    }
+}
+
+impl GrammarUnit for Integer {
+    fn try_match(content: &str, offset: usize) -> Option<(Self, usize)> {
+        let size = take_char_while(content, |c| char::is_numeric(c) || c == '-' || c == '+');
+        if size == 0 {
+            return None;
+        }
+
+        let value = match content[..size].parse::<i64>() {
+            Ok(val) => val,
+            Err(_) => return None,
+        };
+
+        Some((
+            Integer {
+                start: offset,
+                end: offset + size,
+                value,
             },
             size,
         ))

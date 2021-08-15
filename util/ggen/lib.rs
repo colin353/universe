@@ -1,9 +1,9 @@
 mod basic;
 mod macros;
 
-pub use basic::{BareWord, QuotedString, Whitespace};
+pub use basic::{BareWord, Integer, Numeric, QuotedString, Whitespace};
 
-trait GrammarUnit: Sized + std::fmt::Debug {
+pub trait GrammarUnit: Sized + std::fmt::Debug {
     fn try_match(content: &str, offset: usize) -> Option<(Self, usize)>;
     fn range(&self) -> (usize, usize);
 }
@@ -28,7 +28,7 @@ impl<G: GrammarUnit> GrammarUnit for Vec<G> {
     fn try_match(content: &str, offset: usize) -> Option<(Self, usize)> {
         let mut took = 0;
         let mut output = Vec::new();
-        while let Some((unit, t)) = G::try_match(content, offset) {
+        while let Some((unit, t)) = G::try_match(&content[took..], offset + took) {
             took += t;
             output.push(unit);
         }
