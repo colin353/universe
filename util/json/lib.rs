@@ -24,8 +24,8 @@ ggen::sequence!(
 
 pub fn parse(input: &str) -> std::io::Result<Value> {
     let value = match JSON::try_match(input, 0) {
-        Some((value, _)) => value,
-        None => {
+        Ok((value, _)) => value,
+        Err(_) => {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
                 "unable to parse as JSON!",

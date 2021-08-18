@@ -3,9 +3,47 @@ mod macros;
 
 pub use basic::{BareWord, Integer, Numeric, QuotedString, Whitespace};
 
+pub type Result<T> = std::result::Result<T, ParseError>;
+
 pub trait GrammarUnit: Sized + std::fmt::Debug {
-    fn try_match(content: &str, offset: usize) -> Option<(Self, usize)>;
+    fn try_match(content: &str, offset: usize) -> Result<(Self, usize)>;
     fn range(&self) -> (usize, usize);
+}
+
+#[derive(Debug)]
+pub struct ParseError {
+    message: String,
+    start: usize,
+    end: usize,
+}
+
+impl ParseError {
+    pub fn new(message: String, start: usize, end: usize) -> Self {
+        Self {
+            message,
+            start,
+            end,
+        }
+    }
+
+    pub fn render(&self, content: &str) -> String {
+        let line_number = content[..self.end].lines().count();
+        let line_start = content[..self.end]
+            .rfind('\n')
+            .map(|idx| idx + 1)
+            .unwrap_or(0);
+        let line_content = content[line_start..].lines().next().unwrap_or("");
+
+        let underline = " ".repeat(self.start - line_start) + &"^".repeat(self.end - self.start);
+
+        format!(
+            "   |\n{line_number:<3}|{line_content}\n   |{underline} {message}\n",
+            line_number = line_number,
+            line_content = line_content,
+            underline = underline,
+            message = self.message,
+        )
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -15,10 +53,10 @@ pub struct RepeatWithSeparator<Unit, Separator> {
 }
 
 impl<G: GrammarUnit> GrammarUnit for Option<G> {
-    fn try_match(content: &str, offset: usize) -> Option<(Self, usize)> {
+    fn try_match(content: &str, offset: usize) -> Result<(Self, usize)> {
         match G::try_match(content, offset) {
-            Some((unit, took)) => Some((Some(unit), took)),
-            None => Some((None, 0)),
+            Ok((unit, took)) => Ok((Some(unit), took)),
+            Err(_) => Ok((None, 0)),
         }
     }
 
@@ -31,14 +69,14 @@ impl<G: GrammarUnit> GrammarUnit for Option<G> {
 }
 
 impl<G: GrammarUnit> GrammarUnit for Vec<G> {
-    fn try_match(content: &str, offset: usize) -> Option<(Self, usize)> {
+    fn try_match(content: &str, offset: usize) -> Result<(Self, usize)> {
         let mut took = 0;
         let mut output = Vec::new();
-        while let Some((unit, t)) = G::try_match(&content[took..], offset + took) {
+        while let Ok((unit, t)) = G::try_match(&content[took..], offset + took) {
             took += t;
             output.push(unit);
         }
-        Some((output, took))
+        Ok((output, took))
     }
 
     fn range(&self) -> (usize, usize) {
@@ -83,20 +121,20 @@ impl<'a, U, S> IntoIterator for &'a RepeatWithSeparator<U, S> {
 impl<Unit: GrammarUnit, Separator: GrammarUnit> GrammarUnit
     for RepeatWithSeparator<Unit, Separator>
 {
-    fn try_match(content: &str, offset: usize) -> Option<(Self, usize)> {
+    fn try_match(content: &str, offset: usize) -> Result<(Self, usize)> {
         let mut took = 0;
         let mut output = Vec::new();
-        while let Some((unit, t)) = Unit::try_match(&content[took..], offset + took) {
+        while let Ok((unit, t)) = Unit::try_match(&content[took..], offset + took) {
             took += t;
             output.push(unit);
 
-            if let Some((sep, t)) = Separator::try_match(&content[took..], offset + took) {
+            if let Ok((_, t)) = Separator::try_match(&content[took..], offset + took) {
                 took += t;
             } else {
                 break;
             }
         }
-        Some((RepeatWithSeparator::new(output), took))
+        Ok((RepeatWithSeparator::new(output), took))
     }
 
     fn range(&self) -> (usize, usize) {

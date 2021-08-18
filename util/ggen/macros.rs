@@ -1,3 +1,5 @@
+use crate::{ParseError, Result};
+
 #[macro_export]
 macro_rules! define_unit {
     ( $name:ident, $($term_name:ident: $term:ty,)* ; ) => {
@@ -41,13 +43,13 @@ macro_rules! create_unit {
 macro_rules! impl_subunits {
     ( $remaining:expr, $taken:expr, $offset:expr, $term_name:ident: $term:ty, $($rest:tt)* ) => {
         let $term_name = match <$term>::try_match($remaining, $offset + $taken) {
-            Some((t, took)) => {
+            Ok((t, took)) => {
                 $taken += took;
                 $remaining = &$remaining[took..];
                 t
             }
-            None => {
-                return None
+            Err(e) => {
+                return Err(e);
             },
         };
         $crate::impl_subunits!($remaining, $taken, $offset, $($rest)*);
@@ -57,7 +59,11 @@ macro_rules! impl_subunits {
             $taken += $value.len();
             $remaining = &$remaining[$value.len()..];
         } else {
-            return None;
+            return Err($crate::ParseError::new(
+                format!("expected {}", $value),
+                $offset + $taken,
+                $offset + $taken + 1,
+            ));
         }
         $crate::impl_subunits!($remaining, $taken, $offset, $($rest)*);
     };
@@ -70,7 +76,7 @@ macro_rules! sequence {
         $crate::define_unit!($name, ; $( $args )*);
 
         impl $crate::GrammarUnit for $name {
-            fn try_match(content: &str, offset: usize) -> Option<(Self, usize)> {
+            fn try_match(content: &str, offset: usize) -> $crate::Result<(Self, usize)> {
                 let mut taken = 0;
                 let mut _remaining = content;
 
@@ -80,7 +86,7 @@ macro_rules! sequence {
                 unit._start = offset;
                 unit._end = taken + offset;
 
-                Some((unit, taken))
+                Ok((unit, taken))
             }
 
             fn range(&self) -> (usize, usize) {
@@ -101,14 +107,18 @@ macro_rules! one_of {
         }
 
         impl $crate::GrammarUnit for $name {
-            fn try_match(content: &str, offset: usize) -> Option<(Self, usize)> {
+            fn try_match(content: &str, offset: usize) -> $crate::Result<(Self, usize)> {
                 $(
-                    if let Some((unit, took)) = <$term>::try_match(content, offset) {
-                        return Some(($name::$term_name(unit), took));
+                    if let Ok((unit, took)) = <$term>::try_match(content, offset) {
+                        return Ok(($name::$term_name(unit), took));
                     }
                 )*
 
-                return None;
+                return Err($crate::ParseError::new(
+                    String::from("expected one of (...)"),
+                    offset,
+                    offset + 1,
+                ));
             }
 
             fn range(&self) -> (usize, usize) {
@@ -132,12 +142,16 @@ macro_rules! unit {
         }
 
         impl $crate::GrammarUnit for $name {
-            fn try_match(content: &str, offset: usize) -> Option<(Self, usize)> {
+            fn try_match(content: &str, offset: usize) -> $crate::Result<(Self, usize)> {
                 if !content.starts_with($value) {
-                    return None;
+                    return Err($crate::ParseError::new(
+                        format!("expected `{}`", $value),
+                        offset,
+                        offset + 1,
+                    ));
                 }
 
-                Some((
+                Ok((
                     $name {
                         _start: offset,
                         _end: offset + $value.len(),
@@ -164,6 +178,19 @@ mod tests {
                 $expected,
                 format!("{}{}", " ".repeat(start), "^".repeat(end - start),)
             );
+        };
+    }
+
+    macro_rules! assert_fail {
+        ($unit:ty, $content:expr, $expected:expr,) => {
+            let fail = <$unit>::try_match($content, 0);
+            assert!(fail.is_err());
+            let got = fail.unwrap_err().render($content);
+            if got.trim() != $expected.trim() {
+                println!("got:\n\n{}\n", got.trim_matches('\n'));
+                println!("expected:\n\n{}\n", $expected.trim_matches('\n'));
+                panic!("got != expected");
+            }
         };
     }
 
@@ -283,8 +310,17 @@ mod tests {
             _suffix: Option<Whitespace>,
         );
 
-        assert!(Colin::try_match("   colin   ", 0).is_some());
-        assert!(Colin::try_match("   ballin   ", 0).is_none());
+        assert!(Colin::try_match("   colin   ", 0).is_ok());
+
+        assert_fail!(
+            Colin,
+            "   ballin   ",
+            r#"
+   |
+1  |   ballin   
+   |   ^ expected colin
+"#,
+        );
     }
 
     #[test]
@@ -294,7 +330,7 @@ mod tests {
 
         one_of!(Boolean, True: BooleanTrue, False: BooleanFalse);
 
-        assert!(Boolean::try_match("true", 0).is_some());
-        assert!(Boolean::try_match("false", 0).is_some());
+        assert!(Boolean::try_match("true", 0).is_ok());
+        assert!(Boolean::try_match("false", 0).is_ok());
     }
 }

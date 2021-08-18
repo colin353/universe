@@ -92,9 +92,9 @@ mod tests {
 
     #[test]
     fn test_dictionary_match() {
-        assert!(JSONValue::try_match(r#"5"#, 0).is_some());
-        assert!(QuotedString::try_match(r#""abc""#, 0).is_some());
-        assert!(KVPair::try_match(r#""abc":5,"#, 0).is_some());
+        assert!(JSONValue::try_match(r#"5"#, 0).is_ok());
+        assert!(QuotedString::try_match(r#""abc""#, 0).is_ok());
+        assert!(KVPair::try_match(r#""abc":5,"#, 0).is_ok());
 
         let (unit, _) = Dictionary::try_match(r#"{"abc": 5}"#, 0).unwrap();
         assert_range!(
