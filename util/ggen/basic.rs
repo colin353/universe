@@ -34,6 +34,12 @@ pub struct Integer {
     end: usize,
 }
 
+#[derive(Debug, PartialEq)]
+pub struct Identifier {
+    start: usize,
+    end: usize,
+}
+
 impl GrammarUnit for QuotedString {
     fn try_match(content: &str, offset: usize) -> Result<(Self, usize, Option<ParseError>)> {
         if !content.starts_with('"') {
@@ -247,6 +253,61 @@ impl GrammarUnit for Integer {
     }
 }
 
+// Usually, identifiers can't start with a number, and otherwise must consist of alphanumeric
+// characters plus underscore.
+impl GrammarUnit for Identifier {
+    fn try_match(mut content: &str, offset: usize) -> Result<(Self, usize, Option<ParseError>)> {
+        match content.chars().next() {
+            Some(ch) => {
+                if !ch.is_alphabetic() && ch != '_' {
+                    return Err(ParseError::new(
+                        String::from("identifiers must begin with a letter or underscore"),
+                        Self::name(),
+                        offset,
+                        offset + 1,
+                    ));
+                }
+                content = &content[ch.len_utf8()..];
+            }
+            None => {
+                return Err(ParseError::new(
+                    String::from("expected identifier"),
+                    Self::name(),
+                    offset,
+                    offset + 1,
+                ));
+            }
+        }
+
+        let size = 1 + take_char_while(content, |c| c.is_alphanumeric() || c == '_');
+        if size == 0 {
+            return Err(ParseError::new(
+                String::from("expected identifier"),
+                Self::name(),
+                offset,
+                offset + 1,
+            ));
+        }
+
+        Ok((
+            Self {
+                start: offset,
+                end: offset + size,
+            },
+            size,
+            None,
+        ))
+    }
+
+    fn range(&self) -> (usize, usize) {
+        (self.start, self.end)
+    }
+
+    fn name() -> &'static str {
+        "identifier"
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -302,5 +363,23 @@ mod tests {
             "     test",
             "^^^^^", // comment to prevent reformat
         )
+    }
+
+    #[test]
+    fn test_identifier_match() {
+        let content = r#"abc_def1"#;
+        let (_, took, _) = Identifier::try_match(content, 0).unwrap();
+        assert_eq!(took, 8);
+
+        let content = r#"abc def1"#;
+        let (_, took, _) = Identifier::try_match(content, 0).unwrap();
+        assert_eq!(took, 3);
+
+        let content = r#"_abc def1"#;
+        let (_, took, _) = Identifier::try_match(content, 0).unwrap();
+        assert_eq!(took, 4);
+
+        let content = r#"1_abc def1"#;
+        Identifier::try_match(content, 0).unwrap_err();
     }
 }

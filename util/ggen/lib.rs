@@ -1,7 +1,7 @@
 mod basic;
 mod macros;
 
-pub use basic::{BareWord, Integer, Numeric, QuotedString, Whitespace};
+pub use basic::{BareWord, Identifier, Integer, Numeric, QuotedString, Whitespace};
 
 pub type Result<T> = std::result::Result<T, ParseError>;
 
@@ -225,7 +225,7 @@ fn take_while<F: Fn(&str) -> usize>(content: &str, rule: F) -> usize {
     position
 }
 
-fn take_char_while<F: Fn(char) -> bool>(content: &str, rule: F) -> usize {
+pub fn take_char_while<F: Fn(char) -> bool>(content: &str, rule: F) -> usize {
     let mut position = 0;
     for ch in content.chars() {
         if !rule(ch) {

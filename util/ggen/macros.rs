@@ -268,6 +268,52 @@ macro_rules! unit {
     };
 }
 
+#[macro_export]
+macro_rules! char_rule {
+    ( $name:ident, $rule:expr ) => {
+        #[derive(Debug, PartialEq)]
+        pub struct $name {
+            _start: usize,
+            _end: usize,
+        }
+
+        impl $crate::GrammarUnit for $name {
+            fn try_match(
+                content: &str,
+                offset: usize,
+            ) -> $crate::Result<(Self, usize, Option<$crate::ParseError>)> {
+                let size = $crate::take_char_while(content, $rule);
+
+                if size == 0 {
+                    return Err($crate::ParseError::new(
+                        format!("expected {}", stringify!($name)),
+                        Self::name(),
+                        offset,
+                        offset + 1,
+                    ));
+                }
+
+                Ok((
+                    $name {
+                        _start: offset,
+                        _end: offset + size,
+                    },
+                    size,
+                    None,
+                ))
+            }
+
+            fn range(&self) -> (usize, usize) {
+                (self._start, self._end)
+            }
+
+            fn name() -> &'static str {
+                stringify!($name)
+            }
+        }
+    };
+}
+
 #[cfg(test)]
 mod tests {
     use crate::{BareWord, GrammarUnit, QuotedString, Whitespace};
@@ -480,5 +526,19 @@ mod tests {
         let seq_err = QuotedStringNewline::try_match(r#""abcdef""ssss"#, 0).unwrap_err();
         assert_eq!(seq_err.start, 8);
         assert_eq!(seq_err.end, 14);
+    }
+
+    #[test]
+    fn test_from_char_rule() {
+        char_rule!(Word, char::is_alphabetic);
+        let (unit, _, _) = Word::try_match("hello world", 0).unwrap();
+        assert_range!(
+            &unit,         //
+            "hello world", //
+            "^^^^^",
+        );
+
+        // Shouldn't match
+        Word::try_match("1", 0).unwrap_err();
     }
 }
