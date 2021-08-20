@@ -60,9 +60,11 @@ macro_rules! impl_subunits {
                     if seq_err.end > $offset + $taken + 1 {
                         return Err(seq_err);
                     } else if seq_err.end == $offset + $taken + 1 {
-                        return Err($crate::ParseError::new(
-                            format!("expected one of: {}, {}", seq_err.name, e.name),
-                            Self::name(),
+                        let names = seq_err.names.iter().chain(e.names.iter()).map(|x| x.as_str()).collect::<Vec<_>>();
+
+                        return Err($crate::ParseError::new_multi_name(
+                            format!("expected one of: {}", names.join(", ")),
+                            names.into_iter().map(|x| x.to_owned()).collect(),
                             $offset + $taken,
                             $offset + $taken + 1,
                         ));
@@ -83,7 +85,7 @@ macro_rules! impl_subunits {
                     return Err(seq_err);
                 } else if seq_err.end == $offset + $taken + 1 {
                     return Err($crate::ParseError::new(
-                        format!("expected one of: {}, {}", seq_err.name, $value),
+                        format!("expected one of: {}, {}", seq_err.names.join(", "), $value),
                         Self::name(),
                         $offset + $taken,
                         $offset + $taken + 1,
@@ -166,12 +168,14 @@ macro_rules! one_of {
 
                                 let took = this_seq_err.end - offset;
                                 if took > progress {
-                                    unmatched = vec![this_seq_err.name.as_str()];
+                                    unmatched = this_seq_err.names.iter().map(|x| x.as_str()).collect();
                                     error = Some(this_seq_err.clone());
                                     progress = took;
                                     {(&progress, &error, &unmatched)}; // these values may not be read, this prevents a warning
                                 } else if took == progress {
-                                    unmatched.push(this_seq_err.name.as_str());
+                                    for name in &this_seq_err.names {
+                                        unmatched.push(name.as_str());
+                                    }
                                 }
                             }
 
@@ -196,9 +200,9 @@ macro_rules! one_of {
                 if unmatched.len() == 1 {
                     return Err(error.expect("error was not set!"));
                 } else {
-                    return Err($crate::ParseError::new(
+                    return Err($crate::ParseError::new_multi_name(
                         format!("expected one of: {}", unmatched.join(", ")),
-                        <$name>::name(),
+                        unmatched.iter().map(|x| x.to_string()).collect(),
                         offset + progress - 1,
                         offset + progress,
                     ));

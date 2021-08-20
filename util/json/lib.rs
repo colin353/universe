@@ -94,5 +94,18 @@ mod tests {
    |          ^^^^^^^^ unable to parse number
 "#,
         );
+
+        assert_fail!(
+            r#"
+{
+    "a": [true, faulse]
+}
+"#,
+            r#"
+   |
+3  |     "a": [true, faulse]
+   |                 ^ expected one of: number, quoted string, Boolean, null, Array, Dictionary, ]
+"#,
+        );
     }
 }

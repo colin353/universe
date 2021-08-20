@@ -16,7 +16,7 @@ pub trait GrammarUnit: Sized + std::fmt::Debug {
 #[derive(Clone, Debug)]
 pub struct ParseError {
     pub message: String,
-    pub name: String,
+    pub names: Vec<String>,
     pub start: usize,
     pub end: usize,
 }
@@ -25,7 +25,16 @@ impl ParseError {
     pub fn new(message: String, name: &str, start: usize, end: usize) -> Self {
         Self {
             message,
-            name: name.to_owned(),
+            names: vec![name.to_owned()],
+            start,
+            end,
+        }
+    }
+
+    pub fn new_multi_name(message: String, names: Vec<String>, start: usize, end: usize) -> Self {
+        Self {
+            message,
+            names,
             start,
             end,
         }
