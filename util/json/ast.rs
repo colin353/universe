@@ -96,7 +96,7 @@ mod tests {
         assert!(QuotedString::try_match(r#""abc""#, 0).is_ok());
         assert!(KVPair::try_match(r#""abc":5,"#, 0).is_ok());
 
-        let (unit, _) = Dictionary::try_match(r#"{"abc": 5}"#, 0).unwrap();
+        let (unit, _, _) = Dictionary::try_match(r#"{"abc": 5}"#, 0).unwrap();
         assert_range!(
             unit,
             r#"{"abc": 5}"#, //
@@ -126,7 +126,7 @@ mod tests {
 
     #[test]
     fn test_dictionary_multi_value_match() {
-        let (unit, _) = Dictionary::try_match(r#"{"abc": 5, "def": "aaa"}"#, 0).unwrap();
+        let (unit, _, _) = Dictionary::try_match(r#"{"abc": 5, "def": "aaa"}"#, 0).unwrap();
         assert_range!(
             unit,
             r#"{"abc": 5, "def": "aaa"}"#,
@@ -168,7 +168,7 @@ mod tests {
 
     #[test]
     fn test_recursive() {
-        let (unit, _) = JSONValue::try_match(r#"{"abc": 5, "def": [1,2,3,4,5]}"#, 0).unwrap();
+        let (unit, _, _) = JSONValue::try_match(r#"{"abc": 5, "def": [1,2,3,4,5]}"#, 0).unwrap();
         if let JSONValue::Dictionary(dict) = unit {
             assert_range!(
                 dict.kv_pairs.inner[0],

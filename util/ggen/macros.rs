@@ -1,5 +1,3 @@
-use crate::{ParseError, Result};
-
 #[macro_export]
 macro_rules! define_unit {
     ( $name:ident, $($term_name:ident: $term:ty,)* ; ) => {
@@ -41,33 +39,68 @@ macro_rules! create_unit {
 
 #[macro_export]
 macro_rules! impl_subunits {
-    ( $remaining:expr, $taken:expr, $offset:expr, $term_name:ident: $term:ty, $($rest:tt)* ) => {
+    ( $remaining:expr, $taken:expr, $offset:expr, $seq_error:expr, $term_name:ident: $term:ty, $($rest:tt)* ) => {
         let $term_name = match <$term>::try_match($remaining, $offset + $taken) {
-            Ok((t, took)) => {
+            Ok((t, took, seq_err)) => {
                 $taken += took;
                 $remaining = &$remaining[took..];
+                if let Some(this_seq_err) = seq_err {
+                    if let Some(existing_seq_err) = $seq_error.as_ref() {
+                        if this_seq_err.end > existing_seq_err.end {
+                            $seq_error = Some(this_seq_err);
+                        }
+                    } else {
+                        $seq_error = Some(this_seq_err);
+                    }
+                }
                 t
             }
             Err(e) => {
+                if let Some(seq_err) = $seq_error {
+                    if seq_err.end > $offset + $taken + 1 {
+                        return Err(seq_err);
+                    } else if seq_err.end == $offset + $taken + 1 {
+                        return Err($crate::ParseError::new(
+                            format!("expected one of: {}, {}", seq_err.name, e.name),
+                            Self::name(),
+                            $offset + $taken,
+                            $offset + $taken + 1,
+                        ));
+                    }
+                }
                 return Err(e);
             },
         };
-        $crate::impl_subunits!($remaining, $taken, $offset, $($rest)*);
+        $crate::impl_subunits!($remaining, $taken, $offset, $seq_error, $($rest)*);
     };
-    ( $remaining:expr, $taken:expr, $offset:expr, $value:literal, $($rest:tt)* ) => {
+    ( $remaining:expr, $taken:expr, $offset:expr, $seq_error:expr, $value:literal, $($rest:tt)* ) => {
         if $remaining.starts_with($value) {
             $taken += $value.len();
             $remaining = &$remaining[$value.len()..];
         } else {
+            if let Some(seq_err) = $seq_error {
+                if seq_err.end > $offset + $taken + 1 {
+                    return Err(seq_err);
+                } else if seq_err.end == $offset + $taken + 1 {
+                    return Err($crate::ParseError::new(
+                        format!("expected one of: {}, {}", seq_err.name, $value),
+                        Self::name(),
+                        $offset + $taken,
+                        $offset + $taken + 1,
+                    ));
+                }
+            }
+
             return Err($crate::ParseError::new(
                 format!("expected {}", $value),
+                $value,
                 $offset + $taken,
                 $offset + $taken + 1,
             ));
         }
-        $crate::impl_subunits!($remaining, $taken, $offset, $($rest)*);
+        $crate::impl_subunits!($remaining, $taken, $offset, $seq_error, $($rest)*);
     };
-    ( $remaining:expr, $taken:expr, $offset:expr, ) => {};
+    ( $remaining:expr, $taken:expr, $offset:expr, $seq_error:expr, ) => { };
 }
 
 #[macro_export]
@@ -76,21 +109,26 @@ macro_rules! sequence {
         $crate::define_unit!($name, ; $( $args )*);
 
         impl $crate::GrammarUnit for $name {
-            fn try_match(content: &str, offset: usize) -> $crate::Result<(Self, usize)> {
+            fn try_match(content: &str, offset: usize) -> $crate::Result<(Self, usize, Option<$crate::ParseError>)> {
                 let mut taken = 0;
                 let mut _remaining = content;
+                let mut seq_error: Option<$crate::ParseError> = None;
 
-                $crate::impl_subunits!(_remaining, taken, offset, $( $args )*);
+                $crate::impl_subunits!(_remaining, taken, offset, seq_error, $( $args )*);
 
                 let mut unit = $crate::create_unit!($name, ; $( $args )*);
                 unit._start = offset;
                 unit._end = taken + offset;
 
-                Ok((unit, taken))
+                Ok((unit, taken, seq_error))
             }
 
             fn range(&self) -> (usize, usize) {
                 (self._start, self._end)
+            }
+
+            fn name() -> &'static str {
+                stringify!($name)
             }
         }
     };
@@ -107,18 +145,64 @@ macro_rules! one_of {
         }
 
         impl $crate::GrammarUnit for $name {
-            fn try_match(content: &str, offset: usize) -> $crate::Result<(Self, usize)> {
+            fn try_match(content: &str, offset: usize) -> $crate::Result<(Self, usize, Option<$crate::ParseError>)> {
+                let mut progress = 0;
+                let mut unmatched = Vec::new();
+                let mut error = None;
+                let mut seq_error: Option<$crate::ParseError> = None;
+
                 $(
-                    if let Ok((unit, took)) = <$term>::try_match(content, offset) {
-                        return Ok(($name::$term_name(unit), took));
+                    match <$term>::try_match(content, offset) {
+                        Ok((unit, took, seq_err)) => {
+                            if let Some(this_seq_err) = seq_err {
+                                if let Some(existing_seq_err) = seq_error.as_ref() {
+                                    if this_seq_err.end > existing_seq_err.end {
+                                        seq_error = Some(this_seq_err.clone());
+                                    }
+                                } else {
+                                    seq_error = Some(this_seq_err.clone());
+                                    {&seq_error};
+                                }
+
+                                let took = this_seq_err.end - offset;
+                                if took > progress {
+                                    unmatched = vec![this_seq_err.name.as_str()];
+                                    error = Some(this_seq_err.clone());
+                                    progress = took;
+                                    {(&progress, &error, &unmatched)}; // these values may not be read, this prevents a warning
+                                } else if took == progress {
+                                    unmatched.push(this_seq_err.name.as_str());
+                                }
+                            }
+
+                            return Ok(($name::$term_name(unit), took, seq_error))
+                        },
+                        Err(err) => {
+                            if err.end < offset {
+                                panic!("malformed error range from {}", stringify!($term));
+                            }
+                            let took = err.end - offset;
+                            if took > progress {
+                                unmatched = vec![<$term>::name()];
+                                error = Some(err);
+                                progress = took;
+                            } else if took == progress {
+                                unmatched.push(<$term>::name());
+                            }
+                        }
                     }
                 )*
 
-                return Err($crate::ParseError::new(
-                    String::from("expected one of (...)"),
-                    offset,
-                    offset + 1,
-                ));
+                if unmatched.len() == 1 {
+                    return Err(error.expect("error was not set!"));
+                } else {
+                    return Err($crate::ParseError::new(
+                        format!("expected one of: {}", unmatched.join(", ")),
+                        <$name>::name(),
+                        offset + progress - 1,
+                        offset + progress,
+                    ));
+                }
             }
 
             fn range(&self) -> (usize, usize) {
@@ -127,6 +211,10 @@ macro_rules! one_of {
                         Self::$term_name(x) => x.range(),
                     )*
                 }
+            }
+
+            fn name() -> &'static str {
+                stringify!($name)
             }
         }
     }
@@ -142,10 +230,14 @@ macro_rules! unit {
         }
 
         impl $crate::GrammarUnit for $name {
-            fn try_match(content: &str, offset: usize) -> $crate::Result<(Self, usize)> {
+            fn try_match(
+                content: &str,
+                offset: usize,
+            ) -> $crate::Result<(Self, usize, Option<$crate::ParseError>)> {
                 if !content.starts_with($value) {
                     return Err($crate::ParseError::new(
                         format!("expected `{}`", $value),
+                        <$name>::name(),
                         offset,
                         offset + 1,
                     ));
@@ -157,11 +249,16 @@ macro_rules! unit {
                         _end: offset + $value.len(),
                     },
                     $value.len(),
+                    None,
                 ))
             }
 
             fn range(&self) -> (usize, usize) {
                 (self._start, self._end)
+            }
+
+            fn name() -> &'static str {
+                $value
             }
         }
     };
@@ -203,7 +300,7 @@ mod tests {
             _ws2: Whitespace,
         );
 
-        let (unit, _) = StringWithWhitespace::try_match(r#"    "grammar"  "#, 0).unwrap();
+        let (unit, _, _) = StringWithWhitespace::try_match(r#"    "grammar"  "#, 0).unwrap();
 
         assert_range!(
             &unit,
@@ -228,7 +325,7 @@ mod tests {
             Whitespace: Whitespace
         );
 
-        let (unit, _) = StringOrWhitespace::try_match("   xyz", 0).unwrap();
+        let (unit, _, _) = StringOrWhitespace::try_match("   xyz", 0).unwrap();
 
         assert_range!(
             &unit,    //
@@ -247,14 +344,14 @@ mod tests {
             _suffix: Whitespace,
         );
 
-        let (unit, _) = PaddedTerm::try_match("   xyz  ", 0).unwrap();
+        let (unit, _, _) = PaddedTerm::try_match("   xyz  ", 0).unwrap();
         assert_range!(
             &unit.term, //
             "   xyz",   //
             "   ^^^",
         );
 
-        let (unit, _) = PaddedTerm::try_match(r#"   "term"  "#, 0).unwrap();
+        let (unit, _, _) = PaddedTerm::try_match(r#"   "term"  "#, 0).unwrap();
         assert_range!(
             &unit.term, //
             r#"   "term"  "#,
@@ -272,28 +369,28 @@ mod tests {
             _suffix: Option<Whitespace>,
         );
 
-        let (unit, _) = MaybePaddedTerm::try_match("xyz", 0).unwrap();
+        let (unit, _, _) = MaybePaddedTerm::try_match("xyz", 0).unwrap();
         assert_range!(
             &unit.term, //
             "xyz",      //
             "^^^",
         );
 
-        let (unit, _) = MaybePaddedTerm::try_match("   xyz", 0).unwrap();
+        let (unit, _, _) = MaybePaddedTerm::try_match("   xyz", 0).unwrap();
         assert_range!(
             &unit.term, //
             "   xyz",   //
             "   ^^^",
         );
 
-        let (unit, _) = MaybePaddedTerm::try_match("xyz   ", 0).unwrap();
+        let (unit, _, _) = MaybePaddedTerm::try_match("xyz   ", 0).unwrap();
         assert_range!(
             &unit.term, //
             "xyz   ",   //
             "^^^",
         );
 
-        let (unit, _) = MaybePaddedTerm::try_match("   xyz   ", 0).unwrap();
+        let (unit, _, _) = MaybePaddedTerm::try_match("   xyz   ", 0).unwrap();
         assert_range!(
             &unit.term,  //
             "   xyz   ", //
@@ -317,8 +414,8 @@ mod tests {
             "   ballin   ",
             r#"
    |
-1  |   ballin   
-   |   ^ expected colin
+1  |    ballin   
+   |    ^ expected colin
 "#,
         );
     }
@@ -332,5 +429,52 @@ mod tests {
 
         assert!(Boolean::try_match("true", 0).is_ok());
         assert!(Boolean::try_match("false", 0).is_ok());
+        assert_fail!(
+            Boolean,
+            "groose",
+            r#"
+   |
+1  | groose
+   | ^ expected one of: true, false
+"#,
+        );
+    }
+
+    #[test]
+    fn test_one_of_failure() {
+        one_of!(Term, QuotedString: QuotedString, BareWord: BareWord);
+        assert_fail!(
+            Term,
+            "#",
+            r#"
+   |
+1  | #
+   | ^ expected one of: quoted string, bare word
+"#,
+        );
+
+        assert_fail!(
+            Term,
+            r#""groose"#,
+            r#"
+   |
+1  | "groose
+   | ^^^^^^^^ unterminated quoted string
+"#,
+        );
+    }
+
+    #[test]
+    fn test_seq_errors() {
+        let (_, _, maybe_seq_err) = Vec::<QuotedString>::try_match(r#""abcdef""ssss"#, 0).unwrap();
+        let seq_err = maybe_seq_err.unwrap();
+        assert_eq!(seq_err.start, 8);
+        assert_eq!(seq_err.end, 14);
+
+        sequence!(QuotedStringNewline, strings: Vec<QuotedString>, "\n",);
+
+        let seq_err = QuotedStringNewline::try_match(r#""abcdef""ssss"#, 0).unwrap_err();
+        assert_eq!(seq_err.start, 8);
+        assert_eq!(seq_err.end, 14);
     }
 }

@@ -35,10 +35,11 @@ pub struct Integer {
 }
 
 impl GrammarUnit for QuotedString {
-    fn try_match(content: &str, offset: usize) -> Result<(Self, usize)> {
+    fn try_match(content: &str, offset: usize) -> Result<(Self, usize, Option<ParseError>)> {
         if !content.starts_with('"') {
             return Err(ParseError::new(
                 String::from("expected quoted string"),
+                QuotedString::name(),
                 offset,
                 offset + 1,
             ));
@@ -65,6 +66,7 @@ impl GrammarUnit for QuotedString {
             Some(_) | None => {
                 return Err(ParseError::new(
                     String::from("unterminated quoted string"),
+                    QuotedString::name(),
                     offset,
                     offset + end,
                 ));
@@ -80,20 +82,26 @@ impl GrammarUnit for QuotedString {
                 end: end + offset,
             },
             end,
+            None,
         ))
     }
 
     fn range(&self) -> (usize, usize) {
         (self.start, self.end)
     }
+
+    fn name() -> &'static str {
+        "quoted string"
+    }
 }
 
 impl GrammarUnit for Whitespace {
-    fn try_match(content: &str, offset: usize) -> Result<(Self, usize)> {
+    fn try_match(content: &str, offset: usize) -> Result<(Self, usize, Option<ParseError>)> {
         let size = take_char_while(content, char::is_whitespace);
         if size == 0 {
             return Err(ParseError::new(
                 String::from("expected whitespace"),
+                Whitespace::name(),
                 offset,
                 offset + 1,
             ));
@@ -105,20 +113,26 @@ impl GrammarUnit for Whitespace {
                 end: offset + size,
             },
             size,
+            None,
         ))
     }
 
     fn range(&self) -> (usize, usize) {
         (self.start, self.end)
     }
+
+    fn name() -> &'static str {
+        "whitespace"
+    }
 }
 
 impl GrammarUnit for BareWord {
-    fn try_match(content: &str, offset: usize) -> Result<(Self, usize)> {
+    fn try_match(content: &str, offset: usize) -> Result<(Self, usize, Option<ParseError>)> {
         let size = take_char_while(content, |c| char::is_alphanumeric(c) || c == '_');
         if size == 0 {
             return Err(ParseError::new(
                 String::from("expected bare word"),
+                Self::name(),
                 offset,
                 offset + 1,
             ));
@@ -130,22 +144,28 @@ impl GrammarUnit for BareWord {
                 end: offset + size,
             },
             size,
+            None,
         ))
     }
 
     fn range(&self) -> (usize, usize) {
         (self.start, self.end)
     }
+
+    fn name() -> &'static str {
+        "bare word"
+    }
 }
 
 impl GrammarUnit for Numeric {
-    fn try_match(content: &str, offset: usize) -> Result<(Self, usize)> {
+    fn try_match(content: &str, offset: usize) -> Result<(Self, usize, Option<ParseError>)> {
         let size = take_char_while(content, |c| {
             char::is_numeric(c) || c == '+' || c == '-' || c == '.' || c == 'e' || c == 'E'
         });
         if size == 0 {
             return Err(ParseError::new(
                 String::from("expected number"),
+                Self::name(),
                 offset,
                 offset + 1,
             ));
@@ -156,6 +176,7 @@ impl GrammarUnit for Numeric {
             Err(_) => {
                 return Err(ParseError::new(
                     String::from("unable to parse number"),
+                    Self::name(),
                     offset,
                     offset + size,
                 ));
@@ -169,20 +190,26 @@ impl GrammarUnit for Numeric {
                 value,
             },
             size,
+            None,
         ))
     }
 
     fn range(&self) -> (usize, usize) {
         (self.start, self.end)
     }
+
+    fn name() -> &'static str {
+        "number"
+    }
 }
 
 impl GrammarUnit for Integer {
-    fn try_match(content: &str, offset: usize) -> Result<(Self, usize)> {
+    fn try_match(content: &str, offset: usize) -> Result<(Self, usize, Option<ParseError>)> {
         let size = take_char_while(content, |c| char::is_numeric(c) || c == '-' || c == '+');
         if size == 0 {
             return Err(ParseError::new(
                 String::from("expected integer"),
+                Self::name(),
                 offset,
                 offset + 1,
             ));
@@ -193,6 +220,7 @@ impl GrammarUnit for Integer {
             Err(_) => {
                 return Err(ParseError::new(
                     String::from("unable to parse integer"),
+                    Self::name(),
                     offset,
                     offset + size,
                 ));
@@ -206,11 +234,16 @@ impl GrammarUnit for Integer {
                 value,
             },
             size,
+            None,
         ))
     }
 
     fn range(&self) -> (usize, usize) {
         (self.start, self.end)
+    }
+
+    fn name() -> &'static str {
+        "integer"
     }
 }
 
@@ -220,7 +253,7 @@ mod tests {
 
     fn assert_range<G: GrammarUnit>(content: &str, expected: &str) {
         let result = match G::try_match(content, 0) {
-            Ok((g, _)) => g,
+            Ok((g, _, _)) => g,
             Err(_) => {
                 if expected.is_empty() {
                     return;
@@ -238,12 +271,12 @@ mod tests {
 
     #[test]
     fn test_quoted_string_match() {
-        let (qs, took) = QuotedString::try_match(r#""hello, world" test"#, 0).unwrap();
+        let (qs, took, _) = QuotedString::try_match(r#""hello, world" test"#, 0).unwrap();
         assert_eq!(took, 14);
         assert_eq!(&qs.value, "hello, world");
 
         assert!(QuotedString::try_match("", 0).is_err());
-        let (qs, took) = QuotedString::try_match(r#""my ' string \" test""#, 0).unwrap();
+        let (qs, took, _) = QuotedString::try_match(r#""my ' string \" test""#, 0).unwrap();
         assert_eq!(took, 21);
         assert_eq!(&qs.value, "my ' string \" test");
 
@@ -256,12 +289,12 @@ mod tests {
     #[test]
     fn test_whitespace_match() {
         let content = r#""hello, world"   test"#;
-        let (_, took) = QuotedString::try_match(content, 0).unwrap();
+        let (_, took, _) = QuotedString::try_match(content, 0).unwrap();
         assert_eq!(took, 14);
 
         let remaining = &content[took..];
 
-        let (_, took) = Whitespace::try_match(remaining, took).unwrap();
+        let (_, took, _) = Whitespace::try_match(remaining, took).unwrap();
 
         assert_eq!(took, 3);
 
