@@ -77,6 +77,20 @@ pub struct RepeatWithSeparator<Unit, Separator> {
     _marker: std::marker::PhantomData<Separator>,
 }
 
+impl<U: GrammarUnit, S: GrammarUnit> RepeatWithSeparator<U, S> {
+    pub fn empty() -> Self {
+        Self {
+            inner: Vec::new(),
+            _marker: std::marker::PhantomData,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct AtLeastOne<Unit> {
+    pub inner: Vec<Unit>,
+}
+
 impl<G: GrammarUnit> GrammarUnit for Option<G> {
     fn try_match(content: &str, offset: usize) -> Result<(Self, usize, Option<ParseError>)> {
         match G::try_match(content, offset) {
@@ -168,8 +182,10 @@ impl<Unit: GrammarUnit, Separator: GrammarUnit> GrammarUnit
 {
     fn try_match(content: &str, offset: usize) -> Result<(Self, usize, Option<ParseError>)> {
         let mut took = 0;
+        let mut sep_took = 0;
         let mut output = Vec::new();
         let mut seq_error = None;
+        let mut sep_took = 0;
         loop {
             match Unit::try_match(&content[took..], offset + took) {
                 Ok((unit, t, seq_err)) => {
@@ -180,7 +196,14 @@ impl<Unit: GrammarUnit, Separator: GrammarUnit> GrammarUnit
                     }
                 }
                 Err(err) => {
+                    if took == 0 {
+                        return Err(err);
+                    }
+
                     seq_error = Some(err.merge(seq_error));
+
+                    // Revert the last separator
+                    took -= sep_took;
                     break;
                 }
             }
@@ -191,6 +214,7 @@ impl<Unit: GrammarUnit, Separator: GrammarUnit> GrammarUnit
                         seq_error = Some(seq_err.merge(seq_error));
                     }
                     took += t;
+                    sep_took = t;
                 }
                 Err(err) => {
                     seq_error = Some(err.merge(seq_error));
@@ -207,6 +231,46 @@ impl<Unit: GrammarUnit, Separator: GrammarUnit> GrammarUnit
             (Some(x), None) | (None, Some(x)) => x.range(),
             (None, None) => (0, 0),
         }
+    }
+}
+
+impl<G: GrammarUnit> GrammarUnit for AtLeastOne<G> {
+    fn try_match(content: &str, offset: usize) -> Result<(Self, usize, Option<ParseError>)> {
+        let mut took = 0;
+        let mut output = Vec::new();
+        let mut seq_error = None;
+        loop {
+            match G::try_match(&content[took..], offset + took) {
+                Ok((unit, t, seq_err)) => {
+                    took += t;
+                    output.push(unit);
+                    if let Some(seq_err) = seq_err {
+                        seq_error = Some(seq_err.merge(seq_error));
+                    }
+                }
+                Err(err) => {
+                    // Require at least one match
+                    if took == 0 {
+                        return Err(err);
+                    }
+                    seq_error = Some(err.merge(seq_error));
+                    break;
+                }
+            }
+        }
+        Ok((Self { inner: output }, took, seq_error))
+    }
+
+    fn range(&self) -> (usize, usize) {
+        match (self.inner.first(), self.inner.last()) {
+            (Some(first), Some(last)) => (first.range().0, last.range().1),
+            (Some(x), None) | (None, Some(x)) => x.range(),
+            (None, None) => (0, 0),
+        }
+    }
+
+    fn name() -> &'static str {
+        G::name()
     }
 }
 

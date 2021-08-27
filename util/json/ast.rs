@@ -18,7 +18,8 @@ ggen::sequence!(
     Array,
     "[",
     _ws1: Option<Whitespace>,
-    inner: RepeatWithSeparator<JSONValue, CommaSeparator>,
+    inner: Option<RepeatWithSeparator<JSONValue, CommaSeparator>>,
+    _comma: Option<CommaSeparator>, // consume possibly trailing comma
     _ws2: Option<Whitespace>,
     "]",
 );
@@ -48,7 +49,8 @@ ggen::sequence!(
     Dictionary,
     "{",
     _ws1: Option<Whitespace>,
-    kv_pairs: RepeatWithSeparator<KVPair, CommaSeparator>,
+    kv_pairs: Option<RepeatWithSeparator<KVPair, CommaSeparator>>,
+    _comma: Option<CommaSeparator>,
     _ws2: Option<Whitespace>,
     "}",
 );
@@ -62,13 +64,20 @@ pub fn convert(value: JSONValue) -> Value {
             Boolean::False(_) => Value::Boolean(false),
         },
         JSONValue::Null(_) => Value::Null,
-        JSONValue::Array(arr) => {
-            Value::Array(arr.inner.inner.into_iter().map(|v| convert(v)).collect())
-        }
+        JSONValue::Array(arr) => Value::Array(
+            arr.inner
+                .unwrap_or(RepeatWithSeparator::empty())
+                .inner
+                .into_iter()
+                .map(|v| convert(v))
+                .collect(),
+        ),
         JSONValue::Dictionary(dict) => {
             let mut output = HashMap::new();
-            for pair in dict.kv_pairs.inner {
-                output.insert(pair.key.value.to_string(), convert(pair.value));
+            if let Some(pairs) = dict.kv_pairs {
+                for pair in pairs.inner {
+                    output.insert(pair.key.value.to_string(), convert(pair.value));
+                }
             }
             Value::Dictionary(output)
         }
@@ -103,22 +112,22 @@ mod tests {
             r#"^^^^^^^^^^"#,
         );
 
-        assert_eq!(unit.kv_pairs.len(), 1);
+        assert_eq!(unit.kv_pairs.as_ref().unwrap().len(), 1);
 
         assert_range!(
-            unit.kv_pairs.inner[0],
+            unit.kv_pairs.as_ref().unwrap().inner[0],
             r#"{"abc": 5}"#, //
             r#" ^^^^^^^^"#,
         );
 
         assert_range!(
-            unit.kv_pairs.inner[0].key,
+            unit.kv_pairs.as_ref().unwrap().inner[0].key,
             r#"{"abc": 5}"#, //
             r#" ^^^^^"#,
         );
 
         assert_range!(
-            unit.kv_pairs.inner[0].value,
+            unit.kv_pairs.as_ref().unwrap().inner[0].value,
             r#"{"abc": 5}"#, //
             r#"        ^"#,
         );
@@ -133,35 +142,35 @@ mod tests {
             r#"^^^^^^^^^^^^^^^^^^^^^^^^"#,
         );
 
-        assert_eq!(unit.kv_pairs.len(), 2);
+        assert_eq!(unit.kv_pairs.as_ref().unwrap().len(), 2);
 
         assert_range!(
-            unit.kv_pairs.inner[0],
+            unit.kv_pairs.as_ref().unwrap().inner[0],
             r#"{"abc": 5, "def": "aaa"}"#,
             r#" ^^^^^^^^"#,
         );
 
         assert_range!(
-            unit.kv_pairs.inner[1],
+            unit.kv_pairs.as_ref().unwrap().inner[1],
             r#"{"abc": 5, "def": "aaa"}"#,
             r#"           ^^^^^^^^^^^^"#,
         );
 
-        if let JSONValue::Number(num) = &unit.kv_pairs.inner[0].value {
+        if let JSONValue::Number(num) = &unit.kv_pairs.as_ref().unwrap().inner[0].value {
             assert_eq!(num.value, 5.0);
         } else {
             panic!(
                 "value {:?} didn't match pattern!",
-                unit.kv_pairs.inner[0].value
+                unit.kv_pairs.unwrap().inner[0].value
             );
         }
 
-        if let JSONValue::String(s) = &unit.kv_pairs.inner[1].value {
+        if let JSONValue::String(s) = &unit.kv_pairs.as_ref().unwrap().inner[1].value {
             assert_eq!(&s.value, "aaa");
         } else {
             panic!(
                 "value {:?} didn't match pattern!",
-                unit.kv_pairs.inner[1].value
+                unit.kv_pairs.unwrap().inner[1].value
             );
         }
     }
@@ -171,31 +180,38 @@ mod tests {
         let (unit, _, _) = JSONValue::try_match(r#"{"abc": 5, "def": [1,2,3,4,5]}"#, 0).unwrap();
         if let JSONValue::Dictionary(dict) = unit {
             assert_range!(
-                dict.kv_pairs.inner[0],
+                dict.kv_pairs.as_ref().unwrap().inner[0],
                 r#"{"abc": 5, "def": [1,2,3,4,5]}"#,
                 r#" ^^^^^^^^"#,
             );
 
             assert_range!(
-                dict.kv_pairs.inner[1],
+                dict.kv_pairs.as_ref().unwrap().inner[1],
                 r#"{"abc": 5, "def": [1,2,3,4,5]}"#,
                 r#"           ^^^^^^^^^^^^^^^^^^"#,
             );
 
             assert_range!(
-                dict.kv_pairs.inner[1],
+                dict.kv_pairs.as_ref().unwrap().inner[1],
                 r#"{"abc": 5, "def": [1,2,3,4,5]}"#,
                 r#"           ^^^^^^^^^^^^^^^^^^"#,
             );
 
             assert_range!(
-                dict.kv_pairs.inner[1].value,
+                dict.kv_pairs.as_ref().unwrap().inner[1].value,
                 r#"{"abc": 5, "def": [1,2,3,4,5]}"#,
                 r#"                  ^^^^^^^^^^^"#,
             );
 
-            if let JSONValue::Array(arr) = &dict.kv_pairs.inner[1].value {
-                assert_eq!(arr.inner.len(), 5);
+            if let JSONValue::Array(arr) = &dict.kv_pairs.as_ref().unwrap().inner[1].value {
+                assert_eq!(
+                    arr.inner
+                        .as_ref()
+                        .unwrap_or(&RepeatWithSeparator::empty())
+                        .inner
+                        .len(),
+                    5
+                );
             } else {
                 panic!("wasn't an array!");
             }
