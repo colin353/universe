@@ -1,15 +1,17 @@
 use ggen::{
-    AtLeastOne, GrammarUnit, Identifier, Numeric, ParseError, QuotedString, RepeatWithSeparator,
-    Whitespace as NewlineWhitespace,
+    AtLeastOne, Comment, GrammarUnit, Identifier, Numeric, ParseError, QuotedString,
+    RepeatWithSeparator, Whitespace as NewlineWhitespace,
 };
 
 ggen::sequence!(
     Module,
-    _ws1: Option<NewlineWhitespace>,
-    bindings: RepeatWithSeparator<Assignment, AtLeastOne<Newline>>,
-    _ws2: Newline,
+    _ws1: Vec<WhitespaceNewlineComment>,
+    bindings: RepeatWithSeparator<Assignment, AtLeastOne<WhitespaceNewlineComment>>,
+    _ws2: AtLeastOne<WhitespaceNewlineComment>,
     value: Option<Expression>,
-    _ws3: Option<NewlineWhitespace>,
+    _ws3: Vec<WhitespaceNewlineComment>,
+    _ws4: Option<Whitespace>,
+    comment: Option<Comment>, // possible trailing comment w/ no newline
 );
 
 // Newlines are not considered part of whitespace in ccl
@@ -39,10 +41,18 @@ ggen::unit!(Null, "null");
 ggen::sequence!(
     Dictionary,
     "{",
-    _ws1: Option<NewlineWhitespace>,
-    values: RepeatWithSeparator<Assignment, Newline>,
-    _ws2: Option<NewlineWhitespace>,
+    _ws1: Vec<WhitespaceNewlineComment>,
+    values: RepeatWithSeparator<Assignment, AtLeastOne<WhitespaceNewlineComment>>,
+    _ws2: Vec<WhitespaceNewlineComment>,
     "}",
+);
+
+ggen::sequence!(
+    WhitespaceNewlineComment,
+    _ws1: Option<Whitespace>,
+    comment: Option<Comment>,
+    "\n",
+    _ws2: Option<Whitespace>,
 );
 
 ggen::one_of!(

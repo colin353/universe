@@ -40,6 +40,12 @@ pub struct Identifier {
     end: usize,
 }
 
+#[derive(Debug, PartialEq)]
+pub struct Comment {
+    start: usize,
+    end: usize,
+}
+
 impl GrammarUnit for QuotedString {
     fn try_match(content: &str, offset: usize) -> Result<(Self, usize, Option<ParseError>)> {
         if !content.starts_with('"') {
@@ -315,6 +321,38 @@ impl GrammarUnit for Identifier {
 
     fn name() -> &'static str {
         "identifier"
+    }
+}
+
+// Comment starts with two slashes and extends to a newline
+impl GrammarUnit for Comment {
+    fn try_match(mut content: &str, offset: usize) -> Result<(Self, usize, Option<ParseError>)> {
+        if !content.starts_with("//") {
+            return Err(ParseError::new(
+                String::from("expected //"),
+                Self::name(),
+                offset,
+                offset + 1,
+            ));
+        }
+
+        let size = 2 + take_char_while(&content[2..], |c| c != '\n');
+        Ok((
+            Self {
+                start: offset,
+                end: offset + size,
+            },
+            size,
+            None,
+        ))
+    }
+
+    fn range(&self) -> (usize, usize) {
+        (self.start, self.end)
+    }
+
+    fn name() -> &'static str {
+        "comment"
     }
 }
 

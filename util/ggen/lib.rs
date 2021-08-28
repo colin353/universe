@@ -1,7 +1,7 @@
 mod basic;
 mod macros;
 
-pub use basic::{BareWord, Identifier, Integer, Numeric, QuotedString, Whitespace};
+pub use basic::{BareWord, Comment, Identifier, Integer, Numeric, QuotedString, Whitespace};
 
 pub type Result<T> = std::result::Result<T, ParseError>;
 
