@@ -147,8 +147,8 @@ pub fn get_ast_or_panic(content: &str) -> Module {
         Err(e) => e,
     };
 
-    println!("Failed to parse content!");
-    println!("{}", errors.render(content));
+    eprintln!("Failed to parse content!");
+    eprintln!("{}", errors.render(content));
     panic!("Can't continue!");
 }
 
