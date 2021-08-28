@@ -54,17 +54,68 @@ ggen::one_of!(
     Dictionary: Dictionary
 );
 
-ggen::one_of!(Expression, Value: CCLValue);
+ggen::one_of!(
+    ValueExpression,
+    SubExpression: SubExpression,
+    Value: CCLValue
+);
+
+ggen::one_of!(
+    Operator,
+    Addition: AdditionOperator,
+    Subtraction: SubtractionOperator
+);
+
+ggen::sequence!(
+    OperatorExpression,
+    value: ValueExpression,
+    operator: Operator,
+    continuation: RepeatWithSeparator<ValueExpression, Operator>,
+);
+
+ggen::sequence!(
+    AdditionOperator,
+    _ws1: Option<Whitespace>,
+    "+",
+    _ws2: Option<Whitespace>,
+);
+
+ggen::sequence!(
+    SubtractionOperator,
+    _ws1: Option<Whitespace>,
+    "-",
+    _ws2: Option<Whitespace>,
+);
+
+ggen::sequence!(
+    SubExpression,
+    "(",
+    _ws1: Option<NewlineWhitespace>,
+    expression: Expression,
+    _ws2: Option<NewlineWhitespace>,
+    ")",
+);
+
+ggen::sequence!(
+    ExpansionExpression,
+    identifier: CCLIdentifier,
+    _ws1: Option<Whitespace>,
+    target: Dictionary,
+);
+
+ggen::one_of!(
+    Expression,
+    SubExpression: SubExpression,
+    OperatorExpression: OperatorExpression,
+    ExpansionExpression: ExpansionExpression,
+    Value: CCLValue
+);
 
 pub fn get_ast(content: &str) -> Result<Module, ParseError> {
-    Module::try_match(content, 0).map(|(module, _, _)| module)
-}
-
-pub fn get_ast_or_panic(content: &str) -> Module {
     let errors = match Module::try_match(content, 0) {
         Ok((module, took, _)) => {
             if took == content.len() {
-                return module;
+                return Ok(module);
             }
 
             ParseError::new(
@@ -74,6 +125,15 @@ pub fn get_ast_or_panic(content: &str) -> Module {
                 took + 1,
             )
         }
+        Err(e) => e,
+    };
+
+    Err(errors)
+}
+
+pub fn get_ast_or_panic(content: &str) -> Module {
+    let errors = match get_ast(content) {
+        Ok(module) => return module,
         Err(e) => e,
     };
 
@@ -90,6 +150,26 @@ mod tests {
         ($unit:expr, $content:expr, $expected:expr,) => {
             let (start, end) = $unit.range();
             assert_eq!($expected, &$content[start..end],);
+        };
+    }
+
+    macro_rules! assert_matches {
+        ($expected:expr, $pattern:pat) => {
+            assert!(
+                matches!($expected, $pattern),
+                "didn't match! expected {}, got {:?}",
+                stringify!($pattern),
+                $expected
+            );
+        };
+    }
+
+    macro_rules! assert_parse {
+        ($unit:ty, $content:expr) => {
+            if let Err(e) = <$unit>::try_match($content, 0) {
+                println!("failed to parse:\n{}", e.render($content));
+                panic!("can't continue!");
+            }
         };
     }
 
@@ -114,13 +194,13 @@ b
         "#;
         let unit = get_ast_or_panic(content);
 
-        assert_eq!(unit.bindings.inner.len(), 2);
-        assert_range!(unit.bindings.inner[0].left, content, "a",);
+        assert_eq!(unit.bindings.values.len(), 2);
+        assert_range!(unit.bindings.values[0].left, content, "a",);
         assert!(matches!(
-            unit.bindings.inner[0].right,
-            Expression::Value(CCLValue::String(_))
+            unit.bindings.values[0].right,
+            Expression::Value(_)
         ));
-        assert_range!(unit.bindings.inner[1].left, content, "b",);
+        assert_range!(unit.bindings.values[1].left, content, "b",);
         assert_range!(unit.value, content, "b",);
     }
 
@@ -131,18 +211,61 @@ a = {
     a = "hello"
 }
 b = a.a
+c = a + (2 + 3)
 b
         "#;
         let unit = get_ast_or_panic(content);
 
-        assert_eq!(unit.bindings.inner.len(), 2);
-        assert_range!(unit.bindings.inner[0].left, content, "a",);
-        assert!(matches!(
-            unit.bindings.inner[0].right,
-            Expression::Value(CCLValue::Dictionary(_))
-        ));
-        assert_range!(unit.bindings.inner[1].left, content, "b",);
+        assert_eq!(unit.bindings.values.len(), 3);
+        assert_range!(unit.bindings.values[0].left, content, "a",);
+        assert!(
+            matches!(unit.bindings.values[0].right, Expression::Value(_)),
+            "didn't match! {:?}",
+            unit.bindings.values[0].right
+        );
+        assert_range!(unit.bindings.values[1].left, content, "b",);
+
+        assert_range!(unit.bindings.values[2].left, content, "c",);
+        assert_range!(unit.bindings.values[2].right, content, "a + (2 + 3)",);
+        assert_matches!(
+            unit.bindings.values[2].right,
+            Expression::OperatorExpression(_)
+        );
+
         assert!(unit.value.is_some());
         assert_range!(unit.value, content, "b",);
+    }
+
+    #[test]
+    fn test_parse_expansion() {
+        let content = r#"
+a = {
+    a = "hello"
+}
+b = a {
+    b = "world"
+}
+b
+        "#;
+        let unit = get_ast_or_panic(content);
+
+        assert_eq!(unit.bindings.values.len(), 2);
+        assert_range!(unit.bindings.values[1].left, content, "b",);
+        assert_matches!(
+            unit.bindings.values[1].right,
+            Expression::ExpansionExpression(_)
+        );
+
+        assert!(unit.value.is_some());
+        assert_range!(unit.value, content, "b",);
+    }
+
+    #[test]
+    fn test_parse_subexpressions() {
+        get_ast_or_panic(
+            "
+            a = (  2+ 3)
+        ",
+        );
     }
 }

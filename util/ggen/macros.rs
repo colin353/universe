@@ -4,7 +4,7 @@ macro_rules! define_unit {
         #[derive(Debug, PartialEq)]
         pub struct $name {
             $(
-                $term_name: $term,
+               pub $term_name: $term,
             )*
             _start: usize,
             _end: usize,
@@ -142,7 +142,7 @@ macro_rules! one_of {
         #[derive(Debug, PartialEq)]
         pub enum $name {
             $(
-                $term_name($term),
+                $term_name(Box<$term>),
             )*
         }
 
@@ -179,7 +179,7 @@ macro_rules! one_of {
                                 }
                             }
 
-                            return Ok(($name::$term_name(unit), took, seq_error))
+                            return Ok(($name::$term_name(Box::new(unit)), took, seq_error))
                         },
                         Err(err) => {
                             if err.end < offset {

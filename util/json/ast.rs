@@ -59,7 +59,7 @@ pub fn convert(value: JSONValue) -> Value {
     match value {
         JSONValue::Number(num) => Value::Number(num.value),
         JSONValue::String(s) => Value::String(s.value),
-        JSONValue::Boolean(b) => match b {
+        JSONValue::Boolean(b) => match *b {
             Boolean::True(_) => Value::Boolean(true),
             Boolean::False(_) => Value::Boolean(false),
         },
@@ -67,7 +67,7 @@ pub fn convert(value: JSONValue) -> Value {
         JSONValue::Array(arr) => Value::Array(
             arr.inner
                 .unwrap_or(RepeatWithSeparator::empty())
-                .inner
+                .values
                 .into_iter()
                 .map(|v| convert(v))
                 .collect(),
@@ -75,7 +75,7 @@ pub fn convert(value: JSONValue) -> Value {
         JSONValue::Dictionary(dict) => {
             let mut output = HashMap::new();
             if let Some(pairs) = dict.kv_pairs {
-                for pair in pairs.inner {
+                for pair in pairs.values {
                     output.insert(pair.key.value.to_string(), convert(pair.value));
                 }
             }
@@ -115,19 +115,19 @@ mod tests {
         assert_eq!(unit.kv_pairs.as_ref().unwrap().len(), 1);
 
         assert_range!(
-            unit.kv_pairs.as_ref().unwrap().inner[0],
+            unit.kv_pairs.as_ref().unwrap().values[0],
             r#"{"abc": 5}"#, //
             r#" ^^^^^^^^"#,
         );
 
         assert_range!(
-            unit.kv_pairs.as_ref().unwrap().inner[0].key,
+            unit.kv_pairs.as_ref().unwrap().values[0].key,
             r#"{"abc": 5}"#, //
             r#" ^^^^^"#,
         );
 
         assert_range!(
-            unit.kv_pairs.as_ref().unwrap().inner[0].value,
+            unit.kv_pairs.as_ref().unwrap().values[0].value,
             r#"{"abc": 5}"#, //
             r#"        ^"#,
         );
@@ -145,32 +145,32 @@ mod tests {
         assert_eq!(unit.kv_pairs.as_ref().unwrap().len(), 2);
 
         assert_range!(
-            unit.kv_pairs.as_ref().unwrap().inner[0],
+            unit.kv_pairs.as_ref().unwrap().values[0],
             r#"{"abc": 5, "def": "aaa"}"#,
             r#" ^^^^^^^^"#,
         );
 
         assert_range!(
-            unit.kv_pairs.as_ref().unwrap().inner[1],
+            unit.kv_pairs.as_ref().unwrap().values[1],
             r#"{"abc": 5, "def": "aaa"}"#,
             r#"           ^^^^^^^^^^^^"#,
         );
 
-        if let JSONValue::Number(num) = &unit.kv_pairs.as_ref().unwrap().inner[0].value {
+        if let JSONValue::Number(num) = &unit.kv_pairs.as_ref().unwrap().values[0].value {
             assert_eq!(num.value, 5.0);
         } else {
             panic!(
                 "value {:?} didn't match pattern!",
-                unit.kv_pairs.unwrap().inner[0].value
+                unit.kv_pairs.unwrap().values[0].value
             );
         }
 
-        if let JSONValue::String(s) = &unit.kv_pairs.as_ref().unwrap().inner[1].value {
+        if let JSONValue::String(s) = &unit.kv_pairs.as_ref().unwrap().values[1].value {
             assert_eq!(&s.value, "aaa");
         } else {
             panic!(
                 "value {:?} didn't match pattern!",
-                unit.kv_pairs.unwrap().inner[1].value
+                unit.kv_pairs.unwrap().values[1].value
             );
         }
     }
@@ -180,35 +180,35 @@ mod tests {
         let (unit, _, _) = JSONValue::try_match(r#"{"abc": 5, "def": [1,2,3,4,5]}"#, 0).unwrap();
         if let JSONValue::Dictionary(dict) = unit {
             assert_range!(
-                dict.kv_pairs.as_ref().unwrap().inner[0],
+                dict.kv_pairs.as_ref().unwrap().values[0],
                 r#"{"abc": 5, "def": [1,2,3,4,5]}"#,
                 r#" ^^^^^^^^"#,
             );
 
             assert_range!(
-                dict.kv_pairs.as_ref().unwrap().inner[1],
+                dict.kv_pairs.as_ref().unwrap().values[1],
                 r#"{"abc": 5, "def": [1,2,3,4,5]}"#,
                 r#"           ^^^^^^^^^^^^^^^^^^"#,
             );
 
             assert_range!(
-                dict.kv_pairs.as_ref().unwrap().inner[1],
+                dict.kv_pairs.as_ref().unwrap().values[1],
                 r#"{"abc": 5, "def": [1,2,3,4,5]}"#,
                 r#"           ^^^^^^^^^^^^^^^^^^"#,
             );
 
             assert_range!(
-                dict.kv_pairs.as_ref().unwrap().inner[1].value,
+                dict.kv_pairs.as_ref().unwrap().values[1].value,
                 r#"{"abc": 5, "def": [1,2,3,4,5]}"#,
                 r#"                  ^^^^^^^^^^^"#,
             );
 
-            if let JSONValue::Array(arr) = &dict.kv_pairs.as_ref().unwrap().inner[1].value {
+            if let JSONValue::Array(arr) = &dict.kv_pairs.as_ref().unwrap().values[1].value {
                 assert_eq!(
                     arr.inner
                         .as_ref()
                         .unwrap_or(&RepeatWithSeparator::empty())
-                        .inner
+                        .values
                         .len(),
                     5
                 );

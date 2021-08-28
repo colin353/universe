@@ -73,15 +73,15 @@ impl ParseError {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct RepeatWithSeparator<Unit, Separator> {
-    pub inner: Vec<Unit>,
-    _marker: std::marker::PhantomData<Separator>,
+    pub values: Vec<Unit>,
+    pub separators: Vec<Separator>,
 }
 
 impl<U: GrammarUnit, S: GrammarUnit> RepeatWithSeparator<U, S> {
     pub fn empty() -> Self {
         Self {
-            inner: Vec::new(),
-            _marker: std::marker::PhantomData,
+            values: Vec::new(),
+            separators: Vec::new(),
         }
     }
 }
@@ -144,19 +144,16 @@ impl<G: GrammarUnit> GrammarUnit for Vec<G> {
 }
 
 impl<Unit: GrammarUnit, Separator: GrammarUnit> RepeatWithSeparator<Unit, Separator> {
-    pub fn new(inner: Vec<Unit>) -> Self {
-        Self {
-            inner,
-            _marker: std::marker::PhantomData,
-        }
+    pub fn new(values: Vec<Unit>, separators: Vec<Separator>) -> Self {
+        Self { values, separators }
     }
 
     pub fn len(&self) -> usize {
-        self.inner.len()
+        self.values.len()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.inner.is_empty()
+        self.values.is_empty()
     }
 
     pub fn iter(&self) -> impl Iterator<Item = &Unit> {
@@ -173,7 +170,7 @@ impl<'a, U, S> IntoIterator for &'a RepeatWithSeparator<U, S> {
     type IntoIter = std::slice::Iter<'a, U>;
 
     fn into_iter(self) -> Self::IntoIter {
-        (&self.inner).into_iter()
+        (&self.values).into_iter()
     }
 }
 
@@ -183,14 +180,15 @@ impl<Unit: GrammarUnit, Separator: GrammarUnit> GrammarUnit
     fn try_match(content: &str, offset: usize) -> Result<(Self, usize, Option<ParseError>)> {
         let mut took = 0;
         let mut sep_took = 0;
-        let mut output = Vec::new();
+        let mut values = Vec::new();
+        let mut separators = Vec::new();
         let mut seq_error = None;
         let mut sep_took = 0;
         loop {
             match Unit::try_match(&content[took..], offset + took) {
                 Ok((unit, t, seq_err)) => {
                     took += t;
-                    output.push(unit);
+                    values.push(unit);
                     if let Some(seq_err) = seq_err {
                         seq_error = Some(seq_err.merge(seq_error));
                     }
@@ -204,17 +202,19 @@ impl<Unit: GrammarUnit, Separator: GrammarUnit> GrammarUnit
 
                     // Revert the last separator
                     took -= sep_took;
+                    separators.pop();
                     break;
                 }
             }
 
             match Separator::try_match(&content[took..], offset + took) {
-                Ok((_, t, seq_err)) => {
+                Ok((sep, t, seq_err)) => {
                     if let Some(seq_err) = seq_err {
                         seq_error = Some(seq_err.merge(seq_error));
                     }
                     took += t;
                     sep_took = t;
+                    separators.push(sep);
                 }
                 Err(err) => {
                     seq_error = Some(err.merge(seq_error));
@@ -222,11 +222,15 @@ impl<Unit: GrammarUnit, Separator: GrammarUnit> GrammarUnit
                 }
             }
         }
-        Ok((RepeatWithSeparator::new(output), took, seq_error))
+        Ok((
+            RepeatWithSeparator::new(values, separators),
+            took,
+            seq_error,
+        ))
     }
 
     fn range(&self) -> (usize, usize) {
-        match (self.inner.first(), self.inner.last()) {
+        match (self.values.first(), self.values.last()) {
             (Some(first), Some(last)) => (first.range().0, last.range().1),
             (Some(x), None) | (None, Some(x)) => x.range(),
             (None, None) => (0, 0),

@@ -165,9 +165,19 @@ impl GrammarUnit for BareWord {
 
 impl GrammarUnit for Numeric {
     fn try_match(content: &str, offset: usize) -> Result<(Self, usize, Option<ParseError>)> {
-        let size = take_char_while(content, |c| {
-            char::is_numeric(c) || c == '+' || c == '-' || c == '.' || c == 'e' || c == 'E'
+        let mut size = if let Some(ch) = content.chars().next() {
+            if ch == '+' || ch == '-' {
+                1
+            } else {
+                0
+            }
+        } else {
+            0
+        };
+        size += take_char_while(content, |c| {
+            char::is_numeric(c) || c == '.' || c == 'e' || c == 'E'
         });
+
         if size == 0 {
             return Err(ParseError::new(
                 String::from("expected number"),
