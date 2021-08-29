@@ -10,6 +10,8 @@ rust_library(
       "lib.rs",
       "ast.rs",
       "fmt.rs",
+      "exec.rs",
+      "eval.rs",
     ],
     deps = [ 
        "//util/ggen",
@@ -28,6 +30,19 @@ rust_binary(
     ],
     edition = "2018",
 )
+
+rust_binary(
+    name = "cclc",
+    srcs = [
+        "cclc.rs",
+    ],
+    deps = [
+        ":ccl",
+        "//util/flags",
+    ],
+    edition = "2018",
+)
+
 
 rust_test(
     name = "ccl_test",

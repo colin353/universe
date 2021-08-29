@@ -11,6 +11,11 @@ pub trait GrammarUnit: Sized + std::fmt::Debug {
     fn name() -> &'static str {
         std::any::type_name::<Self>()
     }
+
+    fn as_str<'a>(&self, content: &'a str) -> &'a str {
+        let (start, end) = self.range();
+        &content[start..end]
+    }
 }
 
 #[derive(Clone, Debug)]

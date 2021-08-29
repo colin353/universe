@@ -18,7 +18,7 @@ ggen::sequence!(
 ggen::char_rule!(Whitespace, |ch: char| ch.is_whitespace() && ch != '\n');
 
 ggen::unit!(Period, ".");
-type CCLIdentifier = RepeatWithSeparator<Identifier, Period>;
+pub type CCLIdentifier = RepeatWithSeparator<Identifier, Period>;
 
 ggen::sequence!(
     Newline,

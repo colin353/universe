@@ -1,7 +1,7 @@
 #[macro_export]
 macro_rules! define_unit {
     ( $name:ident, $($term_name:ident: $term:ty,)* ; ) => {
-        #[derive(Debug, PartialEq)]
+        #[derive(Clone, Debug, PartialEq)]
         pub struct $name {
             $(
                pub $term_name: $term,
@@ -139,7 +139,7 @@ macro_rules! sequence {
 #[macro_export]
 macro_rules! one_of {
     ( $name:ident, $( $term_name:ident: $term:ty ),* ) => {
-        #[derive(Debug, PartialEq)]
+        #[derive(Clone, Debug, PartialEq)]
         pub enum $name {
             $(
                 $term_name(Box<$term>),
@@ -227,7 +227,7 @@ macro_rules! one_of {
 #[macro_export]
 macro_rules! unit {
     ( $name:ident, $value:literal ) => {
-        #[derive(Debug, PartialEq)]
+        #[derive(Clone, Debug, PartialEq)]
         pub struct $name {
             _start: usize,
             _end: usize,
@@ -271,7 +271,7 @@ macro_rules! unit {
 #[macro_export]
 macro_rules! char_rule {
     ( $name:ident, $rule:expr ) => {
-        #[derive(Debug, PartialEq)]
+        #[derive(Clone, Debug, PartialEq)]
         pub struct $name {
             _start: usize,
             _end: usize,

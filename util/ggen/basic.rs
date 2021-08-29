@@ -1,46 +1,46 @@
 use crate::Result;
 use crate::{take_char_while, take_while, GrammarUnit, ParseError};
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct QuotedString {
     pub value: String,
     start: usize,
     end: usize,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct BareWord {
     start: usize,
     end: usize,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Whitespace {
     start: usize,
     end: usize,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Numeric {
     pub value: f64,
     start: usize,
     end: usize,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Integer {
     pub value: i64,
     start: usize,
     end: usize,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Identifier {
     start: usize,
     end: usize,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Comment {
     start: usize,
     end: usize,
