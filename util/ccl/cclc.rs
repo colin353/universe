@@ -19,7 +19,13 @@ fn main() {
     let specifier = args.next().unwrap_or(String::new());
 
     let parsed = ccl::get_ast_or_panic(&content);
-    let resolved = ccl::exec(parsed, &content, &specifier).unwrap();
+    let resolved = match ccl::exec(parsed, &content, &specifier) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("failed to evaluate!\n\n{}", e.render(&content));
+            std::process::exit(1);
+        }
+    };
 
     println!("{:?}", resolved);
 }

@@ -73,7 +73,11 @@ ggen::one_of!(
 ggen::one_of!(
     Operator,
     Addition: AdditionOperator,
-    Subtraction: SubtractionOperator
+    Subtraction: SubtractionOperator,
+    Multiplication: MultiplicationOperator,
+    Division: DivisionOperator,
+    And: AndOperator,
+    Or: OrOperator
 );
 
 ggen::sequence!(
@@ -81,6 +85,34 @@ ggen::sequence!(
     value: ValueExpression,
     operator: Operator,
     continuation: RepeatWithSeparator<ValueExpression, Operator>,
+);
+
+ggen::sequence!(
+    AndOperator,
+    _ws1: Option<Whitespace>,
+    "&&",
+    _ws2: Option<Whitespace>,
+);
+
+ggen::sequence!(
+    OrOperator,
+    _ws1: Option<Whitespace>,
+    "||",
+    _ws2: Option<Whitespace>,
+);
+
+ggen::sequence!(
+    MultiplicationOperator,
+    _ws1: Option<Whitespace>,
+    "*",
+    _ws2: Option<Whitespace>,
+);
+
+ggen::sequence!(
+    DivisionOperator,
+    _ws1: Option<Whitespace>,
+    "/",
+    _ws2: Option<Whitespace>,
 );
 
 ggen::sequence!(

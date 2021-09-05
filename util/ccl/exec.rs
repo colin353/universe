@@ -10,6 +10,15 @@ use std::sync::{Arc, Mutex};
 #[derive(Debug, Clone)]
 pub enum ExecError {
     CannotResolveSymbol(ParseError),
+    OperatorWithInvalidType(ParseError),
+}
+
+impl ExecError {
+    pub fn render(&self, content: &str) -> String {
+        match self {
+            Self::CannotResolveSymbol(e) | Self::OperatorWithInvalidType(e) => e.render(content),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
