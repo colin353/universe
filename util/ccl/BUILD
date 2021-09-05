@@ -12,6 +12,7 @@ rust_library(
       "fmt.rs",
       "exec.rs",
       "eval.rs",
+      "eval_tests.rs",
     ],
     deps = [ 
        "//util/ggen",

@@ -8,21 +8,15 @@ pub fn format(module: ast::Module, content: &str) -> String {
     // Print any leading comments
     output.push_str(&format_comment(module._ws1.iter(), content, "", false));
 
-    let mut separators = module.bindings.separators.iter();
-    for binding in &module.bindings.values {
-        format_binding(binding, content, "", &mut output);
-
-        if let Some(sep) = separators.next() {
-            output.push_str(&format_comment(sep.inner.iter(), content, "", true));
-        }
+    for (idx, binding) in module.bindings.iter().enumerate() {
+        format_binding(&binding.assignment, content, "", &mut output);
+        output.push_str(&format_comment(
+            binding.comments.inner.iter(),
+            content,
+            "",
+            idx == module.bindings.len() - 1,
+        ));
     }
-
-    output.push_str(&format_comment(
-        module._ws2.inner.iter(),
-        content,
-        "",
-        false,
-    ));
 
     if let Some(expr) = module.value {
         output.push_str(&format_expression(&expr, content, ""));

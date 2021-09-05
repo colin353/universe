@@ -7,6 +7,9 @@ pub use ast::{get_ast, get_ast_or_panic};
 pub use exec::exec;
 pub use fmt::format;
 
+#[cfg(test)]
+mod eval_tests;
+
 #[derive(Clone, PartialEq, Debug)]
 pub enum Value {
     Number(f64),
@@ -42,5 +45,15 @@ impl Dictionary {
 
     pub fn insert(&mut self, key: String, value: Value) {
         self.kv_pairs.push((key, value));
+    }
+}
+
+pub fn exec_or_panic(content: &str, specifier: &str) -> Value {
+    let ast = get_ast_or_panic(content);
+    match exec(ast, content, specifier) {
+        Ok(x) => x,
+        Err(e) => {
+            panic!("failed to evaluate:\n{}", e.render(content))
+        }
     }
 }

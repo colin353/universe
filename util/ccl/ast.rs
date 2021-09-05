@@ -6,12 +6,17 @@ use ggen::{
 ggen::sequence!(
     Module,
     _ws1: Vec<WhitespaceNewlineComment>,
-    bindings: RepeatWithSeparator<Assignment, AtLeastOne<WhitespaceNewlineComment>>,
-    _ws2: AtLeastOne<WhitespaceNewlineComment>,
+    bindings: Vec<AssignmentLine>,
     value: Option<Expression>,
     _ws3: Vec<WhitespaceNewlineComment>,
     _ws4: Option<Whitespace>,
     comment: Option<Comment>, // possible trailing comment w/ no newline
+);
+
+ggen::sequence!(
+    AssignmentLine,
+    assignment: Assignment,
+    comments: AtLeastOne<WhitespaceNewlineComment>,
 );
 
 // Newlines are not considered part of whitespace in ccl
@@ -152,8 +157,8 @@ ggen::sequence!(
 
 ggen::one_of!(
     Expression,
-    SubExpression: SubExpression,
     OperatorExpression: OperatorExpression,
+    SubExpression: SubExpression,
     ExpansionExpression: ExpansionExpression,
     Value: CCLValue
 );
@@ -241,13 +246,13 @@ b
         "#;
         let unit = get_ast_or_panic(content);
 
-        assert_eq!(unit.bindings.values.len(), 2);
-        assert_range!(unit.bindings.values[0].left, content, "a",);
+        assert_eq!(unit.bindings.len(), 2);
+        assert_range!(unit.bindings[0].assignment.left, content, "a",);
         assert!(matches!(
-            unit.bindings.values[0].right,
+            unit.bindings[0].assignment.right,
             Expression::Value(_)
         ));
-        assert_range!(unit.bindings.values[1].left, content, "b",);
+        assert_range!(unit.bindings[1].assignment.left, content, "b",);
         assert_range!(unit.value, content, "b",);
     }
 
@@ -263,19 +268,19 @@ b
         "#;
         let unit = get_ast_or_panic(content);
 
-        assert_eq!(unit.bindings.values.len(), 3);
-        assert_range!(unit.bindings.values[0].left, content, "a",);
+        assert_eq!(unit.bindings.len(), 3);
+        assert_range!(unit.bindings[0].assignment.left, content, "a",);
         assert!(
-            matches!(unit.bindings.values[0].right, Expression::Value(_)),
+            matches!(unit.bindings[0].assignment.right, Expression::Value(_)),
             "didn't match! {:?}",
-            unit.bindings.values[0].right
+            unit.bindings[0].assignment.right
         );
-        assert_range!(unit.bindings.values[1].left, content, "b",);
+        assert_range!(unit.bindings[1].assignment.left, content, "b",);
 
-        assert_range!(unit.bindings.values[2].left, content, "c",);
-        assert_range!(unit.bindings.values[2].right, content, "a + (2 + 3)",);
+        assert_range!(unit.bindings[2].assignment.left, content, "c",);
+        assert_range!(unit.bindings[2].assignment.right, content, "a + (2 + 3)",);
         assert_matches!(
-            unit.bindings.values[2].right,
+            unit.bindings[2].assignment.right,
             Expression::OperatorExpression(_)
         );
 
@@ -296,10 +301,10 @@ b
         "#;
         let unit = get_ast_or_panic(content);
 
-        assert_eq!(unit.bindings.values.len(), 2);
-        assert_range!(unit.bindings.values[1].left, content, "b",);
+        assert_eq!(unit.bindings.len(), 2);
+        assert_range!(unit.bindings[1].assignment.left, content, "b",);
         assert_matches!(
-            unit.bindings.values[1].right,
+            unit.bindings[1].assignment.right,
             Expression::ExpansionExpression(_)
         );
 

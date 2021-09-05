@@ -63,10 +63,10 @@ impl<'a> Scope<'a> {
 
     pub fn from_module(module: ast::Module, content: &'a str) -> Self {
         let mut out = Self::empty(content);
-        for assignment in module.bindings.values {
+        for b in module.bindings {
             out.inner.lock().unwrap().unresolved_identifiers.insert(
-                assignment.left.as_str(content).to_string(),
-                assignment.right,
+                b.assignment.left.as_str(content).to_string(),
+                b.assignment.right,
             );
         }
 

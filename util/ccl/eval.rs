@@ -518,33 +518,30 @@ fn evaluate_or<'a>(
         }
     };
 
-    match (left, right) {
-        (Value::Bool(true), _) => Ok(ValueOrScope::Value(Value::Bool(true))),
-        (Value::Bool(false), other) => Ok(ValueOrScope::Value(other)),
-        (Value::Null, other) => Ok(ValueOrScope::Value(other)),
-        (Value::String(s), other) => {
-            // An empty string is "false-like", treat it that way
-            if !s.is_empty() {
-                Ok(ValueOrScope::Value(Value::String(s)))
-            } else {
-                Ok(ValueOrScope::Value(other))
-            }
+    fn as_bool(value: &Value) -> Option<bool> {
+        match value {
+            Value::Bool(x) => Some(*x),
+            Value::Null => Some(false),
+            Value::String(s) => Some(!s.is_empty()),
+            Value::Number(n) => Some(*n != 0.0),
+            _ => None,
         }
-        (Value::Number(n), other) => {
-            // Zero is false-like
-            if n == 0.0 {
-                Ok(ValueOrScope::Value(other))
-            } else {
-                Ok(ValueOrScope::Value(Value::Number(0.0)))
-            }
-        }
-        (l, r) => {
+    }
+
+    let left_as_bool = as_bool(&left);
+    let right_as_bool = as_bool(&right);
+
+    match (left_as_bool, right_as_bool) {
+        (Some(true), Some(_)) => Ok(ValueOrScope::Value(left)),
+        (Some(_), Some(true)) => Ok(ValueOrScope::Value(right)),
+        (Some(false), Some(false)) => Ok(ValueOrScope::Value(right)),
+        (None, _) | (_, None) => {
             let (start, end) = operator.range();
             Err(ExecError::OperatorWithInvalidType(ParseError::new(
                 format!(
                     "unable to use `||` operator on {} (left) and {} (right)",
-                    l.type_name(),
-                    r.type_name()
+                    left.type_name(),
+                    right.type_name()
                 ),
                 "",
                 start,
