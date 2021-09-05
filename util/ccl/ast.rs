@@ -38,6 +38,10 @@ ggen::sequence!(
 
 ggen::unit!(Null, "null");
 
+ggen::unit!(True, "true");
+ggen::unit!(False, "false");
+ggen::one_of!(Boolean, True: True, False: False);
+
 ggen::sequence!(
     Dictionary,
     "{",
@@ -57,10 +61,11 @@ ggen::sequence!(
 
 ggen::one_of!(
     CCLValue,
+    Bool: Boolean,
+    Null: Null,
     Identifier: CCLIdentifier,
     Numeric: Numeric,
     String: QuotedString,
-    Null: Null,
     Dictionary: Dictionary
 );
 

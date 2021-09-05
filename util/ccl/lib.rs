@@ -11,8 +11,21 @@ pub use fmt::format;
 pub enum Value {
     Number(f64),
     String(String),
+    Bool(bool),
     Null,
     Dictionary(Dictionary),
+}
+
+impl Value {
+    fn type_name(&self) -> &str {
+        match self {
+            Value::Number(_) => "a number",
+            Value::String(_) => "a string",
+            Value::Dictionary(_) => "a dictionary",
+            Value::Null => "null",
+            Value::Bool(_) => "a bool",
+        }
+    }
 }
 
 #[derive(Clone, PartialEq, Debug)]

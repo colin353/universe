@@ -91,11 +91,39 @@ impl<'a> Scope<'a> {
         out
     }
 
-    pub fn resolve_scope(&self, ident: &str) -> Option<Scope<'a>> {
+    pub fn resolve_scope(&self, ident: &str, offset: usize) -> Result<Scope<'a>, ExecError> {
         if let Some(s) = self.inner.lock().unwrap().scopes.get(ident) {
-            return Some(s.clone());
+            return Ok(s.clone());
         }
-        None
+
+        let result = {
+            let _lock = self.inner.lock().unwrap();
+            let expr: Option<ast::Expression> = _lock
+                .unresolved_identifiers
+                .get(ident)
+                .map(|s| s.to_owned());
+            expr
+        };
+        if let Some(s) = result {
+            match self.partially_resolve(ident, offset)? {
+                ValueOrScope::Value(v) => {
+                    return Err(ExecError::CannotResolveSymbol(ParseError::new(
+                        format!("unable to access inside of this (it's {})", v.type_name()),
+                        "",
+                        offset,
+                        offset + ident.len(),
+                    )))
+                }
+                ValueOrScope::Scope(s) => return Ok(s),
+            };
+        }
+
+        Err(ExecError::CannotResolveSymbol(ParseError::new(
+            format!("unable to resolve `{}`", ident),
+            "",
+            offset,
+            offset + ident.len(),
+        )))
     }
 
     pub fn keys(&self) -> Vec<String> {
@@ -152,17 +180,7 @@ impl<'a> Scope<'a> {
             let prefix = &specifier[..idx];
             let suffix = &specifier[idx + 1..];
 
-            let s = match self.resolve_scope(prefix) {
-                Some(s) => s,
-                None => {
-                    return Err(ExecError::CannotResolveSymbol(ParseError::new(
-                        format!("unable to resolve `{}`", prefix),
-                        "",
-                        offset,
-                        offset + idx,
-                    )))
-                }
-            };
+            let s = self.resolve_scope(prefix, offset)?;
             return s.partially_resolve(suffix, offset + idx);
         }
 
@@ -276,7 +294,6 @@ impl<'a> Scope<'a> {
             .remove(specifier);
 
         let out = eval::evaluate(&expression, content, &resolved_dependencies);
-        println!("resolved to {:#?}", out);
         out
     }
 }

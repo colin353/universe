@@ -1,6 +1,5 @@
-use crate::ast;
 use crate::exec::{ExecError, Scope, ValueOrScope};
-use crate::Value;
+use crate::{ast, Value};
 use ggen::ParseError;
 
 use ggen::GrammarUnit;
@@ -39,11 +38,6 @@ pub fn evaluate<'a>(
     content: &'a str,
     dependencies: &HashMap<String, ValueOrScope<'a>>,
 ) -> Result<ValueOrScope<'a>, ExecError> {
-    println!(
-        "evaluation:\n\n  {}\n\nwith:\n{:#?}",
-        expr.as_str(content),
-        dependencies
-    );
     match expr {
         ast::Expression::SubExpression(sub) => evaluate(&sub.expression, content, dependencies),
         ast::Expression::OperatorExpression(opex) => {
@@ -59,6 +53,10 @@ pub fn evaluate<'a>(
                     .to_owned())
             }
             ast::CCLValue::Numeric(value) => Ok(ValueOrScope::Value(Value::Number(value.value))),
+            ast::CCLValue::Bool(inner) => match inner.as_ref() {
+                ast::Boolean::True(_) => Ok(ValueOrScope::Value(Value::Bool(true))),
+                ast::Boolean::False(_) => Ok(ValueOrScope::Value(Value::Bool(false))),
+            },
             ast::CCLValue::String(value) => {
                 Ok(ValueOrScope::Value(Value::String(value.value.clone())))
             }
@@ -212,10 +210,12 @@ fn evaluate_operator_expression<'a>(
         };
 
         match tree[tree_idx].operator {
-            ast::Operator::Addition(op) => evaluate_addition(left, right, content, &op),
-            ast::Operator::Subtraction(op) => evaluate_subtraction(left, right, content, &op),
-            ast::Operator::Multiplication(op) => evaluate_multiplication(left, right, content, &op),
-            ast::Operator::Division(op) => evaluate_division(left, right, content, &op),
+            ast::Operator::Addition(op) => evaluate_addition(left, right, &op),
+            ast::Operator::Subtraction(op) => evaluate_subtraction(left, right, &op),
+            ast::Operator::Multiplication(op) => evaluate_multiplication(left, right, &op),
+            ast::Operator::Division(op) => evaluate_division(left, right, &op),
+            ast::Operator::And(op) => evaluate_and(left, right, &op),
+            ast::Operator::Or(op) => evaluate_or(left, right, &op),
             _ => unimplemented!(),
         }
     };
@@ -230,19 +230,9 @@ fn evaluate_operator_expression<'a>(
     )
 }
 
-fn type_name(value: &Value) -> &str {
-    match value {
-        Value::Number(_) => "a number",
-        Value::String(_) => "a string",
-        Value::Dictionary(_) => "a dictionary",
-        Value::Null => "null",
-    }
-}
-
 fn evaluate_addition<'a>(
     left: ValueOrScope<'a>,
     right: ValueOrScope<'a>,
-    content: &'a str,
     operator: &ast::AdditionOperator,
 ) -> Result<ValueOrScope<'a>, ExecError> {
     let left = match left {
@@ -279,8 +269,8 @@ fn evaluate_addition<'a>(
             Err(ExecError::OperatorWithInvalidType(ParseError::new(
                 format!(
                     "unable to use `+` operator on {} (left) and {} (right)",
-                    type_name(&l),
-                    type_name(&r)
+                    l.type_name(),
+                    r.type_name(),
                 ),
                 "",
                 start,
@@ -293,7 +283,6 @@ fn evaluate_addition<'a>(
 fn evaluate_subtraction<'a>(
     left: ValueOrScope<'a>,
     right: ValueOrScope<'a>,
-    content: &'a str,
     operator: &ast::SubtractionOperator,
 ) -> Result<ValueOrScope<'a>, ExecError> {
     let left = match left {
@@ -329,8 +318,8 @@ fn evaluate_subtraction<'a>(
             Err(ExecError::OperatorWithInvalidType(ParseError::new(
                 format!(
                     "unable to use `-` operator on {} (left) and {} (right)",
-                    type_name(&l),
-                    type_name(&r)
+                    l.type_name(),
+                    r.type_name(),
                 ),
                 "",
                 start,
@@ -343,7 +332,6 @@ fn evaluate_subtraction<'a>(
 fn evaluate_multiplication<'a>(
     left: ValueOrScope<'a>,
     right: ValueOrScope<'a>,
-    content: &'a str,
     operator: &ast::MultiplicationOperator,
 ) -> Result<ValueOrScope<'a>, ExecError> {
     let left = match left {
@@ -379,8 +367,8 @@ fn evaluate_multiplication<'a>(
             Err(ExecError::OperatorWithInvalidType(ParseError::new(
                 format!(
                     "unable to use `*` operator on {} (left) and {} (right)",
-                    type_name(&l),
-                    type_name(&r)
+                    l.type_name(),
+                    r.type_name(),
                 ),
                 "",
                 start,
@@ -393,7 +381,6 @@ fn evaluate_multiplication<'a>(
 fn evaluate_division<'a>(
     left: ValueOrScope<'a>,
     right: ValueOrScope<'a>,
-    content: &'a str,
     operator: &ast::DivisionOperator,
 ) -> Result<ValueOrScope<'a>, ExecError> {
     let left = match left {
@@ -440,8 +427,124 @@ fn evaluate_division<'a>(
             Err(ExecError::OperatorWithInvalidType(ParseError::new(
                 format!(
                     "unable to use `/` operator on {} (left) and {} (right)",
-                    type_name(&l),
-                    type_name(&r)
+                    l.type_name(),
+                    r.type_name(),
+                ),
+                "",
+                start,
+                end,
+            )))
+        }
+    }
+}
+
+fn evaluate_and<'a>(
+    left: ValueOrScope<'a>,
+    right: ValueOrScope<'a>,
+    operator: &ast::AndOperator,
+) -> Result<ValueOrScope<'a>, ExecError> {
+    let left = match left {
+        ValueOrScope::Value(v) => v,
+        ValueOrScope::Scope(_) => {
+            let (start, end) = operator.range();
+            return Err(ExecError::OperatorWithInvalidType(ParseError::new(
+                String::from("unable to use `&&` operator on a dictionary"),
+                "",
+                start,
+                end,
+            )));
+        }
+    };
+
+    let right = match right {
+        ValueOrScope::Value(v) => v,
+        ValueOrScope::Scope(_) => {
+            let (start, end) = operator.range();
+            return Err(ExecError::OperatorWithInvalidType(ParseError::new(
+                String::from("unable to use `&&` operator on a dictionary"),
+                "",
+                start,
+                end,
+            )));
+        }
+    };
+
+    match (left, right) {
+        (Value::Bool(a), Value::Bool(b)) => Ok(ValueOrScope::Value(Value::Bool(a && b))),
+        (l, r) => {
+            let (start, end) = operator.range();
+            Err(ExecError::OperatorWithInvalidType(ParseError::new(
+                format!(
+                    "unable to use `&&` operator on {} (left) and {} (right)",
+                    l.type_name(),
+                    r.type_name(),
+                ),
+                "",
+                start,
+                end,
+            )))
+        }
+    }
+}
+
+fn evaluate_or<'a>(
+    left: ValueOrScope<'a>,
+    right: ValueOrScope<'a>,
+    operator: &ast::OrOperator,
+) -> Result<ValueOrScope<'a>, ExecError> {
+    let left = match left {
+        ValueOrScope::Value(v) => v,
+        ValueOrScope::Scope(_) => {
+            let (start, end) = operator.range();
+            return Err(ExecError::OperatorWithInvalidType(ParseError::new(
+                String::from("unable to use `&&` operator on a dictionary"),
+                "",
+                start,
+                end,
+            )));
+        }
+    };
+
+    let right = match right {
+        ValueOrScope::Value(v) => v,
+        ValueOrScope::Scope(_) => {
+            let (start, end) = operator.range();
+            return Err(ExecError::OperatorWithInvalidType(ParseError::new(
+                String::from("unable to use `||` operator on a dictionary"),
+                "",
+                start,
+                end,
+            )));
+        }
+    };
+
+    match (left, right) {
+        (Value::Bool(true), _) => Ok(ValueOrScope::Value(Value::Bool(true))),
+        (Value::Bool(false), other) => Ok(ValueOrScope::Value(other)),
+        (Value::Null, other) => Ok(ValueOrScope::Value(other)),
+        (Value::String(s), other) => {
+            // An empty string is "false-like", treat it that way
+            if !s.is_empty() {
+                Ok(ValueOrScope::Value(Value::String(s)))
+            } else {
+                Ok(ValueOrScope::Value(other))
+            }
+        }
+        (Value::Number(n), other) => {
+            // Zero is false-like
+            if n == 0.0 {
+                Ok(ValueOrScope::Value(other))
+            } else {
+                Ok(ValueOrScope::Value(Value::Number(0.0)))
+            }
+        }
+        (l, r) => {
+            let (start, end) = operator.range();
+            Err(ExecError::OperatorWithInvalidType(ParseError::new(
+                format!(
+                    "unable to use `||` operator on {} (left) and {} (right)",
+                    l.type_name(),
+                    r.type_name()
                 ),
                 "",
                 start,
