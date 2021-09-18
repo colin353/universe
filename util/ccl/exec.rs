@@ -32,7 +32,7 @@ pub struct Scope<'a> {
     inner: Arc<Mutex<ScopeInner<'a>>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct ScopeInner<'a> {
     in_progress_identifiers: HashSet<String>,
     resolved_identifiers: HashMap<String, ValueOrScope<'a>>,
@@ -59,6 +59,17 @@ impl<'a> Scope<'a> {
         Self {
             inner: Arc::new(Mutex::new(inner)),
         }
+    }
+
+    pub fn duplicate(&self) -> Self {
+        let inner = self.inner.lock().unwrap().clone();
+        Self {
+            inner: Arc::new(Mutex::new(inner)),
+        }
+    }
+
+    pub fn add_override(&self, override_scope: Scope<'a>) {
+        self.inner.lock().unwrap().overrides.push(override_scope);
     }
 
     pub fn from_module(module: ast::Module, content: &'a str) -> Self {
@@ -127,7 +138,7 @@ impl<'a> Scope<'a> {
     }
 
     pub fn keys(&self) -> Vec<String> {
-        let mut out = Vec::new();
+        let mut out = HashSet::new();
         let overrides: Vec<Scope<'a>> = self
             .inner
             .lock()
@@ -137,12 +148,16 @@ impl<'a> Scope<'a> {
             .map(|s| s.to_owned())
             .collect();
         for or in overrides {
-            out.append(&mut or.keys());
+            for key in or.keys() {
+                out.insert(key);
+            }
         }
 
         for (k, _) in self.inner.lock().unwrap().unresolved_identifiers.iter() {
-            out.push(k.to_string());
+            out.insert(k.to_string());
         }
+        let mut out: Vec<_> = out.into_iter().collect();
+        out.sort_unstable();
         out
     }
 

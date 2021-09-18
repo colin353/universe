@@ -41,3 +41,24 @@ fn test_boolean_operators() {
         Value::Bool(false)
     );
 }
+
+#[test]
+fn test_expansion_operator() {
+    assert_eq!(
+        // TODO: fix this, it doesn't work
+        exec_or_panic(
+            r#"
+x = {
+    name = "sir"
+    message = "hello, " + name
+}
+out = x { 
+    name = "colin" 
+}
+out.message
+"#,
+            ""
+        ),
+        Value::String(String::from("hello, colin")),
+    );
+}

@@ -25,7 +25,7 @@ pub fn get_dependencies(expr: &ast::Expression) -> Vec<ast::CCLIdentifier> {
             }
             out
         }
-        ast::Expression::ExpansionExpression(expansion) => Vec::new(),
+        ast::Expression::ExpansionExpression(expansion) => vec![expansion.identifier.clone()],
         ast::Expression::Value(value) => match value.as_ref() {
             ast::CCLValue::Identifier(ident) => vec![ident.as_ref().clone()],
             _ => vec![],
@@ -43,7 +43,9 @@ pub fn evaluate<'a>(
         ast::Expression::OperatorExpression(opex) => {
             evaluate_operator_expression(&opex, content, dependencies)
         }
-        ast::Expression::ExpansionExpression(expansion) => Ok(ValueOrScope::Value(Value::Null)),
+        ast::Expression::ExpansionExpression(expansion) => {
+            evaluate_expansion(&expansion, content, dependencies)
+        }
         ast::Expression::Value(value) => match value.as_ref() {
             ast::CCLValue::Identifier(ident) => {
                 let name = ident.as_str(content);
@@ -550,3 +552,33 @@ fn evaluate_or<'a>(
         }
     }
 }
+fn evaluate_expansion<'a>(
+    expansion: &ast::ExpansionExpression,
+    content: &'a str,
+    dependencies: &HashMap<String, ValueOrScope<'a>>,
+) -> Result<ValueOrScope<'a>, ExecError> {
+    let name = expansion.identifier.as_str(content);
+    let mut original = match dependencies
+        .get(name)
+        .expect("request dependency, but didn't get it!")
+        .to_owned()
+    {
+        ValueOrScope::Scope(s) => s,
+        ValueOrScope::Value(v) => {
+            let (start, end) = expansion.identifier.range();
+            return Err(ExecError::OperatorWithInvalidType(ParseError::new(
+                format!("unable to expand {}", v.type_name()),
+                "",
+                start,
+                end,
+            )));
+        }
+    };
+
+    let mut scope = original.duplicate();
+    let override_scope = Scope::from_dictionary(expansion.target.clone(), content);
+    scope.add_override(override_scope);
+
+    Ok(ValueOrScope::Scope(scope))
+}
+

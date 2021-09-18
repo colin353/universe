@@ -146,7 +146,7 @@ pub fn format_operator(operator: &ast::Operator) -> &str {
         ast::Operator::Addition(_) => "+",
         ast::Operator::Subtraction(_) => "-",
         ast::Operator::Division(_) => "/",
-        ast::Operator::Multiplication(_) => "-",
+        ast::Operator::Multiplication(_) => "*",
         ast::Operator::And(_) => "&&",
         ast::Operator::Or(_) => "||",
     }
