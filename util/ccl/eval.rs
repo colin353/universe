@@ -552,6 +552,7 @@ fn evaluate_or<'a>(
         }
     }
 }
+
 fn evaluate_expansion<'a>(
     expansion: &ast::ExpansionExpression,
     content: &'a str,
@@ -560,7 +561,7 @@ fn evaluate_expansion<'a>(
     let name = expansion.identifier.as_str(content);
     let mut original = match dependencies
         .get(name)
-        .expect("request dependency, but didn't get it!")
+        .expect("requested dependency, but didn't get it!")
         .to_owned()
     {
         ValueOrScope::Scope(s) => s,
@@ -577,8 +578,10 @@ fn evaluate_expansion<'a>(
 
     let mut scope = original.duplicate();
     let override_scope = Scope::from_dictionary(expansion.target.clone(), content);
+    for deep_override in override_scope.inner.lock().unwrap().deep_overrides.iter() {
+        scope.add_deep_overrides(deep_override.0.to_owned(), deep_override.1);
+    }
     scope.add_override(override_scope);
 
     Ok(ValueOrScope::Scope(scope))
 }
-

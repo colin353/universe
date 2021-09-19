@@ -29,11 +29,11 @@ pub enum ValueOrScope<'a> {
 
 #[derive(Debug, Clone)]
 pub struct Scope<'a> {
-    inner: Arc<Mutex<ScopeInner<'a>>>,
+    pub inner: Arc<Mutex<ScopeInner<'a>>>,
 }
 
 #[derive(Debug, Clone)]
-struct ScopeInner<'a> {
+pub struct ScopeInner<'a> {
     in_progress_identifiers: HashSet<String>,
     resolved_identifiers: HashMap<String, ValueOrScope<'a>>,
     unresolved_identifiers: HashMap<String, ast::Expression>,
@@ -42,6 +42,7 @@ struct ScopeInner<'a> {
     content: &'a str,
     parent_scope: Option<Scope<'a>>,
     overrides: Vec<Scope<'a>>,
+    pub deep_overrides: HashMap<String, HashMap<String, (Scope<'a>, ast::Expression)>>,
 }
 
 impl<'a> Scope<'a> {
@@ -55,6 +56,7 @@ impl<'a> Scope<'a> {
             overrides: Vec::new(),
             default_value: None,
             content,
+            deep_overrides: HashMap::new(),
         };
         Self {
             inner: Arc::new(Mutex::new(inner)),
@@ -62,28 +64,64 @@ impl<'a> Scope<'a> {
     }
 
     pub fn duplicate(&self) -> Self {
-        let inner = self.inner.lock().unwrap().clone();
+        let inner = self.inner.try_lock().unwrap().clone();
         Self {
             inner: Arc::new(Mutex::new(inner)),
         }
     }
 
     pub fn add_override(&self, override_scope: Scope<'a>) {
-        self.inner.lock().unwrap().overrides.push(override_scope);
+        self.inner
+            .try_lock()
+            .unwrap()
+            .overrides
+            .push(override_scope);
+    }
+
+    pub fn add_deep_overrides(
+        &self,
+        name: String,
+        overrides: &HashMap<String, (Scope<'a>, ast::Expression)>,
+    ) {
+        let mut inner = self.inner.try_lock().unwrap();
+        let entry = inner
+            .deep_overrides
+            .entry(name)
+            .or_insert_with(HashMap::new);
+        for o in overrides {
+            entry.insert(o.0.to_string(), o.1.clone());
+        }
     }
 
     pub fn from_module(module: ast::Module, content: &'a str) -> Self {
         let mut out = Self::empty(content);
         for b in module.bindings {
-            out.inner.lock().unwrap().unresolved_identifiers.insert(
-                b.assignment.left.as_str(content).to_string(),
-                b.assignment.right,
-            );
+            let lvalue = b.assignment.left;
+            if lvalue.values.len() > 1 {
+                let override_target = lvalue.values[0].as_str(content);
+                let mut remainder = lvalue.clone();
+                remainder.values.remove(0);
+                remainder.separators.remove(0);
+
+                let mut deep_overrides = HashMap::new();
+                deep_overrides.insert(
+                    remainder.as_str(content).to_string(),
+                    (out.clone(), b.assignment.right),
+                );
+
+                out.add_deep_overrides(override_target.to_string(), &deep_overrides);
+            } else {
+                out.inner
+                    .try_lock()
+                    .unwrap()
+                    .unresolved_identifiers
+                    .insert(lvalue.as_str(content).to_string(), b.assignment.right);
+            }
         }
 
         if let Some(value) = module.value {
             out.inner
-                .lock()
+                .try_lock()
                 .unwrap()
                 .unresolved_identifiers
                 .insert(String::new(), value);
@@ -93,22 +131,39 @@ impl<'a> Scope<'a> {
 
     pub fn from_dictionary(dict: ast::Dictionary, content: &'a str) -> Self {
         let mut out = Self::empty(content);
-        for assignment in dict.values.values {
-            out.inner.lock().unwrap().unresolved_identifiers.insert(
-                assignment.left.as_str(content).to_string(),
-                assignment.right,
-            );
+        for b in dict.values.values {
+            let lvalue = b.left;
+            if lvalue.values.len() > 1 {
+                let override_target = lvalue.values[0].as_str(content);
+                let mut remainder = lvalue.clone();
+                remainder.values.remove(0);
+                remainder.separators.remove(0);
+
+                let mut deep_overrides = HashMap::new();
+                deep_overrides.insert(
+                    remainder.as_str(content).to_string(),
+                    (out.clone(), b.right),
+                );
+
+                out.add_deep_overrides(override_target.to_string(), &deep_overrides);
+            } else {
+                out.inner
+                    .try_lock()
+                    .unwrap()
+                    .unresolved_identifiers
+                    .insert(lvalue.as_str(content).to_string(), b.right);
+            }
         }
         out
     }
 
     pub fn resolve_scope(&self, ident: &str, offset: usize) -> Result<Scope<'a>, ExecError> {
-        if let Some(s) = self.inner.lock().unwrap().scopes.get(ident) {
+        if let Some(s) = self.inner.try_lock().unwrap().scopes.get(ident) {
             return Ok(s.clone());
         }
 
         let result = {
-            let _lock = self.inner.lock().unwrap();
+            let _lock = self.inner.try_lock().unwrap();
             let expr: Option<ast::Expression> = _lock
                 .unresolved_identifiers
                 .get(ident)
@@ -141,7 +196,7 @@ impl<'a> Scope<'a> {
         let mut out = HashSet::new();
         let overrides: Vec<Scope<'a>> = self
             .inner
-            .lock()
+            .try_lock()
             .unwrap()
             .overrides
             .iter()
@@ -153,7 +208,7 @@ impl<'a> Scope<'a> {
             }
         }
 
-        for (k, _) in self.inner.lock().unwrap().unresolved_identifiers.iter() {
+        for (k, _) in self.inner.try_lock().unwrap().unresolved_identifiers.iter() {
             out.insert(k.to_string());
         }
         let mut out: Vec<_> = out.into_iter().collect();
@@ -167,9 +222,27 @@ impl<'a> Scope<'a> {
             .map(|vos| match vos {
                 ValueOrScope::Value(v) => Ok(v),
                 ValueOrScope::Scope(s) => {
+                    let scope = if let Some(o) =
+                        self.inner.try_lock().unwrap().deep_overrides.get(specifier)
+                    {
+                        let updated = s.duplicate();
+                        for (key, (scope, expr)) in o.iter() {
+                            let mut components_iter = key.split(".");
+                            let first = components_iter.next().unwrap_or("").to_string();
+                            let rest = components_iter.collect::<Vec<_>>().join(".");
+
+                            let mut entry = HashMap::new();
+                            entry.insert(rest, (scope.clone(), expr.clone()));
+                            updated.add_deep_overrides(first, &entry);
+                        }
+                        updated
+                    } else {
+                        s
+                    };
+
                     let mut out = Dictionary::new();
-                    for key in s.keys() {
-                        let value = match s.resolve(&key, 0) {
+                    for key in scope.keys() {
+                        let value = match scope.resolve(&key, 0) {
                             Ok(v) => v,
                             Err(e) => return Err(e),
                         };
@@ -202,7 +275,7 @@ impl<'a> Scope<'a> {
         // We are about to try and resolve a particular identifier. Mark it as in progress
         if !self
             .inner
-            .lock()
+            .try_lock()
             .unwrap()
             .in_progress_identifiers
             .insert(specifier.to_string())
@@ -215,13 +288,45 @@ impl<'a> Scope<'a> {
             )));
         }
 
+        if self
+            .inner
+            .try_lock()
+            .unwrap()
+            .deep_overrides
+            .get(specifier)
+            .is_some()
+        {
+            let maybe_expression = {
+                let inner = self.inner.try_lock().unwrap();
+                let o = inner.deep_overrides.get(specifier).unwrap();
+
+                // If there is an override for this value, evaluate that instead
+                if let Some((scope, expr)) = o.get("") {
+                    Some((scope.clone(), expr.clone()))
+                } else {
+                    None
+                }
+            };
+
+            if let Some((scope, expr)) = maybe_expression {
+                let result = scope.evaluate_expression(specifier, &expr);
+                // Done resolving, unlock in progress identifiers
+                self.inner
+                    .try_lock()
+                    .unwrap()
+                    .in_progress_identifiers
+                    .remove(specifier);
+                return result;
+            }
+        }
+
         // Specifier refers to a symbol in this scope. Symbol resolution order:
         // 1. Try to resolve the symbol in the override scopes
         // 2. Try to resolve the symbol in the scope itself
         // 3. If the thing is in an expression, try to resolve in a parent
         let overrides: Vec<Scope<'a>> = self
             .inner
-            .lock()
+            .try_lock()
             .unwrap()
             .overrides
             .iter()
@@ -235,7 +340,7 @@ impl<'a> Scope<'a> {
 
             // Done resolving, unlock in progress identifiers
             self.inner
-                .lock()
+                .try_lock()
                 .unwrap()
                 .in_progress_identifiers
                 .remove(specifier);
@@ -244,7 +349,7 @@ impl<'a> Scope<'a> {
         }
 
         self.inner
-            .lock()
+            .try_lock()
             .unwrap()
             .in_progress_identifiers
             .remove(specifier);
@@ -252,7 +357,7 @@ impl<'a> Scope<'a> {
         // Check if the identifier has already been resolved to a basic type
         if let Some(value) = self
             .inner
-            .lock()
+            .try_lock()
             .unwrap()
             .resolved_identifiers
             .get(specifier)
@@ -262,7 +367,7 @@ impl<'a> Scope<'a> {
 
         let expression = match self
             .inner
-            .lock()
+            .try_lock()
             .unwrap()
             .unresolved_identifiers
             .get(specifier)
@@ -278,14 +383,22 @@ impl<'a> Scope<'a> {
             }
         };
 
-        let content: &str = self.inner.lock().unwrap().content.clone();
-        let deps = eval::get_dependencies(&expression);
+        self.evaluate_expression(specifier, &expression)
+    }
+
+    pub fn evaluate_expression(
+        &self,
+        specifier: &str,
+        expr: &ast::Expression,
+    ) -> Result<ValueOrScope<'a>, ExecError> {
+        let content: &str = self.inner.try_lock().unwrap().content.clone();
+        let deps = eval::get_dependencies(expr);
         let mut resolved_dependencies = HashMap::new();
 
         // We will recurse and try to partially resolve all dependencies of the expression,
         // so mark the current identifier as being resolved
         self.inner
-            .lock()
+            .try_lock()
             .unwrap()
             .in_progress_identifiers
             .insert(specifier.to_string());
@@ -296,19 +409,19 @@ impl<'a> Scope<'a> {
             let resolved = self.partially_resolve(name, start)?;
             resolved_dependencies.insert(name.to_string(), resolved.clone());
             self.inner
-                .lock()
+                .try_lock()
                 .unwrap()
                 .resolved_identifiers
                 .insert(name.to_string(), resolved);
         }
 
         self.inner
-            .lock()
+            .try_lock()
             .unwrap()
             .in_progress_identifiers
             .remove(specifier);
 
-        let out = eval::evaluate(&expression, content, &resolved_dependencies);
+        let out = eval::evaluate(&expr, content, &resolved_dependencies);
         out
     }
 }
