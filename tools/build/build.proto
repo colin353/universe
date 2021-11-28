@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+message Target {
+        string name = 1;
+        repeated Input inputs = 2;
+        Operation operation = 3;
+        repeated Output outputs = 4;
+}
+
+enum InputKind {
+        UNKNOWN = 0;
+        FILE = 1;
+        TARGET = 2;
+}
+
+message Input {
+        InputKind kind = 1;
+        string path = 2;
+}
+
+message Output {
+        string name = 1;
+}
+
+// TODO: describe different kinds of operation
+message Operation {}
