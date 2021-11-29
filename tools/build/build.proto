@@ -22,5 +22,20 @@ message Output {
         string name = 1;
 }
 
-// TODO: describe different kinds of operation
-message Operation {}
+message Resource {
+        string name = 1;
+        string target = 2;
+        string filename = 3;
+}
+
+message Variable {
+        string name = 1;
+        string value = 2;
+}
+
+message Operation {
+        string name = 1;
+        Resource script = 2;
+        repeated Resource inputs = 3;
+        repeated Variable variables = 4;
+}

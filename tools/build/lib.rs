@@ -28,16 +28,42 @@ pub struct Target {
 
 impl Target {
     #[cfg(test)]
-    pub fn for_test(identifier: &str, deps: &[&str], files: &[&str]) -> Self {
+    pub fn for_test(
+        identifier: &str,
+        deps: &[&str],
+        files: &[&str],
+        operation: build_grpc_rust::Operation,
+    ) -> Self {
         Self {
             identifier: TargetIdentifier::from_str(identifier),
-            operation: build_grpc_rust::Operation::new(),
+            operation,
             dependencies: deps.iter().map(|d| TargetIdentifier::from_str(d)).collect(),
             files: files.into_iter().map(|s| s.to_string()).collect(),
             resolving: false,
             hash: None,
             result: None,
         }
+    }
+
+    pub fn dependencies(&self) -> Vec<TargetIdentifier> {
+        let mut output = self.dependencies.clone();
+        for input in self.operation.get_inputs() {
+            output.insert(TargetIdentifier::from_str(&input.name));
+        }
+        if self.operation.get_script().get_target().len() > 0 {
+            output.insert(TargetIdentifier::from_str(
+                &self.operation.get_script().get_target(),
+            ));
+        }
+        output.into_iter().collect()
+    }
+
+    pub fn build_dir(&self, root_dir: &std::path::Path) -> std::path::PathBuf {
+        root_dir.join(format!(
+            "{:016x}",
+            self.hash
+                .expect("build_hash must be resolved to get build dir")
+        ))
     }
 
     pub fn fully_qualified_name(&self) -> String {

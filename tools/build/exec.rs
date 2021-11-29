@@ -2,6 +2,8 @@ use std::collections::hash_map::DefaultHasher;
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 
+use std::os::unix::fs::PermissionsExt;
+
 use crate::{
     BuildHash, BuildResult, Error, FileResolver, Target, TargetIdentifier, TargetResolver,
 };
@@ -11,11 +13,13 @@ pub struct ExecutionContext {
     targets: HashMap<TargetIdentifier, Target>,
     target_resolver: Box<dyn TargetResolver>,
     file_resolver: Box<dyn FileResolver>,
+    build_dir: std::path::PathBuf,
 }
 
 impl ExecutionContext {
     pub fn new(
         origin: String,
+        build_dir: std::path::PathBuf,
         target_resolver: Box<dyn TargetResolver>,
         file_resolver: Box<dyn FileResolver>,
     ) -> Self {
@@ -24,6 +28,7 @@ impl ExecutionContext {
             targets: HashMap::new(),
             target_resolver,
             file_resolver,
+            build_dir,
         }
     }
 
@@ -36,7 +41,7 @@ impl ExecutionContext {
             for target in this_round {
                 let resolved = self.target_resolver.resolve(&target)?;
 
-                for dep in &resolved.dependencies {
+                for dep in &resolved.dependencies() {
                     if !self.targets.contains_key(dep) {
                         to_resolve.insert(dep.clone());
                     }
@@ -75,7 +80,7 @@ impl ExecutionContext {
             target.identifier.hash(&mut hasher);
             target.operation_hash().hash(&mut hasher);
 
-            target.dependencies.iter().cloned().collect()
+            target.dependencies()
         };
 
         for dependency in &dependencies {
@@ -119,14 +124,22 @@ impl ExecutionContext {
                 )));
             }
             target.resolving = true;
-            target.dependencies.iter().cloned().collect()
+            target.dependencies()
         };
 
         for dependency in &dependencies {
             self.build_target_and_dependencies(dependency)?;
         }
 
-        self.build_ready_target(identifier)
+        let result = self.build_ready_target(identifier)?;
+
+        let target = self
+            .targets
+            .get_mut(identifier)
+            .expect("all targets should be resolved");
+        target.result = Some(result.clone());
+        target.resolving = false;
+        Ok(result)
     }
 
     fn build_ready_target(&mut self, identifier: &TargetIdentifier) -> Result<BuildResult, Error> {
@@ -135,8 +148,90 @@ impl ExecutionContext {
             .get(identifier)
             .expect("all targets should be resolved");
 
+        let target_dir = target.build_dir(&self.build_dir);
+        if let Err(e) = std::fs::create_dir_all(&target_dir) {
+            return Err(Error::new(format!(
+                "unable to create build directory: {:?}",
+                e
+            )));
+        }
+
+        // Copy in all of the necessary files
+        let mut sources = Vec::new();
+        for file in &target.files {
+            let dest = target_dir.join(file);
+            self.file_resolver.realize_at(file, &dest)?;
+            sources.push(dest.into_os_string().into_string().unwrap());
+        }
+
+        // Construct environment vars for the build script
+        let mut environment: HashMap<String, String> = HashMap::new();
+        environment.insert("SOURCE_FILES".to_string(), sources.join("\n"));
+        environment.insert(
+            "TARGET_DIR".to_string(),
+            target_dir.into_os_string().into_string().unwrap(),
+        );
+        for input in &target.operation.inputs {
+            let ident = TargetIdentifier::from_str(&input.target);
+            let dep = self
+                .targets
+                .get(&ident)
+                .expect("all targets should be resolved");
+            let hash = dep.hash.expect("build hash must be computed by now");
+            environment.insert(
+                input.name.to_string(),
+                format!(
+                    "{}/{}",
+                    dep.build_dir(&self.build_dir).to_str().unwrap().to_string(),
+                    input.filename
+                ),
+            );
+        }
+
+        // Pass along custom variables
+        for variable in &target.operation.variables {
+            environment.insert(variable.name.clone(), variable.value.clone());
+        }
+
+        if target.operation.get_script().filename.len() > 0 {
+            let script_ident = TargetIdentifier::from_str(&target.operation.get_script().target);
+            let script_target = self
+                .targets
+                .get(&script_ident)
+                .expect("all targets should be resolved");
+
+            let script_build_dir = script_target.build_dir(&self.build_dir);
+            let script_path = script_build_dir.join(target.operation.get_script().get_filename());
+
+            // Mark operation script executable
+            let mut perms = std::fs::Permissions::from_mode(0o777);
+            std::fs::set_permissions(script_path, perms);
+
+            // Execute the operation script
+            let status = std::process::Command::new(format!(
+                "{}/{}",
+                script_build_dir.to_str().unwrap(),
+                target.operation.get_script().filename
+            ))
+            .env_clear()
+            .envs(&environment)
+            .status();
+
+            let status = match status {
+                Ok(s) => s,
+                Err(e) => {
+                    return Err(Error::new(format!("failed to start build, {:?}", e)));
+                }
+            };
+
+            if !status.success() {
+                return Err(Error::new(format!("failed to build")));
+            }
+        }
+
         eprintln!("building {}", target.fully_qualified_name());
         eprintln!("operation: {:?}", target.operation);
+        eprintln!("environment: {:?}", environment);
 
         Ok(BuildResult {
             build_hash: target.hash.expect("target must have hash by now"),
@@ -154,24 +249,35 @@ mod tests {
     #[test]
     fn test_build() {
         let file_resolver = FakeFileResolver::new(vec![
-            ("main.rs", "fn hello() -> u64 { 5 }"),
+            ("main.rs", "fn main() { println!(\"cool\") }"),
             ("lib.rs", "// TODO: write lib"),
             ("xyz.rs", "my func"),
+            ("rustc.sh", "#!/bin/bash\necho $SOURCE_FILES\n"),
         ]);
+
+        let mut op = build_grpc_rust::Operation::new();
+        op.name = String::from("compile");
+        op.mut_script().target = String::from("//compiler");
+        op.mut_script().filename = String::from("rustc.sh");
+
         let target_resolver = FakeTargetResolver::new(vec![
-            Target::for_test("//util:my_lib", &[], &["main.rs", "lib.rs"]),
-            Target::for_test("//util:my_bin", &["//util:my_lib"], &["xyz.rs"]),
+            Target::for_test("//util:my_lib", &[], &["main.rs", "lib.rs"], op.clone()),
+            Target::for_test("//util:my_bin", &["//util:my_lib"], &["xyz.rs"], op),
+            Target::for_test(
+                "//compiler",
+                &[],
+                &["rustc.sh"],
+                build_grpc_rust::Operation::new(),
+            ),
         ]);
 
         let mut ctx = ExecutionContext::new(
             String::from(""),
+            std::path::PathBuf::from("/tmp/builds"),
             Box::new(target_resolver),
             Box::new(file_resolver),
         );
-        let result = ctx
-            .build(&TargetIdentifier::from_str("//util:my_bin"))
+        ctx.build(&TargetIdentifier::from_str("//util:my_bin"))
             .unwrap();
-
-        assert_eq!(result.build_hash, 9900385603230248632);
     }
 }
