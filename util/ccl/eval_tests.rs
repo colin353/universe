@@ -62,3 +62,40 @@ out.message
         Value::String(String::from("hello, colin")),
     );
 }
+
+#[test]
+fn test_arrays() {
+    assert_eq!(
+        exec_or_panic("[1,2,3]", ""),
+        Value::Array(vec![
+            Value::Number(1.0),
+            Value::Number(2.0),
+            Value::Number(3.0),
+        ])
+    );
+
+    assert_eq!(
+        exec_or_panic("[1+1,2+2,3+3]", ""),
+        Value::Array(vec![
+            Value::Number(2.0),
+            Value::Number(4.0),
+            Value::Number(6.0),
+        ])
+    );
+
+    assert_eq!(
+        exec_or_panic(
+            "
+            x = 5.0
+            y = [x, x*x, x*x*x]
+            y
+            ",
+            ""
+        ),
+        Value::Array(vec![
+            Value::Number(5.0),
+            Value::Number(25.0),
+            Value::Number(125.0),
+        ])
+    );
+}

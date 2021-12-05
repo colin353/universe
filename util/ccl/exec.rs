@@ -11,12 +11,15 @@ use std::sync::{Arc, Mutex};
 pub enum ExecError {
     CannotResolveSymbol(ParseError),
     OperatorWithInvalidType(ParseError),
+    ArraysCannotContainDictionaries(ParseError),
 }
 
 impl ExecError {
     pub fn render(&self, content: &str) -> String {
         match self {
-            Self::CannotResolveSymbol(e) | Self::OperatorWithInvalidType(e) => e.render(content),
+            Self::CannotResolveSymbol(e)
+            | Self::OperatorWithInvalidType(e)
+            | Self::ArraysCannotContainDictionaries(e) => e.render(content),
         }
     }
 }
@@ -94,7 +97,7 @@ impl<'a> Scope<'a> {
     }
 
     pub fn from_module(module: ast::Module, content: &'a str) -> Self {
-        let mut out = Self::empty(content);
+        let out = Self::empty(content);
         for b in module.bindings {
             let lvalue = b.assignment.left;
             if lvalue.values.len() > 1 {
@@ -130,7 +133,7 @@ impl<'a> Scope<'a> {
     }
 
     pub fn from_dictionary(dict: ast::Dictionary, content: &'a str) -> Self {
-        let mut out = Self::empty(content);
+        let out = Self::empty(content);
         for b in dict.values.values {
             let lvalue = b.left;
             if lvalue.values.len() > 1 {
@@ -170,7 +173,7 @@ impl<'a> Scope<'a> {
                 .map(|s| s.to_owned());
             expr
         };
-        if let Some(s) = result {
+        if result.is_some() {
             match self.partially_resolve(ident, offset)? {
                 ValueOrScope::Value(v) => {
                     return Err(ExecError::CannotResolveSymbol(ParseError::new(

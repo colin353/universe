@@ -28,6 +28,17 @@ pub fn get_dependencies(expr: &ast::Expression) -> Vec<ast::CCLIdentifier> {
         ast::Expression::ExpansionExpression(expansion) => vec![expansion.identifier.clone()],
         ast::Expression::Value(value) => match value.as_ref() {
             ast::CCLValue::Identifier(ident) => vec![ident.as_ref().clone()],
+            ast::CCLValue::Array(array) => {
+                let elements = match array.values.as_ref() {
+                    Some(e) => &e.values,
+                    None => return Vec::new(),
+                };
+                elements
+                    .iter()
+                    .map(|e| get_dependencies(&e).into_iter())
+                    .flatten()
+                    .collect()
+            }
             _ => vec![],
         },
     }
@@ -67,6 +78,32 @@ pub fn evaluate<'a>(
                 dict.as_ref().clone(),
                 content,
             ))),
+            ast::CCLValue::Array(array) => {
+                let mut output = Vec::new();
+                let elements = match array.values.as_ref() {
+                    Some(e) => &e.values,
+                    None => return Ok(ValueOrScope::Value(Value::Array(Vec::new()))),
+                };
+
+                for expr in elements {
+                    let inner = match evaluate(expr, content, dependencies)? {
+                        ValueOrScope::Scope(_) => {
+                            let (start, end) = expr.range();
+                            return Err(ExecError::ArraysCannotContainDictionaries(
+                                ParseError::new(
+                                    String::from("dictionaries within arrays are unsupported"),
+                                    "",
+                                    start,
+                                    end - start,
+                                ),
+                            ));
+                        }
+                        ValueOrScope::Value(value) => value,
+                    };
+                    output.push(inner);
+                }
+                Ok(ValueOrScope::Value(Value::Array(output)))
+            }
         },
     }
 }
@@ -218,7 +255,6 @@ fn evaluate_operator_expression<'a>(
             ast::Operator::Division(op) => evaluate_division(left, right, &op),
             ast::Operator::And(op) => evaluate_and(left, right, &op),
             ast::Operator::Or(op) => evaluate_or(left, right, &op),
-            _ => unimplemented!(),
         }
     };
 
@@ -559,7 +595,7 @@ fn evaluate_expansion<'a>(
     dependencies: &HashMap<String, ValueOrScope<'a>>,
 ) -> Result<ValueOrScope<'a>, ExecError> {
     let name = expansion.identifier.as_str(content);
-    let mut original = match dependencies
+    let original = match dependencies
         .get(name)
         .expect("requested dependency, but didn't get it!")
         .to_owned()
@@ -576,7 +612,7 @@ fn evaluate_expansion<'a>(
         }
     };
 
-    let mut scope = original.duplicate();
+    let scope = original.duplicate();
     let override_scope = Scope::from_dictionary(expansion.target.clone(), content);
     for deep_override in override_scope.inner.lock().unwrap().deep_overrides.iter() {
         scope.add_deep_overrides(deep_override.0.to_owned(), deep_override.1);

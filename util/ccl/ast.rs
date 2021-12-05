@@ -41,8 +41,24 @@ ggen::sequence!(
     right: Expression,
 );
 
-ggen::unit!(Null, "null");
+ggen::sequence!(
+    Array,
+    "[",
+    _ws1: Option<NewlineWhitespace>,
+    values: Option<RepeatWithSeparator<Expression, CommaSeparator>>,
+    _comma: Option<CommaSeparator>,
+    _ws2: Option<NewlineWhitespace>,
+    "]",
+);
 
+ggen::sequence!(
+    CommaSeparator,
+    _ws1: Option<Whitespace>,
+    ",",
+    _ws2: Option<NewlineWhitespace>,
+);
+
+ggen::unit!(Null, "null");
 ggen::unit!(True, "true");
 ggen::unit!(False, "false");
 ggen::one_of!(Boolean, True: True, False: False);
@@ -71,7 +87,8 @@ ggen::one_of!(
     Identifier: CCLIdentifier,
     Numeric: Numeric,
     String: QuotedString,
-    Dictionary: Dictionary
+    Dictionary: Dictionary,
+    Array: Array
 );
 
 ggen::one_of!(

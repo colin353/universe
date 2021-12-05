@@ -17,6 +17,7 @@ pub enum Value {
     Bool(bool),
     Null,
     Dictionary(Dictionary),
+    Array(Vec<Value>),
 }
 
 impl Value {
@@ -27,6 +28,7 @@ impl Value {
             Value::Dictionary(_) => "a dictionary",
             Value::Null => "null",
             Value::Bool(_) => "a bool",
+            Value::Array(_) => "an array",
         }
     }
 }

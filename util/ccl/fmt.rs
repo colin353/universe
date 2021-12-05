@@ -98,6 +98,7 @@ pub fn format_expression(expr: &ast::Expression, content: &str, indent: &str) ->
 pub fn format_value(value: &ast::CCLValue, content: &str, indent: &str) -> String {
     match value {
         ast::CCLValue::Dictionary(dict) => format_dictionary(&dict, content, indent),
+        ast::CCLValue::Array(array) => format_array(&array, content, indent),
         _ => format_unit(value, content).to_string(),
     }
 }
@@ -166,7 +167,7 @@ pub fn format_dictionary(dict: &ast::Dictionary, content: &str, indent: &str) ->
         output.push('\n');
     }
 
-    let mut values = dict.values.values.iter();
+    let values = dict.values.values.iter();
     let mut separators = dict.values.separators.iter();
     for value in values {
         output.push_str(&inner_indent);
@@ -192,6 +193,31 @@ pub fn format_dictionary(dict: &ast::Dictionary, content: &str, indent: &str) ->
     output.push_str(indent);
     output.push('}');
 
+    output
+}
+
+pub fn format_array(array: &ast::Array, content: &str, indent: &str) -> String {
+    let elements = match array.values.as_ref() {
+        Some(e) => &e.values,
+        None => return String::from("[]"),
+    };
+
+    let inner_indent = format!("{}    ", indent);
+    let mut output = format!("[\n{}", inner_indent);
+
+    for (idx, element) in elements.iter().enumerate() {
+        output.push_str(&format_expression(element, content, &inner_indent));
+
+        // Except for the last element, push separator
+        if idx != elements.len() - 1 {
+            output.push_str(",\n");
+            output.push_str(&inner_indent);
+        }
+    }
+
+    output.push_str(",\n");
+    output.push_str(indent);
+    output.push(']');
     output
 }
 
