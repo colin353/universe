@@ -3,8 +3,8 @@ mod eval;
 mod exec;
 mod fmt;
 
-pub use ast::{get_ast, get_ast_or_panic};
-pub use exec::exec;
+pub use ast::{get_ast, get_ast_or_panic, Module};
+pub use exec::{exec, ExecError};
 pub use fmt::format;
 
 #[cfg(test)]
@@ -21,7 +21,7 @@ pub enum Value {
 }
 
 impl Value {
-    fn type_name(&self) -> &str {
+    pub fn type_name(&self) -> &str {
         match self {
             Value::Number(_) => "a number",
             Value::String(_) => "a string",
@@ -31,11 +31,50 @@ impl Value {
             Value::Array(_) => "an array",
         }
     }
+
+    pub fn strs(&self) -> Result<Vec<&str>, String> {
+        match self {
+            Value::String(s) => Ok(vec![&s]),
+            Value::Array(a) => {
+                let mut output = Vec::new();
+                for element in a {
+                    match element {
+                        Value::String(s) => output.push(s.as_str()),
+                        x => {
+                            return Err(format!(
+                                "array must contain only strings, got {}",
+                                x.type_name()
+                            ))
+                        }
+                    }
+                }
+                Ok(output)
+            }
+            x => {
+                return Err(format!(
+                    "expected string or an array of strings, got {}",
+                    x.type_name()
+                ))
+            }
+        }
+    }
+}
+
+pub struct AST {
+    content: String,
+    module: Module,
+}
+
+impl AST {
+    pub fn get(&self, specifier: &str) -> Result<Value, ExecError> {
+        // TODO: remove the clone here, and make exec work on an &'a Module
+        exec(self.module.clone(), &self.content, specifier)
+    }
 }
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct Dictionary {
-    kv_pairs: Vec<(String, Value)>,
+    pub kv_pairs: Vec<(String, Value)>,
 }
 
 impl Dictionary {
