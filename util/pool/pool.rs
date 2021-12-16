@@ -2,6 +2,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 
+pub mod queue;
+pub use queue::PoolQueue;
+
 pub struct ThreadPool<T> {
     threads: Vec<Worker<T>>,
     alarm: mpsc::Receiver<T>,
@@ -16,7 +19,7 @@ pub struct ThreadPoolScheduler<T> {
 
 impl<T> ThreadPoolScheduler<T>
 where
-    T: Send + 'static,
+    T: Send + Sync + 'static,
 {
     pub fn execute<F>(&self, f: F)
     where
@@ -30,7 +33,7 @@ where
 
 impl<T> ThreadPool<T>
 where
-    T: Send + 'static,
+    T: Send + Sync + 'static,
 {
     pub fn new(size: usize) -> Self {
         let mut threads = Vec::with_capacity(size);
@@ -40,9 +43,8 @@ where
         let (waker, alarm) = mpsc::channel();
         let in_progress = Arc::new(AtomicUsize::new(0));
 
-        for id in 0..size {
+        for _ in 0..size {
             threads.push(Worker::new(
-                id,
                 receiver.clone(),
                 waker.clone(),
                 in_progress.clone(),
@@ -94,7 +96,6 @@ where
 }
 
 pub struct Worker<T> {
-    id: usize,
     thread: thread::JoinHandle<()>,
     _mark: std::marker::PhantomData<T>,
 }
@@ -104,7 +105,6 @@ where
     T: Send + 'static,
 {
     fn new(
-        id: usize,
         receiver: Arc<Mutex<mpsc::Receiver<Job<T>>>>,
         waker: mpsc::Sender<T>,
         in_progress: Arc<AtomicUsize>,
@@ -125,7 +125,6 @@ where
             waker.send(result).unwrap();
         });
         Worker {
-            id,
             thread,
             _mark: std::marker::PhantomData,
         }
@@ -142,4 +141,4 @@ impl<T, F: FnOnce() -> T> FnBox<T> for F {
     }
 }
 
-type Job<T> = Box<FnBox<T> + Send + 'static>;
+type Job<T> = Box<dyn FnBox<T> + Send + 'static>;

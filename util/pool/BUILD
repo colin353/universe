@@ -7,6 +7,7 @@ rust_library(
     name = "pool",
     srcs = [
         "pool.rs",
+        "queue.rs",
     ],
 )
 
