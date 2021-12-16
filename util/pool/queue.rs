@@ -15,7 +15,7 @@ pub struct PoolQueueInner<T> {
 }
 
 impl<T: Send + 'static> PoolQueue<T> {
-    pub fn new<F: Fn(T) + Clone + Send + Sync + 'static>(size: usize, operation: F) -> Self {
+    pub fn new(size: usize) -> Self {
         let inner = Arc::new(PoolQueueInner {
             queue: Mutex::new(VecDeque::new()),
             alarm: Condvar::new(),
@@ -24,8 +24,12 @@ impl<T: Send + 'static> PoolQueue<T> {
             thread_count: size,
         });
 
-        for _ in 0..size {
-            let _inner = inner.clone();
+        Self { inner }
+    }
+
+    pub fn start<F: Fn(T) + Clone + Send + Sync + 'static>(&self, operation: F) {
+        for _ in 0..self.inner.thread_count {
+            let _inner = self.inner.clone();
             let _op = operation.clone();
             std::thread::spawn(move || loop {
                 let task = { _inner.queue.lock().unwrap().pop_front() };
@@ -49,8 +53,6 @@ impl<T: Send + 'static> PoolQueue<T> {
                 }
             });
         }
-
-        Self { inner }
     }
 
     pub fn enqueue(&self, task: T) {
