@@ -66,6 +66,11 @@ pub struct AST {
 }
 
 impl AST {
+    pub fn from_string(content: String) -> Result<Self, ggen::ParseError> {
+        let module = get_ast(&content)?;
+        Ok(Self { content, module })
+    }
+
     pub fn get(&self, specifier: &str) -> Result<Value, ExecError> {
         // TODO: remove the clone here, and make exec work on an &'a Module
         exec(self.module.clone(), &self.content, specifier)
