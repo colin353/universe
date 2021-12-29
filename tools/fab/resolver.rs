@@ -24,6 +24,17 @@ pub struct FakeResolver {
     files: HashMap<String, String>,
 }
 
+impl FakeResolver {
+    pub fn new(content: Vec<(&str, &str)>) -> Self {
+        Self {
+            files: content
+                .iter()
+                .map(|(a, b)| (a.to_string(), b.to_string()))
+                .collect(),
+        }
+    }
+}
+
 impl Resolver for FakeResolver {
     fn get_content(&self, origin: &str, path: &str) -> Result<String, Error> {
         if !origin.is_empty() {
@@ -51,6 +62,16 @@ impl Resolver for FakeResolver {
             Some(f) => f,
             None => return Err(Error::new(format!("unable to resolve file {}", path))),
         };
+        if let Some(p) = dest.parent() {
+            if let Err(e) = std::fs::create_dir_all(p) {
+                return Err(Error::new(format!(
+                "failed to create parent directory when realizing file {} at destination {}: {:?}",
+                path,
+                dest.display(),
+                e
+            )));
+            }
+        }
         if let Err(e) = std::fs::write(dest, content) {
             return Err(Error::new(format!(
                 "unable to realize file {} at destination {}: {:?}",

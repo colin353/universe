@@ -1,8 +1,14 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::hash::Hash;
 
 mod config;
 mod environment;
+mod fs;
 mod resolver;
+
+pub use environment::BuildEnvironment;
+pub use fs::FilesystemResolver;
+pub use resolver::Resolver;
 
 pub type BuildHash = u64;
 
@@ -15,52 +21,104 @@ pub struct BuildResult {
 #[derive(Debug, Clone)]
 pub struct Target {
     identifier: TargetIdentifier,
-    operation: String,
+    operation: Option<TargetIdentifier>,
     dependencies: HashSet<TargetIdentifier>,
     files: HashSet<String>,
     resolved: bool,
+    built_dependencies: usize,
     hash: Option<BuildHash>,
     result: Option<BuildResult>,
+    variables: HashMap<String, String>,
 }
 
 impl Target {
     pub fn new(identifier: TargetIdentifier) -> Self {
         Self {
             identifier,
-            operation: String::new(),
+            operation: None,
             dependencies: HashSet::new(),
             files: HashSet::new(),
             resolved: false,
             hash: None,
             result: None,
+            built_dependencies: 0,
+            variables: HashMap::new(),
         }
     }
 
     #[cfg(test)]
-    pub fn for_test(identifier: &str, deps: &[&str], files: &[&str], operation: String) -> Self {
+    pub fn for_test(identifier: &str, deps: &[&str], files: &[&str]) -> Self {
         Self {
             identifier: TargetIdentifier::from_str(identifier),
-            operation,
+            operation: None,
             dependencies: deps.iter().map(|d| TargetIdentifier::from_str(d)).collect(),
             files: files.into_iter().map(|s| s.to_string()).collect(),
             resolved: false,
             hash: None,
             result: None,
+            built_dependencies: 0,
+            variables: HashMap::new(),
         }
+    }
+
+    pub fn hash<R: resolver::Resolver, H: std::hash::Hasher>(&self, resolver: &R, hash: &mut H) {
+        self.identifier.hash(hash);
+        self.variables.iter().collect::<Vec<_>>().hash(hash);
+        self.operation.hash(hash);
     }
 
     pub fn dependencies(&self) -> Vec<TargetIdentifier> {
         let mut output = self.dependencies.clone();
-        output.insert(TargetIdentifier::from_str(&self.operation));
+        if let Some(o) = &self.operation {
+            output.insert(o.to_owned());
+        }
         output.into_iter().collect()
     }
 
     pub fn build_dir(&self, root_dir: &std::path::Path) -> std::path::PathBuf {
-        root_dir.join(format!(
+        root_dir.join("build").join(format!(
             "{:016x}",
             self.hash
                 .expect("build_hash must be resolved to get build dir")
         ))
+    }
+
+    pub fn tmp_out_dir(&self, root_dir: &std::path::Path) -> std::path::PathBuf {
+        root_dir.join("tmp").join("out").join(format!(
+            "{:016x}",
+            self.hash
+                .expect("build_hash must be resolved to get out dir")
+        ))
+    }
+
+    pub fn out_dir(&self, root_dir: &std::path::Path) -> std::path::PathBuf {
+        root_dir.join("out").join(format!(
+            "{:016x}",
+            self.hash
+                .expect("build_hash must be resolved to get out dir")
+        ))
+    }
+
+    pub fn op_dir(&self, root_dir: &std::path::Path) -> std::path::PathBuf {
+        root_dir.join("ops").join(format!(
+            "{:016x}",
+            self.hash
+                .expect("build_hash must be resolved to get op dir")
+        ))
+    }
+
+    pub fn is_operation(&self) -> bool {
+        self.operation.is_none()
+    }
+
+    pub fn op_script(&self, root_dir: &std::path::Path) -> std::path::PathBuf {
+        assert!(self.is_operation());
+        self.op_dir(root_dir).join("src").join(
+            self.files
+                .iter()
+                .next()
+                .expect("operation must contain an operation script!"),
+        )
     }
 
     pub fn fully_qualified_name(&self) -> String {
@@ -82,7 +140,7 @@ pub struct TargetIdentifier {
 
 #[derive(Debug)]
 pub struct Error {
-    message: String,
+    pub message: String,
 }
 
 impl Error {
@@ -91,9 +149,37 @@ impl Error {
             message: message.into(),
         }
     }
+
+    pub fn from_errors(input: &[Error]) -> Self {
+        Error {
+            message: input
+                .iter()
+                .map(|e| e.message.as_str())
+                .collect::<Vec<_>>()
+                .join("\n\n"),
+        }
+    }
 }
 
 impl TargetIdentifier {
+    pub fn from_str_relative(identifier: &str, parent: &TargetIdentifier) -> Self {
+        if identifier.starts_with(":") {
+            let mut out = parent.clone();
+            out.name = identifier[1..].to_string();
+            return out;
+        }
+
+        Self::from_str(identifier)
+    }
+
+    pub fn empty() -> Self {
+        Self {
+            origin: String::new(),
+            path: String::new(),
+            name: String::new(),
+        }
+    }
+
     pub fn from_str(identifier: &str) -> Self {
         let mut origin = "";
         let target_name;
@@ -152,5 +238,15 @@ mod tests {
 
         let ident = TargetIdentifier::from_str("//utils/parser:parser_test");
         assert_eq!(&ident.fully_qualified_name(), "//utils/parser:parser_test");
+    }
+
+    #[test]
+    fn test_relative_target_parsing() {
+        let ident = TargetIdentifier::from_str("//utils/parser");
+        let relative_ident = TargetIdentifier::from_str_relative(":parser_test", &ident);
+        assert_eq!(
+            &relative_ident.fully_qualified_name(),
+            "//utils/parser:parser_test"
+        );
     }
 }
