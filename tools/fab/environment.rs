@@ -36,7 +36,7 @@ impl<R: Resolver + Sync + Send> BuildEnvironment<R> {
 
     pub fn build(&self, identifier: TargetIdentifier) -> Result<BuildResult, Error> {
         let _inner = self.inner.clone();
-        self.inner.pool.enqueue(identifier);
+        self.inner.pool.enqueue(());
         self.inner.pool.join();
         Ok(BuildResult {
             build_hash: 000,
@@ -87,10 +87,6 @@ impl<R: Resolver + Sync> BuildEnvironmentInner<R> {
         // Extract target definition
         let target = config::convert_to_target(build.as_ref(), identifier)?;
 
-        // Queue dependencies for resolution
-        for dep in target.dependencies() {
-            self.pool_channel.send(dep);
-        }
         Ok(())
     }
 
