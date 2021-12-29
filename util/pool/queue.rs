@@ -61,9 +61,12 @@ impl<T: Send + 'static> PoolQueue<T> {
     }
 
     pub fn join(&self) {
-        let waiting = *self.inner.waiting.lock().unwrap();
-        if waiting == self.inner.thread_count {
-            return;
+        {
+            let queue = self.inner.queue.lock().unwrap();
+            let waiting = { *self.inner.waiting.lock().unwrap() };
+            if queue.len() == 0 && waiting == self.inner.thread_count {
+                return;
+            }
         }
         loop {
             let guard = self.inner.waiting.lock().unwrap();
