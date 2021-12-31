@@ -1,6 +1,6 @@
 syntax match CCLNumber "\v<\d+>"
 syntax match CCLNumber "\v<\d+.\d+>"
-syn keyword  CCLValue null true false
+syn keyword  CCLValue null true false import from
 
 
 syntax region CCLString start=/"/ skip=/\\"/ end=/"/ oneline contains=CCLInterpolatedWrapper

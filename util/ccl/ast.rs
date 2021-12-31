@@ -6,6 +6,8 @@ use ggen::{
 ggen::sequence!(
     Module,
     _ws1: Vec<WhitespaceNewlineComment>,
+    imports: Vec<ImportStatement>,
+    _ws2: Vec<WhitespaceNewlineComment>,
     bindings: Vec<AssignmentLine>,
     value: Option<Expression>,
     _ws3: Vec<WhitespaceNewlineComment>,
@@ -180,6 +182,33 @@ ggen::one_of!(
     Value: CCLValue
 );
 
+ggen::sequence!(
+    ImportStatement,
+    "import",
+    _ws1: AtLeastOne<Whitespace>,
+    spec: ImportSpecification,
+    _ws2: AtLeastOne<Whitespace>,
+    "from",
+    _ws3: AtLeastOne<Whitespace>,
+    from: QuotedString,
+    _term: AtLeastOne<WhitespaceNewlineComment>,
+);
+
+ggen::one_of!(
+    ImportSpecification,
+    Multiple: MultipleBindings,
+    Single: Identifier
+);
+
+ggen::sequence!(
+    MultipleBindings,
+    "{",
+    _ws1: Option<Whitespace>,
+    identifiers: RepeatWithSeparator<Identifier, CommaSeparator>,
+    _ws2: Option<Whitespace>,
+    "}",
+);
+
 pub fn get_ast(content: &str) -> Result<Module, ParseError> {
     let errors = match Module::try_match(content, 0) {
         Ok((module, took, _)) => {
@@ -335,6 +364,16 @@ b
             "
             a = (  2+ 3)
         ",
+        );
+    }
+
+    #[test]
+    fn test_parse_import() {
+        get_ast_or_panic(
+            r#"
+            import { ABC, DEF } from "../zzz.ccl"
+            import zzz from "../zzz.ccl"
+       "#,
         );
     }
 }

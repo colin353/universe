@@ -8,6 +8,11 @@ pub fn format(module: ast::Module, content: &str) -> String {
     // Print any leading comments
     output.push_str(&format_comment(module._ws1.iter(), content, "", false));
 
+    // Print imports
+    for import in module.imports {
+        format_import(&import, content, &mut output);
+    }
+
     for (idx, binding) in module.bindings.iter().enumerate() {
         format_binding(&binding.assignment, content, "", &mut output);
         output.push_str(&format_comment(
@@ -65,6 +70,49 @@ pub fn format_comment<'a, I: Iterator<Item = &'a ast::WhitespaceNewlineComment>>
         directly_trailing = false;
     }
     output
+}
+
+pub fn format_import(import: &ast::ImportStatement, content: &str, dest: &mut String) {
+    let spec = match &import.spec {
+        ast::ImportSpecification::Multiple(bindings) => {
+            let mut out = String::from("{");
+            let mut first = true;
+            let use_newlines = bindings.identifiers.len() > 3;
+
+            if !use_newlines {
+                out.push(' ');
+            }
+            for binding in bindings.identifiers.iter() {
+                if !first {
+                    if !use_newlines {
+                        out.push(' ');
+                    }
+                    out.push(',');
+                } else {
+                    first = false;
+                }
+                if use_newlines {
+                    out.push_str("\n    ");
+                }
+                out.push_str(format_unit(binding, content));
+            }
+            if use_newlines {
+                out.push_str(",\n");
+            } else {
+                out.push(' ');
+            }
+            out.push_str("}");
+            out
+        }
+        ast::ImportSpecification::Single(ident) => format_unit(ident.as_ref(), content).to_string(),
+    };
+
+    dest.push_str(&format!(
+        "import {} from {}{}",
+        spec,
+        format_unit(&import.from, content),
+        format_comment(import._term.inner.iter(), content, "", true),
+    ));
 }
 
 pub fn format_binding(binding: &ast::Assignment, content: &str, indent: &str, dest: &mut String) {
@@ -228,7 +276,13 @@ mod tests {
     macro_rules! assert_fmt {
         ($input:expr, $expected:expr,) => {
             let parsed = ast::get_ast_or_panic($input);
-            assert_eq!(format(parsed, $input).trim(), $expected.trim());
+            let left = format(parsed, $input);
+            let left = left.trim();
+            let right = $expected.trim();
+            if left != right {
+                eprintln!("Got:\n\n{}\n\nExpected:\n\n{}\n\n", left, right);
+            }
+            assert_eq!(left, right);
         };
     }
 
@@ -282,6 +336,40 @@ b = {
     }
 }
 3.5 // trailing comment"#,
+        );
+    }
+
+    #[test]
+    fn test_formatting_imports() {
+        assert_fmt!(
+            r#"
+// leading comment
+    import {qqq} from "qqq.ccl"
+// inner comment
+"#,
+            r#"
+// leading comment
+import { qqq } from "qqq.ccl"
+// inner comment
+"#,
+        );
+
+        assert_fmt!(
+            r#"
+// leading comment
+    import {abc,cde,def,efg} from "qqq.ccl"
+// inner comment
+"#,
+            r#"
+// leading comment
+import {
+    abc,
+    cde,
+    def,
+    efg,
+} from "qqq.ccl"
+// inner comment
+"#,
         );
     }
 }
