@@ -89,6 +89,15 @@ impl Dictionary {
         }
     }
 
+    pub fn get(&self, key: &str) -> Option<&Value> {
+        for (k, v) in &self.kv_pairs {
+            if k == key {
+                return Some(v);
+            }
+        }
+        None
+    }
+
     pub fn insert(&mut self, key: String, value: Value) {
         self.kv_pairs.push((key, value));
     }

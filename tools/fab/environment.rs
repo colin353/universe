@@ -461,11 +461,8 @@ impl<R: Resolver + Sync> BuildEnvironmentInner<R> {
         };
 
         // Clear out the build directory from whatever was previously in it
-        if let Err(e) = std::fs::remove_dir_all(&dest) {
-            return Err(Error::new(format!(
-                "unable to remove existing directory {:?}: {:?}",
-                dest, e
-            )));
+        if let Err(_) = std::fs::remove_dir_all(&dest) {
+            // Ignore failure to remove directory, since that probably measn it doesn't exist
         };
         if let Err(e) = std::fs::create_dir_all(&dest.join("src")) {
             return Err(Error::new(format!(

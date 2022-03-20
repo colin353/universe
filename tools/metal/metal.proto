@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+message Binary {
+  string url = 1;
+}
+
+message ArgValue {
+  string value = 1;
+}
+
+message Environment {
+  string name = 1;
+  ArgValue value = 2;
+}
+
+message Argument {
+  string name = 1;
+  ArgValue value = 2;
+}
+
+message Task {
+  string name = 1;
+  Binary binary = 2;
+  repeated Environment environment = 3;
+  repeated Argument arguments = 4;
+}
+
+message Configuration {
+  repeated Task tasks = 1;
+}
