@@ -46,10 +46,14 @@ pub struct ScopeInner<'a> {
     parent_scope: Option<Scope<'a>>,
     overrides: Vec<Scope<'a>>,
     pub deep_overrides: HashMap<String, HashMap<String, (Scope<'a>, ast::Expression)>>,
+
+    // For debugging, shows which part of the content this scope addresses
+    start: usize,
+    end: usize,
 }
 
 impl<'a> Scope<'a> {
-    pub fn empty(content: &'a str) -> Self {
+    pub fn empty(content: &'a str, start: usize, end: usize) -> Self {
         let inner = ScopeInner {
             in_progress_identifiers: HashSet::new(),
             resolved_identifiers: HashMap::new(),
@@ -60,10 +64,17 @@ impl<'a> Scope<'a> {
             default_value: None,
             content,
             deep_overrides: HashMap::new(),
+            start,
+            end,
         };
         Self {
             inner: Arc::new(Mutex::new(inner)),
         }
+    }
+
+    pub fn scope_content(&self) -> String {
+        let _inner = self.inner.lock().unwrap();
+        _inner.content[_inner.start.._inner.end].to_string()
     }
 
     pub fn duplicate(&self) -> Self {
@@ -97,7 +108,8 @@ impl<'a> Scope<'a> {
     }
 
     pub fn from_module(module: ast::Module, content: &'a str) -> Self {
-        let out = Self::empty(content);
+        let (start, end) = module.range();
+        let out = Self::empty(content, start, end);
         for b in module.bindings {
             let lvalue = b.assignment.left;
             if lvalue.values.len() > 1 {
@@ -133,7 +145,8 @@ impl<'a> Scope<'a> {
     }
 
     pub fn from_dictionary(dict: ast::Dictionary, content: &'a str) -> Self {
-        let out = Self::empty(content);
+        let (start, end) = dict.range();
+        let out = Self::empty(content, start, end);
         for b in dict.values.values {
             let lvalue = b.left;
             if lvalue.values.len() > 1 {
@@ -368,25 +381,33 @@ impl<'a> Scope<'a> {
             return Ok(value.clone());
         }
 
-        let expression = match self
-            .inner
-            .try_lock()
-            .unwrap()
-            .unresolved_identifiers
-            .get(specifier)
-        {
-            Some(expr) => expr.clone(),
-            None => {
-                return Err(ExecError::CannotResolveSymbol(ParseError::new(
-                    format!("unable to resolve identifier `{}`", specifier),
-                    "",
-                    offset,
-                    offset + specifier.len(),
-                )));
-            }
+        let expression = {
+            let _inner = self.inner.try_lock().unwrap();
+            _inner
+                .unresolved_identifiers
+                .get(specifier)
+                .map(|expr| expr.clone())
         };
+        if let Some(expr) = expression {
+            return self.evaluate_expression(specifier, &expr);
+        }
 
-        self.evaluate_expression(specifier, &expression)
+        // Try to resolve using the parent scope
+        let parent = {
+            let _inner = self.inner.try_lock().unwrap();
+            _inner.parent_scope.as_ref().map(|s| s.clone())
+        };
+        if let Some(p) = parent {
+            return p.partially_resolve(specifier, offset);
+        }
+
+        // Nothing worked! Couldn't resolve it
+        Err(ExecError::CannotResolveSymbol(ParseError::new(
+            format!("unable to resolve identifier `{}`", specifier),
+            "",
+            offset,
+            offset + specifier.len(),
+        )))
     }
 
     pub fn evaluate_expression(
@@ -425,6 +446,12 @@ impl<'a> Scope<'a> {
             .remove(specifier);
 
         let out = eval::evaluate(&expr, content, &resolved_dependencies);
+
+        // Record the parentage of the scope
+        if let Ok(ValueOrScope::Scope(s)) = &out {
+            s.inner.lock().unwrap().parent_scope = Some(self.clone());
+        }
+
         out
     }
 }

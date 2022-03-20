@@ -99,3 +99,29 @@ fn test_arrays() {
         ])
     );
 }
+
+#[test]
+fn test_resolution() {
+    assert_eq!(
+        exec_or_panic(
+            r#"
+a = {
+    _zzz = "test"
+}
+b = {
+    c = a {
+        t = 3.0
+    }
+}
+b.c
+            "#,
+            ""
+        ),
+        Value::Dictionary(crate::Dictionary {
+            kv_pairs: vec![
+                (String::from("_zzz"), Value::String(String::from("test"))),
+                (String::from("t"), Value::Number(3.0)),
+            ]
+        })
+    );
+}
