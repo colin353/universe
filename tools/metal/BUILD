@@ -22,7 +22,8 @@ rust_library(
     deps = [
         ":metal_grpc_rust",
         "//util/ccl",
-        "//util/ggen"
+        "//util/ggen",
+        "@io_bazel_rules_rust//proto/raze:protobuf",
     ],
 )
 
