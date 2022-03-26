@@ -401,6 +401,19 @@ impl<'a> Scope<'a> {
             return p.partially_resolve(specifier, offset);
         }
 
+        // If this is an empty identifier, resolve to the entire module
+        if specifier.is_empty() {
+            let mut out = Dictionary::new();
+            for key in self.keys() {
+                let value = match self.resolve(&key, 0) {
+                    Ok(v) => v,
+                    Err(e) => return Err(e),
+                };
+                out.insert(key, value);
+            }
+            return Ok(ValueOrScope::Value(Value::Dictionary(out)));
+        }
+
         // Nothing worked! Couldn't resolve it
         Err(ExecError::CannotResolveSymbol(ParseError::new(
             format!("unable to resolve identifier `{}`", specifier),

@@ -125,3 +125,22 @@ b.c
         })
     );
 }
+
+#[test]
+fn test_export_module() {
+    assert_eq!(
+        exec_or_panic(
+            r#"
+x = 1
+y = 2
+            "#,
+            ""
+        ),
+        Value::Dictionary(crate::Dictionary {
+            kv_pairs: vec![
+                (String::from("x"), Value::Number(1.0)),
+                (String::from("y"), Value::Number(2.0)),
+            ]
+        })
+    );
+}

@@ -139,8 +139,6 @@ namespace = {
         }
     }
 }
-
-namespace
 "#,
         );
         if let Err(e) = &result {
@@ -149,7 +147,7 @@ namespace
         let r = result.unwrap();
         assert_eq!(r.get_tasks().len(), 1);
         let t = &r.get_tasks()[0];
-        assert_eq!(t.get_name(), "server");
+        assert_eq!(t.get_name(), "namespace.server");
         assert_eq!(t.get_binary().get_url(), "http://test.com/server.exe");
     }
 }
