@@ -31,3 +31,14 @@ rust_test(
     name = "config_test",
     crate = ":config",
 )
+
+rust_library(
+    name = "state",
+    srcs = ["state.rs"],
+    edition = "2018",
+    deps = [
+        ":metal_grpc_rust",
+        "@io_bazel_rules_rust//proto/raze:protobuf",
+    ],
+)
+
