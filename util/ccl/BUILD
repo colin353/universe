@@ -9,6 +9,7 @@ rust_library(
     srcs = [ 
       "lib.rs",
       "ast.rs",
+      "import_resolver.rs",
       "fmt.rs",
       "exec.rs",
       "eval.rs",

@@ -1,25 +1,44 @@
 use crate::ast;
 use crate::eval;
-use crate::{Dictionary, Value};
+use crate::{Dictionary, ImportResolver, Value};
 
 use ggen::{GrammarUnit, ParseError};
 
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
+
+#[derive(Clone, Debug)]
+enum ImportedIdentifier {
+    Direct(String),
+    Aliased(String),
+}
+
+impl ImportedIdentifier {
+    fn as_str(&self) -> &str {
+        match self {
+            Self::Direct(c) | Self::Aliased(c) => c.as_str(),
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub enum ExecError {
     CannotResolveSymbol(ParseError),
     OperatorWithInvalidType(ParseError),
     ArraysCannotContainDictionaries(ParseError),
+    ImportResolutionError(String),
+    ImportParsingError(ParseError),
 }
 
 impl ExecError {
     pub fn render(&self, content: &str) -> String {
         match self {
             Self::CannotResolveSymbol(e)
+            | Self::ImportParsingError(e)
             | Self::OperatorWithInvalidType(e)
             | Self::ArraysCannotContainDictionaries(e) => e.render(content),
+            Self::ImportResolutionError(e) => e.to_string(),
         }
     }
 }
@@ -40,9 +59,10 @@ pub struct ScopeInner<'a> {
     in_progress_identifiers: HashSet<String>,
     resolved_identifiers: HashMap<String, ValueOrScope<'a>>,
     unresolved_identifiers: HashMap<String, ast::Expression>,
+    unresolved_imports: HashMap<String, ImportedIdentifier>,
     scopes: HashMap<String, Scope<'a>>,
     default_value: Option<ast::Expression>,
-    content: &'a str,
+    content: Cow<'a, str>,
     parent_scope: Option<Scope<'a>>,
     overrides: Vec<Scope<'a>>,
     pub deep_overrides: HashMap<String, HashMap<String, (Scope<'a>, ast::Expression)>>,
@@ -50,22 +70,28 @@ pub struct ScopeInner<'a> {
     // For debugging, shows which part of the content this scope addresses
     start: usize,
     end: usize,
+
+    import_resolvers: Vec<Arc<dyn ImportResolver>>,
+    import_context: Option<String>,
 }
 
 impl<'a> Scope<'a> {
-    pub fn empty(content: &'a str, start: usize, end: usize) -> Self {
+    pub fn empty(content: Cow<'a, str>, start: usize, end: usize) -> Self {
         let inner = ScopeInner {
             in_progress_identifiers: HashSet::new(),
             resolved_identifiers: HashMap::new(),
             unresolved_identifiers: HashMap::new(),
+            unresolved_imports: HashMap::new(),
             scopes: HashMap::new(),
             parent_scope: None,
             overrides: Vec::new(),
             default_value: None,
-            content,
+            content: content,
             deep_overrides: HashMap::new(),
             start,
             end,
+            import_resolvers: Vec::new(),
+            import_context: None,
         };
         Self {
             inner: Arc::new(Mutex::new(inner)),
@@ -107,30 +133,51 @@ impl<'a> Scope<'a> {
         }
     }
 
-    pub fn from_module(module: ast::Module, content: &'a str) -> Self {
+    pub fn from_module(module: ast::Module, content: Cow<'a, str>) -> Self {
         let (start, end) = module.range();
-        let out = Self::empty(content, start, end);
+        let out = Self::empty(content.clone(), start, end);
+
+        // Set up imports
+        for import in module.imports {
+            let mut _inner = out.inner.try_lock().unwrap();
+            match import.spec {
+                ast::ImportSpecification::Multiple(multi) => {
+                    for ident in multi.identifiers.values {
+                        _inner.unresolved_imports.insert(
+                            ident.as_str(content.as_ref()).to_string(),
+                            ImportedIdentifier::Direct(import.from.value.clone()),
+                        );
+                    }
+                }
+                ast::ImportSpecification::Single(ident) => {
+                    _inner.unresolved_imports.insert(
+                        ident.as_str(content.as_ref()).to_string(),
+                        ImportedIdentifier::Aliased(import.from.value.clone()),
+                    );
+                }
+            }
+        }
+
         for b in module.bindings {
             let lvalue = b.assignment.left;
             if lvalue.values.len() > 1 {
-                let override_target = lvalue.values[0].as_str(content);
+                let override_target = lvalue.values[0].as_str(content.as_ref());
                 let mut remainder = lvalue.clone();
                 remainder.values.remove(0);
                 remainder.separators.remove(0);
 
                 let mut deep_overrides = HashMap::new();
                 deep_overrides.insert(
-                    remainder.as_str(content).to_string(),
+                    remainder.as_str(content.as_ref()).to_string(),
                     (out.clone(), b.assignment.right),
                 );
 
                 out.add_deep_overrides(override_target.to_string(), &deep_overrides);
             } else {
-                out.inner
-                    .try_lock()
-                    .unwrap()
-                    .unresolved_identifiers
-                    .insert(lvalue.as_str(content).to_string(), b.assignment.right);
+                out.inner.try_lock().unwrap().unresolved_identifiers.insert(
+                    lvalue.as_str(content.as_ref()).to_string(),
+                    b.assignment.right,
+                );
             }
         }
 
@@ -144,20 +191,20 @@ impl<'a> Scope<'a> {
         out
     }
 
-    pub fn from_dictionary(dict: ast::Dictionary, content: &'a str) -> Self {
+    pub fn from_dictionary(dict: ast::Dictionary, content: Cow<'a, str>) -> Self {
         let (start, end) = dict.range();
-        let out = Self::empty(content, start, end);
+        let out = Self::empty(content.clone(), start, end);
         for b in dict.values.values {
             let lvalue = b.left;
             if lvalue.values.len() > 1 {
-                let override_target = lvalue.values[0].as_str(content);
+                let override_target = lvalue.values[0].as_str(content.as_ref());
                 let mut remainder = lvalue.clone();
                 remainder.values.remove(0);
                 remainder.separators.remove(0);
 
                 let mut deep_overrides = HashMap::new();
                 deep_overrides.insert(
-                    remainder.as_str(content).to_string(),
+                    remainder.as_str(content.as_ref()).to_string(),
                     (out.clone(), b.right),
                 );
 
@@ -167,7 +214,7 @@ impl<'a> Scope<'a> {
                     .try_lock()
                     .unwrap()
                     .unresolved_identifiers
-                    .insert(lvalue.as_str(content).to_string(), b.right);
+                    .insert(lvalue.as_str(content.as_ref()).to_string(), b.right);
             }
         }
         out
@@ -414,6 +461,46 @@ impl<'a> Scope<'a> {
             return Ok(ValueOrScope::Value(Value::Dictionary(out)));
         }
 
+        // Check if this identifier exists in the imports
+        {
+            let _inner = self.inner.try_lock().unwrap();
+            if let Some(import) = _inner.unresolved_imports.get(specifier) {
+                // Try to resolve this import using the import resolvers
+                for (idx, resolver) in _inner.import_resolvers.iter().enumerate() {
+                    let res = resolver.resolve_import(
+                        import.as_str(),
+                        _inner.import_context.as_ref().map(|s| s.as_str()),
+                    );
+
+                    let import_resolution = match res {
+                        Ok(ir) => ir,
+                        Err(e) => {
+                            // If all import resolvers have failed, return the resolution error
+                            if idx == _inner.import_resolvers.len() - 1 {
+                                return Err(e);
+                            }
+                            continue;
+                        }
+                    };
+
+                    // TODO: cache imported scopes, since they might get imported, parsed, and
+                    // resolved a bunch of times!
+                    let tmp = Scope::from_module(
+                        import_resolution.module,
+                        import_resolution.content.into(),
+                    );
+                    // Pass along import resolver
+                    tmp.add_import_resolvers(_inner.import_resolvers.clone());
+
+                    // TODO: make errors support offsets within imported files
+                    return match import {
+                        ImportedIdentifier::Direct(_) => tmp.partially_resolve(specifier, 0),
+                        ImportedIdentifier::Aliased(_) => tmp.partially_resolve("", 0),
+                    };
+                }
+            };
+        };
+
         // Nothing worked! Couldn't resolve it
         Err(ExecError::CannotResolveSymbol(ParseError::new(
             format!("unable to resolve identifier `{}`", specifier),
@@ -428,7 +515,7 @@ impl<'a> Scope<'a> {
         specifier: &str,
         expr: &ast::Expression,
     ) -> Result<ValueOrScope<'a>, ExecError> {
-        let content: &str = self.inner.try_lock().unwrap().content.clone();
+        let content = self.inner.try_lock().unwrap().content.clone();
         let deps = eval::get_dependencies(expr);
         let mut resolved_dependencies = HashMap::new();
 
@@ -441,7 +528,7 @@ impl<'a> Scope<'a> {
             .insert(specifier.to_string());
 
         for d in deps {
-            let name = d.as_str(content);
+            let name = d.as_str(content.as_ref());
             let (start, _) = d.range();
             let resolved = self.partially_resolve(name, start)?;
             resolved_dependencies.insert(name.to_string(), resolved.clone());
@@ -467,9 +554,24 @@ impl<'a> Scope<'a> {
 
         out
     }
+
+    pub fn add_import_resolvers(&self, resolvers: Vec<Arc<dyn ImportResolver>>) {
+        self.inner.lock().unwrap().import_resolvers = resolvers;
+    }
+}
+
+pub fn exec_with_import_resolvers(
+    module: ast::Module,
+    content: &str,
+    specifier: &str,
+    resolvers: Vec<Arc<dyn ImportResolver>>,
+) -> Result<Value, ExecError> {
+    let root = Scope::from_module(module, content.into());
+    root.add_import_resolvers(resolvers);
+    root.resolve(specifier, 0)
 }
 
 pub fn exec(module: ast::Module, content: &str, specifier: &str) -> Result<Value, ExecError> {
-    let root = Scope::from_module(module, content);
+    let root = Scope::from_module(module, content.into());
     root.resolve(specifier, 0)
 }

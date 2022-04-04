@@ -4,6 +4,7 @@ use ggen::ParseError;
 
 use ggen::GrammarUnit;
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 
 pub fn get_dependencies(expr: &ast::Expression) -> Vec<ast::CCLIdentifier> {
@@ -46,7 +47,7 @@ pub fn get_dependencies(expr: &ast::Expression) -> Vec<ast::CCLIdentifier> {
 
 pub fn evaluate<'a>(
     expr: &ast::Expression,
-    content: &'a str,
+    content: Cow<'a, str>,
     dependencies: &HashMap<String, ValueOrScope<'a>>,
 ) -> Result<ValueOrScope<'a>, ExecError> {
     match expr {
@@ -59,7 +60,7 @@ pub fn evaluate<'a>(
         }
         ast::Expression::Value(value) => match value.as_ref() {
             ast::CCLValue::Identifier(ident) => {
-                let name = ident.as_str(content);
+                let name = ident.as_str(content.as_ref());
                 Ok(dependencies
                     .get(name)
                     .expect("request dependency, but didn't get it!")
@@ -86,7 +87,7 @@ pub fn evaluate<'a>(
                 };
 
                 for expr in elements {
-                    let inner = match evaluate(expr, content, dependencies)? {
+                    let inner = match evaluate(expr, content.clone(), dependencies)? {
                         ValueOrScope::Scope(_) => {
                             let (start, end) = expr.range();
                             return Err(ExecError::ArraysCannotContainDictionaries(
@@ -123,7 +124,7 @@ struct Tree<'a> {
 
 fn evaluate_operator_expression<'a>(
     expr: &ast::OperatorExpression,
-    content: &'a str,
+    content: Cow<'a, str>,
     dependencies: &HashMap<String, ValueOrScope<'a>>,
 ) -> Result<ValueOrScope<'a>, ExecError> {
     let values: Vec<_> = std::iter::once(&expr.value)
@@ -217,32 +218,32 @@ fn evaluate_operator_expression<'a>(
         tree_idx: usize,
         tree: &[Tree],
         values: &[&ast::ValueExpression],
-        content: &'a str,
+        content: Cow<'a, str>,
         dependencies: &HashMap<String, ValueOrScope<'a>>,
     ) -> Result<ValueOrScope<'a>, ExecError> {
         let left = match tree[tree_idx].left {
-            Term::Tree(idx) => evaluate_tree(idx, tree, values, content, dependencies)?,
+            Term::Tree(idx) => evaluate_tree(idx, tree, values, content.clone(), dependencies)?,
             Term::Value(idx) => match &values[idx] {
                 ast::ValueExpression::SubExpression(sub) => {
-                    evaluate(&sub.expression, content, dependencies)?
+                    evaluate(&sub.expression, content.clone(), dependencies)?
                 }
                 ast::ValueExpression::Value(value) => evaluate(
                     &ast::Expression::Value(value.clone()),
-                    content,
+                    content.clone(),
                     dependencies,
                 )?,
             },
         };
 
         let right = match tree[tree_idx].right {
-            Term::Tree(idx) => evaluate_tree(idx, tree, values, content, dependencies)?,
+            Term::Tree(idx) => evaluate_tree(idx, tree, values, content.clone(), dependencies)?,
             Term::Value(idx) => match &values[idx] {
                 ast::ValueExpression::SubExpression(sub) => {
-                    evaluate(&sub.expression, content, dependencies)?
+                    evaluate(&sub.expression, content.clone(), dependencies)?
                 }
                 ast::ValueExpression::Value(value) => evaluate(
                     &ast::Expression::Value(value.clone()),
-                    content,
+                    content.clone(),
                     dependencies,
                 )?,
             },
@@ -591,10 +592,10 @@ fn evaluate_or<'a>(
 
 fn evaluate_expansion<'a>(
     expansion: &ast::ExpansionExpression,
-    content: &'a str,
+    content: Cow<'a, str>,
     dependencies: &HashMap<String, ValueOrScope<'a>>,
 ) -> Result<ValueOrScope<'a>, ExecError> {
-    let name = expansion.identifier.as_str(content);
+    let name = expansion.identifier.as_str(content.as_ref());
     let original = match dependencies
         .get(name)
         .expect("requested dependency, but didn't get it!")

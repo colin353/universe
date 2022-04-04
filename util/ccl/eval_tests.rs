@@ -1,4 +1,8 @@
-use crate::{exec_or_panic, Value};
+use crate::{
+    exec_or_panic, exec_with_import_resolvers, get_ast_or_panic, FakeImportResolver,
+    ImportResolver, Value,
+};
+use std::sync::Arc;
 
 #[test]
 fn test_operator_precedence() {
@@ -143,4 +147,26 @@ y = 2
             ]
         })
     );
+}
+
+#[test]
+fn test_imports() {
+    let imported_content = r#"
+qrst = 1.5
+    "#
+    .to_string();
+
+    let resolvers: Vec<Arc<dyn ImportResolver>> = vec![Arc::new(FakeImportResolver::new(vec![(
+        String::from("./xyz.ccl"),
+        imported_content,
+    )]))];
+
+    let content = r#"
+import { qrst } from "./xyz.ccl"
+qrst + 5
+"#;
+    let ast = get_ast_or_panic(content);
+    let value = exec_with_import_resolvers(ast, content, "", resolvers).unwrap();
+
+    assert_eq!(value, Value::Number(6.5));
 }
