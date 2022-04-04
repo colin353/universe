@@ -1,7 +1,7 @@
 mod basic;
 mod macros;
 
-pub use basic::{BareWord, Comment, Identifier, Integer, Numeric, QuotedString, Whitespace};
+pub use basic::{BareWord, Comment, Identifier, Integer, Numeric, QuotedString, Whitespace, EOF};
 
 pub type Result<T> = std::result::Result<T, ParseError>;
 
@@ -19,26 +19,52 @@ pub trait GrammarUnit: Sized + std::fmt::Debug {
 }
 
 #[derive(Clone, Debug)]
+pub enum ParseErrorKind {
+    Message(String),
+    StaticMessage(&'static str),
+    ExpectedOneOf,
+    Expected,
+}
+
+#[derive(Clone, Debug)]
 pub struct ParseError {
-    pub message: String,
-    pub names: Vec<String>,
+    pub kind: ParseErrorKind,
+    pub names: Vec<&'static str>,
     pub start: usize,
     pub end: usize,
 }
 
 impl ParseError {
-    pub fn new(message: String, name: &str, start: usize, end: usize) -> Self {
+    pub fn from_string(msg: String, name: &'static str, start: usize, end: usize) -> Self {
         Self {
-            message,
-            names: vec![name.to_owned()],
+            kind: ParseErrorKind::Message(msg),
+            names: vec![name],
             start,
             end,
         }
     }
 
-    pub fn new_multi_name(message: String, names: Vec<String>, start: usize, end: usize) -> Self {
+    pub fn with_message(msg: &'static str, name: &'static str, start: usize, end: usize) -> Self {
         Self {
-            message,
+            kind: ParseErrorKind::StaticMessage(msg),
+            names: vec![name],
+            start,
+            end,
+        }
+    }
+
+    pub fn expected(name: &'static str, start: usize, end: usize) -> Self {
+        Self {
+            kind: ParseErrorKind::Expected,
+            names: vec![name],
+            start,
+            end,
+        }
+    }
+
+    pub fn expected_one_of(names: Vec<&'static str>, start: usize, end: usize) -> Self {
+        Self {
+            kind: ParseErrorKind::ExpectedOneOf,
             names,
             start,
             end,
@@ -46,19 +72,26 @@ impl ParseError {
     }
 
     pub fn render(&self, content: &str) -> String {
-        let end = std::cmp::min(content.len(), self.end);
-        let line_number = content[..end].lines().count();
-        let line_start = content[..end].rfind('\n').map(|idx| idx + 1).unwrap_or(0);
+        let start = std::cmp::min(content.len(), self.start);
+        let line_number = std::cmp::max(content[..start].lines().count(), 1);
+        let line_start = content[..start].rfind('\n').map(|idx| idx + 1).unwrap_or(0);
         let line_content = content[line_start..].lines().next().unwrap_or("");
 
         let underline = " ".repeat(self.start - line_start) + &"^".repeat(self.end - self.start);
+
+        let message = match &self.kind {
+            ParseErrorKind::Expected => format!("expected {}", self.names.get(0).unwrap_or(&"??")),
+            ParseErrorKind::ExpectedOneOf => format!("expected one of: {}", self.names.join(", ")),
+            ParseErrorKind::StaticMessage(msg) => msg.to_string(),
+            ParseErrorKind::Message(msg) => msg.clone(),
+        };
 
         format!(
             "   |\n{line_number:<3}| {line_content}\n   | {underline} {message}\n",
             line_number = line_number,
             line_content = line_content,
             underline = underline,
-            message = self.message,
+            message = message,
         )
     }
 

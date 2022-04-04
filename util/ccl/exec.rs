@@ -236,7 +236,7 @@ impl<'a> Scope<'a> {
         if result.is_some() {
             match self.partially_resolve(ident, offset)? {
                 ValueOrScope::Value(v) => {
-                    return Err(ExecError::CannotResolveSymbol(ParseError::new(
+                    return Err(ExecError::CannotResolveSymbol(ParseError::from_string(
                         format!("unable to access inside of this (it's {})", v.type_name()),
                         "",
                         offset,
@@ -247,7 +247,7 @@ impl<'a> Scope<'a> {
             };
         }
 
-        Err(ExecError::CannotResolveSymbol(ParseError::new(
+        Err(ExecError::CannotResolveSymbol(ParseError::from_string(
             format!("unable to resolve `{}`", ident),
             "",
             offset,
@@ -343,7 +343,7 @@ impl<'a> Scope<'a> {
             .in_progress_identifiers
             .insert(specifier.to_string())
         {
-            return Err(ExecError::CannotResolveSymbol(ParseError::new(
+            return Err(ExecError::CannotResolveSymbol(ParseError::from_string(
                 format!("circular dependency when resolving `{}`", specifier),
                 "",
                 offset,
@@ -502,7 +502,7 @@ impl<'a> Scope<'a> {
         };
 
         // Nothing worked! Couldn't resolve it
-        Err(ExecError::CannotResolveSymbol(ParseError::new(
+        Err(ExecError::CannotResolveSymbol(ParseError::from_string(
             format!("unable to resolve identifier `{}`", specifier),
             "",
             offset,

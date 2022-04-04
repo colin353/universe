@@ -91,8 +91,8 @@ pub fn evaluate<'a>(
                         ValueOrScope::Scope(_) => {
                             let (start, end) = expr.range();
                             return Err(ExecError::ArraysCannotContainDictionaries(
-                                ParseError::new(
-                                    String::from("dictionaries within arrays are unsupported"),
+                                ParseError::with_message(
+                                    "dictionaries within arrays are unsupported",
                                     "",
                                     start,
                                     end - start,
@@ -278,12 +278,14 @@ fn evaluate_addition<'a>(
         ValueOrScope::Value(v) => v,
         ValueOrScope::Scope(_) => {
             let (start, end) = operator.range();
-            return Err(ExecError::OperatorWithInvalidType(ParseError::new(
-                String::from("unable to use `+` operator on a dictionary"),
-                "",
-                start,
-                end,
-            )));
+            return Err(ExecError::OperatorWithInvalidType(
+                ParseError::with_message(
+                    "unable to use `+` operator on a dictionary",
+                    "",
+                    start,
+                    end,
+                ),
+            ));
         }
     };
 
@@ -291,12 +293,14 @@ fn evaluate_addition<'a>(
         ValueOrScope::Value(v) => v,
         ValueOrScope::Scope(_) => {
             let (start, end) = operator.range();
-            return Err(ExecError::OperatorWithInvalidType(ParseError::new(
-                String::from("unable to use `+` operator on a dictionary"),
-                "",
-                start,
-                end,
-            )));
+            return Err(ExecError::OperatorWithInvalidType(
+                ParseError::with_message(
+                    "unable to use `+` operator on a dictionary",
+                    "",
+                    start,
+                    end,
+                ),
+            ));
         }
     };
 
@@ -305,7 +309,7 @@ fn evaluate_addition<'a>(
         (Value::String(a), Value::String(b)) => Ok(ValueOrScope::Value(Value::String(a + &b))),
         (l, r) => {
             let (start, end) = operator.range();
-            Err(ExecError::OperatorWithInvalidType(ParseError::new(
+            Err(ExecError::OperatorWithInvalidType(ParseError::from_string(
                 format!(
                     "unable to use `+` operator on {} (left) and {} (right)",
                     l.type_name(),
@@ -328,12 +332,14 @@ fn evaluate_subtraction<'a>(
         ValueOrScope::Value(v) => v,
         ValueOrScope::Scope(_) => {
             let (start, end) = operator.range();
-            return Err(ExecError::OperatorWithInvalidType(ParseError::new(
-                String::from("unable to use `-` operator on a dictionary"),
-                "",
-                start,
-                end,
-            )));
+            return Err(ExecError::OperatorWithInvalidType(
+                ParseError::with_message(
+                    "unable to use `-` operator on a dictionary",
+                    "",
+                    start,
+                    end,
+                ),
+            ));
         }
     };
 
@@ -341,12 +347,14 @@ fn evaluate_subtraction<'a>(
         ValueOrScope::Value(v) => v,
         ValueOrScope::Scope(_) => {
             let (start, end) = operator.range();
-            return Err(ExecError::OperatorWithInvalidType(ParseError::new(
-                String::from("unable to use `-` operator on a dictionary"),
-                "",
-                start,
-                end,
-            )));
+            return Err(ExecError::OperatorWithInvalidType(
+                ParseError::with_message(
+                    "unable to use `-` operator on a dictionary",
+                    "",
+                    start,
+                    end,
+                ),
+            ));
         }
     };
 
@@ -354,7 +362,7 @@ fn evaluate_subtraction<'a>(
         (Value::Number(a), Value::Number(b)) => Ok(ValueOrScope::Value(Value::Number(a - b))),
         (l, r) => {
             let (start, end) = operator.range();
-            Err(ExecError::OperatorWithInvalidType(ParseError::new(
+            Err(ExecError::OperatorWithInvalidType(ParseError::from_string(
                 format!(
                     "unable to use `-` operator on {} (left) and {} (right)",
                     l.type_name(),
@@ -377,12 +385,14 @@ fn evaluate_multiplication<'a>(
         ValueOrScope::Value(v) => v,
         ValueOrScope::Scope(_) => {
             let (start, end) = operator.range();
-            return Err(ExecError::OperatorWithInvalidType(ParseError::new(
-                String::from("unable to use `*` operator on a dictionary"),
-                "",
-                start,
-                end,
-            )));
+            return Err(ExecError::OperatorWithInvalidType(
+                ParseError::with_message(
+                    "unable to use `*` operator on a dictionary",
+                    "",
+                    start,
+                    end,
+                ),
+            ));
         }
     };
 
@@ -390,12 +400,14 @@ fn evaluate_multiplication<'a>(
         ValueOrScope::Value(v) => v,
         ValueOrScope::Scope(_) => {
             let (start, end) = operator.range();
-            return Err(ExecError::OperatorWithInvalidType(ParseError::new(
-                String::from("unable to use `*` operator on a dictionary"),
-                "",
-                start,
-                end,
-            )));
+            return Err(ExecError::OperatorWithInvalidType(
+                ParseError::with_message(
+                    "unable to use `*` operator on a dictionary",
+                    "",
+                    start,
+                    end,
+                ),
+            ));
         }
     };
 
@@ -403,7 +415,7 @@ fn evaluate_multiplication<'a>(
         (Value::Number(a), Value::Number(b)) => Ok(ValueOrScope::Value(Value::Number(a * b))),
         (l, r) => {
             let (start, end) = operator.range();
-            Err(ExecError::OperatorWithInvalidType(ParseError::new(
+            Err(ExecError::OperatorWithInvalidType(ParseError::from_string(
                 format!(
                     "unable to use `*` operator on {} (left) and {} (right)",
                     l.type_name(),
@@ -426,12 +438,14 @@ fn evaluate_division<'a>(
         ValueOrScope::Value(v) => v,
         ValueOrScope::Scope(_) => {
             let (start, end) = operator.range();
-            return Err(ExecError::OperatorWithInvalidType(ParseError::new(
-                String::from("unable to use `/` operator on a dictionary"),
-                "",
-                start,
-                end,
-            )));
+            return Err(ExecError::OperatorWithInvalidType(
+                ParseError::with_message(
+                    "unable to use `/` operator on a dictionary",
+                    "",
+                    start,
+                    end,
+                ),
+            ));
         }
     };
 
@@ -439,12 +453,14 @@ fn evaluate_division<'a>(
         ValueOrScope::Value(v) => v,
         ValueOrScope::Scope(_) => {
             let (start, end) = operator.range();
-            return Err(ExecError::OperatorWithInvalidType(ParseError::new(
-                String::from("unable to use `/` operator on a dictionary"),
-                "",
-                start,
-                end,
-            )));
+            return Err(ExecError::OperatorWithInvalidType(
+                ParseError::with_message(
+                    "unable to use `/` operator on a dictionary",
+                    "",
+                    start,
+                    end,
+                ),
+            ));
         }
     };
 
@@ -452,18 +468,15 @@ fn evaluate_division<'a>(
         (Value::Number(a), Value::Number(b)) => {
             if b == 0.0 {
                 let (start, end) = operator.range();
-                return Err(ExecError::OperatorWithInvalidType(ParseError::new(
-                    String::from("division by zero!"),
-                    "",
-                    start,
-                    end,
-                )));
+                return Err(ExecError::OperatorWithInvalidType(
+                    ParseError::with_message("division by zero!", "", start, end),
+                ));
             }
             Ok(ValueOrScope::Value(Value::Number(a / b)))
         }
         (l, r) => {
             let (start, end) = operator.range();
-            Err(ExecError::OperatorWithInvalidType(ParseError::new(
+            Err(ExecError::OperatorWithInvalidType(ParseError::from_string(
                 format!(
                     "unable to use `/` operator on {} (left) and {} (right)",
                     l.type_name(),
@@ -486,12 +499,14 @@ fn evaluate_and<'a>(
         ValueOrScope::Value(v) => v,
         ValueOrScope::Scope(_) => {
             let (start, end) = operator.range();
-            return Err(ExecError::OperatorWithInvalidType(ParseError::new(
-                String::from("unable to use `&&` operator on a dictionary"),
-                "",
-                start,
-                end,
-            )));
+            return Err(ExecError::OperatorWithInvalidType(
+                ParseError::with_message(
+                    "unable to use `&&` operator on a dictionary",
+                    "",
+                    start,
+                    end,
+                ),
+            ));
         }
     };
 
@@ -499,12 +514,14 @@ fn evaluate_and<'a>(
         ValueOrScope::Value(v) => v,
         ValueOrScope::Scope(_) => {
             let (start, end) = operator.range();
-            return Err(ExecError::OperatorWithInvalidType(ParseError::new(
-                String::from("unable to use `&&` operator on a dictionary"),
-                "",
-                start,
-                end,
-            )));
+            return Err(ExecError::OperatorWithInvalidType(
+                ParseError::with_message(
+                    "unable to use `&&` operator on a dictionary",
+                    "",
+                    start,
+                    end,
+                ),
+            ));
         }
     };
 
@@ -512,7 +529,7 @@ fn evaluate_and<'a>(
         (Value::Bool(a), Value::Bool(b)) => Ok(ValueOrScope::Value(Value::Bool(a && b))),
         (l, r) => {
             let (start, end) = operator.range();
-            Err(ExecError::OperatorWithInvalidType(ParseError::new(
+            Err(ExecError::OperatorWithInvalidType(ParseError::from_string(
                 format!(
                     "unable to use `&&` operator on {} (left) and {} (right)",
                     l.type_name(),
@@ -535,12 +552,14 @@ fn evaluate_or<'a>(
         ValueOrScope::Value(v) => v,
         ValueOrScope::Scope(_) => {
             let (start, end) = operator.range();
-            return Err(ExecError::OperatorWithInvalidType(ParseError::new(
-                String::from("unable to use `&&` operator on a dictionary"),
-                "",
-                start,
-                end,
-            )));
+            return Err(ExecError::OperatorWithInvalidType(
+                ParseError::with_message(
+                    "unable to use `&&` operator on a dictionary",
+                    "",
+                    start,
+                    end,
+                ),
+            ));
         }
     };
 
@@ -548,12 +567,14 @@ fn evaluate_or<'a>(
         ValueOrScope::Value(v) => v,
         ValueOrScope::Scope(_) => {
             let (start, end) = operator.range();
-            return Err(ExecError::OperatorWithInvalidType(ParseError::new(
-                String::from("unable to use `||` operator on a dictionary"),
-                "",
-                start,
-                end,
-            )));
+            return Err(ExecError::OperatorWithInvalidType(
+                ParseError::with_message(
+                    "unable to use `||` operator on a dictionary",
+                    "",
+                    start,
+                    end,
+                ),
+            ));
         }
     };
 
@@ -576,7 +597,7 @@ fn evaluate_or<'a>(
         (Some(false), Some(false)) => Ok(ValueOrScope::Value(right)),
         (None, _) | (_, None) => {
             let (start, end) = operator.range();
-            Err(ExecError::OperatorWithInvalidType(ParseError::new(
+            Err(ExecError::OperatorWithInvalidType(ParseError::from_string(
                 format!(
                     "unable to use `||` operator on {} (left) and {} (right)",
                     left.type_name(),
@@ -604,7 +625,7 @@ fn evaluate_expansion<'a>(
         ValueOrScope::Scope(s) => s,
         ValueOrScope::Value(v) => {
             let (start, end) = expansion.identifier.range();
-            return Err(ExecError::OperatorWithInvalidType(ParseError::new(
+            return Err(ExecError::OperatorWithInvalidType(ParseError::from_string(
                 format!("unable to expand {}", v.type_name()),
                 "",
                 start,

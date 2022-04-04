@@ -57,16 +57,15 @@ macro_rules! impl_subunits {
             }
             Err(e) => {
                 if let Some(seq_err) = $seq_error {
-                    if seq_err.end > $offset + $taken + 1 {
+                    if seq_err.end > e.end {
                         return Err(seq_err);
-                    } else if seq_err.end == $offset + $taken + 1 {
-                        let names = seq_err.names.iter().chain(e.names.iter()).map(|x| x.as_str()).collect::<Vec<_>>();
-
-                        return Err($crate::ParseError::new_multi_name(
-                            format!("expected one of: {}", names.join(", ")),
-                            names.into_iter().map(|x| x.to_owned()).collect(),
-                            $offset + $taken,
-                            $offset + $taken + 1,
+                    } else if seq_err.end == e.end {
+                        let mut names: Vec<&'static str> = seq_err.names;
+                        names.extend(&e.names);
+                        return Err($crate::ParseError::expected_one_of(
+                            names,
+                            e.end,
+                            e.end + 1,
                         ));
                     }
                 }
@@ -84,17 +83,24 @@ macro_rules! impl_subunits {
                 if seq_err.end > $offset + $taken + 1 {
                     return Err(seq_err);
                 } else if seq_err.end == $offset + $taken + 1 {
-                    return Err($crate::ParseError::new(
-                        format!("expected one of: {}, {}", seq_err.names.join(", "), $value),
-                        Self::name(),
+                    let mut names: Vec<&'static str> = seq_err.names;
+
+                    match $value {
+                        "\n" => names.push("newline"),
+                        "\t" => names.push("tab"),
+                        " " => names.push("space"),
+                        x => names.push(x),
+                    }
+
+                    return Err($crate::ParseError::expected_one_of(
+                        names,
                         $offset + $taken,
                         $offset + $taken + 1,
                     ));
                 }
             }
 
-            return Err($crate::ParseError::new(
-                format!("expected {}", $value),
+            return Err($crate::ParseError::expected(
                 $value,
                 $offset + $taken,
                 $offset + $taken + 1,
@@ -150,36 +156,32 @@ macro_rules! one_of {
             fn try_match(content: &str, offset: usize) -> $crate::Result<(Self, usize, Option<$crate::ParseError>)> {
                 let mut progress = 0;
                 let mut unmatched = Vec::new();
-                let mut error = None;
-                let mut seq_error: Option<$crate::ParseError> = None;
+                let mut error: Option<$crate::ParseError> = None;
 
                 $(
                     match <$term>::try_match(content, offset) {
                         Ok((unit, took, seq_err)) => {
                             if let Some(this_seq_err) = seq_err {
-                                if let Some(existing_seq_err) = seq_error.as_ref() {
+                                if let Some(existing_seq_err) = error.as_ref() {
                                     if this_seq_err.end > existing_seq_err.end {
-                                        seq_error = Some(this_seq_err.clone());
+                                        error = Some(this_seq_err.clone());
                                     }
                                 } else {
-                                    seq_error = Some(this_seq_err.clone());
-                                    {&seq_error};
+                                    error = Some(this_seq_err.clone());
                                 }
 
                                 let took = this_seq_err.end - offset;
                                 if took > progress {
-                                    unmatched = this_seq_err.names.iter().map(|x| x.as_str()).collect();
+                                    unmatched = this_seq_err.names.clone();
                                     error = Some(this_seq_err.clone());
                                     progress = took;
-                                    {(&progress, &error, &unmatched)}; // these values may not be read, this prevents a warning
                                 } else if took == progress {
                                     for name in &this_seq_err.names {
-                                        unmatched.push(name.as_str());
+                                        unmatched.push(name);
                                     }
                                 }
                             }
-
-                            return Ok(($name::$term_name(Box::new(unit)), took, seq_error))
+                            return Ok(($name::$term_name(Box::new(unit)), took, error))
                         },
                         Err(err) => {
                             if err.end < offset {
@@ -200,9 +202,8 @@ macro_rules! one_of {
                 if unmatched.len() == 1 {
                     return Err(error.expect("error was not set!"));
                 } else {
-                    return Err($crate::ParseError::new_multi_name(
-                        format!("expected one of: {}", unmatched.join(", ")),
-                        unmatched.iter().map(|x| x.to_string()).collect(),
+                    return Err($crate::ParseError::expected_one_of(
+                        unmatched,
                         offset + progress - 1,
                         offset + progress,
                     ));
@@ -239,8 +240,7 @@ macro_rules! unit {
                 offset: usize,
             ) -> $crate::Result<(Self, usize, Option<$crate::ParseError>)> {
                 if !content.starts_with($value) {
-                    return Err($crate::ParseError::new(
-                        format!("expected `{}`", $value),
+                    return Err($crate::ParseError::expected(
                         <$name>::name(),
                         offset,
                         offset + 1,
@@ -262,7 +262,13 @@ macro_rules! unit {
             }
 
             fn name() -> &'static str {
-                $value
+                match $value {
+                    "." => "\".\"",
+                    "," => "\",\"",
+                    "\n" => "newline",
+                    "\t" => "tab",
+                    x => x,
+                }
             }
         }
     };
@@ -285,8 +291,7 @@ macro_rules! char_rule {
                 let size = $crate::take_char_while(content, $rule);
 
                 if size == 0 {
-                    return Err($crate::ParseError::new(
-                        format!("expected {}", stringify!($name)),
+                    return Err($crate::ParseError::expected(
                         Self::name(),
                         offset,
                         offset + 1,

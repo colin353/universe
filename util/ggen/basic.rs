@@ -46,11 +46,15 @@ pub struct Comment {
     end: usize,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct EOF {
+    pos: usize,
+}
+
 impl GrammarUnit for QuotedString {
     fn try_match(content: &str, offset: usize) -> Result<(Self, usize, Option<ParseError>)> {
         if !content.starts_with('"') {
-            return Err(ParseError::new(
-                String::from("expected quoted string"),
+            return Err(ParseError::expected(
                 QuotedString::name(),
                 offset,
                 offset + 1,
@@ -76,8 +80,8 @@ impl GrammarUnit for QuotedString {
         match last {
             Some('"') => (),
             Some(_) | None => {
-                return Err(ParseError::new(
-                    String::from("unterminated quoted string"),
+                return Err(ParseError::with_message(
+                    "unterminated quoted string",
                     QuotedString::name(),
                     offset,
                     offset + end,
@@ -111,12 +115,7 @@ impl GrammarUnit for Whitespace {
     fn try_match(content: &str, offset: usize) -> Result<(Self, usize, Option<ParseError>)> {
         let size = take_char_while(content, char::is_whitespace);
         if size == 0 {
-            return Err(ParseError::new(
-                String::from("expected whitespace"),
-                Whitespace::name(),
-                offset,
-                offset + 1,
-            ));
+            return Err(ParseError::expected(Whitespace::name(), offset, offset + 1));
         }
 
         Ok((
@@ -142,12 +141,7 @@ impl GrammarUnit for BareWord {
     fn try_match(content: &str, offset: usize) -> Result<(Self, usize, Option<ParseError>)> {
         let size = take_char_while(content, |c| char::is_alphanumeric(c) || c == '_');
         if size == 0 {
-            return Err(ParseError::new(
-                String::from("expected bare word"),
-                Self::name(),
-                offset,
-                offset + 1,
-            ));
+            return Err(ParseError::expected(Self::name(), offset, offset + 1));
         }
 
         Ok((
@@ -185,19 +179,14 @@ impl GrammarUnit for Numeric {
         });
 
         if size == 0 {
-            return Err(ParseError::new(
-                String::from("expected number"),
-                Self::name(),
-                offset,
-                offset + 1,
-            ));
+            return Err(ParseError::expected(Self::name(), offset, offset + 1));
         }
 
         let value = match content[..size].parse::<f64>() {
             Ok(val) => val,
             Err(_) => {
-                return Err(ParseError::new(
-                    String::from("unable to parse number"),
+                return Err(ParseError::with_message(
+                    "unable to parse number",
                     Self::name(),
                     offset,
                     offset + size,
@@ -229,19 +218,14 @@ impl GrammarUnit for Integer {
     fn try_match(content: &str, offset: usize) -> Result<(Self, usize, Option<ParseError>)> {
         let size = take_char_while(content, |c| char::is_numeric(c) || c == '-' || c == '+');
         if size == 0 {
-            return Err(ParseError::new(
-                String::from("expected integer"),
-                Self::name(),
-                offset,
-                offset + 1,
-            ));
+            return Err(ParseError::expected(Self::name(), offset, offset + 1));
         }
 
         let value = match content[..size].parse::<i64>() {
             Ok(val) => val,
             Err(_) => {
-                return Err(ParseError::new(
-                    String::from("unable to parse integer"),
+                return Err(ParseError::with_message(
+                    "unable to parse integer",
                     Self::name(),
                     offset,
                     offset + size,
@@ -276,8 +260,8 @@ impl GrammarUnit for Identifier {
         match content.chars().next() {
             Some(ch) => {
                 if !ch.is_alphabetic() && ch != '_' {
-                    return Err(ParseError::new(
-                        String::from("identifiers must begin with a letter or underscore"),
+                    return Err(ParseError::with_message(
+                        "identifiers must begin with a letter or underscore",
                         Self::name(),
                         offset,
                         offset + 1,
@@ -286,23 +270,13 @@ impl GrammarUnit for Identifier {
                 content = &content[ch.len_utf8()..];
             }
             None => {
-                return Err(ParseError::new(
-                    String::from("expected identifier"),
-                    Self::name(),
-                    offset,
-                    offset + 1,
-                ));
+                return Err(ParseError::expected(Self::name(), offset, offset + 1));
             }
         }
 
         let size = 1 + take_char_while(content, |c| c.is_alphanumeric() || c == '_');
         if size == 0 {
-            return Err(ParseError::new(
-                String::from("expected identifier"),
-                Self::name(),
-                offset,
-                offset + 1,
-            ));
+            return Err(ParseError::expected(Self::name(), offset, offset + 1));
         }
 
         Ok((
@@ -328,12 +302,7 @@ impl GrammarUnit for Identifier {
 impl GrammarUnit for Comment {
     fn try_match(mut content: &str, offset: usize) -> Result<(Self, usize, Option<ParseError>)> {
         if !content.starts_with("//") {
-            return Err(ParseError::new(
-                String::from("expected //"),
-                Self::name(),
-                offset,
-                offset + 1,
-            ));
+            return Err(ParseError::expected(Self::name(), offset, offset + 1));
         }
 
         let size = 2 + take_char_while(&content[2..], |c| c != '\n');
@@ -353,6 +322,25 @@ impl GrammarUnit for Comment {
 
     fn name() -> &'static str {
         "comment"
+    }
+}
+
+// Comment starts with two slashes and extends to a newline
+impl GrammarUnit for EOF {
+    fn try_match(mut content: &str, offset: usize) -> Result<(Self, usize, Option<ParseError>)> {
+        if content.is_empty() {
+            return Ok((Self { pos: offset }, 0, None));
+        }
+
+        Err(ParseError::expected(Self::name(), offset, offset + 1))
+    }
+
+    fn range(&self) -> (usize, usize) {
+        (self.pos, self.pos)
+    }
+
+    fn name() -> &'static str {
+        "EOF"
     }
 }
 

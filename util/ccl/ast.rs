@@ -1,6 +1,6 @@
 use ggen::{
     AtLeastOne, Comment, GrammarUnit, Identifier, Numeric, ParseError, QuotedString,
-    RepeatWithSeparator, Whitespace as NewlineWhitespace,
+    RepeatWithSeparator, Whitespace as NewlineWhitespace, EOF,
 };
 
 ggen::sequence!(
@@ -13,6 +13,7 @@ ggen::sequence!(
     _ws3: Vec<WhitespaceNewlineComment>,
     _ws4: Option<Whitespace>,
     comment: Option<Comment>, // possible trailing comment w/ no newline
+    end: EOF,
 );
 
 ggen::sequence!(
@@ -184,6 +185,7 @@ ggen::one_of!(
 
 ggen::sequence!(
     ImportStatement,
+    _pre: Vec<Whitespace>,
     "import",
     _ws1: AtLeastOne<Whitespace>,
     spec: ImportSpecification,
@@ -216,12 +218,7 @@ pub fn get_ast(content: &str) -> Result<Module, ParseError> {
                 return Ok(module);
             }
 
-            ParseError::new(
-                String::from("unexpected extra content"),
-                "module",
-                took,
-                took + 1,
-            )
+            ParseError::with_message("unexpected extra content", "module", took, took + 1)
         }
         Err(e) => e,
     };
