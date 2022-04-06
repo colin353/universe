@@ -19,13 +19,78 @@ message Environment {
   ArgValue value = 2;
 }
 
+enum TaskState {
+  STARTING = 0;
+  STARTED = 1;
+  SUCCESS = 2;
+  FAILED = 3;
+  RESTARTING = 4;
+  STOPPING = 5;
+  STOPPED = 6;
+}
+
 message Task {
+  // Specified during task creation
   string name = 1;
   Binary binary = 2;
   repeated Environment environment = 3;
   repeated ArgValue arguments = 4;
+
+  // Runtime parameters
+  TaskState state = 5;
+}
+
+enum DiffType {
+  UNCHANGED = 0;
+  ADDED = 1;
+  MODIFIED = 2;
+  DELETED = 3;
+}
+
+message Diff {
+  string name = 1;
+  DiffType kind = 2;
 }
 
 message Configuration {
   repeated Task tasks = 1;
+}
+
+message UpdateRequest {
+  Configuration config = 1;
+
+  // If set, tear down rather than create
+  bool down = 2;
+}
+
+message UpdateResponse {
+  bool success = 1;
+  string error_message = 2;
+  DiffResponse diff_applied = 3;
+}
+
+message DiffResponse {
+  Configuration added = 1;
+  Configuration removed = 2;
+}
+
+message Endpoint {
+  bytes ip_address = 1;
+  uint32 port = 2;
+}
+
+message ResolveRequest {
+  string service_name = 1;
+}
+
+message ResolveResponse {
+  bool success = 1;
+  repeated Endpoint endpoints = 2;
+  int64 ttl = 3;
+}
+
+service MetalService {
+   rpc Update(UpdateRequest) returns (UpdateResponse);
+   rpc Diff(UpdateRequest) returns (DiffResponse);
+   rpc Resolve(ResolveRequest) returns (ResolveResponse);
 }

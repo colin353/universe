@@ -42,3 +42,29 @@ rust_library(
     ],
 )
 
+rust_library(
+    name = "service",
+    srcs = ["service.rs"],
+    edition = "2018",
+    deps = [
+        ":metal_grpc_rust",
+        ":state",
+        ":diff",
+        "@io_bazel_rules_rust//proto/raze:grpc",
+    ],
+)
+
+rust_library(
+    name = "diff",
+    srcs = ["diff.rs"],
+    edition = "2018",
+    deps = [
+        ":metal_grpc_rust",
+    ],
+)
+
+
+rust_test(
+    name = "service_test",
+    crate = ":service",
+)

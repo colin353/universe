@@ -5,12 +5,12 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 
 #[derive(Debug)]
-enum MetalStateError {
+pub enum MetalStateError {
     FilesystemError(std::io::Error),
     ProtobufError(protobuf::ProtobufError),
 }
 
-trait MetalStateManager {
+pub trait MetalStateManager {
     fn initialize(&self) -> Result<(), MetalStateError> {
         Ok(())
     }
@@ -119,8 +119,16 @@ impl MetalStateManager for FilesystemState {
     }
 }
 
-struct FakeState {
+pub struct FakeState {
     tasks: Mutex<HashMap<String, Task>>,
+}
+
+impl FakeState {
+    pub fn new() -> Self {
+        Self {
+            tasks: Mutex::new(HashMap::new()),
+        }
+    }
 }
 
 impl MetalStateManager for FakeState {
