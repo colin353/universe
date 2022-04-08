@@ -63,6 +63,18 @@ rust_library(
     ],
 )
 
+rust_library(
+    name = "monitor",
+    srcs = [
+        "monitor.rs",
+        "process.rs"
+    ],
+    edition = "2018",
+    deps = [
+        ":metal_grpc_rust",
+        "//third_party:libc",
+    ],
+)
 
 rust_test(
     name = "service_test",

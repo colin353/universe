@@ -2,6 +2,7 @@ syntax = "proto3";
 
 message Binary {
   string url = 1;
+  string path = 2;
 }
 
 enum ArgKind {
@@ -29,6 +30,20 @@ enum TaskState {
   STOPPED = 6;
 }
 
+message ServiceAssignment {
+  uint32 port = 1;
+  string service_name = 2;
+}
+
+message TaskRuntimeInfo {
+  uint32 pid = 1;
+  bytes ip_address = 2;
+  repeated ServiceAssignment services = 3;
+  uint64 last_start_time = 4;
+  uint64 last_stopped_time = 5;
+  int32 exit_status = 6;
+}
+
 message Task {
   // Specified during task creation
   string name = 1;
@@ -36,8 +51,9 @@ message Task {
   repeated Environment environment = 3;
   repeated ArgValue arguments = 4;
 
-  // Runtime parameters
   TaskState state = 5;
+
+  TaskRuntimeInfo runtime_info = 6;
 }
 
 enum DiffType {
