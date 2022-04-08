@@ -1,6 +1,8 @@
 use crate::ast;
 use crate::exec::ExecError;
 
+use std::collections::HashMap;
+
 pub struct ImportResolution {
     pub module: ast::Module,
     pub content: String,
@@ -13,6 +15,45 @@ pub trait ImportResolver: std::fmt::Debug {
         name: &str,
         context: Option<&str>,
     ) -> Result<ImportResolution, ExecError>;
+}
+
+#[derive(Debug)]
+pub struct StaticImportResolver {
+    imports: HashMap<&'static str, &'static str>,
+}
+impl StaticImportResolver {
+    fn new() -> Self {
+        Self {
+            imports: HashMap::new(),
+        }
+    }
+
+    fn add_import(&mut self, name: &'static str, content: &'static str) {
+        self.imports.insert(name, content);
+    }
+}
+
+impl ImportResolver for StaticImportResolver {
+    fn resolve_import(&self, name: &str, _: Option<&str>) -> Result<ImportResolution, ExecError> {
+        if let Some(c) = self.imports.get(name) {
+            let module = match ast::get_ast(c) {
+                Ok(a) => a,
+                Err(e) => {
+                    return Err(ExecError::ImportParsingError(e));
+                }
+            };
+            return Ok(ImportResolution {
+                module,
+                content: c.to_string(),
+                context: None,
+            });
+        }
+
+        Err(ExecError::ImportResolutionError(format!(
+            "unable to resolve import {:?}",
+            name
+        )))
+    }
 }
 
 #[derive(Debug)]
