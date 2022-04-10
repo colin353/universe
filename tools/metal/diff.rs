@@ -1,6 +1,41 @@
-use metal_grpc_rust::{Diff, DiffType, Task};
+use metal_grpc_rust::{Diff, DiffResponse, DiffType, Task};
 
 use std::collections::HashSet;
+
+pub fn fmt_diff(diff: &DiffResponse) -> String {
+    let added_tasks = diff.get_added().get_tasks().len();
+    let removed_tasks = diff.get_removed().get_tasks().len();
+
+    if added_tasks == 0 && removed_tasks == 0 {
+        return format!("No changes");
+    }
+
+    let mut out = String::new();
+    if added_tasks > 0 {
+        out += &format!(
+            "Updated {} task{}\n",
+            added_tasks,
+            if added_tasks == 1 { "" } else { "s" }
+        );
+
+        for task in diff.get_added().get_tasks() {
+            out += &format!("  {}", task.get_name());
+        }
+    }
+
+    if removed_tasks > 0 {
+        out += &format!(
+            "Stopped {} task{}\n",
+            removed_tasks,
+            if removed_tasks == 1 { "" } else { "s" }
+        );
+
+        for task in diff.get_removed().get_tasks() {
+            out += &format!("  {}", task.get_name());
+        }
+    }
+    out
+}
 
 // TODO: make this more sophisticated (capable of printing a nice diff of tasks in the terminal)
 pub fn diff_task(original: &Task, proposed: &Task) -> Diff {

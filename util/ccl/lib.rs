@@ -7,7 +7,9 @@ mod import_resolver;
 pub use ast::{get_ast, get_ast_or_panic, Module};
 pub use exec::{exec, exec_with_import_resolvers, ExecError};
 pub use fmt::format;
-pub use import_resolver::{FakeImportResolver, FilesystemImportResolver, ImportResolver};
+pub use import_resolver::{
+    FakeImportResolver, FilesystemImportResolver, ImportResolver, StaticImportResolver,
+};
 
 #[cfg(test)]
 mod eval_tests;

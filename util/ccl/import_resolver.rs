@@ -22,13 +22,13 @@ pub struct StaticImportResolver {
     imports: HashMap<&'static str, &'static str>,
 }
 impl StaticImportResolver {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             imports: HashMap::new(),
         }
     }
 
-    fn add_import(&mut self, name: &'static str, content: &'static str) {
+    pub fn add_import(&mut self, name: &'static str, content: &'static str) {
         self.imports.insert(name, content);
     }
 }
@@ -94,6 +94,11 @@ impl ImportResolver for FakeImportResolver {
 
 #[derive(Debug)]
 pub struct FilesystemImportResolver {}
+impl FilesystemImportResolver {
+    pub fn new() -> Self {
+        Self {}
+    }
+}
 impl ImportResolver for FilesystemImportResolver {
     fn resolve_import(
         &self,

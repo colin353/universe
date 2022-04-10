@@ -1,17 +1,28 @@
+use std::sync::Arc;
+
+static METAL_CCL_IMPORT: &str = include_str!("metal.ccl");
+
 #[derive(Debug)]
-enum MetalConfigError {
+pub enum MetalConfigError {
     CCLParseError(ggen::ParseError),
     CCLExecError(ccl::ExecError),
     ConversionError(String),
 }
 
-fn read_config(input: &str) -> Result<metal_grpc_rust::Configuration, MetalConfigError> {
+pub fn read_config(input: &str) -> Result<metal_grpc_rust::Configuration, MetalConfigError> {
     let ast = match ccl::get_ast(input) {
         Ok(a) => a,
         Err(e) => return Err(MetalConfigError::CCLParseError(e)),
     };
 
-    let value = match ccl::exec(ast, input, "") {
+    let mut static_resolver = ccl::StaticImportResolver::new();
+    static_resolver.add_import("metal", METAL_CCL_IMPORT);
+    let resolvers: Vec<Arc<dyn ccl::ImportResolver>> = vec![
+        Arc::new(static_resolver),
+        Arc::new(ccl::FilesystemImportResolver::new()),
+    ];
+
+    let value = match ccl::exec_with_import_resolvers(ast, input, "", resolvers) {
         Ok(v) => v,
         Err(e) => return Err(MetalConfigError::CCLExecError(e)),
     };
@@ -162,6 +173,15 @@ fn extract_environment(
                     if ty.as_str() == "port" {
                         let mut av = metal_grpc_rust::ArgValue::new();
                         av.set_kind(metal_grpc_rust::ArgKind::PORT_ASSIGNMENT);
+
+                        if let Some(ccl::Value::String(service_name)) = dict.get("name") {
+                            av.set_value(service_name.to_string());
+                        } else {
+                            return Err(MetalConfigError::ConversionError(format!(
+                                "port binding must have a name",
+                            )));
+                        }
+
                         env.set_value(av);
                     } else {
                         return Err(MetalConfigError::ConversionError(format!(
@@ -235,21 +255,18 @@ mod tests {
     fn test_read_config() {
         let result = read_config(
             r#"
+import { task, port_binding } from "metal"
+
 namespace = {
-    server = {
-        _metal_type = "task"
+    server = task {
         binary = {
             url = "http://test.com/server.exe"
         }
         environment = {
             SECRET_VALUE = "secret_content"
-            PORT = {
-                _metal_type = "port"
+            PORT = port_binding {
+                name = "my_service"
             }
-        }
-
-        port_binding = {
-            _metal_type = "port"
         }
         arguments = [
             "--help", "xyz",
@@ -274,6 +291,7 @@ namespace = {
             t.get_environment()[0].get_value().get_kind(),
             metal_grpc_rust::ArgKind::PORT_ASSIGNMENT
         );
+        assert_eq!(t.get_environment()[0].get_value().get_value(), "my_service");
 
         assert_eq!(t.get_environment()[1].get_name(), "SECRET_VALUE");
         assert_eq!(

@@ -19,6 +19,8 @@ rust_grpc_library(
 rust_library(
     name = "config",
     srcs = ["config.rs"],
+    data = ["metal.ccl"],
+    edition = "2018",
     deps = [
         ":metal_grpc_rust",
         "//util/ccl",
@@ -30,6 +32,8 @@ rust_library(
 rust_test(
     name = "config_test",
     crate = ":config",
+    # Not sure why this isn't inherited from the other target...
+    data = ["metal.ccl"],
 )
 
 rust_library(
@@ -79,4 +83,19 @@ rust_library(
 rust_test(
     name = "service_test",
     crate = ":service",
+)
+
+rust_binary(
+    name = "cli",
+    srcs = [
+        "cli.rs",
+    ],
+    edition = "2018",
+    deps = [
+        ":config",
+        ":diff",
+        ":metal_grpc_rust",
+        "//util/flags",
+        "@io_bazel_rules_rust//proto/raze:grpc",
+    ],
 )
