@@ -49,14 +49,17 @@ pub fn evaluate<'a>(
     expr: &ast::Expression,
     content: Cow<'a, str>,
     dependencies: &HashMap<String, ValueOrScope<'a>>,
+    context: &Scope<'a>,
 ) -> Result<ValueOrScope<'a>, ExecError> {
     match expr {
-        ast::Expression::SubExpression(sub) => evaluate(&sub.expression, content, dependencies),
+        ast::Expression::SubExpression(sub) => {
+            evaluate(&sub.expression, content, dependencies, context)
+        }
         ast::Expression::OperatorExpression(opex) => {
-            evaluate_operator_expression(&opex, content, dependencies)
+            evaluate_operator_expression(&opex, content, dependencies, context)
         }
         ast::Expression::ExpansionExpression(expansion) => {
-            evaluate_expansion(&expansion, content, dependencies)
+            evaluate_expansion(&expansion, content, dependencies, context)
         }
         ast::Expression::Value(value) => match value.as_ref() {
             ast::CCLValue::Identifier(ident) => {
@@ -75,10 +78,11 @@ pub fn evaluate<'a>(
                 Ok(ValueOrScope::Value(Value::String(value.value.clone())))
             }
             ast::CCLValue::Null(_) => Ok(ValueOrScope::Value(Value::Null)),
-            ast::CCLValue::Dictionary(dict) => Ok(ValueOrScope::Scope(Scope::from_dictionary(
-                dict.as_ref().clone(),
-                content,
-            ))),
+            ast::CCLValue::Dictionary(dict) => {
+                let s = Scope::from_dictionary(dict.as_ref().clone(), content);
+                s.set_parent(context);
+                Ok(ValueOrScope::Scope(s))
+            }
             ast::CCLValue::Array(array) => {
                 let mut output = Vec::new();
                 let elements = match array.values.as_ref() {
@@ -87,7 +91,7 @@ pub fn evaluate<'a>(
                 };
 
                 for expr in elements {
-                    let inner = match evaluate(expr, content.clone(), dependencies)? {
+                    let inner = match evaluate(expr, content.clone(), dependencies, context)? {
                         ValueOrScope::Scope(_) => {
                             let (start, end) = expr.range();
                             return Err(ExecError::ArraysCannotContainDictionaries(
@@ -126,6 +130,7 @@ fn evaluate_operator_expression<'a>(
     expr: &ast::OperatorExpression,
     content: Cow<'a, str>,
     dependencies: &HashMap<String, ValueOrScope<'a>>,
+    context: &Scope<'a>,
 ) -> Result<ValueOrScope<'a>, ExecError> {
     let values: Vec<_> = std::iter::once(&expr.value)
         .chain(expr.continuation.values.iter())
@@ -220,31 +225,38 @@ fn evaluate_operator_expression<'a>(
         values: &[&ast::ValueExpression],
         content: Cow<'a, str>,
         dependencies: &HashMap<String, ValueOrScope<'a>>,
+        context: &Scope<'a>,
     ) -> Result<ValueOrScope<'a>, ExecError> {
         let left = match tree[tree_idx].left {
-            Term::Tree(idx) => evaluate_tree(idx, tree, values, content.clone(), dependencies)?,
+            Term::Tree(idx) => {
+                evaluate_tree(idx, tree, values, content.clone(), dependencies, context)?
+            }
             Term::Value(idx) => match &values[idx] {
                 ast::ValueExpression::SubExpression(sub) => {
-                    evaluate(&sub.expression, content.clone(), dependencies)?
+                    evaluate(&sub.expression, content.clone(), dependencies, context)?
                 }
                 ast::ValueExpression::Value(value) => evaluate(
                     &ast::Expression::Value(value.clone()),
                     content.clone(),
                     dependencies,
+                    context,
                 )?,
             },
         };
 
         let right = match tree[tree_idx].right {
-            Term::Tree(idx) => evaluate_tree(idx, tree, values, content.clone(), dependencies)?,
+            Term::Tree(idx) => {
+                evaluate_tree(idx, tree, values, content.clone(), dependencies, context)?
+            }
             Term::Value(idx) => match &values[idx] {
                 ast::ValueExpression::SubExpression(sub) => {
-                    evaluate(&sub.expression, content.clone(), dependencies)?
+                    evaluate(&sub.expression, content.clone(), dependencies, context)?
                 }
                 ast::ValueExpression::Value(value) => evaluate(
                     &ast::Expression::Value(value.clone()),
                     content.clone(),
                     dependencies,
+                    context,
                 )?,
             },
         };
@@ -266,6 +278,7 @@ fn evaluate_operator_expression<'a>(
         values.as_slice(),
         content,
         dependencies,
+        context,
     )
 }
 
@@ -615,6 +628,7 @@ fn evaluate_expansion<'a>(
     expansion: &ast::ExpansionExpression,
     content: Cow<'a, str>,
     dependencies: &HashMap<String, ValueOrScope<'a>>,
+    context: &Scope<'a>,
 ) -> Result<ValueOrScope<'a>, ExecError> {
     let name = expansion.identifier.as_str(content.as_ref());
     let original = match dependencies
@@ -636,6 +650,7 @@ fn evaluate_expansion<'a>(
 
     let scope = original.duplicate();
     let override_scope = Scope::from_dictionary(expansion.target.clone(), content);
+    override_scope.set_parent(context);
     for deep_override in override_scope.inner.lock().unwrap().deep_overrides.iter() {
         scope.add_deep_overrides(deep_override.0.to_owned(), deep_override.1);
     }

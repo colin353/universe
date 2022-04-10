@@ -225,27 +225,17 @@ impl<'a> Scope<'a> {
             return Ok(s.clone());
         }
 
-        let result = {
-            let _lock = self.inner.try_lock().unwrap();
-            let expr: Option<ast::Expression> = _lock
-                .unresolved_identifiers
-                .get(ident)
-                .map(|s| s.to_owned());
-            expr
+        match self.partially_resolve(ident, offset)? {
+            ValueOrScope::Value(v) => {
+                return Err(ExecError::CannotResolveSymbol(ParseError::from_string(
+                    format!("unable to access inside of this (it's {})", v.type_name()),
+                    "",
+                    offset,
+                    offset + ident.len(),
+                )))
+            }
+            ValueOrScope::Scope(s) => return Ok(s),
         };
-        if result.is_some() {
-            match self.partially_resolve(ident, offset)? {
-                ValueOrScope::Value(v) => {
-                    return Err(ExecError::CannotResolveSymbol(ParseError::from_string(
-                        format!("unable to access inside of this (it's {})", v.type_name()),
-                        "",
-                        offset,
-                        offset + ident.len(),
-                    )))
-                }
-                ValueOrScope::Scope(s) => return Ok(s),
-            };
-        }
 
         Err(ExecError::CannotResolveSymbol(ParseError::from_string(
             format!("unable to resolve `{}`", ident),
@@ -545,18 +535,15 @@ impl<'a> Scope<'a> {
             .in_progress_identifiers
             .remove(specifier);
 
-        let out = eval::evaluate(&expr, content, &resolved_dependencies);
-
-        // Record the parentage of the scope
-        if let Ok(ValueOrScope::Scope(s)) = &out {
-            s.inner.lock().unwrap().parent_scope = Some(self.clone());
-        }
-
-        out
+        eval::evaluate(&expr, content, &resolved_dependencies, self)
     }
 
     pub fn add_import_resolvers(&self, resolvers: Vec<Arc<dyn ImportResolver>>) {
         self.inner.lock().unwrap().import_resolvers = resolvers;
+    }
+
+    pub fn set_parent(&self, parent: &Scope<'a>) {
+        self.inner.lock().unwrap().parent_scope = Some(parent.clone());
     }
 }
 

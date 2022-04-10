@@ -170,3 +170,38 @@ qrst + 5
 
     assert_eq!(value, Value::Number(6.5));
 }
+
+#[test]
+fn test_imports_nested() {
+    let imported_content = r#"
+animal = {
+    __type = "animal"
+}
+        
+person = {
+    __type = "person"
+}
+    "#
+    .to_string();
+
+    let resolvers: Vec<Arc<dyn ImportResolver>> = vec![Arc::new(FakeImportResolver::new(vec![(
+        String::from("./xyz.ccl"),
+        imported_content,
+    )]))];
+
+    let content = r#"
+import { person, animal } from "./xyz.ccl"
+namespace = {
+    first = animal {
+        second = person {
+            name = "colin"
+        }
+    }
+}
+namespace.first.second.__type
+"#;
+    let ast = get_ast_or_panic(content);
+    let value = exec_with_import_resolvers(ast, content, "", resolvers).unwrap();
+
+    assert_eq!(value, Value::String(String::from("person")));
+}
