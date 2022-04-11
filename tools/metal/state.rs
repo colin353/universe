@@ -10,7 +10,7 @@ pub enum MetalStateError {
     ProtobufError(protobuf::ProtobufError),
 }
 
-pub trait MetalStateManager {
+pub trait MetalStateManager: Send + Sync {
     fn initialize(&self) -> Result<(), MetalStateError> {
         Ok(())
     }
@@ -19,7 +19,7 @@ pub trait MetalStateManager {
     fn all_tasks(&self) -> Result<Vec<Task>, MetalStateError>;
 }
 
-struct FilesystemState {
+pub struct FilesystemState {
     root: Mutex<std::path::PathBuf>,
 }
 
@@ -33,11 +33,17 @@ fn path_from_resource_name(root: &std::path::Path, name: &str) -> std::path::Pat
 }
 
 impl FilesystemState {
+    pub fn new(root: std::path::PathBuf) -> Self {
+        Self {
+            root: Mutex::new(root),
+        }
+    }
+
     fn initialize(&self) -> Result<(), MetalStateError> {
         let root = self.root.lock().unwrap();
         let res = root.join("resources");
         if !res.exists() {
-            match std::fs::create_dir_all(&*root) {
+            match std::fs::create_dir_all(&*res) {
                 Ok(_) => return Ok(()),
                 Err(e) => return Err(MetalStateError::FilesystemError(e)),
             };
@@ -89,10 +95,14 @@ impl FilesystemState {
 }
 
 impl MetalStateManager for FilesystemState {
+    fn initialize(&self) -> Result<(), MetalStateError> {
+        self.initialize()
+    }
+
     fn set_task(&self, task: &Task) -> Result<(), MetalStateError> {
         let root = self.root.lock().unwrap();
         let mut filename = path_from_resource_name(&root, task.get_name());
-        filename.set_extension(".task");
+        filename.set_extension("task");
         let mut f = match std::fs::File::create(filename) {
             Ok(f) => f,
             Err(e) => return Err(MetalStateError::FilesystemError(e)),
@@ -106,7 +116,7 @@ impl MetalStateManager for FilesystemState {
     fn get_task(&self, name: &str) -> Result<Option<Task>, MetalStateError> {
         let root = self.root.lock().unwrap();
         let mut filename = path_from_resource_name(&root, name);
-        filename.set_extension(".task");
+        filename.set_extension("task");
         Self::read_task(&filename)
     }
 

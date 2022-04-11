@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{MetalMonitorError, MetalMonitorInner, PortAllocator};
+use crate::{MetalMonitor, MetalMonitorError, PortAllocator};
 use metal_grpc_rust::{ArgKind, ServiceAssignment, Task, TaskRuntimeInfo};
 
 fn ts() -> u64 {
@@ -10,7 +10,7 @@ fn ts() -> u64 {
         .as_micros() as u64
 }
 
-impl MetalMonitorInner {
+impl MetalMonitor {
     fn ip_address(&self) -> Vec<u8> {
         match self.ip_address {
             std::net::IpAddr::V4(a) => a.octets().to_vec(),

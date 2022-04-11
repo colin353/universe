@@ -17,6 +17,16 @@ rust_grpc_library(
 )
 
 rust_library(
+    name = "core",
+    srcs = ["core.rs"],
+    edition = "2018",
+    deps = [
+        ":metal_grpc_rust",
+    ]
+)
+
+
+rust_library(
     name = "config",
     srcs = ["config.rs"],
     data = ["metal.ccl"],
@@ -52,6 +62,7 @@ rust_library(
     edition = "2018",
     deps = [
         ":metal_grpc_rust",
+        ":core",
         ":state",
         ":diff",
         "@io_bazel_rules_rust//proto/raze:grpc",
@@ -75,6 +86,7 @@ rust_library(
     ],
     edition = "2018",
     deps = [
+        ":core",
         ":metal_grpc_rust",
         "//third_party:libc",
     ],
@@ -99,3 +111,20 @@ rust_binary(
         "@io_bazel_rules_rust//proto/raze:grpc",
     ],
 )
+
+rust_binary(
+    name = "metal",
+    srcs = [ 
+        "main.rs",
+    ],
+    edition = "2018",
+    deps = [
+        ":service",
+        ":state",
+        ":monitor",
+        ":metal_grpc_rust",
+        "@io_bazel_rules_rust//proto/raze:tls_api_stub",
+        "@io_bazel_rules_rust//proto/raze:grpc",
+    ]
+)
+

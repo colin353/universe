@@ -5,21 +5,17 @@ use diff::diff_task;
 use metal_grpc_rust::{Configuration, DiffResponse, DiffType, Task, TaskState};
 use state::{MetalStateError, MetalStateManager};
 
-struct MetalServiceHandler(Arc<MetalServiceHandlerInner>);
-
-impl MetalServiceHandler {
-    fn new(state: Arc<dyn MetalStateManager>) -> Result<Self, MetalStateError> {
-        Ok(Self(Arc::new(MetalServiceHandlerInner::new(state)?)))
-    }
-}
-
-pub struct MetalServiceHandlerInner {
+pub struct MetalServiceHandler {
     tasks: RwLock<HashMap<String, Task>>,
     state: Arc<dyn MetalStateManager>,
+    monitor: Arc<dyn core::Monitor>,
 }
 
-impl MetalServiceHandlerInner {
-    fn new(state: Arc<dyn MetalStateManager>) -> Result<Self, MetalStateError> {
+impl MetalServiceHandler {
+    pub fn new(
+        state: Arc<dyn MetalStateManager>,
+        monitor: Arc<dyn core::Monitor>,
+    ) -> Result<Self, MetalStateError> {
         // Initialize the task state by reading from any existing state
         let tasks = state
             .all_tasks()?
@@ -29,6 +25,7 @@ impl MetalServiceHandlerInner {
 
         Ok(Self {
             tasks: RwLock::new(tasks),
+            monitor,
             state,
         })
     }
@@ -63,7 +60,7 @@ fn compute_diff(
 
 impl MetalServiceHandler {
     fn update(&self, req: metal_grpc_rust::UpdateRequest) -> metal_grpc_rust::UpdateResponse {
-        let mut locked = self.0.tasks.write().unwrap();
+        let mut locked = self.tasks.write().unwrap();
         let difference = compute_diff(&locked, req.get_config(), req.get_down());
         for task in difference.get_added().get_tasks() {
             if let Some(t) = locked.get_mut(task.get_name()) {
@@ -71,10 +68,10 @@ impl MetalServiceHandler {
                 t.set_environment(task.get_environment().to_owned().into_iter().collect());
                 t.set_arguments(task.get_arguments().to_owned().into_iter().collect());
                 t.set_state(TaskState::RESTARTING);
-                self.0.state.set_task(t);
+                self.state.set_task(t);
             } else {
                 locked.insert(task.get_name().to_owned(), task.to_owned());
-                self.0.state.set_task(task);
+                self.state.set_task(task);
             }
         }
 
@@ -82,17 +79,24 @@ impl MetalServiceHandler {
             if let Some(t) = locked.get_mut(task.get_name()) {
                 t.set_state(TaskState::STOPPING);
                 t.set_environment(task.get_environment().to_owned().into_iter().collect());
-                self.0.state.set_task(t);
+                self.state.set_task(t);
             }
         }
 
         let mut out = metal_grpc_rust::UpdateResponse::new();
+
+        // Try to actually enact the difference using the monitor
+        match self.monitor.execute(&difference) {
+            Ok(_) => out.set_success(true),
+            Err(e) => out.set_error_message(format!("failed to enact diff: {:?}", e)),
+        }
+
         out.set_diff_applied(difference);
         out
     }
 
     fn diff(&self, req: metal_grpc_rust::UpdateRequest) -> metal_grpc_rust::DiffResponse {
-        let locked = self.0.tasks.read().unwrap();
+        let locked = self.tasks.read().unwrap();
         compute_diff(&locked, req.get_config(), req.get_down())
     }
 
@@ -135,7 +139,8 @@ mod tests {
     #[test]
     fn test_simple_setup() {
         let state = Arc::new(FakeState::new());
-        let service = MetalServiceHandler::new(state).unwrap();
+        let monitor = Arc::new(core::FakeMonitor::new());
+        let service = MetalServiceHandler::new(state, monitor).unwrap();
 
         let mut update = metal_grpc_rust::UpdateRequest::new();
         let mut t = Task::new();

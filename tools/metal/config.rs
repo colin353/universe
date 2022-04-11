@@ -118,7 +118,7 @@ fn extract_task(
     }
 
     // Validate task
-    if task.get_binary().get_url().is_empty() {
+    if task.get_binary().get_url().is_empty() && task.get_binary().get_path().is_empty() {
         return Err(MetalConfigError::ConversionError(String::from(
             "task must contain a binary!",
         )));
@@ -141,14 +141,23 @@ fn extract_binary(dict: &ccl::Dictionary) -> Result<metal_grpc_rust::Binary, Met
                     )))
                 }
             },
+            "path" => match v {
+                ccl::Value::String(path) => binary.set_path(path.clone()),
+                _ => {
+                    return Err(MetalConfigError::ConversionError(format!(
+                        "binary's path field must be a string, got {:?}",
+                        v.type_name()
+                    )))
+                }
+            },
             _ => continue,
         }
     }
 
     // Validate the binary
-    if binary.get_url().is_empty() {
+    if binary.get_url().is_empty() && binary.get_path().is_empty() {
         return Err(MetalConfigError::ConversionError(String::from(
-            "binary must contain a url field!",
+            "binary must contain a url or path field!",
         )));
     }
 

@@ -1,0 +1,30 @@
+use state::MetalStateManager;
+
+use std::sync::Arc;
+
+fn main() {
+    let root_dir = std::path::PathBuf::from("/tmp/metal");
+    let ip_address = "127.0.0.1".parse().expect("failed to parse IP address");
+
+    //let state_mgr = state::FilesystemState::new(root_dir.clone());
+    let state_mgr = state::FakeState::new();
+    state_mgr.initialize().unwrap();
+
+    let monitor = monitor::MetalMonitor::new(root_dir.clone(), ip_address);
+
+    let handler = service::MetalServiceHandler::new(Arc::new(state_mgr), Arc::new(monitor))
+        .expect("failed to create service handler");
+
+    let mut server = grpc::ServerBuilder::<tls_api_stub::TlsAcceptor>::new();
+    server.http.set_port(20202);
+    server.add_service(metal_grpc_rust::MetalServiceServer::new_service_def(
+        handler,
+    ));
+    server.http.set_cpu_pool_threads(8);
+
+    let _server = server.build().expect("failed to build server");
+
+    loop {
+        std::thread::sleep(std::time::Duration::from_secs(60));
+    }
+}

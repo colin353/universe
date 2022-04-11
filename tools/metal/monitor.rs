@@ -1,18 +1,10 @@
+use core::MetalMonitorError;
 use metal_grpc_rust::{DiffResponse, Task, TaskRuntimeInfo};
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, RwLock};
 
 mod process;
-
-enum MetalMonitorError {
-    InvalidBinaryFormat(String),
-    FailedToStartTask,
-    FailedToCreateDirectories,
-    PortSpaceExhausted,
-    FailedToKillProcess,
-    ConcurrencyError,
-}
 
 pub struct PortAllocator {
     start: u16,
@@ -48,32 +40,35 @@ impl PortAllocator {
     }
 }
 
-#[derive(Clone)]
-struct MetalMonitor(Arc<MetalMonitorInner>);
-
-struct MetalMonitorInner {
+pub struct MetalMonitor {
     tasks: RwLock<HashMap<String, RwLock<Task>>>,
     ip_address: std::net::IpAddr,
     port_allocator: PortAllocator,
     root_dir: std::path::PathBuf,
 }
 
+impl core::Monitor for MetalMonitor {
+    fn execute(&self, diff: &DiffResponse) -> Result<Vec<Task>, MetalMonitorError> {
+        self.execute(diff)
+    }
+}
+
 impl MetalMonitor {
-    fn new(root_dir: std::path::PathBuf, ip_address: std::net::IpAddr) -> Self {
-        MetalMonitor(Arc::new(MetalMonitorInner {
+    pub fn new(root_dir: std::path::PathBuf, ip_address: std::net::IpAddr) -> Self {
+        Self {
             tasks: RwLock::new(HashMap::new()),
             ip_address,
             port_allocator: PortAllocator::new(10000, 20000),
             root_dir,
-        }))
+        }
     }
 
-    fn execute(&self, diff: DiffResponse) -> Result<Vec<Task>, MetalMonitorError> {
+    fn execute(&self, diff: &DiffResponse) -> Result<Vec<Task>, MetalMonitorError> {
         let mut results = Vec::new();
         for added in diff.get_added().get_tasks() {
             // Update or create the task lock entry
             {
-                let mut _taskmap = self.0.tasks.write().unwrap();
+                let mut _taskmap = self.tasks.write().unwrap();
                 let mut task = _taskmap
                     .entry(added.get_name().to_owned())
                     .or_insert_with(|| RwLock::new(added.clone()))
@@ -87,15 +82,15 @@ impl MetalMonitor {
 
             // Re-acquire the taskmap as a readlock, attempt to stop/start the task
             {
-                let _taskmap = self.0.tasks.read().unwrap();
+                let _taskmap = self.tasks.read().unwrap();
                 let task_lock = _taskmap
                     .get(added.get_name())
                     .ok_or(MetalMonitorError::ConcurrencyError)?;
 
                 let mut task = task_lock.write().unwrap();
-                let runtime_info = self.0.stop_task(&task)?;
+                let runtime_info = self.stop_task(&task)?;
                 task.set_runtime_info(runtime_info);
-                let runtime_info = self.0.start_task(&task)?;
+                let runtime_info = self.start_task(&task)?;
                 task.set_runtime_info(runtime_info);
 
                 results.push(task.clone());
@@ -103,14 +98,14 @@ impl MetalMonitor {
         }
 
         for removed in diff.get_removed().get_tasks() {
-            let mut _taskmap = self.0.tasks.read().unwrap();
+            let mut _taskmap = self.tasks.read().unwrap();
             let mut task = match _taskmap.get(removed.get_name()) {
                 Some(t) => t.write().unwrap(),
                 // No need to stop it if it doesn't exist
                 None => continue,
             };
 
-            let runtime_info = self.0.stop_task(&task)?;
+            let runtime_info = self.stop_task(&task)?;
             task.set_runtime_info(runtime_info);
             results.push(task.clone());
         }
