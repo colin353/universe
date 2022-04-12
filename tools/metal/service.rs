@@ -1,11 +1,12 @@
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
-use diff::diff_task;
-use metal_grpc_rust::{Configuration, DiffResponse, DiffType, Task, TaskState};
+use metal_grpc_rust::{Configuration, DiffResponse, DiffType, Task, TaskRuntimeInfo};
 use state::{MetalStateError, MetalStateManager};
 
-pub struct MetalServiceHandler {
+pub struct MetalServiceHandler(pub Arc<MetalServiceHandlerInner>);
+
+pub struct MetalServiceHandlerInner {
     tasks: RwLock<HashMap<String, Task>>,
     state: Arc<dyn MetalStateManager>,
     monitor: Arc<dyn core::Monitor>,
@@ -23,11 +24,23 @@ impl MetalServiceHandler {
             .map(|t| (t.get_name().to_string(), t))
             .collect();
 
-        Ok(Self {
+        Ok(MetalServiceHandler(Arc::new(MetalServiceHandlerInner {
             tasks: RwLock::new(tasks),
             monitor,
             state,
-        })
+        })))
+    }
+}
+
+impl core::Coordinator for MetalServiceHandlerInner {
+    fn report_tasks(&self, tasks: Vec<(String, TaskRuntimeInfo)>) {
+        let mut _tasks = self.tasks.write().unwrap();
+        for (task_name, runtime_state) in tasks {
+            if let Some(t) = _tasks.get_mut(&task_name) {
+                t.set_runtime_info(runtime_state);
+                println!("task update: {:#?}", t);
+            }
+        }
     }
 }
 
@@ -40,9 +53,7 @@ fn compute_diff(
     for task in desired.get_tasks() {
         if let Some(current_task) = current.get(task.get_name()) {
             if down {
-                if current_task.get_state() != TaskState::STOPPING {
-                    response.mut_removed().mut_tasks().push(task.clone());
-                }
+                response.mut_removed().mut_tasks().push(task.clone());
             } else {
                 let difference = diff::diff_task(&current_task, task);
                 if difference.get_kind() == DiffType::MODIFIED {
@@ -58,7 +69,7 @@ fn compute_diff(
     response
 }
 
-impl MetalServiceHandler {
+impl MetalServiceHandlerInner {
     fn update(&self, req: metal_grpc_rust::UpdateRequest) -> metal_grpc_rust::UpdateResponse {
         let mut locked = self.tasks.write().unwrap();
         let difference = compute_diff(&locked, req.get_config(), req.get_down());
@@ -67,7 +78,6 @@ impl MetalServiceHandler {
                 t.set_binary(task.get_binary().to_owned());
                 t.set_environment(task.get_environment().to_owned().into_iter().collect());
                 t.set_arguments(task.get_arguments().to_owned().into_iter().collect());
-                t.set_state(TaskState::RESTARTING);
                 self.state.set_task(t);
             } else {
                 locked.insert(task.get_name().to_owned(), task.to_owned());
@@ -77,7 +87,6 @@ impl MetalServiceHandler {
 
         for task in difference.get_removed().get_tasks() {
             if let Some(t) = locked.get_mut(task.get_name()) {
-                t.set_state(TaskState::STOPPING);
                 t.set_environment(task.get_environment().to_owned().into_iter().collect());
                 self.state.set_task(t);
             }
@@ -111,7 +120,7 @@ impl metal_grpc_rust::MetalService for MetalServiceHandler {
         _m: grpc::RequestOptions,
         req: metal_grpc_rust::UpdateRequest,
     ) -> grpc::SingleResponse<metal_grpc_rust::UpdateResponse> {
-        grpc::SingleResponse::completed(self.update(req))
+        grpc::SingleResponse::completed(self.0.update(req))
     }
 
     fn diff(
@@ -119,7 +128,7 @@ impl metal_grpc_rust::MetalService for MetalServiceHandler {
         _m: grpc::RequestOptions,
         req: metal_grpc_rust::UpdateRequest,
     ) -> grpc::SingleResponse<metal_grpc_rust::DiffResponse> {
-        grpc::SingleResponse::completed(self.diff(req))
+        grpc::SingleResponse::completed(self.0.diff(req))
     }
 
     fn resolve(
@@ -127,7 +136,7 @@ impl metal_grpc_rust::MetalService for MetalServiceHandler {
         _m: grpc::RequestOptions,
         req: metal_grpc_rust::ResolveRequest,
     ) -> grpc::SingleResponse<metal_grpc_rust::ResolveResponse> {
-        grpc::SingleResponse::completed(self.resolve(req))
+        grpc::SingleResponse::completed(self.0.resolve(req))
     }
 }
 
@@ -146,7 +155,7 @@ mod tests {
         let mut t = Task::new();
         t.set_name(String::from("task_one"));
         update.mut_config().mut_tasks().push(t);
-        let resp = service.update(update);
+        let resp = service.0.update(update);
 
         assert_eq!(resp.get_diff_applied().get_added().get_tasks().len(), 1);
 
@@ -155,7 +164,7 @@ mod tests {
         let mut t = Task::new();
         t.set_name(String::from("task_one"));
         update.mut_config().mut_tasks().push(t);
-        let resp = service.update(update);
+        let resp = service.0.update(update);
 
         assert_eq!(resp.get_diff_applied().get_added().get_tasks().len(), 0);
 
@@ -165,7 +174,7 @@ mod tests {
         let mut t = Task::new();
         t.set_name(String::from("task_one"));
         update.mut_config().mut_tasks().push(t);
-        let resp = service.update(update);
+        let resp = service.0.update(update);
 
         assert_eq!(resp.get_diff_applied().get_removed().get_tasks().len(), 1);
         assert_eq!(resp.get_diff_applied().get_added().get_tasks().len(), 0);

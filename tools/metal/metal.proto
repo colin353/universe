@@ -22,12 +22,11 @@ message Environment {
 
 enum TaskState {
   STARTING = 0;
-  STARTED = 1;
+  RUNNING = 1;
   SUCCESS = 2;
   FAILED = 3;
   RESTARTING = 4;
-  STOPPING = 5;
-  STOPPED = 6;
+  UNKNOWN = 5;
 }
 
 message ServiceAssignment {
@@ -42,6 +41,13 @@ message TaskRuntimeInfo {
   uint64 last_start_time = 4;
   uint64 last_stopped_time = 5;
   int32 exit_status = 6;
+  TaskState state = 7;
+}
+
+enum RestartMode {
+  ONE_SHOT = 0;
+  ON_FAILURE = 1;
+  ALWAYS = 2;
 }
 
 message Task {
@@ -51,9 +57,8 @@ message Task {
   repeated Environment environment = 3;
   repeated ArgValue arguments = 4;
 
-  TaskState state = 5;
-
-  TaskRuntimeInfo runtime_info = 6;
+  TaskRuntimeInfo runtime_info = 5;
+  RestartMode restart_mode = 6;
 }
 
 enum DiffType {

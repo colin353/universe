@@ -10,10 +10,17 @@ fn main() {
     let state_mgr = state::FakeState::new();
     state_mgr.initialize().unwrap();
 
-    let monitor = monitor::MetalMonitor::new(root_dir.clone(), ip_address);
+    let monitor = Arc::new(monitor::MetalMonitor::new(root_dir.clone(), ip_address));
 
-    let handler = service::MetalServiceHandler::new(Arc::new(state_mgr), Arc::new(monitor))
+    let handler = service::MetalServiceHandler::new(Arc::new(state_mgr), monitor.clone())
         .expect("failed to create service handler");
+
+    monitor.set_coordinator(handler.0.clone());
+
+    // Start monitoring thread
+    std::thread::spawn(move || {
+        monitor.monitor();
+    });
 
     let mut server = grpc::ServerBuilder::<tls_api_stub::TlsAcceptor>::new();
     server.http.set_port(20202);
