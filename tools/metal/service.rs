@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
-use metal_grpc_rust::{Configuration, DiffResponse, DiffType, Task, TaskRuntimeInfo};
+use metal_grpc_rust::{Configuration, DiffResponse, DiffType, Task, TaskRuntimeInfo, TaskState};
 use state::{MetalStateError, MetalStateManager};
 
 pub struct MetalServiceHandler(pub Arc<MetalServiceHandlerInner>);
@@ -33,14 +33,31 @@ impl MetalServiceHandler {
 }
 
 impl core::Coordinator for MetalServiceHandlerInner {
-    fn report_tasks(&self, tasks: Vec<(String, TaskRuntimeInfo)>) {
+    fn report_tasks(&self, tasks: Vec<(String, TaskRuntimeInfo)>) -> Vec<String> {
         let mut _tasks = self.tasks.write().unwrap();
+        let mut to_clean_up = Vec::new();
         for (task_name, runtime_state) in tasks {
+            println!("{}: \n{:#?}\n", task_name, runtime_state);
+
+            let state = runtime_state.get_state();
+
+            // Update current task status in state
             if let Some(t) = _tasks.get_mut(&task_name) {
                 t.set_runtime_info(runtime_state);
-                println!("task update: {:#?}", t);
+                self.state.set_task(t);
             }
+
+            match state {
+                TaskState::SUCCESS | TaskState::STOPPED | TaskState::FAILED => {
+                    // Task is done, remove it
+                    _tasks.remove(&task_name);
+                    to_clean_up.push(task_name.clone());
+                }
+                _ => (),
+            };
         }
+
+        to_clean_up
     }
 }
 
@@ -71,24 +88,27 @@ fn compute_diff(
 
 impl MetalServiceHandlerInner {
     fn update(&self, req: metal_grpc_rust::UpdateRequest) -> metal_grpc_rust::UpdateResponse {
-        let mut locked = self.tasks.write().unwrap();
-        let difference = compute_diff(&locked, req.get_config(), req.get_down());
-        for task in difference.get_added().get_tasks() {
-            if let Some(t) = locked.get_mut(task.get_name()) {
-                t.set_binary(task.get_binary().to_owned());
-                t.set_environment(task.get_environment().to_owned().into_iter().collect());
-                t.set_arguments(task.get_arguments().to_owned().into_iter().collect());
-                self.state.set_task(t);
-            } else {
-                locked.insert(task.get_name().to_owned(), task.to_owned());
-                self.state.set_task(task);
+        let difference: DiffResponse;
+        {
+            let mut locked = self.tasks.write().unwrap();
+            difference = compute_diff(&locked, req.get_config(), req.get_down());
+            for task in difference.get_added().get_tasks() {
+                if let Some(t) = locked.get_mut(task.get_name()) {
+                    t.set_binary(task.get_binary().to_owned());
+                    t.set_environment(task.get_environment().to_owned().into_iter().collect());
+                    t.set_arguments(task.get_arguments().to_owned().into_iter().collect());
+                    self.state.set_task(t).unwrap();
+                } else {
+                    locked.insert(task.get_name().to_owned(), task.to_owned());
+                    self.state.set_task(task).unwrap();
+                }
             }
-        }
 
-        for task in difference.get_removed().get_tasks() {
-            if let Some(t) = locked.get_mut(task.get_name()) {
-                t.set_environment(task.get_environment().to_owned().into_iter().collect());
-                self.state.set_task(t);
+            for task in difference.get_removed().get_tasks() {
+                if let Some(t) = locked.get_mut(task.get_name()) {
+                    t.set_environment(task.get_environment().to_owned().into_iter().collect());
+                    self.state.set_task(t).unwrap();
+                }
             }
         }
 
@@ -109,8 +129,18 @@ impl MetalServiceHandlerInner {
         compute_diff(&locked, req.get_config(), req.get_down())
     }
 
-    fn resolve(&self, req: metal_grpc_rust::ResolveRequest) -> metal_grpc_rust::ResolveResponse {
+    fn resolve(&self, _req: metal_grpc_rust::ResolveRequest) -> metal_grpc_rust::ResolveResponse {
         todo!();
+    }
+
+    fn status(&self, req: metal_grpc_rust::StatusRequest) -> metal_grpc_rust::StatusResponse {
+        let mut response = metal_grpc_rust::StatusResponse::new();
+        for task in self.state.all_tasks().unwrap() {
+            if task.get_name().starts_with(req.get_selector()) {
+                response.mut_tasks().push(task);
+            }
+        }
+        response
     }
 }
 
@@ -137,6 +167,14 @@ impl metal_grpc_rust::MetalService for MetalServiceHandler {
         req: metal_grpc_rust::ResolveRequest,
     ) -> grpc::SingleResponse<metal_grpc_rust::ResolveResponse> {
         grpc::SingleResponse::completed(self.0.resolve(req))
+    }
+
+    fn status(
+        &self,
+        _m: grpc::RequestOptions,
+        req: metal_grpc_rust::StatusRequest,
+    ) -> grpc::SingleResponse<metal_grpc_rust::StatusResponse> {
+        grpc::SingleResponse::completed(self.0.status(req))
     }
 }
 

@@ -1,3 +1,5 @@
+use metal_grpc_rust::RestartMode;
+
 use std::sync::Arc;
 
 static METAL_CCL_IMPORT: &str = include_str!("metal.ccl");
@@ -110,6 +112,25 @@ fn extract_task(
                     return Err(MetalConfigError::ConversionError(format!(
                         "task's arguments field must be an array, got {}",
                         v.type_name()
+                    )))
+                }
+            },
+            "restart_mode" => match v {
+                ccl::Value::String(v) => task.set_restart_mode(match v.as_str() {
+                    "one_shot" => RestartMode::ONE_SHOT,
+                    "on_failure" => RestartMode::ON_FAILURE,
+                    "always" => RestartMode::ALWAYS,
+                    x => {
+                        return Err(MetalConfigError::ConversionError(format!(
+                            "restart_policy must be an one_shot, on_failure or always, got {}",
+                            x
+                        )))
+                    }
+                }),
+                x => {
+                    return Err(MetalConfigError::ConversionError(format!(
+                        "restart_policy must be a string, got {}",
+                        x.type_name()
                     )))
                 }
             },
@@ -293,6 +314,7 @@ namespace = {
         assert_eq!(t.get_name(), "namespace.server");
         assert_eq!(t.get_binary().get_url(), "http://test.com/server.exe");
         assert_eq!(t.get_environment().len(), 2);
+        assert_eq!(t.get_restart_mode(), RestartMode::ON_FAILURE);
 
         // NOTE: ccl dictionary values are sorted alphabetically
         assert_eq!(t.get_environment()[0].get_name(), "PORT");

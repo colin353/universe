@@ -27,6 +27,7 @@ enum TaskState {
   FAILED = 3;
   RESTARTING = 4;
   UNKNOWN = 5;
+  STOPPED = 6;
 }
 
 message ServiceAssignment {
@@ -110,8 +111,17 @@ message ResolveResponse {
   int64 ttl = 3;
 }
 
+message StatusRequest {
+  string selector = 1;
+}
+
+message StatusResponse {
+  repeated Task tasks = 1;
+}
+
 service MetalService {
    rpc Update(UpdateRequest) returns (UpdateResponse);
    rpc Diff(UpdateRequest) returns (DiffResponse);
    rpc Resolve(ResolveRequest) returns (ResolveResponse);
+   rpc Status(StatusRequest) returns (StatusResponse);
 }

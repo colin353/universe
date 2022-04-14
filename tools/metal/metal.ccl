@@ -1,5 +1,6 @@
 task = {
     _metal_type = "task"
+    restart_mode = "on_failure"
 }
 
 port_binding = {

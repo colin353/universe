@@ -1,14 +1,8 @@
 use std::collections::HashMap;
 
 use crate::{MetalMonitor, MetalMonitorError, PortAllocator};
+use core::ts;
 use metal_grpc_rust::{ArgKind, ServiceAssignment, Task, TaskRuntimeInfo, TaskState};
-
-pub fn ts() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_micros() as u64
-}
 
 impl MetalMonitor {
     fn ip_address(&self) -> Vec<u8> {
@@ -36,8 +30,8 @@ impl MetalMonitor {
             libc::ESRCH => (),
             // 0 indicates success
             0 => (),
-            // Something else happened
-            _ => return Err(MetalMonitorError::FailedToKillProcess),
+            // Process isn't running, that's OK
+            _ => (),
         }
 
         let mut runtime_info = task.get_runtime_info().clone();
@@ -237,14 +231,13 @@ fn get_proc_state(pid: u32) -> Option<ProcessState> {
         Err(_) => return None,
     };
 
-    let exit_code: i32 = match &data[data.rfind(' ')?..].parse() {
-        Ok(i) => *i,
+    let exit_code: i32 = match data[data.rfind(' ')?..].trim().parse() {
+        Ok(i) => i,
         Err(_) => return None,
     };
 
     let start = data.find(')')?;
-
-    Some(match &data[start + 1..start + 2] {
+    Some(match &data[start + 2..start + 3] {
         "R" | "P" | "K" | "W" | "t" | "S" | "D" => ProcessState::Running,
         "T" | "X" | "x" => ProcessState::Exited(exit_code),
         _ => return None,

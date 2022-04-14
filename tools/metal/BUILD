@@ -106,6 +106,7 @@ rust_binary(
     deps = [
         ":config",
         ":diff",
+        ":core",
         ":metal_grpc_rust",
         "//util/flags",
         "@io_bazel_rules_rust//proto/raze:grpc",

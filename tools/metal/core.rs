@@ -11,7 +11,7 @@ pub enum MetalMonitorError {
 }
 
 pub trait Coordinator: Send + Sync {
-    fn report_tasks(&self, status: Vec<(String, TaskRuntimeInfo)>);
+    fn report_tasks(&self, status: Vec<(String, TaskRuntimeInfo)>) -> Vec<String>;
 }
 
 pub trait Monitor: Send + Sync {
@@ -30,4 +30,11 @@ impl Monitor for FakeMonitor {
     fn execute(&self, diff: &DiffResponse) -> Result<Vec<Task>, MetalMonitorError> {
         Ok(Vec::new())
     }
+}
+
+pub fn ts() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_micros() as u64
 }

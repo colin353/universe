@@ -77,8 +77,8 @@ impl MetalMonitor {
 
     pub fn monitor(&self) {
         loop {
-            let runtime_state = self.check_tasks();
-            for (task_name, runtime_state) in &runtime_state {
+            let mut runtime_state = self.check_tasks();
+            for (task_name, runtime_state) in &mut runtime_state {
                 let mut restart_mode = RestartMode::ONE_SHOT;
                 {
                     let _tasks = self.tasks.read().unwrap();
@@ -93,7 +93,7 @@ impl MetalMonitor {
                 if runtime_state.get_state() != TaskState::RUNNING {
                     match restart_mode {
                         RestartMode::ONE_SHOT => {
-                            // Tear down task
+                            // No need to restart
                         }
                         mode => {
                             if mode == RestartMode::ON_FAILURE
@@ -101,6 +101,17 @@ impl MetalMonitor {
                             {
                                 continue;
                             }
+
+                            // Mark task state as restarting
+                            match self.tasks.read().unwrap().get(task_name) {
+                                Some(t) => t
+                                    .write()
+                                    .unwrap()
+                                    .mut_runtime_info()
+                                    .set_state(TaskState::RESTARTING),
+                                _ => (),
+                            }
+                            runtime_state.set_state(TaskState::RESTARTING);
 
                             self.restart_queue.lock().unwrap().push_back((
                                 task_name.clone(),
@@ -113,15 +124,24 @@ impl MetalMonitor {
             }
 
             // Report task state to coordinator
+            let mut to_clean_up = Vec::new();
             if !runtime_state.is_empty() {
                 if let Some(c) = &*self.coordinator.lock().unwrap() {
-                    c.report_tasks(runtime_state);
+                    to_clean_up = c.report_tasks(runtime_state);
+                }
+            }
+
+            // Clean up removed tasks
+            if !to_clean_up.is_empty() {
+                let mut _tasks = self.tasks.write().unwrap();
+                for task_name in &to_clean_up {
+                    _tasks.remove(task_name);
                 }
             }
 
             // Possibly restart tasks
             let queue = self.restart_queue.lock().unwrap();
-            let now = process::ts();
+            let now = core::ts();
             for (task_name, timestamp) in queue.iter() {
                 if *timestamp < now {
                     println!("should restart {}", task_name);
@@ -133,6 +153,9 @@ impl MetalMonitor {
 
     fn execute(&self, diff: &DiffResponse) -> Result<Vec<Task>, MetalMonitorError> {
         let mut results = Vec::new();
+
+        println!("diff: {:#?}", diff);
+
         for added in diff.get_added().get_tasks() {
             // Update or create the task lock entry
             {
@@ -160,7 +183,6 @@ impl MetalMonitor {
                 task.set_runtime_info(runtime_info);
                 let runtime_info = self.start_task(&task)?;
                 task.set_runtime_info(runtime_info);
-
                 results.push(task.clone());
             }
         }
@@ -174,8 +196,30 @@ impl MetalMonitor {
             };
 
             let runtime_info = self.stop_task(&task)?;
-            task.set_runtime_info(runtime_info);
+            task.set_runtime_info(runtime_info.clone());
+            task.mut_runtime_info().set_state(TaskState::STOPPED);
             results.push(task.clone());
+        }
+
+        // Report started/changed tasks
+        let mut to_clean_up = Vec::new();
+        if !results.is_empty() {
+            if let Some(c) = &*self.coordinator.lock().unwrap() {
+                to_clean_up = c.report_tasks(
+                    results
+                        .iter()
+                        .map(|t| (t.get_name().to_owned(), t.get_runtime_info().clone()))
+                        .collect(),
+                );
+            }
+        }
+
+        // Clean up removed tasks
+        if !to_clean_up.is_empty() {
+            let mut _tasks = self.tasks.write().unwrap();
+            for task_name in &to_clean_up {
+                _tasks.remove(task_name);
+            }
         }
 
         Ok(results)
