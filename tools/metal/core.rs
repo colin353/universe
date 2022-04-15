@@ -17,6 +17,7 @@ pub trait Coordinator: Send + Sync {
 pub trait Monitor: Send + Sync {
     fn execute(&self, diff: &DiffResponse) -> Result<Vec<Task>, MetalMonitorError>;
     fn monitor(&self) {}
+    fn restart_loop(&self) {}
 }
 
 pub struct FakeMonitor {}

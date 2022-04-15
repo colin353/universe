@@ -52,6 +52,11 @@ pub fn diff_task(original: &Task, proposed: &Task) -> Diff {
         return out;
     }
 
+    if original.get_restart_mode() != proposed.get_restart_mode() {
+        out.set_kind(DiffType::MODIFIED);
+        return out;
+    }
+
     let original_env: HashSet<_> = original
         .get_environment()
         .iter()

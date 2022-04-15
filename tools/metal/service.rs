@@ -37,8 +37,6 @@ impl core::Coordinator for MetalServiceHandlerInner {
         let mut _tasks = self.tasks.write().unwrap();
         let mut to_clean_up = Vec::new();
         for (task_name, runtime_state) in tasks {
-            println!("{}: \n{:#?}\n", task_name, runtime_state);
-
             let state = runtime_state.get_state();
 
             // Update current task status in state

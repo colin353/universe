@@ -66,7 +66,7 @@ impl MetalMonitor {
             }
         }
         let mut allocated_ports = self.port_allocator.allocate_ports(ports.len())?;
-        for (k, v) in ports.iter_mut() {
+        for (_, v) in ports.iter_mut() {
             *v = allocated_ports.pop().expect("should have enough ports");
         }
 
@@ -126,7 +126,7 @@ impl MetalMonitor {
             .stdout(stdout_file)
             .stderr(stderr_file)
             .spawn()
-            .map_err(|e| MetalMonitorError::FailedToStartTask)?;
+            .map_err(|_| MetalMonitorError::FailedToStartTask)?;
 
         let mut runtime_info = TaskRuntimeInfo::new();
         runtime_info.set_state(TaskState::RUNNING);
@@ -165,6 +165,12 @@ impl MetalMonitor {
             }
 
             let prev_state = runtime_info.get_state();
+
+            // If we already know this task is waiting for restart, don't probe
+            if prev_state == TaskState::RESTARTING {
+                continue;
+            }
+
             let new_state = match get_proc_state(runtime_info.get_pid()) {
                 Some(ProcessState::Running) => TaskState::RUNNING,
                 Some(ProcessState::Exited(status)) => {

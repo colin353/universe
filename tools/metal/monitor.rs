@@ -1,7 +1,7 @@
 use core::{Coordinator, MetalMonitorError};
-use metal_grpc_rust::{DiffResponse, RestartMode, Task, TaskRuntimeInfo, TaskState};
+use metal_grpc_rust::{DiffResponse, RestartMode, Task, TaskState};
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex, RwLock};
 
 mod process;
@@ -28,14 +28,14 @@ impl PortAllocator {
             return Err(MetalMonitorError::PortSpaceExhausted);
         }
         let mut out = Vec::new();
-        for i in 0..num_ports {
+        for _ in 0..num_ports {
             out.push(allocs.len() as u16 + self.start);
             allocs.push(true);
         }
         Ok(out)
     }
 
-    fn deallocate_ports(&self, ports: &[u16]) {
+    fn deallocate_ports(&self, _ports: &[u16]) {
         // TODO: actually deallocate ports so they can be reused
     }
 }
@@ -46,7 +46,8 @@ pub struct MetalMonitor {
     port_allocator: PortAllocator,
     root_dir: std::path::PathBuf,
     coordinator: Mutex<Option<Arc<dyn Coordinator>>>,
-    restart_queue: Mutex<std::collections::VecDeque<(String, u64)>>,
+    restart_queue: Mutex<Vec<(String, u64)>>,
+    restart_accumulator: Mutex<HashMap<String, (u64, u64)>>,
 }
 
 impl core::Monitor for MetalMonitor {
@@ -56,6 +57,10 @@ impl core::Monitor for MetalMonitor {
 
     fn monitor(&self) {
         self.monitor()
+    }
+
+    fn restart_loop(&self) {
+        self.restart_loop()
     }
 }
 
@@ -67,12 +72,36 @@ impl MetalMonitor {
             port_allocator: PortAllocator::new(10000, 20000),
             root_dir,
             coordinator: Mutex::new(None),
-            restart_queue: Mutex::new(std::collections::VecDeque::new()),
+            restart_queue: Mutex::new(Vec::new()),
+            restart_accumulator: Mutex::new(HashMap::new()),
         }
     }
 
     pub fn set_coordinator(&self, coordinator: Arc<dyn Coordinator>) {
         *self.coordinator.lock().unwrap() = Some(coordinator);
+    }
+
+    pub fn queue_restart(&self, task_name: &str) {
+        // Check the accumulator to see what the delay should be
+        let target_start_time = {
+            let now = core::ts();
+            let mut acc = self.restart_accumulator.lock().unwrap();
+            let delay = if let Some((delay, ts)) = acc.get(task_name) {
+                let decayed_delay = (*delay as f64
+                    * 2f64.powf(1.0 - ((now - ts) as f64) / (60_000_000 as f64)))
+                    as u64;
+                std::cmp::min(30_000_000, std::cmp::max(1_000_000, decayed_delay))
+            } else {
+                1_000_000
+            };
+            acc.insert(task_name.to_string(), (delay, now));
+            delay + now
+        };
+
+        let mut queue = self.restart_queue.lock().unwrap();
+        queue.push((task_name.to_owned(), target_start_time));
+        queue.sort_by_key(|(_, t)| *t);
+        queue.dedup_by_key(|(n, _)| n.clone());
     }
 
     pub fn monitor(&self) {
@@ -90,7 +119,9 @@ impl MetalMonitor {
                 }
 
                 // If the task is no longer running, we may need to restart it, or else clean it up
-                if runtime_state.get_state() != TaskState::RUNNING {
+                if runtime_state.get_state() != TaskState::RUNNING
+                    && runtime_state.get_state() != TaskState::RESTARTING
+                {
                     match restart_mode {
                         RestartMode::ONE_SHOT => {
                             // No need to restart
@@ -113,11 +144,7 @@ impl MetalMonitor {
                             }
                             runtime_state.set_state(TaskState::RESTARTING);
 
-                            self.restart_queue.lock().unwrap().push_back((
-                                task_name.clone(),
-                                // Last stopped time + 5 seconds
-                                runtime_state.get_last_stopped_time() + 5 * 1000 * 1000,
-                            ));
+                            self.queue_restart(&task_name);
                         }
                     }
                 }
@@ -138,24 +165,65 @@ impl MetalMonitor {
                     _tasks.remove(task_name);
                 }
             }
+            std::thread::sleep(std::time::Duration::from_secs(1));
+        }
+    }
+
+    pub fn restart_loop(&self) {
+        loop {
+            std::thread::sleep(std::time::Duration::from_secs(2));
 
             // Possibly restart tasks
-            let queue = self.restart_queue.lock().unwrap();
+            let mut queue = self.restart_queue.lock().unwrap();
             let now = core::ts();
+            let mut to_take = 0;
             for (task_name, timestamp) in queue.iter() {
                 if *timestamp < now {
-                    println!("should restart {}", task_name);
+                    to_take += 1;
+                } else {
+                    break;
                 }
             }
-            std::thread::sleep(std::time::Duration::from_secs(1));
+            if to_take == 0 {
+                continue;
+            }
+
+            let mut to_restart = queue.split_off(to_take);
+            std::mem::swap(&mut to_restart, &mut *queue);
+            for (task_name, _) in to_restart {
+                let task = match self.tasks.read().unwrap().get(&task_name) {
+                    Some(t) => t.read().unwrap().clone(),
+                    None => {
+                        // Task was unscheduled before it could be restarted
+                        continue;
+                    }
+                };
+
+                if let Ok(runtime_info) = self.start_task(&task) {
+                    match self.tasks.read().unwrap().get(&task_name) {
+                        Some(t) => t.write().unwrap().set_runtime_info(runtime_info),
+                        None => {
+                            // Task was unscheduled but I just started it... TODO: do something
+                            // here?
+                            continue;
+                        }
+                    }
+                } else {
+                    match self.tasks.read().unwrap().get(&task_name) {
+                        Some(t) => t
+                            .write()
+                            .unwrap()
+                            .mut_runtime_info()
+                            .set_state(TaskState::FAILED),
+                        None => continue,
+                    }
+                }
+            }
         }
     }
 
     fn execute(&self, diff: &DiffResponse) -> Result<Vec<Task>, MetalMonitorError> {
         let mut results = Vec::new();
-
-        println!("diff: {:#?}", diff);
-
         for added in diff.get_added().get_tasks() {
             // Update or create the task lock entry
             {

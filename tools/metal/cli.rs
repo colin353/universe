@@ -5,7 +5,7 @@ use metal_grpc_rust::{MetalService, TaskState};
 extern crate flags;
 
 fn render_time(ts: u64) -> String {
-    let mut time = ts;
+    let time: u64;
     let units: &'static str;
     if ts < 60_000_000 {
         time = ts / 1_000_000;

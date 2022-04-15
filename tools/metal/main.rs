@@ -18,8 +18,14 @@ fn main() {
     monitor.set_coordinator(handler.0.clone());
 
     // Start monitoring thread
+    let _mon = monitor.clone();
     std::thread::spawn(move || {
-        monitor.monitor();
+        _mon.monitor();
+    });
+
+    // Start restart_loop thread
+    std::thread::spawn(move || {
+        monitor.restart_loop();
     });
 
     let mut server = grpc::ServerBuilder::<tls_api_stub::TlsAcceptor>::new();
