@@ -119,9 +119,26 @@ message StatusResponse {
   repeated Task tasks = 1;
 }
 
+message GetLogsRequest {
+  string resource_name = 1;
+}
+
+message Logs {
+  uint64 start_time = 1;
+  uint64 end_time = 2;
+  string stdout = 3;
+  string stderr = 4;
+  int32 exit_status = 5;
+}
+
+message GetLogsResponse {
+  repeated Logs logs = 1;
+}
+
 service MetalService {
    rpc Update(UpdateRequest) returns (UpdateResponse);
    rpc Diff(UpdateRequest) returns (DiffResponse);
    rpc Resolve(ResolveRequest) returns (ResolveResponse);
    rpc Status(StatusRequest) returns (StatusResponse);
+   rpc GetLogs(GetLogsRequest) returns (GetLogsResponse);
 }

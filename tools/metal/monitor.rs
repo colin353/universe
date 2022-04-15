@@ -1,7 +1,8 @@
 use core::{Coordinator, MetalMonitorError};
-use metal_grpc_rust::{DiffResponse, RestartMode, Task, TaskState};
+use metal_grpc_rust::{DiffResponse, Logs, RestartMode, Task, TaskState};
 
 use std::collections::HashMap;
+use std::io::{Read, Seek};
 use std::sync::{Arc, Mutex, RwLock};
 
 mod process;
@@ -61,6 +62,103 @@ impl core::Monitor for MetalMonitor {
 
     fn restart_loop(&self) {
         self.restart_loop()
+    }
+
+    fn get_logs(&self, resource_name: &str) -> Result<Vec<Logs>, MetalMonitorError> {
+        let logs_dir = self.resource_logs_dir(resource_name);
+        let iter = match std::fs::read_dir(logs_dir) {
+            Ok(i) => i,
+            Err(_) => return Ok(Vec::new()),
+        };
+
+        let mut log_files = HashMap::new();
+        for entry in iter {
+            let entry = match entry {
+                Ok(i) => i,
+                Err(_) => continue,
+            };
+
+            let start_time: u64 = match entry
+                .path()
+                .extension()
+                .unwrap_or(std::ffi::OsStr::new(""))
+                .to_string_lossy()
+                .parse()
+            {
+                Ok(t) => t,
+                Err(_) => continue,
+            };
+
+            let files = log_files.entry(start_time).or_insert(Vec::new());
+            files.push(entry.path());
+        }
+
+        let mut sorted_logs: Vec<_> = log_files.into_iter().collect();
+        sorted_logs.sort_by_key(|(t, _)| *t);
+
+        let mut remaining_bytes: i64 = 1_048_576;
+        let mut out = Vec::new();
+        for (t, paths) in sorted_logs.iter().rev() {
+            if remaining_bytes <= 0 {
+                break;
+            }
+
+            let mut log_entry = Logs::new();
+            log_entry.set_start_time(*t);
+            for path in paths {
+                let stem = match path.file_stem().map(|s| s.to_string_lossy()) {
+                    Some(s) => s,
+                    None => continue,
+                };
+
+                match stem.as_ref() {
+                    "EXIT_TIME" => match std::fs::read_to_string(path) {
+                        Ok(c) => {
+                            if let Ok(i) = c.trim().parse::<u64>() {
+                                log_entry.set_end_time(i * 1_000_000);
+                            }
+                        }
+                        Err(_) => continue,
+                    },
+                    "EXIT_STATUS" => match std::fs::read_to_string(path) {
+                        Ok(c) => {
+                            if let Ok(i) = c.trim().parse() {
+                                log_entry.set_exit_status(i);
+                            }
+                        }
+                        Err(_) => continue,
+                    },
+                    s @ "STDOUT" | s @ "STDERR" => match std::fs::File::open(path) {
+                        Ok(mut f) => {
+                            if let Err(_) = f.seek(std::io::SeekFrom::End(-remaining_bytes)) {
+                                f.seek(std::io::SeekFrom::Start(0))
+                                    .expect("failed to seek!");
+                            }
+
+                            let mut log_data = String::new();
+                            if let Ok(b) = f.read_to_string(&mut log_data) {
+                                remaining_bytes = remaining_bytes - (b as i64);
+
+                                if s == "STDOUT" {
+                                    log_entry.set_stdout(log_data);
+                                } else {
+                                    log_entry.set_stderr(log_data);
+                                }
+                            }
+                        }
+                        Err(_) => continue,
+                    },
+                    _ => continue,
+                }
+            }
+
+            out.push(log_entry);
+        }
+
+        // Reverse the order of the log entries, so oldest is first
+        out.reverse();
+
+        Ok(out)
     }
 }
 

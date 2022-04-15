@@ -140,6 +140,14 @@ impl MetalServiceHandlerInner {
         }
         response
     }
+
+    fn get_logs(&self, req: metal_grpc_rust::GetLogsRequest) -> metal_grpc_rust::GetLogsResponse {
+        let mut response = metal_grpc_rust::GetLogsResponse::new();
+        for log in self.monitor.get_logs(req.get_resource_name()).unwrap() {
+            response.mut_logs().push(log);
+        }
+        response
+    }
 }
 
 impl metal_grpc_rust::MetalService for MetalServiceHandler {
@@ -173,6 +181,14 @@ impl metal_grpc_rust::MetalService for MetalServiceHandler {
         req: metal_grpc_rust::StatusRequest,
     ) -> grpc::SingleResponse<metal_grpc_rust::StatusResponse> {
         grpc::SingleResponse::completed(self.0.status(req))
+    }
+
+    fn get_logs(
+        &self,
+        _m: grpc::RequestOptions,
+        req: metal_grpc_rust::GetLogsRequest,
+    ) -> grpc::SingleResponse<metal_grpc_rust::GetLogsResponse> {
+        grpc::SingleResponse::completed(self.0.get_logs(req))
     }
 }
 

@@ -12,7 +12,7 @@ impl MetalMonitor {
         }
     }
 
-    fn resource_logs_dir(&self, name: &str) -> std::path::PathBuf {
+    pub fn resource_logs_dir(&self, name: &str) -> std::path::PathBuf {
         let mut out = self.root_dir.join("logs");
         for component in name.split(".") {
             out.push(component);

@@ -1,4 +1,4 @@
-use metal_grpc_rust::{DiffResponse, Task, TaskRuntimeInfo};
+use metal_grpc_rust::{DiffResponse, Logs, Task, TaskRuntimeInfo};
 
 #[derive(Debug)]
 pub enum MetalMonitorError {
@@ -18,6 +18,7 @@ pub trait Monitor: Send + Sync {
     fn execute(&self, diff: &DiffResponse) -> Result<Vec<Task>, MetalMonitorError>;
     fn monitor(&self) {}
     fn restart_loop(&self) {}
+    fn get_logs(&self, resource_name: &str) -> Result<Vec<Logs>, MetalMonitorError>;
 }
 
 pub struct FakeMonitor {}
@@ -29,6 +30,10 @@ impl FakeMonitor {
 
 impl Monitor for FakeMonitor {
     fn execute(&self, diff: &DiffResponse) -> Result<Vec<Task>, MetalMonitorError> {
+        Ok(Vec::new())
+    }
+
+    fn get_logs(&self, _: &str) -> Result<Vec<Logs>, MetalMonitorError> {
         Ok(Vec::new())
     }
 }

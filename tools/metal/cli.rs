@@ -130,13 +130,108 @@ fn status(args: &[String], client: &metal_grpc_rust::MetalServiceClient) {
     }
 }
 
+fn logs(
+    args: &[String],
+    client: &metal_grpc_rust::MetalServiceClient,
+    all: bool,
+    stdout: bool,
+    stderr: bool,
+) {
+    if args.len() != 1 {
+        eprintln!("USAGE: metal [options] logs [resource_name]");
+        std::process::exit(1);
+    }
+
+    let mut req = metal_grpc_rust::GetLogsRequest::new();
+    req.set_resource_name(args[0].to_string());
+
+    let response = match client.get_logs(grpc::RequestOptions::new(), req).wait() {
+        Ok(r) => r.1,
+        Err(_) => {
+            eprintln!("failed to connect to metal service, is the metal service running?");
+            std::process::exit(1);
+        }
+    };
+
+    let mut logs_to_render: Box<dyn Iterator<Item = &metal_grpc_rust::Logs>> =
+        Box::new(std::iter::once(response.get_logs().last()).filter_map(|x| x));
+    if all {
+        logs_to_render = Box::new(response.get_logs().iter());
+    }
+
+    for log in logs_to_render {
+        // Print log header
+        let header = format!(
+            "{} (started {} ago{})",
+            &args[0],
+            render_time(core::ts() - log.get_start_time()),
+            if log.get_end_time() == 0 {
+                String::new()
+            } else {
+                format!(
+                    ", ran for {}, exit status {}",
+                    render_time(
+                        log.get_end_time()
+                            .checked_sub(log.get_start_time())
+                            .unwrap_or(0)
+                    ),
+                    log.get_exit_status(),
+                )
+            }
+        );
+        println!("{}", "=".repeat(70));
+        println!("= TASK       {:<55} =", &args[0]);
+        println!(
+            "= STARTED    {:<55} =",
+            format!("{} ago", render_time(core::ts() - log.get_start_time())),
+        );
+        if log.get_end_time() != 0 {
+            println!(
+                "= RAN FOR    {:<55} =",
+                render_time(
+                    log.get_end_time()
+                        .checked_sub(log.get_start_time())
+                        .unwrap_or(0)
+                )
+            );
+            println!("= EXIT CODE  {:<55} =", log.get_exit_status());
+        }
+        println!("{}\n", "=".repeat(70));
+
+        let mut showed_logs = false;
+        if stdout && log.get_stdout().len() > 0 {
+            showed_logs = true;
+            println!("{:=^1$}\n", " STDOUT ", 70);
+            println!("{}", log.get_stdout());
+        }
+
+        if stderr && log.get_stderr().len() > 0 {
+            showed_logs = true;
+            println!("{:=^1$}\n", " STDERR ", 70);
+            println!("{}", log.get_stderr());
+        }
+
+        if !showed_logs && (stderr || stdout) {
+            println!("(no logs captured)");
+        }
+    }
+}
+
 fn usage() {
     eprintln!("USAGE: metal [options] [command] [config]");
     std::process::exit(1);
 }
 
 fn main() {
-    let args = parse_flags!();
+    let all = define_flag!(
+        "all",
+        false,
+        "[logs] Whether to show all logs (true) or just the most recent"
+    );
+    let stdout = define_flag!("stdout", true, "[logs] Whether to show the stdout log");
+    let stderr = define_flag!("stderr", true, "[logs] Whether to show the stderr log");
+
+    let args = parse_flags!(all, stdout, stderr);
 
     let client =
         metal_grpc_rust::MetalServiceClient::new_plain("localhost", 20202, Default::default())
@@ -146,6 +241,13 @@ fn main() {
         Some("up") => up(&args[1..], &client),
         Some("down") => down(&args[1..], &client),
         Some("status") => status(&args[1..], &client),
+        Some("logs") => logs(
+            &args[1..],
+            &client,
+            all.value(),
+            stdout.value(),
+            stderr.value(),
+        ),
         _ => usage(),
     }
 }
