@@ -106,9 +106,8 @@ message ResolveRequest {
 }
 
 message ResolveResponse {
-  bool success = 1;
-  repeated Endpoint endpoints = 2;
-  int64 ttl = 3;
+  repeated Endpoint endpoints = 1;
+  uint32 ttl_seconds = 2;
 }
 
 message StatusRequest {

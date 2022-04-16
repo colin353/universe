@@ -1,5 +1,6 @@
 use grpc::ClientStubExt;
 use metal_grpc_rust::{MetalService, TaskState};
+use std::convert::TryInto;
 
 #[macro_use]
 extern crate flags;
@@ -217,6 +218,45 @@ fn logs(
     }
 }
 
+fn resolve(args: &[String], client: &metal_grpc_rust::MetalServiceClient) {
+    if args.len() != 1 {
+        eprintln!("USAGE: metal [options] resolve [resource_name]");
+        std::process::exit(1);
+    }
+
+    let mut req = metal_grpc_rust::ResolveRequest::new();
+    req.set_service_name(args[0].to_string());
+
+    let response = match client.resolve(grpc::RequestOptions::new(), req).wait() {
+        Ok(r) => r.1,
+        Err(_) => {
+            eprintln!("failed to connect to metal service, is the metal service running?");
+            std::process::exit(1);
+        }
+    };
+
+    if response.get_endpoints().is_empty() {
+        eprintln!("failed to resolve resource");
+        std::process::exit(1);
+    }
+
+    for endpoint in response.get_endpoints() {
+        let ip: std::net::IpAddr;
+        if endpoint.get_ip_address().len() == 4 {
+            let bytes: [u8; 4] = endpoint.get_ip_address()[0..4].try_into().unwrap();
+            ip = std::net::IpAddr::from(bytes);
+        } else if endpoint.get_ip_address().len() == 16 {
+            let bytes: [u8; 16] = endpoint.get_ip_address()[0..16].try_into().unwrap();
+            ip = std::net::IpAddr::from(bytes);
+        } else {
+            eprintln!("invalid IP address: {:?}", endpoint.get_ip_address());
+            continue;
+        }
+
+        println!("{}:{}", ip, endpoint.get_port());
+    }
+}
+
 fn usage() {
     eprintln!("USAGE: metal [options] [command] [config]");
     std::process::exit(1);
@@ -241,6 +281,7 @@ fn main() {
         Some("up") => up(&args[1..], &client),
         Some("down") => down(&args[1..], &client),
         Some("status") => status(&args[1..], &client),
+        Some("resolve") => resolve(&args[1..], &client),
         Some("logs") => logs(
             &args[1..],
             &client,

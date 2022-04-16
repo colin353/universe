@@ -4,6 +4,8 @@ use std::sync::{Arc, RwLock};
 use metal_grpc_rust::{Configuration, DiffResponse, DiffType, Task, TaskRuntimeInfo, TaskState};
 use state::{MetalStateError, MetalStateManager};
 
+const RESOLUTION_TTL: u64 = 5;
+
 pub struct MetalServiceHandler(pub Arc<MetalServiceHandlerInner>);
 
 pub struct MetalServiceHandlerInner {
@@ -127,8 +129,31 @@ impl MetalServiceHandlerInner {
         compute_diff(&locked, req.get_config(), req.get_down())
     }
 
-    fn resolve(&self, _req: metal_grpc_rust::ResolveRequest) -> metal_grpc_rust::ResolveResponse {
-        todo!();
+    fn resolve(&self, req: metal_grpc_rust::ResolveRequest) -> metal_grpc_rust::ResolveResponse {
+        let mut response = metal_grpc_rust::ResolveResponse::new();
+
+        // Try to resolve as a task + binding name
+        if let Some(pos) = req.get_service_name().rfind('.') {
+            let task_name = &req.get_service_name()[..pos];
+            let binding_name = &req.get_service_name()[pos + 1..];
+            if !task_name.is_empty() {
+                let locked = self.tasks.read().unwrap();
+                if let Some(t) = locked.get(task_name) {
+                    for binding in t.get_runtime_info().get_services() {
+                        if binding.get_service_name() == binding_name {
+                            let mut endpoint = metal_grpc_rust::Endpoint::new();
+                            endpoint
+                                .set_ip_address(t.get_runtime_info().get_ip_address().to_owned());
+                            endpoint.set_port(binding.get_port());
+
+                            response.mut_endpoints().push(endpoint);
+                        }
+                    }
+                }
+            }
+        }
+
+        response
     }
 
     fn status(&self, req: metal_grpc_rust::StatusRequest) -> metal_grpc_rust::StatusResponse {
