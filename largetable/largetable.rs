@@ -1,15 +1,13 @@
-use dtable;
+use crate::{dtable, keyserializer, mtable};
 use itertools::{MinHeap, KV};
-use keyserializer;
 use largetable_proto_rust::Record;
-use mtable;
 use protobuf;
 use recordio;
 use sstable::SSTableReader;
 
 use std;
 use std::borrow::BorrowMut;
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::VecDeque;
 use std::io;
 use std::sync::RwLock;
 
@@ -28,7 +26,7 @@ impl<'a> LargeTable {
         }
     }
 
-    pub fn add_journal(&mut self, writer: Box<io::Write + Send + Sync>) {
+    pub fn add_journal(&mut self, writer: Box<dyn io::Write + Send + Sync>) {
         self.journals
             .insert(0, RwLock::new(recordio::RecordIOWriter::new(writer)));
         self.journals.drain(1..);
@@ -42,7 +40,7 @@ impl<'a> LargeTable {
         self.mtables.drain(1..);
     }
 
-    pub fn load_from_journal(&mut self, reader: Box<io::Read>) {
+    pub fn load_from_journal(&mut self, reader: Box<dyn io::Read>) {
         let records = recordio::RecordIOReaderOwned::<Record>::new(reader);
         for record in records {
             let row = record.get_row().to_owned();
@@ -285,7 +283,7 @@ impl<'a> LargeTable {
         shards
     }
 
-    pub fn write_to_disk(&self, w: &mut io::Write, idx: usize) {
+    pub fn write_to_disk(&self, w: &mut dyn io::Write, idx: usize) {
         let write: &mut io::Write = w.borrow_mut() as &mut io::Write;
         self.mtables[idx]
             .write()

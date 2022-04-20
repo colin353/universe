@@ -1,29 +1,103 @@
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
-# Add a comment into the WORKSPACE
+# Rust rules
 http_archive(
-    name = "io_bazel_rules_rust",
-    sha256 = "ea90c021a9cbd45a0e37b46907a69e1650c49579df86e3e3f1c98a117eec0b42",
-    strip_prefix = "rules_rust-3075d2bbd0800cc1ea7afefa12431261959b3811",
+    name = "rules_rust",
+    sha256 = "78a3cb15542ca32ab3b1785d7c544aa9b66dc75a70ffe5069f10761fc87f83d3",
+    strip_prefix = "rules_rust-b778fca0ac4dfcf3c9e24f1517e73d39d739c730",
     urls = [
-        "https://github.com/colin353/rules_rust/archive/3075d2bbd0800cc1ea7afefa12431261959b3811.tar.gz",
+        "https://github.com/bazelbuild/rules_rust/archive/b778fca0ac4dfcf3c9e24f1517e73d39d739c730.tar.gz",
+    ],
+)
+
+load("@rules_rust//rust:repositories.bzl", "rules_rust_dependencies", "rust_register_toolchains")
+rules_rust_dependencies()
+rust_register_toolchains(version="nightly", iso_date="2022-02-23", edition="2018")
+
+load("@rules_rust//proto:repositories.bzl", "rust_proto_repositories")
+rust_proto_repositories()
+
+load("@rules_rust//proto:transitive_repositories.bzl", "rust_proto_transitive_repositories")
+rust_proto_transitive_repositories()
+
+
+# Go rules
+
+http_archive(
+    name = "io_bazel_rules_go",
+    sha256 = "f2dcd210c7095febe54b804bb1cd3a58fe8435a909db2ec04e31542631cf715c",
+    urls = [
+        "https://mirror.bazel.build/github.com/bazelbuild/rules_go/releases/download/v0.31.0/rules_go-v0.31.0.zip",
+        "https://github.com/bazelbuild/rules_go/releases/download/v0.31.0/rules_go-v0.31.0.zip",
     ],
 )
 
 http_archive(
-    name = "bazel_skylib",
-    sha256 = "9a737999532daca978a158f94e77e9af6a6a169709c0cee274f0a4c3359519bd",
-    strip_prefix = "bazel-skylib-1.0.0",
-    url = "https://github.com/bazelbuild/bazel-skylib/archive/1.0.0.tar.gz",
+    name = "bazel_gazelle",
+    sha256 = "de69a09dc70417580aabf20a28619bb3ef60d038470c7cf8442fafcf627c21cb",
+    urls = [
+        "https://mirror.bazel.build/github.com/bazelbuild/bazel-gazelle/releases/download/v0.24.0/bazel-gazelle-v0.24.0.tar.gz",
+        "https://github.com/bazelbuild/bazel-gazelle/releases/download/v0.24.0/bazel-gazelle-v0.24.0.tar.gz",
+    ],
 )
+
+load("@io_bazel_rules_go//go:deps.bzl", "go_register_toolchains", "go_rules_dependencies")
+load("@bazel_gazelle//:deps.bzl", "gazelle_dependencies", "go_repository")
+
+############################################################
+# Define your own dependencies here using go_repository.
+# Else, dependencies declared by rules_go/gazelle will be used.
+# The first declaration of an external repository "wins".
+############################################################
+
+go_rules_dependencies()
+
+go_register_toolchains(version = "1.18")
+
+gazelle_dependencies()
+
+# Python rules
+
+load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+rules_python_version = "740825b7f74930c62f44af95c9a4c1bd428d2c53" # Latest @ 2021-06-23
 
 http_archive(
-    name = "io_bazel_rules_docker",
-    sha256 = "dc97fccceacd4c6be14e800b2a00693d5e8d07f69ee187babfd04a80a9f8e250",
-    strip_prefix = "rules_docker-0.14.1",
-    urls = ["https://github.com/bazelbuild/rules_docker/releases/download/v0.14.1/rules_docker-v0.14.1.tar.gz"],
+    name = "rules_python",
+    sha256 = "09a3c4791c61b62c2cbc5b2cbea4ccc32487b38c7a2cc8f87a794d7a659cc742",
+    strip_prefix = "rules_python-{}".format(rules_python_version),
+    url = "https://github.com/bazelbuild/rules_python/archive/{}.zip".format(rules_python_version),
 )
 
+# Docker rules
+http_archive(
+    name = "io_bazel_rules_docker",
+    sha256 = "85ffff62a4c22a74dbd98d05da6cf40f497344b3dbf1e1ab0a37ab2a1a6ca014",
+    strip_prefix = "rules_docker-0.23.0",
+    urls = ["https://github.com/bazelbuild/rules_docker/releases/download/v0.23.0/rules_docker-v0.23.0.tar.gz"],
+)
+
+load(
+    "@io_bazel_rules_docker//repositories:repositories.bzl",
+    container_repositories = "repositories",
+)
+container_repositories()
+
+load("@io_bazel_rules_docker//repositories:deps.bzl", container_deps = "deps")
+
+container_deps()
+
+load(
+    "@io_bazel_rules_docker//container:container.bzl",
+    "container_pull",
+)
+
+container_repositories()
+container_deps()
+
+# 
+
+# Vendored node
 http_archive(
     name = "vendored_node",
     build_file_content = """exports_files(["node-v14.8.0-linux-x64/bin/node"])""",
@@ -31,64 +105,17 @@ http_archive(
     urls = ["https://nodejs.org/dist/v14.8.0/node-v14.8.0-linux-x64.tar.xz"],
 )
 
-load(
-    "@io_bazel_rules_docker//repositories:repositories.bzl",
-    container_repositories = "repositories",
-)
-
-container_repositories()
-
-# This is NOT needed when going through the language lang_image
-# "repositories" function(s).
-load("@io_bazel_rules_docker//repositories:deps.bzl", container_deps = "deps")
-
-container_deps()
-
-load("@io_bazel_rules_rust//rust:repositories.bzl", "rust_repository_set")
-
-rust_repository_set(
-    name = "rust_linux_x86_64",
-    exec_triple = "x86_64-unknown-linux-gnu",
-    extra_target_triples = [],
-    iso_date = "2020-02-16",
-    version = "nightly",
-)
-
-load("@io_bazel_rules_rust//:workspace.bzl", "bazel_version")
-
-bazel_version(name = "bazel_version")
-
-load("@io_bazel_rules_rust//proto:repositories.bzl", "rust_proto_repositories")
-
-rust_proto_repositories()
-
-load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
-load(
-    "@io_bazel_rules_docker//rust:image.bzl",
-    _rust_image_repos = "repositories",
-)
-
-_rust_image_repos()
-
-load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+load("@io_bazel_rules_docker//rust:image.bzl", _rust_image_repos = "repositories")
 load("@io_bazel_rules_docker//container:pull.bzl", "container_pull")
-
 container_pull(
     name = "glibc_base",
     digest = "sha256:32c93ea6e867f4deee92912656c77f78f50e6e3d031dbfd85270dd30d75ed1ff",
     registry = "gcr.io",
     repository = "distroless/cc-debian10",
 )
-
 container_pull(
     name = "build_base",
-    digest = "sha256:341f46c0ede6cbc10c968c4bff059949fba7395207bd84bab5aecba3005d115f",
+    digest = "sha256:cd987774f7e27ffc46cc13312c1c9e2df469ea87b2b17682590a91d0342e9544",
     registry = "registry.hub.docker.com",
     repository = "colinmerkel/build",
-)
-
-http_archive(
-    name = "rules_pkg",
-    sha256 = "4ba8f4ab0ff85f2484287ab06c0d871dcb31cc54d439457d28fd4ae14b18450a",
-    url = "https://github.com/bazelbuild/rules_pkg/releases/download/0.2.4/rules_pkg-0.2.4.tar.gz",
 )

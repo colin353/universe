@@ -17,7 +17,7 @@ licenses([
 ])
 
 load(
-    "@io_bazel_rules_rust//rust:rust.bzl",
+    "@rules_rust//rust:defs.bzl",
     "rust_binary",
     "rust_library",
     "rust_test",
@@ -32,7 +32,7 @@ rust_library(
         "with-deprecated",
     ],
     crate_root = "src/lib.rs",
-    crate_type = "lib",
+
     edition = "2015",
     rustc_flags = [
         "--cap-lints=allow",

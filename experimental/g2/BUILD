@@ -1,8 +1,7 @@
 package(default_visibility = ["//visibility:public"])
 
-load("@io_bazel_rules_rust//rust:rust.bzl", "rust_library")
-load("@io_bazel_rules_rust//proto:proto.bzl", "rust_proto_library")
-load("@io_bazel_rules_rust//rust:rust.bzl", "rust_binary")
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_binary")
+load("@rules_rust//proto:proto.bzl", "rust_proto_library")
 
 rust_binary(
     name = "g2",

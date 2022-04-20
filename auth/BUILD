@@ -1,10 +1,7 @@
 package(default_visibility = ["//visibility:public"])
 
-load("@io_bazel_rules_rust//rust:rust.bzl", "rust_library")
-load("@io_bazel_rules_rust//rust:rust.bzl", "rust_binary")
-load("@io_bazel_rules_rust//rust:rust.bzl", "rust_test")
-load("@io_bazel_rules_rust//proto:proto.bzl", "rust_proto_library")
-load("@io_bazel_rules_rust//proto:proto.bzl", "rust_grpc_library")
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_binary", "rust_test")
+load("@rules_rust//proto:proto.bzl", "rust_proto_library", "rust_grpc_library")
 load("@io_bazel_rules_docker//rust:image.bzl", "rust_image")
 load("@io_bazel_rules_docker//docker:docker.bzl", "docker_push")
 
@@ -37,7 +34,7 @@ rust_library(
         "//third_party:tokio",
         "//util/ws",
         "//util/ws:ws_utils",
-        "@io_bazel_rules_rust//proto/raze:grpc",
+        "@rules_rust//proto/raze:grpc",
     ],
 )
 
@@ -50,7 +47,7 @@ rust_library(
         "//third_party:lazy_static",
         "//util/cache",
         "//util/grpc_tls",
-        "@io_bazel_rules_rust//proto/raze:grpc",
+        "@rules_rust//proto/raze:grpc",
     ],
 )
 
@@ -65,9 +62,9 @@ rust_binary(
         "//third_party:tls_api_openssl",
         "//util/flags",
         "//util/ws",
-        "@io_bazel_rules_rust//proto/raze:grpc",
-        "@io_bazel_rules_rust//proto/raze:protobuf",
-        "@io_bazel_rules_rust//proto/raze:tls_api",
+        "@rules_rust//proto/raze:grpc",
+        "@rules_rust//proto/raze:protobuf",
+        "@rules_rust//proto/raze:tls_api",
     ],
 )
 
@@ -104,9 +101,9 @@ rust_image(
         "//third_party:tls_api_openssl",
         "//util/flags",
         "//util/ws",
-        "@io_bazel_rules_rust//proto/raze:grpc",
-        "@io_bazel_rules_rust//proto/raze:protobuf",
-        "@io_bazel_rules_rust//proto/raze:tls_api",
+        "@rules_rust//proto/raze:grpc",
+        "@rules_rust//proto/raze:protobuf",
+        "@rules_rust//proto/raze:tls_api",
     ],
 )
 

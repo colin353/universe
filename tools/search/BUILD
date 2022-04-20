@@ -1,10 +1,7 @@
 package(default_visibility = ["//visibility:public"])
 
-load("@io_bazel_rules_rust//rust:rust.bzl", "rust_binary")
-load("@io_bazel_rules_rust//rust:rust.bzl", "rust_library")
-load("@io_bazel_rules_rust//rust:rust.bzl", "rust_test")
-load("@io_bazel_rules_rust//proto:proto.bzl", "rust_proto_library")
-load("@io_bazel_rules_rust//proto:proto.bzl", "rust_grpc_library")
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_test")
+load("@rules_rust//proto:proto.bzl", "rust_proto_library", "rust_grpc_library")
 load("@io_bazel_rules_docker//rust:image.bzl", "rust_image")
 load("@io_bazel_rules_docker//docker:docker.bzl", "docker_push")
 
@@ -58,8 +55,8 @@ rust_binary(
         "//util/tmpl",
         "//util/ws",
         "//util/ws:ws_utils",
-        "@io_bazel_rules_rust//proto/raze:grpc",
-        "@io_bazel_rules_rust//proto/raze:tls_api_stub",
+        "@rules_rust//proto/raze:grpc",
+        "@rules_rust//proto/raze:tls_api_stub",
     ],
 )
 
@@ -101,8 +98,8 @@ rust_binary(
         "//util/tmpl",
         "//util/ws",
         "//util/ws:ws_utils",
-        "@io_bazel_rules_rust//proto/raze:grpc",
-        "@io_bazel_rules_rust//proto/raze:tls_api_stub",
+        "@rules_rust//proto/raze:grpc",
+        "@rules_rust//proto/raze:tls_api_stub",
     ],
 )
 
@@ -142,9 +139,9 @@ rust_library(
         ":search_grpc_rust",
         "//third_party:tls_api_openssl",
         "//util/grpc_tls",
-        "@io_bazel_rules_rust//proto/raze:grpc",
-        "@io_bazel_rules_rust//proto/raze:tls_api",
-        "@raze__httpbis__0_7_0//:httpbis",
+        "@rules_rust//proto/raze:grpc",
+        "@rules_rust//proto/raze:tls_api",
+        #"@raze__httpbis__0_7_0//:httpbis",
     ],
 )
 
@@ -156,7 +153,7 @@ rust_library(
         ":search_grpc_rust",
         ":search_lib",
         "//auth:auth_client",
-        "@io_bazel_rules_rust//proto/raze:grpc",
+        "@rules_rust//proto/raze:grpc",
     ],
 )
 
@@ -189,7 +186,7 @@ rust_library(
         "//util/pool",
         "//util/primitive",
         "//util/sstable",
-        "@io_bazel_rules_rust//proto/raze:protobuf",
+        "@rules_rust//proto/raze:protobuf",
     ],
 )
 
@@ -260,7 +257,7 @@ rust_library(
         "//plume",
         "//third_party:byteorder",
         "//tools/search/language_specific",
-        "@io_bazel_rules_rust//proto/raze:protobuf",
+        "@rules_rust//proto/raze:protobuf",
     ],
 )
 

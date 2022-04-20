@@ -22,7 +22,7 @@ pub struct Flag<T: std::str::FromStr> {
 }
 
 pub trait ParseableFlag {
-    fn validate(&self, &str) -> Result<(), Error>;
+    fn validate(&self, _: &str) -> Result<(), Error>;
     fn get_name(&self) -> &str;
     fn get_usage_string(&self) -> &str;
     fn get_default_value(&self) -> String;
@@ -30,7 +30,7 @@ pub trait ParseableFlag {
 
 // parse_flags takes a set of flags and checks whether they are all present
 // and whether they parse correctly.
-pub fn parse_flags(flags: &[&ParseableFlag]) -> Result<Vec<String>, Error> {
+pub fn parse_flags(flags: &[&dyn ParseableFlag]) -> Result<Vec<String>, Error> {
     let args: Vec<String> = env::args().skip(1).collect();
     let args_str: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
 
@@ -40,7 +40,7 @@ pub fn parse_flags(flags: &[&ParseableFlag]) -> Result<Vec<String>, Error> {
 // parse_flags_or_panic tries to parse the flags, but if it fails, it checks the reason why and may
 // panic and/or emit an error message. It returns a list of strings, which are the non-flag
 // command-line arguments.
-pub fn parse_flags_or_panic(flags: &[&ParseableFlag]) -> Vec<String> {
+pub fn parse_flags_or_panic(flags: &[&dyn ParseableFlag]) -> Vec<String> {
     let error = match parse_flags(flags) {
         Ok(args) => return args,
         Err(e) => e,
@@ -48,7 +48,10 @@ pub fn parse_flags_or_panic(flags: &[&ParseableFlag]) -> Vec<String> {
 
     match error.kind() {
         ErrorKind::Interrupted => std::process::exit(1),
-        _ => panic!(format!("{}", error)),
+        _ => {
+            eprintln!("{}", error);
+            panic!("failed to parse flags!")
+        }
     }
 }
 
@@ -112,7 +115,7 @@ impl Flag<String> {
         if value.starts_with("~/") {
             match env::var("HOME") {
                 Ok(h) => return format!("{}{}", h, &value[1..]),
-                Err(_) => ()
+                Err(_) => (),
             };
         }
         value

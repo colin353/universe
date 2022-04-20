@@ -16,7 +16,7 @@ licenses([
 ])
 
 load(
-    "@io_bazel_rules_rust//rust:rust.bzl",
+    "@rules_rust//rust:defs.bzl",
     "rust_library",
     "rust_binary",
     "rust_test",
@@ -27,7 +27,7 @@ load(
 rust_library(
     name = "openssl_probe",
     crate_root = "src/lib.rs",
-    crate_type = "lib",
+
     edition = "2015",
     srcs = glob(["**/*.rs"]),
     deps = [

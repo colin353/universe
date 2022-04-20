@@ -10,6 +10,6 @@ fn main() {
 
     let keywords = parse_flags!(index_dir);
 
-    let mut s = search_lib::Searcher::new(&index_dir.path());
+    let s = search_lib::Searcher::new(&index_dir.path());
     s.search(&keywords.join(" "));
 }

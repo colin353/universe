@@ -49,7 +49,7 @@ pub trait LargeTableClient {
 
     fn batch_write(
         &self,
-        largetable_grpc_rust::BatchWriteRequest,
+        _: largetable_grpc_rust::BatchWriteRequest,
     ) -> largetable_grpc_rust::WriteResponse;
 
     fn batch_read(
@@ -276,7 +276,7 @@ impl LargeTableClient for LargeTableRemoteClient {
         req.set_timestamp(1);
 
         for _ in 0..10 {
-            if let Ok(_) =  self.client.read(self.opts(), req.clone()).wait() {
+            if let Ok(_) = self.client.read(self.opts(), req.clone()).wait() {
                 return;
             }
             std::thread::sleep(std::time::Duration::from_secs(1));

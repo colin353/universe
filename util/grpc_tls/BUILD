@@ -1,6 +1,6 @@
 package(default_visibility = ["//visibility:public"])
 
-load("@io_bazel_rules_rust//rust:rust.bzl", "rust_library")
+load("@rules_rust//rust:defs.bzl", "rust_library")
 
 rust_library(
     name = "grpc_tls",
@@ -8,8 +8,8 @@ rust_library(
     edition = "2018",
     deps = [
         "//third_party:tls_api_openssl",
-        "@io_bazel_rules_rust//proto/raze:grpc",
-        "@io_bazel_rules_rust//proto/raze:tls_api",
-        "@raze__httpbis__0_7_0//:httpbis",
+        "@rules_rust//proto/raze:grpc",
+        "@rules_rust//proto/raze:tls_api",
+        "@rules_rust_proto__httpbis__0_7_0//:httpbis",
     ],
 )

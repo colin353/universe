@@ -6,7 +6,7 @@ RUN apt-get -y install curl gnupg2
 RUN curl -N -s https://bazel.build/bazel-release.pub.gpg | apt-key add -
 RUN echo "deb [arch=amd64] https://storage.googleapis.com/bazel-apt stable jdk1.8" | tee /etc/apt/sources.list.d/bazel.list
 RUN apt-get update
-RUN apt-get -y install bazel=3.1.0 libfuse-dev libfuse2 git python pkg-config
+RUN apt-get -y install bazel=5.1.1 libfuse-dev libfuse2 git python pkg-config
 RUN echo "build --jobs=2 --host_force_python=PY2 --remote_http_cache=https://storage.googleapis.com/colinmerkel-bazel-cache --google_credentials=/data/bazel-access.json" >> /etc/bazel.bazelrc
 RUN echo "test --jobs=2 --host_force_python=PY2 --remote_http_cache=https://storage.googleapis.com/colinmerkel-bazel-cache --google_credentials=/data/bazel-access.json" >> /etc/bazel.bazelrc
 RUN echo "run --jobs=2 --host_force_python=PY2 --remote_http_cache=https://storage.googleapis.com/colinmerkel-bazel-cache --google_credentials=/data/bazel-access.json" >>  /etc/bazel.bazelrc

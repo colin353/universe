@@ -98,7 +98,7 @@ mod tests {
     use tokio;
 
     use super::*;
-    #[test]
+    //#[test]
     fn test_get_token() {
         let access = std::fs::read_to_string("/home/colin/security/bazel-access.json").unwrap();
 

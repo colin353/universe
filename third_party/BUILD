@@ -37,7 +37,7 @@ alias(
 
 alias(
     name = "futures",
-    actual = "@io_bazel_rules_rust//proto/raze:futures",
+    actual = "@rules_rust_proto__futures__0_1_29//:futures",
 )
 
 alias(
@@ -87,7 +87,7 @@ alias(
 
 alias(
     name = "tls_api",
-    actual = "@io_bazel_rules_rust//proto/raze:tls_api",
+    actual = "@rules_rust//proto/raze:tls_api",
 )
 
 alias(

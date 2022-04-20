@@ -1,10 +1,8 @@
 package(default_visibility = ["//visibility:public"])
 
-load("@io_bazel_rules_rust//proto:proto.bzl", "rust_proto_library")
-load("@io_bazel_rules_rust//proto:proto.bzl", "rust_grpc_library")
-load("@io_bazel_rules_rust//rust:rust.bzl", "rust_library")
-load("@io_bazel_rules_rust//rust:rust.bzl", "rust_binary")
-load("@io_bazel_rules_rust//rust:rust.bzl", "rust_test")
+load("@rules_rust//proto:proto.bzl", "rust_proto_library")
+load("@rules_rust//proto:proto.bzl", "rust_grpc_library")
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_binary", "rust_test")
 load("@io_bazel_rules_docker//rust:image.bzl", "rust_image")
 load("@io_bazel_rules_docker//docker:docker.bzl", "docker_push")
 
@@ -28,9 +26,9 @@ rust_library(
         "//largetable:largetable_client",
         "//largetable:largetable_test",
         "//tools/lockserv:lockserv_client",
-        "@io_bazel_rules_rust//proto/raze:futures",
-        "@io_bazel_rules_rust//proto/raze:grpc",
-        "@io_bazel_rules_rust//proto/raze:protobuf",
+        "//third_party:futures",
+        "@rules_rust//proto/raze:grpc",
+        "@rules_rust//proto/raze:protobuf",
     ],
 )
 
@@ -41,8 +39,8 @@ rust_library(
     deps = [
         ":queue_grpc_rust",
         "//tools/lockserv:lockserv_client",
-        "@io_bazel_rules_rust//proto/raze:grpc",
-        "@io_bazel_rules_rust//proto/raze:protobuf",
+        "@rules_rust//proto/raze:grpc",
+        "@rules_rust//proto/raze:protobuf",
     ],
 )
 
@@ -62,7 +60,7 @@ rust_binary(
     deps = [
         ":queue_client",
         "//tools/lockserv:lockserv_client",
-        "@io_bazel_rules_rust//proto/raze:protobuf",
+        "@rules_rust//proto/raze:protobuf",
     ],
 )
 
@@ -79,9 +77,9 @@ rust_binary(
         "//tools/lockserv:lockserv_client",
         "//util/flags",
         "//util/ws",
-        "@io_bazel_rules_rust//proto/raze:grpc",
-        "@io_bazel_rules_rust//proto/raze:protobuf",
-        "@io_bazel_rules_rust//proto/raze:tls_api_stub",
+        "@rules_rust//proto/raze:grpc",
+        "@rules_rust//proto/raze:protobuf",
+        "@rules_rust//proto/raze:tls_api_stub",
     ],
 )
 

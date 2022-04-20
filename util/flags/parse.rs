@@ -7,9 +7,9 @@
  *
  */
 
+use crate::ParseableFlag;
 use std::collections::HashMap;
 use std::io::{Error, ErrorKind};
-use ParseableFlag;
 
 // split takes an opt string and returns the name of the flag to
 // be set, and the value assigned (or true, if nothing.)
@@ -41,7 +41,7 @@ fn split(opt: &str) -> Result<Option<(&str, &str)>, Error> {
     Ok(Some((flag_name, flag_value)))
 }
 
-fn print_help_message(flags: &[&ParseableFlag]) {
+fn print_help_message(flags: &[&dyn ParseableFlag]) {
     println!("Options: ");
     for f in flags {
         println!(
@@ -73,7 +73,7 @@ fn envargname_from_argname(arg_name: &str) -> String {
 // This function checks that the flags are parsed correctly, and errors
 // if they are invalid, etc.
 pub fn parse_flags_from_string(
-    flags: &[&ParseableFlag],
+    flags: &[&dyn ParseableFlag],
     args: &[&str],
     envargs: &[(&str, &str)],
 ) -> Result<Vec<String>, Error> {
@@ -171,7 +171,7 @@ pub fn get_flag_value(flag_name: &str, args: &[&str], envargs: &[(&str, &str)]) 
 #[cfg(test)]
 mod test {
     use super::*;
-    use Flag;
+    use crate::Flag;
 
     #[test]
     fn test_parse_flags() {
@@ -185,7 +185,7 @@ mod test {
             default: 5,
             usage: "",
         };
-        let flags: &[&ParseableFlag] = &[&boolFlag, &intFlag];
+        let flags: &[&dyn ParseableFlag] = &[&boolFlag, &intFlag];
         parse_flags_from_string(&flags, &["--value=true", "-number=3"], &[]).unwrap();
 
         assert_eq!(
@@ -217,7 +217,7 @@ mod test {
             default: 5,
             usage: "",
         };
-        let flags: &[&ParseableFlag] = &[&boolFlag, &intFlag];
+        let flags: &[&dyn ParseableFlag] = &[&boolFlag, &intFlag];
         assert_eq!(
             parse_flags_from_string(flags, &["file.txt", "-number=3"], &[]).unwrap(),
             vec!["file.txt"]

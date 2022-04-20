@@ -143,7 +143,7 @@ impl<'short, 'long: 'short> MTable {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dtable;
+    use crate::dtable;
     use std;
     use std::io::Seek;
     #[test]

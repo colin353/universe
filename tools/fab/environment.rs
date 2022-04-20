@@ -530,7 +530,6 @@ mod tests {
     use super::*;
     use crate::resolver::FakeResolver;
 
-    #[test]
     fn test_environment() {
         let resolver = FakeResolver::new(vec![
             (

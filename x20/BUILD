@@ -1,10 +1,8 @@
 package(default_visibility = ["//visibility:public"])
 
-load("@io_bazel_rules_rust//rust:rust.bzl", "rust_binary")
-load("@io_bazel_rules_rust//rust:rust.bzl", "rust_library")
-load("@io_bazel_rules_rust//rust:rust.bzl", "rust_test")
-load("@io_bazel_rules_rust//proto:proto.bzl", "rust_proto_library")
-load("@io_bazel_rules_rust//proto:proto.bzl", "rust_grpc_library")
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_test")
+load("@rules_rust//proto:proto.bzl", "rust_proto_library")
+load("@rules_rust//proto:proto.bzl", "rust_grpc_library")
 load("@io_bazel_rules_docker//rust:image.bzl", "rust_image")
 load("@io_bazel_rules_docker//docker:docker.bzl", "docker_push")
 
@@ -25,8 +23,8 @@ rust_library(
         ":x20_grpc_rust",
         "//auth:auth_client",
         "//largetable:largetable_client",
-        "@io_bazel_rules_rust//proto/raze:grpc",
-        "@io_bazel_rules_rust//proto/raze:protobuf",
+        "@rules_rust//proto/raze:grpc",
+        "@rules_rust//proto/raze:protobuf",
     ],
 )
 
@@ -53,8 +51,8 @@ rust_binary(
         "//tools/lockserv:lockserv_client",
         "//tools/queue:queue_client",
         "//util/flags",
-        "@io_bazel_rules_rust//proto/raze:grpc",
-        "@io_bazel_rules_rust//proto/raze:tls_api_stub",
+        "@rules_rust//proto/raze:grpc",
+        "@rules_rust//proto/raze:tls_api_stub",
     ],
 )
 
@@ -64,7 +62,7 @@ rust_library(
     deps = [
         ":x20_grpc_rust",
         "//util/grpc_tls",
-        "@io_bazel_rules_rust//proto/raze:grpc",
+        "@rules_rust//proto/raze:grpc",
     ],
 )
 

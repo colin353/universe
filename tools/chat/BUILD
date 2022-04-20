@@ -1,10 +1,8 @@
 package(default_visibility = ["//visibility:public"])
 
-load("@io_bazel_rules_rust//rust:rust.bzl", "rust_binary")
-load("@io_bazel_rules_rust//rust:rust.bzl", "rust_library")
-load("@io_bazel_rules_rust//rust:rust.bzl", "rust_test")
-load("@io_bazel_rules_rust//proto:proto.bzl", "rust_proto_library")
-load("@io_bazel_rules_rust//proto:proto.bzl", "rust_grpc_library")
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_test")
+load("@rules_rust//proto:proto.bzl", "rust_proto_library")
+load("@rules_rust//proto:proto.bzl", "rust_grpc_library")
 load("@io_bazel_rules_docker//rust:image.bzl", "rust_image")
 load("@io_bazel_rules_docker//docker:docker.bzl", "docker_push")
 
@@ -31,11 +29,11 @@ rust_binary(
         ":chat_service",
         ":irc",
         "//util/flags",
-        "@io_bazel_rules_rust//proto/raze:futures",
-        "@io_bazel_rules_rust//proto/raze:grpc",
-        "@io_bazel_rules_rust//proto/raze:protobuf",
-        "@io_bazel_rules_rust//proto/raze:tls_api",
-        "@io_bazel_rules_rust//proto/raze:tls_api_stub",
+        "//third_party:futures",
+        "@rules_rust//proto/raze:grpc",
+        "@rules_rust//proto/raze:protobuf",
+        "@rules_rust//proto/raze:tls_api",
+        "@rules_rust//proto/raze:tls_api_stub",
     ],
 )
 
@@ -46,7 +44,7 @@ rust_library(
     deps = [
         ":chat_grpc_rust",
         ":chat_service",
-        "@io_bazel_rules_rust//proto/raze:futures",
+        "//third_party:futures",
     ],
 )
 
@@ -56,8 +54,8 @@ rust_library(
     edition = "2018",
     deps = [
         ":chat_grpc_rust",
-        "@io_bazel_rules_rust//proto/raze:futures",
-        "@io_bazel_rules_rust//proto/raze:grpc",
+        "//third_party:futures",
+        "@rules_rust//proto/raze:grpc",
     ],
 )
 
@@ -68,7 +66,7 @@ rust_library(
     deps = [
         ":chat_grpc_rust",
         "//util/grpc_tls",
-        "@io_bazel_rules_rust//proto/raze:grpc",
+        "@rules_rust//proto/raze:grpc",
     ],
 )
 

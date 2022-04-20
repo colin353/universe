@@ -1,7 +1,7 @@
-use config;
+use crate::config;
+use crate::subprocess;
 use rand;
 use recordio::{RecordIOReader, RecordIOWriter};
-use subprocess;
 use x20_client;
 
 use std::collections::HashMap;

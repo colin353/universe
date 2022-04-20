@@ -1,10 +1,8 @@
 package(default_visibility = ["//visibility:public"])
 
-load("@io_bazel_rules_rust//proto:proto.bzl", "rust_proto_library")
-load("@io_bazel_rules_rust//proto:proto.bzl", "rust_grpc_library")
-load("@io_bazel_rules_rust//rust:rust.bzl", "rust_library")
-load("@io_bazel_rules_rust//rust:rust.bzl", "rust_binary")
-load("@io_bazel_rules_rust//rust:rust.bzl", "rust_test")
+load("@rules_rust//proto:proto.bzl", "rust_proto_library")
+load("@rules_rust//proto:proto.bzl", "rust_grpc_library")
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_binary", "rust_test")
 load("@io_bazel_rules_docker//rust:image.bzl", "rust_image")
 load("@io_bazel_rules_docker//docker:docker.bzl", "docker_push")
 
@@ -24,8 +22,8 @@ rust_library(
     edition = "2018",
     deps = [
         ":lockserv_grpc_rust",
-        "@io_bazel_rules_rust//proto/raze:grpc",
-        "@io_bazel_rules_rust//proto/raze:protobuf",
+        "@rules_rust//proto/raze:grpc",
+        "@rules_rust//proto/raze:protobuf",
     ],
 )
 
@@ -35,8 +33,8 @@ rust_library(
     edition = "2018",
     deps = [
         ":lockserv_grpc_rust",
-        "@io_bazel_rules_rust//proto/raze:grpc",
-        "@io_bazel_rules_rust//proto/raze:protobuf",
+        "@rules_rust//proto/raze:grpc",
+        "@rules_rust//proto/raze:protobuf",
     ],
 )
 
@@ -48,9 +46,9 @@ rust_binary(
         ":lockserv_grpc_rust",
         ":server_lib",
         "//util/flags",
-        "@io_bazel_rules_rust//proto/raze:grpc",
-        "@io_bazel_rules_rust//proto/raze:protobuf",
-        "@io_bazel_rules_rust//proto/raze:tls_api_stub",
+        "@rules_rust//proto/raze:grpc",
+        "@rules_rust//proto/raze:protobuf",
+        "@rules_rust//proto/raze:tls_api_stub",
     ],
 )
 

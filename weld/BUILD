@@ -1,10 +1,7 @@
 package(default_visibility = ["//visibility:public"])
 
-load("@io_bazel_rules_rust//rust:rust.bzl", "rust_library")
-load("@io_bazel_rules_rust//rust:rust.bzl", "rust_binary")
-load("@io_bazel_rules_rust//rust:rust.bzl", "rust_test")
-load("@io_bazel_rules_rust//proto:proto.bzl", "rust_proto_library")
-load("@io_bazel_rules_rust//proto:proto.bzl", "rust_grpc_library")
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_binary", "rust_test")
+load("@rules_rust//proto:proto.bzl", "rust_proto_library", "rust_grpc_library")
 load("@io_bazel_rules_docker//rust:image.bzl", "rust_image")
 load("@io_bazel_rules_docker//docker:docker.bzl", "docker_push")
 
@@ -38,10 +35,10 @@ rust_library(
         "//third_party:time",
         "//util/grpc_tls",
         "//util/tmpl:escape",
-        "@io_bazel_rules_rust//proto/raze:grpc",
-        "@io_bazel_rules_rust//proto/raze:protobuf",
-        "@io_bazel_rules_rust//proto/raze:tls_api",
-        "@raze__httpbis__0_7_0//:httpbis",
+        "@rules_rust//proto/raze:grpc",
+        "@rules_rust//proto/raze:protobuf",
+        "@rules_rust//proto/raze:tls_api",
+        "@rules_rust_proto__httpbis__0_7_0//:httpbis",
     ],
 )
 
@@ -99,10 +96,10 @@ rust_library(
         "//third_party:libc",
         "//third_party:rand",
         "//third_party:time",
-        "@io_bazel_rules_rust//proto/raze:grpc",
-        "@io_bazel_rules_rust//proto/raze:protobuf",
-        "@io_bazel_rules_rust//proto/raze:tls_api",
-        "@io_bazel_rules_rust//proto/raze:tls_api_stub",
+        "@rules_rust//proto/raze:grpc",
+        "@rules_rust//proto/raze:protobuf",
+        "@rules_rust//proto/raze:tls_api",
+        "@rules_rust//proto/raze:tls_api_stub",
     ],
 )
 
@@ -127,10 +124,10 @@ rust_binary(
         "//third_party:tls_api_openssl",
         "//util/flags",
         "//util/pool",
-        "@io_bazel_rules_rust//proto/raze:grpc",
-        "@io_bazel_rules_rust//proto/raze:protobuf",
-        "@io_bazel_rules_rust//proto/raze:tls_api",
-        "@io_bazel_rules_rust//proto/raze:tls_api_stub",
+        "@rules_rust//proto/raze:grpc",
+        "@rules_rust//proto/raze:protobuf",
+        "@rules_rust//proto/raze:tls_api",
+        "@rules_rust//proto/raze:tls_api_stub",
     ],
 )
 
@@ -159,10 +156,10 @@ rust_binary(
         "//tools/queue:queue_client",
         "//util/flags",
         "//util/pool",
-        "@io_bazel_rules_rust//proto/raze:grpc",
-        "@io_bazel_rules_rust//proto/raze:protobuf",
-        "@io_bazel_rules_rust//proto/raze:tls_api",
-        "@io_bazel_rules_rust//proto/raze:tls_api_stub",
+        "@rules_rust//proto/raze:grpc",
+        "@rules_rust//proto/raze:protobuf",
+        "@rules_rust//proto/raze:tls_api",
+        "@rules_rust//proto/raze:tls_api_stub",
     ],
 )
 
@@ -192,8 +189,8 @@ rust_library(
         "//auth:auth_client",
         "//largetable:largetable_client",
         "//largetable:largetable_test",
-        "@io_bazel_rules_rust//proto/raze:grpc",
-        "@io_bazel_rules_rust//proto/raze:protobuf",
+        "@rules_rust//proto/raze:grpc",
+        "@rules_rust//proto/raze:protobuf",
     ],
 )
 
@@ -218,9 +215,9 @@ rust_binary(
         "//third_party:openssl",
         "//third_party:tls_api_openssl",
         "//util/flags",
-        "@io_bazel_rules_rust//proto/raze:grpc",
-        "@io_bazel_rules_rust//proto/raze:protobuf",
-        "@io_bazel_rules_rust//proto/raze:tls_api",
+        "@rules_rust//proto/raze:grpc",
+        "@rules_rust//proto/raze:protobuf",
+        "@rules_rust//proto/raze:tls_api",
     ],
 )
 
@@ -241,10 +238,10 @@ rust_image(
         "//third_party:openssl",
         "//third_party:tls_api_openssl",
         "//util/flags",
-        "@io_bazel_rules_rust//proto/raze:grpc",
-        "@io_bazel_rules_rust//proto/raze:protobuf",
-        "@io_bazel_rules_rust//proto/raze:tls_api",
-        "@io_bazel_rules_rust//proto/raze:tls_api_stub",
+        "@rules_rust//proto/raze:grpc",
+        "@rules_rust//proto/raze:protobuf",
+        "@rules_rust//proto/raze:tls_api",
+        "@rules_rust//proto/raze:tls_api_stub",
     ],
 )
 
