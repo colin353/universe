@@ -33,6 +33,10 @@ impl Lock {
     }
 }
 
+fn wait<T: Send + Sync>(resp: grpc::SingleResponse<T>) -> Result<T, grpc::Error> {
+    futures::executor::block_on(resp.join_metadata_result()).map(|r| r.1)
+}
+
 impl LockservClient {
     pub fn new(hostname: &str, port: u16) -> Self {
         Self {
@@ -46,8 +50,8 @@ impl LockservClient {
     pub fn acquire(&self, path: String) -> Result<Lock, Error> {
         let mut req = AcquireRequest::new();
         req.set_path(path.clone());
-        let mut response = match self.client.acquire(Default::default(), req).wait() {
-            Ok(r) => r.1,
+        let mut response = match wait(self.client.acquire(Default::default(), req)) {
+            Ok(r) => r,
             Err(_) => return Err(Error::Network),
         };
 
@@ -67,8 +71,8 @@ impl LockservClient {
         req.set_path(lock.path.clone());
         req.set_generation(lock.generation);
 
-        let mut response = match self.client.acquire(Default::default(), req).wait() {
-            Ok(r) => r.1,
+        let mut response = match wait(self.client.acquire(Default::default(), req)) {
+            Ok(r) => r,
             Err(_) => return Err(Error::Network),
         };
 
@@ -89,7 +93,7 @@ impl LockservClient {
         req.set_path(lock.path);
         req.set_should_yield(true);
 
-        match self.client.acquire(Default::default(), req).wait() {
+        match wait(self.client.acquire(Default::default(), req)) {
             Ok(_) => Ok(()),
             Err(_) => Err(Error::Network),
         }
@@ -105,8 +109,8 @@ impl LockservClient {
         message.write_to_vec(&mut bytes).unwrap();
         req.set_content(bytes);
 
-        let mut response = match self.client.acquire(Default::default(), req).wait() {
-            Ok(r) => r.1,
+        let mut response = match wait(self.client.acquire(Default::default(), req)) {
+            Ok(r) => r,
             Err(_) => return Err(Error::Network),
         };
 
@@ -125,8 +129,8 @@ impl LockservClient {
         let mut req = ReadRequest::new();
         req.set_path(path);
 
-        let response = match self.client.read(Default::default(), req).wait() {
-            Ok(r) => r.1,
+        let response = match wait(self.client.read(Default::default(), req)) {
+            Ok(r) => r,
             Err(_) => return Err(Error::Network),
         };
         let mut message = T::new();

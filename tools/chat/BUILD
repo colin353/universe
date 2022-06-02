@@ -23,7 +23,6 @@ docker_push(
 rust_binary(
     name = "chat",
     srcs = ["chat.rs"],
-    edition = "2018",
     deps = [
         ":chat_grpc_rust",
         ":chat_service",
@@ -40,7 +39,6 @@ rust_binary(
 rust_library(
     name = "irc",
     srcs = ["irc.rs"],
-    edition = "2018",
     deps = [
         ":chat_grpc_rust",
         ":chat_service",
@@ -51,7 +49,6 @@ rust_library(
 rust_library(
     name = "chat_service",
     srcs = ["chat_service.rs"],
-    edition = "2018",
     deps = [
         ":chat_grpc_rust",
         "//third_party:futures",
@@ -62,10 +59,10 @@ rust_library(
 rust_library(
     name = "chat_client",
     srcs = ["client.rs"],
-    edition = "2018",
     deps = [
         ":chat_grpc_rust",
         "//util/grpc_tls",
+        "//third_party:futures",
         "@rules_rust//proto/raze:grpc",
     ],
 )

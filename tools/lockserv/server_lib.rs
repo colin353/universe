@@ -117,18 +117,20 @@ impl LockServiceHandler {
 impl lockserv_grpc_rust::LockService for LockServiceHandler {
     fn acquire(
         &self,
-        _m: grpc::RequestOptions,
-        req: AcquireRequest,
-    ) -> grpc::SingleResponse<AcquireResponse> {
-        grpc::SingleResponse::completed(self.acquire(req))
+        _: grpc::ServerHandlerContext,
+        req: grpc::ServerRequestSingle<AcquireRequest>,
+        resp: grpc::ServerResponseUnarySink<AcquireResponse>,
+    ) -> grpc::Result<()> {
+        resp.finish(self.acquire(req.message))
     }
 
     fn read(
         &self,
-        _m: grpc::RequestOptions,
-        req: ReadRequest,
-    ) -> grpc::SingleResponse<ReadResponse> {
-        grpc::SingleResponse::completed(self.read(req))
+        _: grpc::ServerHandlerContext,
+        req: grpc::ServerRequestSingle<ReadRequest>,
+        resp: grpc::ServerResponseUnarySink<ReadResponse>,
+    ) -> grpc::Result<()> {
+        resp.finish(self.read(req.message))
     }
 }
 

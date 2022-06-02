@@ -1,10 +1,11 @@
-extern crate grpc;
-extern crate grpc_tls;
 extern crate x20_grpc_rust as x20;
 
 use grpc::{ClientStub, ClientStubExt};
 use std::sync::Arc;
-use x20::X20Service;
+
+fn wait<T: Send + Sync>(resp: grpc::SingleResponse<T>) -> Result<T, grpc::Error> {
+    futures::executor::block_on(resp.join_metadata_result()).map(|r| r.1)
+}
 
 #[derive(Clone)]
 pub struct X20Client {
@@ -31,47 +32,42 @@ impl X20Client {
     }
 
     pub fn get_binaries(&self) -> Result<Vec<x20::Binary>, x20::Error> {
-        match self
-            .client
-            .get_binaries(
-                std::default::Default::default(),
-                x20::GetBinariesRequest::new(),
-            )
-            .wait()
-        {
-            Ok(mut x) => Ok(x.1.take_binaries().into_vec()),
+        match wait(self.client.get_binaries(
+            std::default::Default::default(),
+            x20::GetBinariesRequest::new(),
+        )) {
+            Ok(mut x) => Ok(x.take_binaries().into_vec()),
             Err(_) => Err(x20::Error::NETWORK),
         }
     }
 
     pub fn publish_binary(&self, mut req: x20::PublishBinaryRequest) -> x20::PublishBinaryResponse {
         req.set_token(self.token.clone());
-        self.client
-            .publish_binary(std::default::Default::default(), req)
-            .wait()
-            .expect("rpc")
-            .1
+        wait(
+            self.client
+                .publish_binary(std::default::Default::default(), req),
+        )
+        .unwrap()
     }
 
     pub fn get_configs(&self, env: String) -> Result<Vec<x20::Configuration>, x20::Error> {
         let mut req = x20::GetConfigsRequest::new();
         req.set_environment(env);
-        match self
-            .client
-            .get_configs(std::default::Default::default(), req)
-            .wait()
-        {
-            Ok(mut x) => Ok(x.1.take_configs().into_vec()),
+        match wait(
+            self.client
+                .get_configs(std::default::Default::default(), req),
+        ) {
+            Ok(mut x) => Ok(x.take_configs().into_vec()),
             Err(_) => Err(x20::Error::NETWORK),
         }
     }
 
     pub fn publish_config(&self, mut req: x20::PublishConfigRequest) -> x20::PublishConfigResponse {
         req.set_token(self.token.clone());
-        self.client
-            .publish_config(std::default::Default::default(), req)
-            .wait()
-            .expect("rpc")
-            .1
+        wait(
+            self.client
+                .publish_config(std::default::Default::default(), req),
+        )
+        .expect("rpc")
     }
 }

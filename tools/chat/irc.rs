@@ -2,6 +2,7 @@ use chat_grpc_rust::Message;
 use chat_service::{ChatServiceEvent, ChatServiceHandler};
 use futures::future::Future;
 use futures::stream::Stream;
+use futures::StreamExt;
 use std::io::BufRead;
 use std::io::Write;
 use std::net::{TcpListener, TcpStream};
@@ -88,7 +89,7 @@ impl IrcServer {
         None
     }
 
-    pub fn handle_client(&self, mut stream: TcpStream) {
+    pub async fn handle_client(&self, mut stream: TcpStream) {
         let reader = std::io::BufReader::new(stream.try_clone().unwrap());
         let mut lines_iter = reader.lines();
 
@@ -104,8 +105,8 @@ impl IrcServer {
             let user = user.clone();
             let mut stream = stream.try_clone().unwrap();
             std::thread::spawn(move || {
-                for msg in incoming.wait() {
-                    match msg.unwrap() {
+                for msg in futures::executor::block_on_stream(incoming) {
+                    match msg {
                         ChatServiceEvent::Message(msg) => {
                             // Skip messages from self
                             if msg.get_user() == user {

@@ -1,19 +1,9 @@
-extern crate futures;
-extern crate hyper;
-extern crate hyper_tls;
-extern crate json;
-extern crate rand;
-extern crate ws;
-extern crate ws_utils;
-
-use futures::future;
+use hyper::body::Buf;
 use hyper::header::HeaderValue;
-use hyper::rt::Future;
-use hyper::rt::Stream;
 use hyper::StatusCode;
 use hyper_tls::HttpsConnector;
 use rand::Rng;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use ws::{Body, Request, Response, ResponseFuture, Server};
 
@@ -81,9 +71,10 @@ fn random_string() -> String {
 impl auth_grpc_rust::AuthenticationService for AuthServiceHandler {
     fn login(
         &self,
-        _m: grpc::RequestOptions,
-        mut req: auth_grpc_rust::LoginRequest,
-    ) -> grpc::SingleResponse<auth_grpc_rust::LoginChallenge> {
+        _: grpc::ServerHandlerContext,
+        mut req: grpc::ServerRequestSingle<auth_grpc_rust::LoginRequest>,
+        resp: grpc::ServerResponseUnarySink<auth_grpc_rust::LoginChallenge>,
+    ) -> grpc::Result<()> {
         let mut challenge = auth_grpc_rust::LoginChallenge::new();
         let token = random_string();
         let url = format!("{}begin?token={}", self.hostname, token);
@@ -91,60 +82,68 @@ impl auth_grpc_rust::AuthenticationService for AuthServiceHandler {
         challenge.set_token(token.clone());
 
         let mut record = LoginRecord::new();
-        record.return_url = req.take_return_url();
+        record.return_url = req.take_message().take_return_url();
         self.tokens.write().unwrap().insert(token, record);
 
-        grpc::SingleResponse::completed(challenge)
+        resp.finish(challenge)
     }
 
     fn authenticate(
         &self,
-        _m: grpc::RequestOptions,
-        req: auth_grpc_rust::AuthenticateRequest,
-    ) -> grpc::SingleResponse<auth_grpc_rust::AuthenticateResponse> {
+        _: grpc::ServerHandlerContext,
+        req: grpc::ServerRequestSingle<auth_grpc_rust::AuthenticateRequest>,
+        resp: grpc::ServerResponseUnarySink<auth_grpc_rust::AuthenticateResponse>,
+    ) -> grpc::Result<()> {
         let mut response = auth_grpc_rust::AuthenticateResponse::new();
-        if req.get_token() == &self.secret_key {
+        if req.message.get_token() == &self.secret_key {
             response.set_success(true);
             response.set_username(MACHINE_USERNAME.to_owned());
-        } else if let Some(t) = self.tokens.read().unwrap().get(req.get_token()) {
+        } else if let Some(t) = self.tokens.read().unwrap().get(req.message.get_token()) {
             if t.is_valid() {
                 response.set_success(true);
                 response.set_username(t.username.clone());
             }
         }
-        grpc::SingleResponse::completed(response)
+        resp.finish(response)
     }
 
     fn get_gcp_token(
         &self,
-        _m: grpc::RequestOptions,
-        req: auth_grpc_rust::GCPTokenRequest,
-    ) -> grpc::SingleResponse<auth_grpc_rust::GCPTokenResponse> {
+        _: grpc::ServerHandlerContext,
+        req: grpc::ServerRequestSingle<auth_grpc_rust::GCPTokenRequest>,
+        resp: grpc::ServerResponseUnarySink<auth_grpc_rust::GCPTokenResponse>,
+    ) -> grpc::Result<()> {
         let mut response = auth_grpc_rust::GCPTokenResponse::new();
 
         let mut authenticated = false;
-        if req.get_token() == &self.secret_key {
+        if req.message.get_token() == &self.secret_key {
             authenticated = true;
-        } else if let Some(t) = self.tokens.read().unwrap().get(req.get_token()) {
+        } else if let Some(t) = self.tokens.read().unwrap().get(req.message.get_token()) {
             if t.is_valid() {
                 authenticated = true;
             }
         }
 
         if !authenticated {
-            return grpc::SingleResponse::completed(response);
+            return resp.finish(response);
         }
 
-        let (token, expiry) = gcp::get_token_sync(
+        let (token, expiry) = match gcp::get_token_sync(
             &self.default_access_json,
             &["https://www.googleapis.com/auth/devstorage.read_write"],
-        );
+        ) {
+            Ok(z) => z,
+            Err(e) => {
+                eprintln!("something went wrong while conducting oauth! {:?}", e);
+                return resp.finish(response);
+            }
+        };
 
         response.set_success(true);
         response.set_gcp_token(token);
         response.set_expiry(expiry);
 
-        grpc::SingleResponse::completed(response)
+        resp.finish(response)
     }
 }
 
@@ -178,10 +177,10 @@ impl AuthWebServer {
     }
 
     fn respond_error(&self) -> ResponseFuture {
-        Box::new(future::ok(Response::new(Body::from("invalid"))))
+        Box::pin(std::future::ready(Response::new(Body::from("invalid"))))
     }
 
-    fn begin_authentication(&self, path: String, req: Request, key: &str) -> ResponseFuture {
+    fn begin_authentication(&self, _path: String, req: Request, _key: &str) -> ResponseFuture {
         let query = match req.uri().query() {
             Some(q) => q,
             None => return self.respond_error(),
@@ -218,31 +217,42 @@ impl AuthWebServer {
         }
 
         self.set_cookie_for_domain(token, &self.cookie_domain, &mut response);
-        Box::new(future::ok(response))
+        Box::pin(std::future::ready(response))
     }
 
     fn finish_authentication(&self, path: String, req: Request, key: String) -> ResponseFuture {
+        let _self = self.clone();
+        Box::pin(async move { _self.async_finish(path, req, key).await.unwrap() })
+    }
+
+    async fn async_finish(
+        &self,
+        _path: String,
+        req: Request,
+        key: String,
+    ) -> Result<Response, hyper::Error> {
         let query = match req.uri().query() {
             Some(q) => q,
-            None => return Box::new(future::ok(Response::new(Body::from("")))),
+            None => return Ok(Response::new(Body::from(""))),
         };
 
         let params = ws_utils::parse_params(query);
         let redirect_uri = ws_utils::urlencode(&format!("{}finish", self.hostname));
         let body = format!(
             "code={code}\
-             &client_id={client_id}\
-             &client_secret={client_secret}\
-             &redirect_uri={redirect_uri}\
-             &grant_type=authorization_code",
+                 &client_id={client_id}\
+                 &client_secret={client_secret}\
+                 &redirect_uri={redirect_uri}\
+                 &grant_type=authorization_code",
             code = params.get("code").unwrap(),
             client_id = self.client_id,
             client_secret = self.client_secret,
             redirect_uri = redirect_uri,
         );
 
-        let mut req = hyper::Request::builder();
-        req.method("POST")
+        let req = hyper::Request::builder();
+        let req = req
+            .method("POST")
             .uri("https://www.googleapis.com/oauth2/v4/token/");
         let mut req = req.body(hyper::Body::from(body)).unwrap();
 
@@ -254,80 +264,77 @@ impl AuthWebServer {
             );
         }
 
-        let https = HttpsConnector::new(4).unwrap();
+        let https = HttpsConnector::new();
         let client = hyper::client::Client::builder().build::<_, hyper::Body>(https);
         let tokens = self.tokens.clone();
         let email_whitelist = self.email_whitelist.clone();
-        Box::new(
-            client
-                .request(req)
-                .and_then(|res| res.into_body().concat2())
-                .and_then(move |response| {
-                    let response = String::from_utf8(response.into_bytes().to_vec()).unwrap();
-                    let parsed = json::parse(&response).unwrap();
-                    let token = &parsed["access_token"];
 
-                    let mut req = hyper::Request::builder();
-                    req.method("GET")
-                        .uri("https://openidconnect.googleapis.com/v1/userinfo");
-                    let mut req = req.body(hyper::Body::from("")).unwrap();
+        let resp = client.request(req).await?;
+        let mut body = hyper::body::aggregate(resp).await?;
+        let bytes = body.to_bytes();
 
-                    {
-                        let headers = req.headers_mut();
-                        headers.insert(
-                            "Authorization",
-                            HeaderValue::from_str(&format!("Bearer {}", token)).unwrap(),
-                        );
-                    }
+        let response = std::str::from_utf8(&bytes).unwrap();
+        let parsed = json::parse(&response).unwrap();
+        let token = &parsed["access_token"];
 
-                    client.request(req)
-                })
-                .and_then(|res| res.into_body().concat2())
-                .and_then(move |response| {
-                    let response = String::from_utf8(response.into_bytes().to_vec()).unwrap();
-                    let parsed = json::parse(&response).unwrap();
-                    let email = &parsed["email"];
+        let req = hyper::Request::builder();
+        let req = req
+            .method("GET")
+            .uri("https://openidconnect.googleapis.com/v1/userinfo");
+        let mut req = req.body(hyper::Body::from("")).unwrap();
 
-                    let email_str = match email.as_str() {
-                        Some(e) => e,
-                        None => {
-                            return future::ok(Response::new(Body::from("invalid")));
-                        }
-                    };
+        {
+            let headers = req.headers_mut();
+            headers.insert(
+                "Authorization",
+                HeaderValue::from_str(&format!("Bearer {}", token)).unwrap(),
+            );
+        }
 
-                    let username = match email_whitelist.get(email_str) {
-                        Some(x) => x,
-                        None => return future::ok(Response::new(Body::from("invalid"))),
-                    };
+        let resp = client.request(req).await?;
+        let mut body = hyper::body::aggregate(resp).await?;
+        let bytes = body.to_bytes();
+        let response = std::str::from_utf8(&bytes).unwrap();
+        let parsed = json::parse(&response).unwrap();
+        let email = &parsed["email"];
 
-                    let mut tokens_write = tokens.write().unwrap();
-                    let login_record = match tokens_write.get_mut(&key) {
-                        Some(x) => x,
-                        None => {
-                            return future::ok(Response::new(Body::from("invalid")));
-                        }
-                    };
+        let email_str = match email.as_str() {
+            Some(e) => e,
+            None => {
+                return Ok(Response::new(Body::from("invalid")));
+            }
+        };
 
-                    if !login_record.username.is_empty() && &login_record.username != username {
-                        return future::ok(Response::new(Body::from("invalid")));
-                    }
-                    login_record.valid = true;
-                    login_record.username = username.to_owned();
+        let username = match email_whitelist.get(email_str) {
+            Some(x) => x,
+            None => return Ok(Response::new(Body::from("invalid"))),
+        };
 
-                    let mut response = Response::new(Body::from(format!("{}", email)));
-                    *response.status_mut() = StatusCode::TEMPORARY_REDIRECT;
-                    {
-                        let headers = response.headers_mut();
-                        headers.insert(
-                            "Location",
-                            HeaderValue::from_str(&login_record.return_url).unwrap(),
-                        );
-                    }
+        let mut tokens_write = tokens.write().unwrap();
+        let login_record = match tokens_write.get_mut(&key) {
+            Some(x) => x,
+            None => {
+                return Ok(Response::new(Body::from("invalid")));
+            }
+        };
 
-                    future::ok(response)
-                })
-                .map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "bad fails")),
-        )
+        if !login_record.username.is_empty() && &login_record.username != username {
+            return Ok(Response::new(Body::from("invalid")));
+        }
+        login_record.valid = true;
+        login_record.username = username.to_owned();
+
+        let mut response = Response::new(Body::from(format!("{}", email)));
+        *response.status_mut() = StatusCode::TEMPORARY_REDIRECT;
+        {
+            let headers = response.headers_mut();
+            headers.insert(
+                "Location",
+                HeaderValue::from_str(&login_record.return_url).unwrap(),
+            );
+        }
+
+        Ok(response)
     }
 }
 

@@ -1,21 +1,17 @@
-extern crate futures;
-extern crate hyper;
-extern crate rand;
 use rand::Rng;
 
-use futures::future;
+use futures::future::BoxFuture;
 use hyper::header::HeaderValue;
 use hyper::header::{
     ACCESS_CONTROL_ALLOW_ORIGIN, CACHE_CONTROL, CONTENT_TYPE, COOKIE, LOCATION, SET_COOKIE,
 };
 use hyper::http::StatusCode;
-use hyper::rt::Future;
-use hyper::service::service_fn;
+use hyper::service::{make_service_fn, service_fn};
 pub use hyper::Body;
 
 pub type Request = hyper::Request<Body>;
 pub type Response = hyper::Response<Body>;
-pub type ResponseFuture = Box<dyn Future<Item = Response, Error = std::io::Error> + Send>;
+pub type ResponseFuture = BoxFuture<'static, Response>;
 
 use std::io::Read;
 
@@ -50,7 +46,7 @@ pub trait Server: Sync + Send + Clone + 'static {
     }
 
     fn respond_future(&self, path: String, req: Request, session_key: &str) -> ResponseFuture {
-        Box::new(future::ok(self.respond(path, req, session_key)))
+        Box::pin(std::future::ready(self.respond(path, req, session_key)))
     }
 
     fn serve_static_file(&self, path: &str, content: &[u8]) -> Response {
@@ -135,30 +131,35 @@ pub trait Server: Sync + Send + Clone + 'static {
             HeaderValue::from_bytes(location.as_bytes()).unwrap(),
         );
     }
+}
 
-    fn serve(self, port: u16) {
-        let addr = ([0, 0, 0, 0], port).into();
-        let self_clone = self.clone();
-        let server = hyper::Server::bind(&addr);
+pub async fn serve<S: Server>(server: S, port: u16) {
+    let addr = ([0, 0, 0, 0], port).into();
+    let svc = hyper::Server::bind(&addr);
+    let make_svc = make_service_fn(move |_| {
+        let s1 = server.clone();
+        async move {
+            Ok::<_, hyper::Error>(service_fn(move |req| {
+                let s2 = s1.clone();
+                async move {
+                    let mut maybe_session_key = None;
+                    if let Some(c) = req.headers().get(COOKIE) {
+                        maybe_session_key = extract_key(c, "token");
+                    }
+                    let (has_cookie, session_key) = match maybe_session_key {
+                        Some(k) => (true, k),
+                        None => (false, random_string()),
+                    };
 
-        hyper::rt::run(
-            server
-                .serve(move || {
-                    let s = self_clone.clone();
-                    service_fn(move |req| {
-                        let mut maybe_session_key = None;
-                        if let Some(c) = req.headers().get(COOKIE) {
-                            maybe_session_key = extract_key(c, "token");
-                        }
-                        let (has_cookie, session_key) = match maybe_session_key {
-                            Some(k) => (true, k),
-                            None => (false, random_string()),
-                        };
+                    let resp = s2
+                        .respond_future(req.uri().path().into(), req, &session_key)
+                        .await;
 
-                        s.respond_future(req.uri().path().into(), req, &session_key)
-                    })
-                })
-                .map_err(|e| println!("error: {}", e)),
-        );
-    }
+                    Ok::<_, hyper::Error>(resp)
+                }
+            }))
+        }
+    });
+
+    svc.serve(make_svc).await;
 }

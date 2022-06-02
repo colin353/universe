@@ -902,152 +902,173 @@ impl<C: LargeTableClient> WeldLocalServiceHandler<C> {
 impl<C: LargeTableClient> weld::WeldLocalService for WeldLocalServiceHandler<C> {
     fn get_change(
         &self,
-        _m: grpc::RequestOptions,
-        req: weld::GetChangeRequest,
-    ) -> grpc::SingleResponse<weld::Change> {
-        grpc::SingleResponse::completed(self.get_change(req))
+        _: grpc::ServerHandlerContext,
+        req: grpc::ServerRequestSingle<weld::GetChangeRequest>,
+        resp: grpc::ServerResponseUnarySink<weld::Change>,
+    ) -> grpc::Result<()> {
+        resp.finish(self.get_change(req.message))
     }
 
     fn make_change(
         &self,
-        _m: grpc::RequestOptions,
-        req: weld::Change,
-    ) -> grpc::SingleResponse<weld::Change> {
-        grpc::SingleResponse::completed(self.make_change(req))
+        _: grpc::ServerHandlerContext,
+        req: grpc::ServerRequestSingle<weld::Change>,
+        resp: grpc::ServerResponseUnarySink<weld::Change>,
+    ) -> grpc::Result<()> {
+        resp.finish(self.make_change(req.message))
     }
 
     fn read(
         &self,
-        _m: grpc::RequestOptions,
-        req: weld::FileIdentifier,
-    ) -> grpc::SingleResponse<weld::File> {
-        grpc::SingleResponse::completed(self.read(req))
+        _: grpc::ServerHandlerContext,
+        req: grpc::ServerRequestSingle<weld::FileIdentifier>,
+        resp: grpc::ServerResponseUnarySink<weld::File>,
+    ) -> grpc::Result<()> {
+        resp.finish(self.read(req.message))
     }
 
     fn write(
         &self,
-        _m: grpc::RequestOptions,
-        req: weld::WriteRequest,
-    ) -> grpc::SingleResponse<weld::WriteResponse> {
-        grpc::SingleResponse::completed(self.write(req))
+        _: grpc::ServerHandlerContext,
+        req: grpc::ServerRequestSingle<weld::WriteRequest>,
+        resp: grpc::ServerResponseUnarySink<weld::WriteResponse>,
+    ) -> grpc::Result<()> {
+        resp.finish(self.write(req.message))
     }
 
     fn list_files(
         &self,
-        _m: grpc::RequestOptions,
-        req: weld::FileIdentifier,
-    ) -> grpc::SingleResponse<weld::ListFilesResponse> {
-        grpc::SingleResponse::completed(self.list_files(req))
+        _: grpc::ServerHandlerContext,
+        req: grpc::ServerRequestSingle<weld::FileIdentifier>,
+        resp: grpc::ServerResponseUnarySink<weld::ListFilesResponse>,
+    ) -> grpc::Result<()> {
+        resp.finish(self.list_files(req.message))
     }
 
     fn delete(
         &self,
-        _m: grpc::RequestOptions,
-        req: weld::FileIdentifier,
-    ) -> grpc::SingleResponse<weld::DeleteResponse> {
-        grpc::SingleResponse::completed(self.delete(req))
+        _: grpc::ServerHandlerContext,
+        req: grpc::ServerRequestSingle<weld::FileIdentifier>,
+        resp: grpc::ServerResponseUnarySink<weld::DeleteResponse>,
+    ) -> grpc::Result<()> {
+        resp.finish(self.delete(req.message))
     }
 
     fn list_changes(
         &self,
-        _m: grpc::RequestOptions,
-        _req: weld::ListChangesRequest,
-    ) -> grpc::SingleResponse<weld::ListChangesResponse> {
-        grpc::SingleResponse::completed(self.list_changes())
+        _: grpc::ServerHandlerContext,
+        req: grpc::ServerRequestSingle<weld::ListChangesRequest>,
+        resp: grpc::ServerResponseUnarySink<weld::ListChangesResponse>,
+    ) -> grpc::Result<()> {
+        resp.finish(self.list_changes())
     }
 
     fn snapshot(
         &self,
-        _m: grpc::RequestOptions,
-        req: weld::Change,
-    ) -> grpc::SingleResponse<weld::SnapshotResponse> {
-        grpc::SingleResponse::completed(self.snapshot(req))
+        _: grpc::ServerHandlerContext,
+        req: grpc::ServerRequestSingle<weld::Change>,
+        resp: grpc::ServerResponseUnarySink<weld::SnapshotResponse>,
+    ) -> grpc::Result<()> {
+        resp.finish(self.snapshot(req.message))
     }
 
     fn submit(
         &self,
-        _m: grpc::RequestOptions,
-        req: weld::Change,
-    ) -> grpc::SingleResponse<weld::SubmitResponse> {
-        grpc::SingleResponse::completed(self.submit(req))
+        _: grpc::ServerHandlerContext,
+        req: grpc::ServerRequestSingle<weld::Change>,
+        resp: grpc::ServerResponseUnarySink<weld::SubmitResponse>,
+    ) -> grpc::Result<()> {
+        resp.finish(self.submit(req.message))
     }
 
     fn lookup_friendly_name(
         &self,
-        _m: grpc::RequestOptions,
-        req: weld::LookupFriendlyNameRequest,
-    ) -> grpc::SingleResponse<weld::LookupFriendlyNameResponse> {
-        let id = match self.repo.lookup_friendly_name(req.get_friendly_name()) {
+        _: grpc::ServerHandlerContext,
+        req: grpc::ServerRequestSingle<weld::LookupFriendlyNameRequest>,
+        resp: grpc::ServerResponseUnarySink<weld::LookupFriendlyNameResponse>,
+    ) -> grpc::Result<()> {
+        let id = match self
+            .repo
+            .lookup_friendly_name(req.message.get_friendly_name())
+        {
             Some(id) => id,
             None => 0,
         };
 
         let mut response = weld::LookupFriendlyNameResponse::new();
         response.set_id(id);
-        grpc::SingleResponse::completed(response)
+        resp.finish(response)
     }
 
     fn get_patch(
         &self,
-        _m: grpc::RequestOptions,
-        req: weld::Change,
-    ) -> grpc::SingleResponse<weld::Patch> {
-        grpc::SingleResponse::completed(self.get_patch(req))
+        _: grpc::ServerHandlerContext,
+        req: grpc::ServerRequestSingle<weld::Change>,
+        resp: grpc::ServerResponseUnarySink<weld::Patch>,
+    ) -> grpc::Result<()> {
+        resp.finish(self.get_patch(req.message))
     }
 
     fn sync(
         &self,
-        _m: grpc::RequestOptions,
-        req: weld::SyncRequest,
-    ) -> grpc::SingleResponse<weld::SyncResponse> {
-        grpc::SingleResponse::completed(self.sync(&req))
+        _: grpc::ServerHandlerContext,
+        req: grpc::ServerRequestSingle<weld::SyncRequest>,
+        resp: grpc::ServerResponseUnarySink<weld::SyncResponse>,
+    ) -> grpc::Result<()> {
+        resp.finish(self.sync(&req.message))
     }
 
     fn run_build(
         &self,
-        _m: grpc::RequestOptions,
-        req: weld::RunBuildRequest,
-    ) -> grpc::SingleResponse<weld::RunBuildResponse> {
-        grpc::SingleResponse::completed(self.run_build(&req))
+        _: grpc::ServerHandlerContext,
+        req: grpc::ServerRequestSingle<weld::RunBuildRequest>,
+        resp: grpc::ServerResponseUnarySink<weld::RunBuildResponse>,
+    ) -> grpc::Result<()> {
+        resp.finish(self.run_build(&req.message))
     }
 
     fn run_build_query(
         &self,
-        _m: grpc::RequestOptions,
-        req: weld::RunBuildQueryRequest,
-    ) -> grpc::SingleResponse<weld::RunBuildQueryResponse> {
-        grpc::SingleResponse::completed(self.run_build_query(&req))
+        _: grpc::ServerHandlerContext,
+        req: grpc::ServerRequestSingle<weld::RunBuildQueryRequest>,
+        resp: grpc::ServerResponseUnarySink<weld::RunBuildQueryResponse>,
+    ) -> grpc::Result<()> {
+        resp.finish(self.run_build_query(&req.message))
     }
 
     fn publish_file(
         &self,
-        _m: grpc::RequestOptions,
-        req: weld::PublishFileRequest,
-    ) -> grpc::SingleResponse<weld::PublishFileResponse> {
-        grpc::SingleResponse::completed(self.publish_file(req))
+        _: grpc::ServerHandlerContext,
+        req: grpc::ServerRequestSingle<weld::PublishFileRequest>,
+        resp: grpc::ServerResponseUnarySink<weld::PublishFileResponse>,
+    ) -> grpc::Result<()> {
+        resp.finish(self.publish_file(req.message))
     }
 
     fn apply_patch(
         &self,
-        _m: grpc::RequestOptions,
-        req: weld::ApplyPatchRequest,
-    ) -> grpc::SingleResponse<weld::ApplyPatchResponse> {
-        grpc::SingleResponse::completed(self.apply_patch(req))
+        _: grpc::ServerHandlerContext,
+        req: grpc::ServerRequestSingle<weld::ApplyPatchRequest>,
+        resp: grpc::ServerResponseUnarySink<weld::ApplyPatchResponse>,
+    ) -> grpc::Result<()> {
+        resp.finish(self.apply_patch(req.message))
     }
 
     fn delete_change(
         &self,
-        _m: grpc::RequestOptions,
-        req: weld::Change,
-    ) -> grpc::SingleResponse<weld::DeleteResponse> {
-        grpc::SingleResponse::completed(self.delete_change(&req))
+        _: grpc::ServerHandlerContext,
+        req: grpc::ServerRequestSingle<weld::Change>,
+        resp: grpc::ServerResponseUnarySink<weld::DeleteResponse>,
+    ) -> grpc::Result<()> {
+        resp.finish(self.delete_change(&req.message))
     }
 
     fn clean_submitted_changes(
         &self,
-        _m: grpc::RequestOptions,
-        req: weld::CleanSubmittedChangesRequest,
-    ) -> grpc::SingleResponse<weld::CleanSubmittedChangesResponse> {
-        grpc::SingleResponse::completed(self.clean_submitted_changes())
+        _: grpc::ServerHandlerContext,
+        req: grpc::ServerRequestSingle<weld::CleanSubmittedChangesRequest>,
+        resp: grpc::ServerResponseUnarySink<weld::CleanSubmittedChangesResponse>,
+    ) -> grpc::Result<()> {
+        resp.finish(self.clean_submitted_changes())
     }
 }

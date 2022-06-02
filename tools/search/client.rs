@@ -1,15 +1,16 @@
 use grpc::ClientStub;
 use grpc::ClientStubExt;
 
-use search_grpc_rust::{Error, SearchService};
-use std::net::{SocketAddr, ToSocketAddrs};
+use search_grpc_rust::Error;
 use std::sync::Arc;
-use tls_api::TlsConnector;
-use tls_api::TlsConnectorBuilder;
 
 pub struct SearchClient {
     client: Arc<search_grpc_rust::SearchServiceClient>,
     token: String,
+}
+
+fn wait<T: Send + Sync>(resp: grpc::SingleResponse<T>) -> Result<T, grpc::Error> {
+    futures::executor::block_on(resp.join_metadata_result()).map(|r| r.1)
 }
 
 impl SearchClient {
@@ -42,12 +43,7 @@ impl SearchClient {
         mut req: search_grpc_rust::SearchRequest,
     ) -> search_grpc_rust::SearchResponse {
         req.set_token(self.token.clone());
-        let result = self
-            .client
-            .search(std::default::Default::default(), req)
-            .wait()
-            .expect("rpc")
-            .1;
+        let result = wait(self.client.search(std::default::Default::default(), req)).expect("rpc");
         if result.get_error() != Error::NONE {
             panic!("search error: {:?}", result.get_error());
         }

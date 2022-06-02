@@ -40,6 +40,7 @@ rust_library(
         ":queue_grpc_rust",
         "//tools/lockserv:lockserv_client",
         "@rules_rust//proto/raze:grpc",
+        "//third_party:futures",
         "@rules_rust//proto/raze:protobuf",
     ],
 )
@@ -75,6 +76,7 @@ rust_binary(
         "//auth:auth_client",
         "//largetable:largetable_client",
         "//tools/lockserv:lockserv_client",
+        "//third_party:tokio",
         "//util/flags",
         "//util/ws",
         "@rules_rust//proto/raze:grpc",

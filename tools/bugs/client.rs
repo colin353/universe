@@ -5,6 +5,10 @@ use grpc::ClientStub;
 use grpc::ClientStubExt;
 use std::sync::Arc;
 
+fn wait<T: Send + Sync>(resp: grpc::SingleResponse<T>) -> Result<T, grpc::Error> {
+    futures::executor::block_on(resp.join_metadata_result()).map(|r| r.1)
+}
+
 pub struct BugClient {
     client: Arc<bugs::BugServiceClient>,
     token: String,
@@ -33,12 +37,8 @@ impl BugClient {
         req.set_token(self.token.clone());
         req.set_status(status);
 
-        let mut response = self
-            .client
-            .get_bugs(std::default::Default::default(), req)
-            .wait()
-            .expect("rpc")
-            .1;
+        let mut response =
+            wait(self.client.get_bugs(std::default::Default::default(), req)).expect("rpc");
 
         if response.get_error() == bugs::Error::NONE {
             return Ok(response.take_bugs().into_vec());
@@ -51,12 +51,8 @@ impl BugClient {
         req.set_token(self.token.clone());
         req.mut_bug().set_id(id);
 
-        let mut response = self
-            .client
-            .get_bug(std::default::Default::default(), req)
-            .wait()
-            .expect("rpc")
-            .1;
+        let mut response =
+            wait(self.client.get_bug(std::default::Default::default(), req)).expect("rpc");
 
         if response.get_error() == bugs::Error::NONE {
             if !response.get_found() {
@@ -73,12 +69,11 @@ impl BugClient {
         req.set_token(self.token.clone());
         *req.mut_bug() = b;
 
-        let mut response = self
-            .client
-            .create_bug(std::default::Default::default(), req)
-            .wait()
-            .expect("rpc")
-            .1;
+        let mut response = wait(
+            self.client
+                .create_bug(std::default::Default::default(), req),
+        )
+        .expect("rpc");
 
         if response.get_error() == bugs::Error::NONE {
             return Ok(response.take_bug());
@@ -92,12 +87,11 @@ impl BugClient {
         req.set_token(self.token.clone());
         *req.mut_bug() = b;
 
-        let response = self
-            .client
-            .update_bug(std::default::Default::default(), req)
-            .wait()
-            .expect("rpc")
-            .1;
+        let response = wait(
+            self.client
+                .update_bug(std::default::Default::default(), req),
+        )
+        .expect("rpc");
 
         if response.get_error() == bugs::Error::NONE {
             return Ok(());

@@ -4,12 +4,12 @@ extern crate flags;
 extern crate tmpl;
 
 use std::sync::Arc;
-use ws::Server;
 
 mod render;
 mod webserver;
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let input_dir = define_flag!(
         "input_dir",
         String::from("/code"),
@@ -65,7 +65,6 @@ fn main() {
     // Start the actual search webserver
     let mut server = grpc::ServerBuilder::<tls_api_stub::TlsAcceptor>::new();
     server.http.set_port(grpc_port.value());
-    server.http.set_cpu_pool_threads(2);
 
     let searcher = Arc::new(search_lib::Searcher::new(&output_dir.path()));
     let auth = auth_client::AuthClient::new_fake();
@@ -84,12 +83,15 @@ fn main() {
     println!("{}\n", search_utils::CREDITS);
     println!("indexing done! serving at {}", base_url);
 
-    webserver::SearchWebserver::new(
-        searcher,
-        static_files.value(),
-        base_url,
-        auth,
-        js_src.value(),
+    ws::serve(
+        webserver::SearchWebserver::new(
+            searcher,
+            static_files.value(),
+            base_url,
+            auth,
+            js_src.value(),
+        ),
+        web_port.value(),
     )
-    .serve(web_port.value());
+    .await;
 }

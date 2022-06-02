@@ -113,8 +113,8 @@ impl WeldServer for WeldServerClient {
     fn read(&self, mut req: weld::FileIdentifier) -> weld::File {
         req.set_auth_token(self.get_token());
 
-        if let Ok(x) = self.client.read(self.opts(), req).wait() {
-            return x.1;
+        if let Ok(x) = wait(self.client.read(self.opts(), req)) {
+            return x;
         }
 
         self.load_token();
@@ -124,8 +124,8 @@ impl WeldServer for WeldServerClient {
     fn read_attrs(&self, mut req: weld::FileIdentifier) -> weld::File {
         req.set_auth_token(self.get_token());
 
-        if let Ok(x) = self.client.read_attrs(self.opts(), req).wait() {
-            return x.1;
+        if let Ok(x) = wait(self.client.read_attrs(self.opts(), req)) {
+            return x;
         }
 
         self.load_token();
@@ -134,8 +134,8 @@ impl WeldServer for WeldServerClient {
 
     fn submit(&self, mut req: weld::Change) -> weld::SubmitResponse {
         req.set_auth_token(self.get_token());
-        if let Ok(x) = self.client.submit(self.opts(), req).wait() {
-            return x.1;
+        if let Ok(x) = wait(self.client.submit(self.opts(), req)) {
+            return x;
         }
 
         self.load_token();
@@ -144,8 +144,8 @@ impl WeldServer for WeldServerClient {
 
     fn snapshot(&self, mut req: weld::Change) -> weld::SnapshotResponse {
         req.set_auth_token(self.get_token());
-        if let Ok(x) = self.client.snapshot(self.opts(), req).wait() {
-            return x.1;
+        if let Ok(x) = wait(self.client.snapshot(self.opts(), req)) {
+            return x;
         }
 
         self.load_token();
@@ -154,8 +154,8 @@ impl WeldServer for WeldServerClient {
 
     fn get_change(&self, mut req: weld::Change) -> weld::Change {
         req.set_auth_token(self.get_token());
-        if let Ok(x) = self.client.get_change(self.opts(), req).wait() {
-            return x.1;
+        if let Ok(x) = wait(self.client.get_change(self.opts(), req)) {
+            return x;
         }
 
         self.load_token();
@@ -165,8 +165,8 @@ impl WeldServer for WeldServerClient {
     fn list_changes(&self) -> Vec<Change> {
         let mut req = weld::ListChangesRequest::new();
         req.set_auth_token(self.get_token());
-        if let Ok(mut x) = self.client.list_changes(self.opts(), req).wait() {
-            return x.1.take_changes().into_vec();
+        if let Ok(mut x) = wait(self.client.list_changes(self.opts(), req)) {
+            return x.take_changes().into_vec();
         }
         self.load_token();
         panic!("list_changes request failed!");
@@ -175,8 +175,8 @@ impl WeldServer for WeldServerClient {
     fn get_latest_change(&self) -> weld::Change {
         let mut req = weld::GetLatestChangeRequest::new();
         req.set_auth_token(self.get_token());
-        if let Ok(x) = self.client.get_latest_change(self.opts(), req).wait() {
-            return x.1;
+        if let Ok(x) = wait(self.client.get_latest_change(self.opts(), req)) {
+            return x;
         }
 
         self.load_token();
@@ -185,8 +185,8 @@ impl WeldServer for WeldServerClient {
 
     fn list_files(&self, mut req: weld::FileIdentifier) -> Vec<File> {
         req.set_auth_token(self.get_token());
-        if let Ok(mut x) = self.client.list_files(self.opts(), req).wait() {
-            return x.1.take_files().into_vec();
+        if let Ok(mut x) = wait(self.client.list_files(self.opts(), req)) {
+            return x.take_files().into_vec();
         }
         self.load_token();
         panic!("list_files request failed!");
@@ -194,8 +194,8 @@ impl WeldServer for WeldServerClient {
 
     fn get_submitted_changes(&self, mut req: weld::GetSubmittedChangesRequest) -> Vec<Change> {
         req.set_auth_token(self.get_token());
-        if let Ok(mut x) = self.client.get_submitted_changes(self.opts(), req).wait() {
-            return x.1.take_changes().into_vec();
+        if let Ok(mut x) = wait(self.client.get_submitted_changes(self.opts(), req)) {
+            return x.take_changes().into_vec();
         }
         self.load_token();
         panic!("get_submitted_changes request failed!");
@@ -203,7 +203,7 @@ impl WeldServer for WeldServerClient {
 
     fn update_change_metadata(&self, mut req: weld::Change) {
         req.set_auth_token(self.get_token());
-        if let Err(_) = self.client.update_change_metadata(self.opts(), req).wait() {
+        if let Err(_) = wait(self.client.update_change_metadata(self.opts(), req)) {
             self.load_token();
             panic!("update_change_metadata request failed!");
         }
@@ -229,75 +229,53 @@ impl WeldLocalClient {
     }
 
     pub fn make_change(&self, req: weld::Change) -> weld::Change {
-        self.client
-            .make_change(self.opts(), req)
-            .wait()
-            .expect("rpc")
-            .1
+        wait(self.client.make_change(self.opts(), req)).expect("rpc")
     }
 
     pub fn read(&self, req: weld::FileIdentifier) -> weld::File {
-        self.client.read(self.opts(), req).wait().expect("rpc").1
+        wait(self.client.read(self.opts(), req)).expect("rpc")
     }
 
     pub fn write(&self, req: weld::WriteRequest) {
-        self.client.write(self.opts(), req).wait().expect("rpc");
+        wait(self.client.write(self.opts(), req)).expect("rpc");
     }
 
     pub fn delete(&self, req: weld::FileIdentifier) {
-        self.client.delete(self.opts(), req).wait().expect("rpc");
+        wait(self.client.delete(self.opts(), req)).expect("rpc");
     }
 
     pub fn get_change(&self, req: weld::GetChangeRequest) -> weld::Change {
-        self.client
-            .get_change(self.opts(), req)
-            .wait()
-            .expect("rpc")
-            .1
+        wait(self.client.get_change(self.opts(), req)).expect("rpc")
     }
 
     pub fn list_files(&self, req: weld::FileIdentifier) -> Vec<File> {
-        self.client
-            .list_files(self.opts(), req)
-            .wait()
+        wait(self.client.list_files(self.opts(), req))
             .expect("rpc")
-            .1
             .take_files()
             .into_vec()
     }
 
     pub fn list_changes(&self) -> Vec<Change> {
         let req = weld::ListChangesRequest::new();
-        self.client
-            .list_changes(self.opts(), req)
-            .wait()
+        wait(self.client.list_changes(self.opts(), req))
             .expect("rpc")
-            .1
             .take_changes()
             .into_vec()
     }
 
     pub fn snapshot(&self, req: weld::Change) -> weld::SnapshotResponse {
-        self.client
-            .snapshot(self.opts(), req)
-            .wait()
-            .expect("rpc")
-            .1
+        wait(self.client.snapshot(self.opts(), req)).expect("rpc")
     }
 
     pub fn submit(&self, req: weld::Change) -> weld::SubmitResponse {
-        self.client.submit(self.opts(), req).wait().expect("rpc").1
+        wait(self.client.submit(self.opts(), req)).expect("rpc")
     }
 
     pub fn lookup_friendly_name(&self, name: String) -> Option<u64> {
         let mut req = weld::LookupFriendlyNameRequest::new();
         req.set_friendly_name(name);
-        match self
-            .client
-            .lookup_friendly_name(self.opts(), req)
-            .wait()
+        match wait(self.client.lookup_friendly_name(self.opts(), req))
             .expect("rpc")
-            .1
             .get_id()
         {
             0 => None,
@@ -306,65 +284,42 @@ impl WeldLocalClient {
     }
 
     pub fn get_patch(&self, req: weld::Change) -> String {
-        self.client
-            .get_patch(self.opts(), req)
-            .wait()
+        wait(self.client.get_patch(self.opts(), req))
             .expect("rpc")
-            .1
             .get_patch()
             .to_owned()
     }
 
     pub fn sync(&self, req: weld::SyncRequest) -> weld::SyncResponse {
-        self.client.sync(self.opts(), req).wait().expect("rpc").1
+        wait(self.client.sync(self.opts(), req)).expect("rpc")
     }
 
     pub fn run_build(&self, req: weld::RunBuildRequest) -> weld::RunBuildResponse {
-        self.client
-            .run_build(self.opts(), req)
-            .wait()
-            .expect("rpc")
-            .1
+        wait(self.client.run_build(self.opts(), req)).expect("rpc")
     }
 
     pub fn run_build_query(&self, req: weld::RunBuildQueryRequest) -> weld::RunBuildQueryResponse {
-        self.client
-            .run_build_query(self.opts(), req)
-            .wait()
-            .expect("rpc")
-            .1
+        wait(self.client.run_build_query(self.opts(), req)).expect("rpc")
     }
 
     pub fn publish_file(&self, req: weld::PublishFileRequest) -> weld::PublishFileResponse {
-        self.client
-            .publish_file(self.opts(), req)
-            .wait()
-            .expect("rpc")
-            .1
+        wait(self.client.publish_file(self.opts(), req)).expect("rpc")
     }
 
     pub fn apply_patch(&self, req: weld::ApplyPatchRequest) -> weld::ApplyPatchResponse {
-        self.client
-            .apply_patch(self.opts(), req)
-            .wait()
-            .expect("rpc")
-            .1
+        wait(self.client.apply_patch(self.opts(), req)).expect("rpc")
     }
 
     pub fn delete_change(&self, req: weld::Change) -> weld::DeleteResponse {
-        self.client
-            .delete_change(self.opts(), req)
-            .wait()
-            .expect("rpc")
-            .1
+        wait(self.client.delete_change(self.opts(), req)).expect("rpc")
     }
 
     pub fn clean_submitted_changes(&self) -> weld::CleanSubmittedChangesResponse {
-        self.client
-            .clean_submitted_changes(self.opts(), weld::CleanSubmittedChangesRequest::new())
-            .wait()
-            .expect("rpc")
-            .1
+        wait(
+            self.client
+                .clean_submitted_changes(self.opts(), weld::CleanSubmittedChangesRequest::new()),
+        )
+        .expect("rpc")
     }
 }
 
@@ -603,6 +558,10 @@ pub fn get_changed_file<'a>(filename: &str, change: &'a weld::Change) -> Option<
     get_changed_files(change)
         .into_iter()
         .find(|f| f.get_filename() == filename)
+}
+
+fn wait<T: Send + Sync>(resp: grpc::SingleResponse<T>) -> Result<T, grpc::Error> {
+    futures::executor::block_on(resp.join_metadata_result()).map(|r| r.1)
 }
 
 #[cfg(test)]

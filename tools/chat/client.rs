@@ -17,6 +17,10 @@ pub fn get_timestamp_usec() -> u64 {
     (since_epoch.as_secs() as u64) * 1_000_000 + (since_epoch.subsec_nanos() / 1000) as u64
 }
 
+fn wait<T: Send + Sync>(resp: grpc::SingleResponse<T>) -> Result<T, grpc::Error> {
+    futures::executor::block_on(resp.join_metadata_result()).map(|r| r.1)
+}
+
 impl ChatClient {
     pub fn new(hostname: &str, port: u16, use_tls: bool) -> Self {
         let mut out = Self {
@@ -83,12 +87,12 @@ impl ChatClient {
         if message.get_timestamp() == 0 {
             message.set_timestamp(get_timestamp_usec());
         }
-        match maybe_client
-            .as_ref()
-            .unwrap()
-            .send(Default::default(), message)
-            .wait()
-        {
+        match wait(
+            maybe_client
+                .as_ref()
+                .unwrap()
+                .send(Default::default(), message),
+        ) {
             Ok(_) => return,
             Err(e) => eprintln!("couldn't log chat! {:?}", e),
         };

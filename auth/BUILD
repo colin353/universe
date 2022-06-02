@@ -45,6 +45,7 @@ rust_library(
     deps = [
         ":auth_grpc_rust",
         "//third_party:lazy_static",
+        "//third_party:futures",
         "//util/cache",
         "//util/grpc_tls",
         "@rules_rust//proto/raze:grpc",
@@ -62,9 +63,10 @@ rust_binary(
         "//third_party:tls_api_openssl",
         "//util/flags",
         "//util/ws",
+        "//third_party:tokio",
         "@rules_rust//proto/raze:grpc",
         "@rules_rust//proto/raze:protobuf",
-        "@rules_rust//proto/raze:tls_api",
+        "//third_party:tls_api",
     ],
 )
 
@@ -74,12 +76,11 @@ rust_library(
     edition = "2018",
     deps = [
         "//third_party:base64",
-        "//third_party:futures",
         "//third_party:hyper",
-        "//third_party:hyper_tls",
         "//third_party:json",
         "//third_party:openssl",
         "//third_party:tokio",
+        "//third_party:hyper_tls",
         "//util/ws:ws_utils",
     ],
 )
@@ -100,10 +101,11 @@ rust_image(
         ":auth_service_impl",
         "//third_party:tls_api_openssl",
         "//util/flags",
+        "//third_party:tokio",
         "//util/ws",
         "@rules_rust//proto/raze:grpc",
         "@rules_rust//proto/raze:protobuf",
-        "@rules_rust//proto/raze:tls_api",
+        "//third_party:tls_api",
     ],
 )
 

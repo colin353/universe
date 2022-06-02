@@ -67,7 +67,7 @@ where
         )
     }
 
-    fn results(&self, keywords: &str, path: String, req: Request) -> Response {
+    fn results(&self, keywords: &str, _path: String, _req: Request) -> Response {
         let start = std::time::Instant::now();
         let mut results = self.searcher.search(keywords);
 
@@ -109,7 +109,7 @@ where
         )))
     }
 
-    fn suggest(&self, query: &str, is_opensearch: bool, req: Request) -> Response {
+    fn suggest(&self, query: &str, is_opensearch: bool, _req: Request) -> Response {
         let mut response = self.searcher.suggest(query);
         let mut output = Vec::new();
 
@@ -140,8 +140,8 @@ where
         Response::new(Body::from(json::stringify(output)))
     }
 
-    fn info(&self, query: &str, req: Request) -> Response {
-        let mut response = self.searcher.search(query);
+    fn info(&self, query: &str, _req: Request) -> Response {
+        let response = self.searcher.search(query);
         let mut output = Vec::new();
         for candidate in response.get_candidates() {
             if candidate.get_jump_to_line() > 0 {
@@ -205,7 +205,7 @@ where
 
         let mut filename_components = Vec::new();
         let mut prev_idx = 0;
-        for (idx, component) in file.get_filename().match_indices("/") {
+        for (idx, _) in file.get_filename().match_indices("/") {
             filename_components.push(content!(
                     "path" => file.get_filename()[0..idx].to_string(),
                     "section" => file.get_filename()[prev_idx..idx].to_string()
@@ -233,7 +233,7 @@ where
         Response::new(Body::from(self.wrap_template(true, query, page, 0, false)))
     }
 
-    fn index(&self, path: String, req: Request) -> Response {
+    fn index(&self, _path: String, _req: Request) -> Response {
         let page = tmpl::apply_with_settings(INDEX, content!(), &self.settings);
         Response::new(Body::from(self.wrap_template(false, "", page, 0, false)))
     }

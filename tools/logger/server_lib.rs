@@ -5,9 +5,7 @@ use itertools::{MinHeap, KV};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, RwLock};
 
-use logger_client::{
-    get_date_dir, get_log_dir, get_log_name, get_logs_with_root_dir, get_timestamp,
-};
+use logger_client::{get_date_dir, get_log_dir, get_logs_with_root_dir, get_timestamp};
 
 #[derive(Clone)]
 pub struct LoggerServiceHandler {
@@ -72,7 +70,7 @@ impl LoggerServiceHandler {
     }
 
     pub fn get_logs(&self, req: GetLogsRequest) -> GetLogsResponse {
-        let mut logs = get_logs_with_root_dir(
+        let logs = get_logs_with_root_dir(
             &self.data_dir,
             req.get_log(),
             req.get_start_time(),
@@ -135,7 +133,7 @@ impl LoggerServiceHandler {
                 continue;
             }
 
-            let mut l = logs_to_move
+            let l = logs_to_move
                 .entry((log_name.to_string(), format!("{}/{}/{}", year, month, day)))
                 .or_insert(Vec::new());
             l.push(log.clone());
@@ -151,7 +149,7 @@ impl LoggerServiceHandler {
             .iter()
             .map(|f| {
                 let file = gfile::GFile::open(f).unwrap();
-                let mut f = std::io::BufReader::new(file);
+                let f = std::io::BufReader::new(file);
                 recordio::RecordIOReaderOwned::<EventMessage>::new(Box::new(f))
             })
             .collect();
@@ -199,16 +197,22 @@ impl LoggerServiceHandler {
 }
 
 impl logger_grpc_rust::LoggerService for LoggerServiceHandler {
-    fn log(&self, _m: grpc::RequestOptions, req: LogRequest) -> grpc::SingleResponse<LogResponse> {
-        grpc::SingleResponse::completed(self.log(req))
+    fn log(
+        &self,
+        _: grpc::ServerHandlerContext,
+        req: grpc::ServerRequestSingle<LogRequest>,
+        resp: grpc::ServerResponseUnarySink<LogResponse>,
+    ) -> grpc::Result<()> {
+        resp.finish(self.log(req.message))
     }
 
     fn get_logs(
         &self,
-        _m: grpc::RequestOptions,
-        req: GetLogsRequest,
-    ) -> grpc::SingleResponse<GetLogsResponse> {
-        grpc::SingleResponse::completed(self.get_logs(req))
+        _: grpc::ServerHandlerContext,
+        req: grpc::ServerRequestSingle<GetLogsRequest>,
+        resp: grpc::ServerResponseUnarySink<GetLogsResponse>,
+    ) -> grpc::Result<()> {
+        resp.finish(self.get_logs(req.message))
     }
 }
 

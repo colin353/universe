@@ -4,7 +4,8 @@ extern crate flags;
 use largetable_client::LargeTableClient;
 use ws::Server;
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let grpc_port = define_flag!("grpc_port", 5554, "The gRPC port to bind to");
     let web_port = define_flag!("web_port", 5553, "The webserver port to bind to");
     let largetable_hostname = define_flag!(
@@ -66,7 +67,6 @@ fn main() {
 
     let mut server = grpc::ServerBuilder::<tls_api_stub::TlsAcceptor>::new();
     server.http.set_port(grpc_port.value());
-    server.http.set_cpu_pool_threads(2);
     server.add_service(queue_grpc_rust::QueueServiceServer::new_service_def(
         handler.clone(),
     ));
@@ -83,5 +83,9 @@ fn main() {
         std::thread::sleep(std::time::Duration::from_secs(10));
     });
 
-    webserver::QueueWebServer::new(database, auth, base_url.value()).serve(web_port.value());
+    ws::serve(
+        webserver::QueueWebServer::new(database, auth, base_url.value()),
+        web_port.value(),
+    )
+    .await;
 }

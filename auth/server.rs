@@ -1,17 +1,12 @@
-extern crate grpc;
-extern crate tls_api_openssl;
-extern crate ws;
 #[macro_use]
 extern crate flags;
-extern crate auth_grpc_rust;
-extern crate auth_service_impl;
 
 use std::collections::HashMap;
 use std::iter::FromIterator;
 use std::sync::{Arc, RwLock};
-use ws::Server;
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let grpc_port = define_flag!("grpc_port", 8888, "The gRPC port to bind to.");
     let web_port = define_flag!("web_port", 8899, "The web port to bind to.");
     let oauth_client_id = define_flag!("oauth_client_id", String::new(), "The oauth client ID");
@@ -65,7 +60,6 @@ fn main() {
 
     let mut server = grpc::ServerBuilder::<tls_api_openssl::TlsAcceptor>::new();
     server.http.set_port(grpc_port.value());
-    server.http.set_cpu_pool_threads(2);
 
     let default_access_token =
         std::fs::read_to_string(gcp_token_location.value()).unwrap_or_default();
@@ -82,13 +76,16 @@ fn main() {
     server.add_service(auth_grpc_rust::AuthenticationServiceServer::new_service_def(handler));
 
     let _server = server.build().expect("server");
-    auth_service_impl::AuthWebServer::new(
-        tokens,
-        hostname.value(),
-        cookie_domain.value(),
-        oauth_client_id.value(),
-        oauth_client_secret.value(),
-        Arc::new(email_whitelist),
+    ws::serve(
+        auth_service_impl::AuthWebServer::new(
+            tokens,
+            hostname.value(),
+            cookie_domain.value(),
+            oauth_client_id.value(),
+            oauth_client_secret.value(),
+            Arc::new(email_whitelist),
+        ),
+        web_port.value(),
     )
-    .serve(web_port.value());
+    .await;
 }

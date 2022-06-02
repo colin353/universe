@@ -68,7 +68,6 @@ fn main() {
 
     let mut server = grpc::ServerBuilder::<tls_api_openssl::TlsAcceptor>::new();
     server.http.set_port(port.value());
-    server.http.set_cpu_pool_threads(8);
 
     init::init();
 

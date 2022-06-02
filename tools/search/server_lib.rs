@@ -27,31 +27,33 @@ impl SearchServiceHandler {
 impl SearchService for SearchServiceHandler {
     fn search(
         &self,
-        _: grpc::RequestOptions,
-        req: SearchRequest,
-    ) -> grpc::SingleResponse<SearchResponse> {
-        if !self.authenticate(req.get_token()) {
+        _: grpc::ServerHandlerContext,
+        req: grpc::ServerRequestSingle<SearchRequest>,
+        resp: grpc::ServerResponseUnarySink<SearchResponse>,
+    ) -> grpc::Result<()> {
+        if !self.authenticate(req.message.get_token()) {
             let mut response = SearchResponse::new();
             response.set_error(Error::AUTHENTICATION);
-            return grpc::SingleResponse::completed(response);
+            return resp.finish(response);
         }
 
-        let mut response = self.searcher.search(req.get_query());
-        grpc::SingleResponse::completed(response)
+        let mut response = self.searcher.search(req.message.get_query());
+        resp.finish(response)
     }
 
     fn suggest(
         &self,
-        _: grpc::RequestOptions,
-        req: SuggestRequest,
-    ) -> grpc::SingleResponse<SuggestResponse> {
-        if !self.authenticate(req.get_token()) {
+        _: grpc::ServerHandlerContext,
+        req: grpc::ServerRequestSingle<SuggestRequest>,
+        resp: grpc::ServerResponseUnarySink<SuggestResponse>,
+    ) -> grpc::Result<()> {
+        if !self.authenticate(req.message.get_token()) {
             let mut response = SuggestResponse::new();
             response.set_error(Error::AUTHENTICATION);
-            return grpc::SingleResponse::completed(response);
+            return resp.finish(response);
         }
 
-        let mut response = self.searcher.suggest(req.get_prefix());
-        grpc::SingleResponse::completed(response)
+        let mut response = self.searcher.suggest(req.message.get_prefix());
+        resp.finish(response)
     }
 }

@@ -11,8 +11,9 @@ rust_library(
     name = "tls_api_openssl",
     srcs = [
         "lib.rs",
+        "handshake.rs",
     ],
-    edition = "2018",
+    edition = "2021",
     rustc_flags = [
         "--cfg=has_alpn",
     ],
@@ -20,5 +21,6 @@ rust_library(
         "//third_party:openssl",
         "//third_party:tls_api",
         "//third_party/vendor/native-tls-0.2.2:native_tls",
+        "//third_party:tokio",
     ],
 )

@@ -49,7 +49,7 @@ impl<A> Server for HomepageServer<A>
 where
     A: auth_client::AuthServer,
 {
-    fn respond(&self, path: String, req: Request, token: &str) -> Response {
+    fn respond(&self, path: String, _req: Request, token: &str) -> Response {
         if path.starts_with("/static/") {
             return self.serve_static_files(path, "/static/", &self.static_dir);
         }
@@ -66,7 +66,8 @@ where
     }
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let port = define_flag!("port", 8080, "the port to bind to");
     let static_files = define_flag!(
         "static_files",
@@ -87,5 +88,9 @@ fn main() {
     parse_flags!(port, static_files, auth_hostname, auth_port, base_url);
 
     let auth = auth_client::AuthClient::new(&auth_hostname.value(), auth_port.value());
-    HomepageServer::new(static_files.value(), base_url.value(), auth).serve(port.value());
+    ws::serve(
+        HomepageServer::new(static_files.value(), base_url.value(), auth),
+        port.value(),
+    )
+    .await;
 }

@@ -109,6 +109,7 @@ rust_binary(
         ":core",
         ":metal_grpc_rust",
         "//util/flags",
+        "//third_party:futures",
         "@rules_rust//proto/raze:grpc",
     ],
 )

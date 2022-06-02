@@ -54,7 +54,7 @@ fn main() {
         }
         "delete" => {
             assert_eq!(query.len(), 3, "`delete` expects 2 arguments");
-            let res = c.delete(&query[1], &query[2]);
+            c.delete(&query[1], &query[2]);
             eprintln!("ok");
         }
         "read_scope" => {

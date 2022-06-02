@@ -1,11 +1,7 @@
-#[macro_use]
-extern crate json;
+use hyper::body::Buf;
 
 use openssl::hash::MessageDigest;
 use openssl::pkey;
-
-use futures::{future, Future};
-use hyper::rt::Stream;
 
 const GOOGLE_RS256_HEAD: &str = r#"{"alg":"RS256","typ":"JWT"}"#;
 
@@ -15,19 +11,13 @@ fn get_timestamp() -> u64 {
     since_epoch.as_secs()
 }
 
-pub fn get_token_sync(access_json: &str, scopes: &[&str]) -> (String, u64) {
+pub fn get_token_sync(access_json: &str, scopes: &[&str]) -> Result<(String, u64), hyper::Error> {
     let mut runtime = tokio::runtime::Runtime::new().unwrap();
-    let output = runtime.block_on(get_token(&access_json, scopes));
-
-    output.unwrap()
+    runtime.block_on(get_token(&access_json, scopes))
 }
 
-pub fn get_token(
-    access_json: &str,
-    scopes: &[&str],
-) -> Box<dyn Future<Item = (String, u64), Error = String> + Send> {
+async fn get_token(access_json: &str, scopes: &[&str]) -> Result<(String, u64), hyper::Error> {
     let access = json::parse(access_json).unwrap();
-
     let expiration_time = get_timestamp() + 3600 - 5;
 
     // Create the claims JWT
@@ -73,28 +63,23 @@ pub fn get_token(
         .body(hyper::Body::from(body))
         .unwrap();
 
-    let https = hyper_tls::HttpsConnector::new(1).unwrap();
+    let https = hyper_tls::HttpsConnector::new();
     let client = hyper::client::Client::builder().build::<_, hyper::Body>(https);
 
-    Box::new(
-        client
-            .request(req)
-            .and_then(|res| res.into_body().concat2())
-            .and_then(move |response| {
-                let response = String::from_utf8(response.into_bytes().to_vec()).unwrap();
-                let parsed = json::parse(&response).unwrap();
-                future::ok((
-                    parsed["access_token"].as_str().unwrap().to_string(),
-                    expiration_time,
-                ))
-            })
-            .map_err(|f| format!("fail: {:?}", f)),
-    )
+    let resp = client.request(req).await?;
+    let mut body = hyper::body::aggregate(resp).await?;
+    let bytes = body.to_bytes();
+    let response = std::str::from_utf8(&bytes).unwrap();
+    println!("response = {}", response);
+    let parsed = json::parse(&response).unwrap();
+    Ok((
+        parsed["access_token"].as_str().unwrap().to_string(),
+        expiration_time,
+    ))
 }
 
 #[cfg(test)]
 mod tests {
-    #[macro_use]
     use tokio;
 
     use super::*;

@@ -1,9 +1,8 @@
 #[macro_use]
 extern crate flags;
 
-use ws::Server;
-
-fn main() {
+#[tokio::main]
+async fn main() {
     let grpc_port = define_flag!("grpc_port", 3232 as u16, "The port to bind to for grpc.");
     let web_port = define_flag!(
         "web_port",
@@ -49,7 +48,6 @@ fn main() {
     server.add_service(logger_grpc_rust::LoggerServiceServer::new_service_def(
         handler.clone(),
     ));
-    server.http.set_cpu_pool_threads(2);
 
     let handler2 = handler.clone();
     std::thread::spawn(move || {
@@ -59,7 +57,11 @@ fn main() {
 
     let _server = server.build().expect("server");
 
-    webserver::LoggerWebServer::new(handler, auth, base_url.value()).serve(web_port.value());
+    ws::serve(
+        webserver::LoggerWebServer::new(handler, auth, base_url.value()),
+        web_port.value(),
+    )
+    .await;
 
     loop {
         std::thread::park();

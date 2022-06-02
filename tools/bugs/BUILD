@@ -58,6 +58,7 @@ rust_library(
     deps = [
         ":bugs_grpc_rust",
         "//util/grpc_tls",
+        "//third_party:futures",
         "@rules_rust//proto/raze:grpc",
     ],
 )

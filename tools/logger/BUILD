@@ -41,6 +41,7 @@ rust_binary(
         "//auth:auth_client",
         "//util/flags",
         "//util/ws",
+        "//third_party:tokio",
         "@rules_rust//proto/raze:grpc",
         "@rules_rust//proto/raze:tls_api_stub",
     ],

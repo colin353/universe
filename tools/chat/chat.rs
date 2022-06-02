@@ -11,7 +11,6 @@ fn main() {
 
     let mut server = grpc::ServerBuilder::<tls_api_stub::TlsAcceptor>::new();
     server.http.set_port(grpc_port.value());
-    server.http.set_cpu_pool_threads(2);
     server.add_service(chat_grpc_rust::ChatServiceServer::new_service_def(
         handler.clone(),
     ));

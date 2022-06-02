@@ -23,7 +23,6 @@ const DTABLE_EXT: &'static str = "sstable";
 const DTABLE_TEMPORARY_EXT: &'static str = "sstable-temporary";
 const JOURNAL_EXT: &'static str = "recordio";
 const COMPACTION_POLICIES: &'static str = "__META__POLICIES__";
-const BUFFER_POOL_SIZE: usize = 16;
 const BUFFER_SIZE: usize = 64000;
 
 #[derive(Clone)]
@@ -232,7 +231,7 @@ impl LargeTableServiceHandler {
             tmp_filename
         );
 
-        let mut builder = SSTableBuilder::new(&mut f);
+        let builder = SSTableBuilder::new(&mut f);
         compaction::compact(policies, tables, get_timestamp_usec(), builder);
 
         // Now that compaction is done, rename the temporary file to a new filename.
@@ -270,71 +269,71 @@ fn get_timestamp_usec() -> u64 {
 impl largetable_grpc_rust::LargeTableService for LargeTableServiceHandler {
     fn read(
         &self,
-        _m: grpc::RequestOptions,
-        req: largetable_grpc_rust::ReadRequest,
-    ) -> grpc::SingleResponse<largetable_grpc_rust::ReadResponse> {
+        _: grpc::ServerHandlerContext,
+        req: grpc::ServerRequestSingle<largetable_grpc_rust::ReadRequest>,
+        resp: grpc::ServerResponseUnarySink<largetable_grpc_rust::ReadResponse>,
+    ) -> grpc::Result<()> {
         let start = std::time::Instant::now();
         self.wait_until_ready();
 
-        let timestamp = match req.get_timestamp() {
+        let timestamp = match req.message.get_timestamp() {
             0 => get_timestamp_usec(),
             x => x,
         };
 
-        let response =
-            match self
-                .largetable
-                .read()
-                .unwrap()
-                .read(req.get_row(), req.get_column(), timestamp)
-            {
-                Some(mut result) => {
-                    let mut response = largetable_grpc_rust::ReadResponse::new();
-                    response.set_found(!result.deleted);
-                    if !result.deleted {
-                        response.set_data(result.take_data());
-                    }
-                    response.set_timestamp(result.get_timestamp());
-                    response
+        let response = match self.largetable.read().unwrap().read(
+            req.message.get_row(),
+            req.message.get_column(),
+            timestamp,
+        ) {
+            Some(mut result) => {
+                let mut response = largetable_grpc_rust::ReadResponse::new();
+                response.set_found(!result.deleted);
+                if !result.deleted {
+                    response.set_data(result.take_data());
                 }
-                None => {
-                    let mut response = largetable_grpc_rust::ReadResponse::new();
-                    response.set_found(false);
-                    response
-                }
-            };
+                response.set_timestamp(result.get_timestamp());
+                response
+            }
+            None => {
+                let mut response = largetable_grpc_rust::ReadResponse::new();
+                response.set_found(false);
+                response
+            }
+        };
 
         let mut pl = logger_client::LargetablePerfLog::new();
-        pl.set_row(req.get_row().to_string());
+        pl.set_row(req.message.get_row().to_string());
         pl.set_records(if response.get_found() { 1 } else { 0 });
         pl.set_request_duration_micros(start.elapsed().as_micros() as u64);
         pl.set_kind(logger_client::ReadKind::READ);
         pl.set_size_bytes(response.get_data().len() as u64);
         self.logger.log(logger_client::Log::LARGETABLE_READS, &pl);
 
-        grpc::SingleResponse::completed(response)
+        resp.finish(response)
     }
 
     fn read_range(
         &self,
-        _m: grpc::RequestOptions,
-        req: largetable_grpc_rust::ReadRangeRequest,
-    ) -> grpc::SingleResponse<largetable_grpc_rust::ReadRangeResponse> {
+        _: grpc::ServerHandlerContext,
+        req: grpc::ServerRequestSingle<largetable_grpc_rust::ReadRangeRequest>,
+        resp: grpc::ServerResponseUnarySink<largetable_grpc_rust::ReadRangeResponse>,
+    ) -> grpc::Result<()> {
         let start = std::time::Instant::now();
         self.wait_until_ready();
 
-        let time_usec = if req.get_timestamp() > 0 {
-            req.get_timestamp()
+        let time_usec = if req.message.get_timestamp() > 0 {
+            req.message.get_timestamp()
         } else {
             get_timestamp_usec()
         };
 
         let records = self.largetable.read().unwrap().read_range(
-            req.get_row(),
-            req.get_column_spec(),
-            req.get_column_min(),
-            req.get_column_max(),
-            req.get_max_records(),
+            req.message.get_row(),
+            req.message.get_column_spec(),
+            req.message.get_column_min(),
+            req.message.get_column_max(),
+            req.message.get_max_records(),
             time_usec,
         );
 
@@ -355,78 +354,81 @@ impl largetable_grpc_rust::LargeTableService for LargeTableServiceHandler {
         }
 
         let mut pl = logger_client::LargetablePerfLog::new();
-        pl.set_row(req.get_row().to_string());
+        pl.set_row(req.message.get_row().to_string());
         pl.set_records(response.get_records().len() as u64);
         pl.set_request_duration_micros(start.elapsed().as_micros() as u64);
         pl.set_kind(logger_client::ReadKind::READ_RANGE);
         pl.set_size_bytes(size_bytes as u64);
         self.logger.log(logger_client::Log::LARGETABLE_READS, &pl);
 
-        grpc::SingleResponse::completed(response)
+        resp.finish(response)
     }
 
     fn reserve_id(
         &self,
-        _m: grpc::RequestOptions,
-        req: largetable_grpc_rust::ReserveIDRequest,
-    ) -> grpc::SingleResponse<largetable_grpc_rust::ReserveIDResponse> {
+        _: grpc::ServerHandlerContext,
+        req: grpc::ServerRequestSingle<largetable_grpc_rust::ReserveIDRequest>,
+        resp: grpc::ServerResponseUnarySink<largetable_grpc_rust::ReserveIDResponse>,
+    ) -> grpc::Result<()> {
         self.wait_until_ready();
 
         let reserved_id = self
             .largetable
             .read()
             .unwrap()
-            .reserve_id(req.get_row(), req.get_column());
+            .reserve_id(req.message.get_row(), req.message.get_column());
 
         let mut response = largetable_grpc_rust::ReserveIDResponse::new();
         response.set_id(reserved_id);
 
-        grpc::SingleResponse::completed(response)
+        resp.finish(response)
     }
 
     fn write(
         &self,
-        _m: grpc::RequestOptions,
-        req: largetable_grpc_rust::WriteRequest,
-    ) -> grpc::SingleResponse<largetable_grpc_rust::WriteResponse> {
+        _: grpc::ServerHandlerContext,
+        req: grpc::ServerRequestSingle<largetable_grpc_rust::WriteRequest>,
+        resp: grpc::ServerResponseUnarySink<largetable_grpc_rust::WriteResponse>,
+    ) -> grpc::Result<()> {
         let start = std::time::Instant::now();
         self.wait_until_ready();
 
-        let time_usec = match req.get_timestamp() {
+        let time_usec = match req.message.get_timestamp() {
             0 => get_timestamp_usec(),
             x => x,
         };
-        let size_bytes = req.get_data().len();
+        let size_bytes = req.message.get_data().len();
 
         let mut rec = largetable::Record::new();
         rec.set_timestamp(time_usec);
-        rec.set_data(req.get_data().to_owned());
+        rec.set_data(req.message.get_data().to_owned());
         rec.set_deleted(false);
 
         self.largetable
             .read()
             .unwrap()
-            .write(req.get_row(), req.get_column(), rec);
+            .write(req.message.get_row(), req.message.get_column(), rec);
 
         let mut response = largetable_grpc_rust::WriteResponse::new();
         response.set_timestamp(time_usec);
 
         let mut pl = logger_client::LargetablePerfLog::new();
-        pl.set_row(req.get_row().to_string());
+        pl.set_row(req.message.get_row().to_string());
         pl.set_records(1);
         pl.set_request_duration_micros(start.elapsed().as_micros() as u64);
         pl.set_kind(logger_client::ReadKind::WRITE);
         pl.set_size_bytes(size_bytes as u64);
         self.logger.log(logger_client::Log::LARGETABLE_READS, &pl);
 
-        grpc::SingleResponse::completed(response)
+        resp.finish(response)
     }
 
     fn delete(
         &self,
-        _m: grpc::RequestOptions,
-        req: largetable_grpc_rust::DeleteRequest,
-    ) -> grpc::SingleResponse<largetable_grpc_rust::DeleteResponse> {
+        _: grpc::ServerHandlerContext,
+        req: grpc::ServerRequestSingle<largetable_grpc_rust::DeleteRequest>,
+        resp: grpc::ServerResponseUnarySink<largetable_grpc_rust::DeleteResponse>,
+    ) -> grpc::Result<()> {
         self.wait_until_ready();
 
         let time_usec = get_timestamp_usec();
@@ -436,28 +438,29 @@ impl largetable_grpc_rust::LargeTableService for LargeTableServiceHandler {
         self.largetable
             .read()
             .unwrap()
-            .write(req.get_row(), req.get_column(), rec);
+            .write(req.message.get_row(), req.message.get_column(), rec);
 
         let mut response = largetable_grpc_rust::DeleteResponse::new();
         response.set_timestamp(time_usec);
-        grpc::SingleResponse::completed(response)
+        resp.finish(response)
     }
 
     fn batch_read(
         &self,
-        _m: grpc::RequestOptions,
-        _req: largetable_grpc_rust::BatchReadRequest,
-    ) -> grpc::SingleResponse<largetable_grpc_rust::BatchReadResponse> {
+        _: grpc::ServerHandlerContext,
+        _req: grpc::ServerRequestSingle<largetable_grpc_rust::BatchReadRequest>,
+        resp: grpc::ServerResponseUnarySink<largetable_grpc_rust::BatchReadResponse>,
+    ) -> grpc::Result<()> {
         self.wait_until_ready();
-
-        grpc::SingleResponse::completed(largetable_grpc_rust::BatchReadResponse::new())
+        resp.finish(largetable_grpc_rust::BatchReadResponse::new())
     }
 
     fn batch_write(
         &self,
-        _m: grpc::RequestOptions,
-        req: largetable_grpc_rust::BatchWriteRequest,
-    ) -> grpc::SingleResponse<largetable_grpc_rust::WriteResponse> {
+        _: grpc::ServerHandlerContext,
+        req: grpc::ServerRequestSingle<largetable_grpc_rust::BatchWriteRequest>,
+        resp: grpc::ServerResponseUnarySink<largetable_grpc_rust::WriteResponse>,
+    ) -> grpc::Result<()> {
         let start = std::time::Instant::now();
         self.wait_until_ready();
         let mut size_bytes = 0;
@@ -465,7 +468,7 @@ impl largetable_grpc_rust::LargeTableService for LargeTableServiceHandler {
         let request_time = get_timestamp_usec();
         {
             let table = self.largetable.read().unwrap();
-            for write in req.get_writes() {
+            for write in req.message.get_writes() {
                 let time_usec = match write.get_timestamp() {
                     0 => request_time,
                     x => x,
@@ -479,7 +482,7 @@ impl largetable_grpc_rust::LargeTableService for LargeTableServiceHandler {
                 table.write(write.get_row(), write.get_column(), rec);
             }
 
-            for delete in req.get_deletes() {
+            for delete in req.message.get_deletes() {
                 let mut rec = largetable::Record::new();
                 rec.set_timestamp(request_time);
                 rec.set_deleted(true);
@@ -489,7 +492,7 @@ impl largetable_grpc_rust::LargeTableService for LargeTableServiceHandler {
         }
 
         let mut pl = logger_client::LargetablePerfLog::new();
-        pl.set_records((req.get_writes().len() + req.get_deletes().len()) as u64);
+        pl.set_records((req.message.get_writes().len() + req.message.get_deletes().len()) as u64);
         pl.set_request_duration_micros(start.elapsed().as_micros() as u64);
         pl.set_kind(logger_client::ReadKind::BULK_WRITE);
         pl.set_size_bytes(size_bytes as u64);
@@ -497,43 +500,45 @@ impl largetable_grpc_rust::LargeTableService for LargeTableServiceHandler {
 
         let mut response = largetable_grpc_rust::WriteResponse::new();
         response.set_timestamp(request_time);
-        grpc::SingleResponse::completed(response)
+        resp.finish(response)
     }
 
     fn get_shard_hint(
         &self,
-        _m: grpc::RequestOptions,
-        req: largetable_grpc_rust::ShardHintRequest,
-    ) -> grpc::SingleResponse<largetable_grpc_rust::ShardHintResponse> {
+        _: grpc::ServerHandlerContext,
+        req: grpc::ServerRequestSingle<largetable_grpc_rust::ShardHintRequest>,
+        resp: grpc::ServerResponseUnarySink<largetable_grpc_rust::ShardHintResponse>,
+    ) -> grpc::Result<()> {
         self.wait_until_ready();
 
         let shards = self.largetable.read().unwrap().get_shard_hint(
-            req.get_row(),
-            req.get_column_spec(),
-            req.get_column_min(),
-            req.get_column_max(),
+            req.message.get_row(),
+            req.message.get_column_spec(),
+            req.message.get_column_min(),
+            req.message.get_column_max(),
         );
 
         let mut hint = largetable_grpc_rust::ShardHintResponse::new();
         hint.set_shards(protobuf::RepeatedField::from_vec(shards));
-        grpc::SingleResponse::completed(hint)
+        resp.finish(hint)
     }
 
     fn set_compaction_policy(
         &self,
-        _m: grpc::RequestOptions,
-        req: largetable_grpc_rust::CompactionPolicy,
-    ) -> grpc::SingleResponse<largetable_grpc_rust::SetCompactionPolicyResponse> {
+        _: grpc::ServerHandlerContext,
+        req: grpc::ServerRequestSingle<largetable_grpc_rust::CompactionPolicy>,
+        resp: grpc::ServerResponseUnarySink<largetable_grpc_rust::SetCompactionPolicyResponse>,
+    ) -> grpc::Result<()> {
         self.wait_until_ready();
 
         let mut rec = largetable_proto_rust::Record::new();
-        req.write_to_vec(&mut rec.mut_data()).unwrap();
+        req.message.write_to_vec(&mut rec.mut_data()).unwrap();
         self.largetable.read().unwrap().write(
             COMPACTION_POLICIES,
-            &format!("{}_{}", req.get_row(), req.get_scope()),
+            &format!("{}_{}", req.message.get_row(), req.message.get_scope()),
             rec,
         );
 
-        grpc::SingleResponse::completed(largetable_grpc_rust::SetCompactionPolicyResponse::new())
+        resp.finish(largetable_grpc_rust::SetCompactionPolicyResponse::new())
     }
 }

@@ -17,6 +17,7 @@ rust_binary(
         "//util/ws",
         "//weld",
         "//weld/review:server",
+        "//third_party:tokio",
     ],
 )
 
@@ -74,6 +75,7 @@ rust_image(
         "//util/ws",
         "//weld",
         "//weld/review:server",
+        "//third_party:tokio",
     ],
 )
 

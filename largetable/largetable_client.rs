@@ -10,8 +10,6 @@ pub use largetable_grpc_rust::{
     ReadRangeResponse, ReadResponse, Record, ShardHintResponse, WriteResponse,
 };
 
-use largetable_grpc_rust::LargeTableService;
-
 pub trait LargeTableClient {
     fn write(
         &self,
@@ -253,6 +251,10 @@ impl<'a, T: protobuf::Message, C: LargeTableClient> Iterator
     }
 }
 
+fn wait<T: Send + Sync>(resp: grpc::SingleResponse<T>) -> Result<T, grpc::Error> {
+    futures::executor::block_on(resp.join_metadata_result()).map(|r| r.1)
+}
+
 impl LargeTableClient for LargeTableRemoteClient {
     fn write(
         &self,
@@ -266,7 +268,7 @@ impl LargeTableClient for LargeTableRemoteClient {
         req.set_column(col.to_owned());
         req.set_data(data);
         req.set_timestamp(timestamp);
-        self.client.write(self.opts(), req).wait().expect("rpc").1
+        wait(self.client.write(self.opts(), req)).expect("rpc")
     }
 
     fn wait_for_connection(&self) {
@@ -276,7 +278,7 @@ impl LargeTableClient for LargeTableRemoteClient {
         req.set_timestamp(1);
 
         for _ in 0..10 {
-            if let Ok(_) = self.client.read(self.opts(), req.clone()).wait() {
+            if let Ok(_) = wait(self.client.read(self.opts(), req.clone())) {
                 return;
             }
             std::thread::sleep(std::time::Duration::from_secs(1));
@@ -289,7 +291,7 @@ impl LargeTableClient for LargeTableRemoteClient {
         let mut req = largetable_grpc_rust::DeleteRequest::new();
         req.set_row(row.to_owned());
         req.set_column(col.to_owned());
-        self.client.delete(self.opts(), req).wait().expect("rpc").1
+        wait(self.client.delete(self.opts(), req)).expect("rpc")
     }
 
     fn read(&self, row: &str, col: &str, timestamp: u64) -> largetable_grpc_rust::ReadResponse {
@@ -297,14 +299,11 @@ impl LargeTableClient for LargeTableRemoteClient {
         req.set_row(row.to_owned());
         req.set_column(col.to_owned());
         req.set_timestamp(timestamp);
-        self.client.read(self.opts(), req).wait().expect("rpc").1
+        wait(self.client.read(self.opts(), req)).expect("rpc")
     }
 
     fn set_compaction_policy(&self, policy: largetable_grpc_rust::CompactionPolicy) {
-        self.client
-            .set_compaction_policy(self.opts(), policy)
-            .wait()
-            .expect("rpc");
+        wait(self.client.set_compaction_policy(self.opts(), policy)).expect("rpc");
     }
 
     fn reserve_id(&self, row: &str, col: &str) -> u64 {
@@ -312,12 +311,7 @@ impl LargeTableClient for LargeTableRemoteClient {
         req.set_row(row.to_owned());
         req.set_column(col.to_owned());
 
-        let response = self
-            .client
-            .reserve_id(self.opts(), req)
-            .wait()
-            .expect("rpc")
-            .1;
+        let response = wait(self.client.reserve_id(self.opts(), req)).expect("rpc");
         response.get_id()
     }
 
@@ -336,11 +330,7 @@ impl LargeTableClient for LargeTableRemoteClient {
         req.set_max_records(limit);
         req.set_timestamp(timestamp);
 
-        self.client
-            .read_range(self.opts(), req)
-            .wait()
-            .expect("rpc")
-            .1
+        wait(self.client.read_range(self.opts(), req)).expect("rpc")
     }
 
     fn read_scoped(
@@ -360,11 +350,7 @@ impl LargeTableClient for LargeTableRemoteClient {
         req.set_timestamp(timestamp);
         req.set_max_records(limit);
 
-        self.client
-            .read_range(self.opts(), req)
-            .wait()
-            .expect("rpc")
-            .1
+        wait(self.client.read_range(self.opts(), req)).expect("rpc")
     }
 
     fn shard_hint(&self, row: &str, col_spec: &str) -> largetable_grpc_rust::ShardHintResponse {
@@ -372,33 +358,21 @@ impl LargeTableClient for LargeTableRemoteClient {
         req.set_row(row.to_owned());
         req.set_column_spec(col_spec.to_owned());
 
-        self.client
-            .get_shard_hint(self.opts(), req)
-            .wait()
-            .expect("rpc")
-            .1
+        wait(self.client.get_shard_hint(self.opts(), req)).expect("rpc")
     }
 
     fn batch_write(
         &self,
         req: largetable_grpc_rust::BatchWriteRequest,
     ) -> largetable_grpc_rust::WriteResponse {
-        self.client
-            .batch_write(self.opts(), req)
-            .wait()
-            .expect("rpc")
-            .1
+        wait(self.client.batch_write(self.opts(), req)).expect("rpc")
     }
 
     fn batch_read(
         &self,
         req: largetable_grpc_rust::BatchReadRequest,
     ) -> largetable_grpc_rust::BatchReadResponse {
-        self.client
-            .batch_read(self.opts(), req)
-            .wait()
-            .expect("rpc")
-            .1
+        wait(self.client.batch_read(self.opts(), req)).expect("rpc")
     }
 }
 

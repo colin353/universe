@@ -62,6 +62,7 @@ rust_library(
     deps = [
         ":x20_grpc_rust",
         "//util/grpc_tls",
+        "//third_party:futures",
         "@rules_rust//proto/raze:grpc",
     ],
 )
@@ -128,6 +129,7 @@ rust_binary(
     deps = [
         ":x20_client",
         "//util/flags",
+        "//third_party:tokio",
         "//util/ws",
     ],
 )

@@ -7,10 +7,10 @@ load("@io_bazel_rules_docker//docker:docker.bzl", "docker_push")
 rust_binary(
     name = "fes",
     srcs = ["fes.rs"],
-    edition = "2018",
     deps = [
         "//util/flags",
         "//util/ws",
+        "//third_party:tokio",
     ],
 )
 
@@ -24,10 +24,10 @@ rust_binary(
         "//tools/search/js:flow_view",
         "//tools/search/js:search_box",
     ],
-    edition = "2018",
     deps = [
         "//util/flags",
         "//util/ws",
+        "//third_party:tokio",
     ],
 )
 

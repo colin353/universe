@@ -345,111 +345,121 @@ fn index_to_rowname(index: u64) -> String {
 impl<C: LargeTableClient> weld::WeldService for WeldServiceHandler<C> {
     fn read(
         &self,
-        m: grpc::RequestOptions,
-        mut req: weld::FileIdentifier,
-    ) -> grpc::SingleResponse<weld::File> {
-        match self.authenticate(req.take_auth_token()) {
-            Some(_username) => grpc::SingleResponse::completed(self.read(req)),
-            None => grpc::SingleResponse::err(grpc::Error::Other("unauthenticated")),
+        _: grpc::ServerHandlerContext,
+        mut req: grpc::ServerRequestSingle<weld::FileIdentifier>,
+        resp: grpc::ServerResponseUnarySink<weld::File>,
+    ) -> grpc::Result<()> {
+        match self.authenticate(req.message.take_auth_token()) {
+            Some(_username) => resp.finish(self.read(req.message)),
+            None => Err(grpc::Error::Other("unauthenticated")),
         }
     }
 
     fn read_attrs(
         &self,
-        m: grpc::RequestOptions,
-        mut req: weld::FileIdentifier,
-    ) -> grpc::SingleResponse<weld::File> {
-        match self.authenticate(req.take_auth_token()) {
-            Some(_username) => grpc::SingleResponse::completed(self.read_attrs(req)),
-            None => grpc::SingleResponse::err(grpc::Error::Other("unauthenticated")),
+        _: grpc::ServerHandlerContext,
+        mut req: grpc::ServerRequestSingle<weld::FileIdentifier>,
+        resp: grpc::ServerResponseUnarySink<weld::File>,
+    ) -> grpc::Result<()> {
+        match self.authenticate(req.message.take_auth_token()) {
+            Some(_username) => resp.finish(self.read_attrs(req.message)),
+            None => Err(grpc::Error::Other("unauthenticated")),
         }
     }
 
     fn list_changes(
         &self,
-        m: grpc::RequestOptions,
-        mut req: weld::ListChangesRequest,
-    ) -> grpc::SingleResponse<weld::ListChangesResponse> {
-        match self.authenticate(req.take_auth_token()) {
-            Some(username) => grpc::SingleResponse::completed(self.list_changes(&username, req)),
-            None => grpc::SingleResponse::err(grpc::Error::Other("unauthenticated")),
+        _: grpc::ServerHandlerContext,
+        mut req: grpc::ServerRequestSingle<weld::ListChangesRequest>,
+        resp: grpc::ServerResponseUnarySink<weld::ListChangesResponse>,
+    ) -> grpc::Result<()> {
+        match self.authenticate(req.message.take_auth_token()) {
+            Some(username) => resp.finish(self.list_changes(&username, req.message)),
+            None => Err(grpc::Error::Other("unauthenticated")),
         }
     }
 
     fn submit(
         &self,
-        m: grpc::RequestOptions,
-        mut req: weld::Change,
-    ) -> grpc::SingleResponse<weld::SubmitResponse> {
-        match self.authenticate(req.take_auth_token()) {
-            Some(username) => grpc::SingleResponse::completed(self.submit(&username, req.get_id())),
-            None => grpc::SingleResponse::err(grpc::Error::Other("unauthenticated")),
+        _: grpc::ServerHandlerContext,
+        mut req: grpc::ServerRequestSingle<weld::Change>,
+        resp: grpc::ServerResponseUnarySink<weld::SubmitResponse>,
+    ) -> grpc::Result<()> {
+        match self.authenticate(req.message.take_auth_token()) {
+            Some(username) => resp.finish(self.submit(&username, req.message.get_id())),
+            None => Err(grpc::Error::Other("unauthenticated")),
         }
     }
 
     fn snapshot(
         &self,
-        m: grpc::RequestOptions,
-        mut req: weld::Change,
-    ) -> grpc::SingleResponse<weld::SnapshotResponse> {
-        match self.authenticate(req.take_auth_token()) {
-            Some(username) => grpc::SingleResponse::completed(self.snapshot(&username, req)),
-            None => grpc::SingleResponse::err(grpc::Error::Other("unauthenticated")),
+        _: grpc::ServerHandlerContext,
+        mut req: grpc::ServerRequestSingle<weld::Change>,
+        resp: grpc::ServerResponseUnarySink<weld::SnapshotResponse>,
+    ) -> grpc::Result<()> {
+        match self.authenticate(req.message.take_auth_token()) {
+            Some(username) => resp.finish(self.snapshot(&username, req.message)),
+            None => Err(grpc::Error::Other("unauthenticated")),
         }
     }
 
     fn get_change(
         &self,
-        m: grpc::RequestOptions,
-        mut req: weld::Change,
-    ) -> grpc::SingleResponse<weld::Change> {
-        match self.authenticate(req.take_auth_token()) {
-            Some(_) => grpc::SingleResponse::completed(self.get_change(req)),
-            None => grpc::SingleResponse::err(grpc::Error::Other("unauthenticated")),
+        _: grpc::ServerHandlerContext,
+        mut req: grpc::ServerRequestSingle<weld::Change>,
+        resp: grpc::ServerResponseUnarySink<weld::Change>,
+    ) -> grpc::Result<()> {
+        match self.authenticate(req.message.take_auth_token()) {
+            Some(_) => resp.finish(self.get_change(req.message)),
+            None => Err(grpc::Error::Other("unauthenticated")),
         }
     }
 
     fn get_latest_change(
         &self,
-        m: grpc::RequestOptions,
-        mut req: weld::GetLatestChangeRequest,
-    ) -> grpc::SingleResponse<weld::Change> {
-        match self.authenticate(req.take_auth_token()) {
-            Some(_) => grpc::SingleResponse::completed(self.get_latest_change()),
-            None => grpc::SingleResponse::err(grpc::Error::Other("unauthenticated")),
+        _: grpc::ServerHandlerContext,
+        mut req: grpc::ServerRequestSingle<weld::GetLatestChangeRequest>,
+        resp: grpc::ServerResponseUnarySink<weld::Change>,
+    ) -> grpc::Result<()> {
+        match self.authenticate(req.message.take_auth_token()) {
+            Some(_) => resp.finish(self.get_latest_change()),
+            None => Err(grpc::Error::Other("unauthenticated")),
         }
     }
 
     fn list_files(
         &self,
-        m: grpc::RequestOptions,
-        mut req: weld::FileIdentifier,
-    ) -> grpc::SingleResponse<weld::ListFilesResponse> {
-        match self.authenticate(req.take_auth_token()) {
-            Some(_) => grpc::SingleResponse::completed(self.list_files(req)),
-            None => grpc::SingleResponse::err(grpc::Error::Other("unauthenticated")),
+        _: grpc::ServerHandlerContext,
+        mut req: grpc::ServerRequestSingle<weld::FileIdentifier>,
+        resp: grpc::ServerResponseUnarySink<weld::ListFilesResponse>,
+    ) -> grpc::Result<()> {
+        match self.authenticate(req.message.take_auth_token()) {
+            Some(_) => resp.finish(self.list_files(req.message)),
+            None => Err(grpc::Error::Other("unauthenticated")),
         }
     }
 
     fn get_submitted_changes(
         &self,
-        m: grpc::RequestOptions,
-        mut req: weld::GetSubmittedChangesRequest,
-    ) -> grpc::SingleResponse<weld::GetSubmittedChangesResponse> {
-        match self.authenticate(req.take_auth_token()) {
-            Some(_) => grpc::SingleResponse::completed(self.get_submitted_changes(&req)),
-            None => grpc::SingleResponse::err(grpc::Error::Other("unauthenticated")),
+        _: grpc::ServerHandlerContext,
+        mut req: grpc::ServerRequestSingle<weld::GetSubmittedChangesRequest>,
+        resp: grpc::ServerResponseUnarySink<weld::GetSubmittedChangesResponse>,
+    ) -> grpc::Result<()> {
+        match self.authenticate(req.message.take_auth_token()) {
+            Some(_) => resp.finish(self.get_submitted_changes(&req.message)),
+            None => Err(grpc::Error::Other("unauthenticated")),
         }
     }
 
     fn update_change_metadata(
         &self,
-        m: grpc::RequestOptions,
-        mut req: weld::Change,
-    ) -> grpc::SingleResponse<weld::Change> {
-        match self.authenticate(req.take_auth_token()) {
-            Some(_) => grpc::SingleResponse::completed(self.update_change_metadata(req)),
-            None => grpc::SingleResponse::err(grpc::Error::Other("unauthenticated")),
+        _: grpc::ServerHandlerContext,
+        mut req: grpc::ServerRequestSingle<weld::Change>,
+        resp: grpc::ServerResponseUnarySink<weld::Change>,
+    ) -> grpc::Result<()> {
+        match self.authenticate(req.message.take_auth_token()) {
+            Some(_) => resp.finish(self.update_change_metadata(req.message)),
+            None => Err(grpc::Error::Other("unauthenticated")),
         }
     }
 }

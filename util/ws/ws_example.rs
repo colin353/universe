@@ -57,7 +57,8 @@ impl Server for ExampleServer {
     }
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     println!("Start server...");
-    ExampleServer::new().serve(9988);
+    ws::serve(ExampleServer::new(), 9988).await;
 }

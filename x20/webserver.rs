@@ -58,7 +58,8 @@ impl Server for X20Webserver {
     }
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let port = define_flag!("port", 50000, "the port to bind to");
     let x20_hostname = define_flag!(
         "x20_hostname",
@@ -69,5 +70,5 @@ fn main() {
     parse_flags!(port, x20_hostname, x20_port);
 
     let client = x20_client::X20Client::new(&x20_hostname.value(), x20_port.value(), String::new());
-    X20Webserver::new(client).serve(port.value());
+    ws::serve(X20Webserver::new(client), port.value()).await;
 }

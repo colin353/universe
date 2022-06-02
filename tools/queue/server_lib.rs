@@ -6,9 +6,10 @@ use std::collections::{HashMap, HashSet};
 use std::iter::FromIterator;
 use std::sync::{Arc, RwLock};
 
+use futures::channel::mpsc;
+use futures::channel::mpsc::UnboundedSender;
 use futures::stream::Stream;
-use futures::sync::mpsc;
-use futures::sync::mpsc::UnboundedSender;
+use futures::StreamExt;
 
 pub const QUEUE: &'static str = "queues";
 pub const QUEUES: &'static str = "queues";
@@ -384,35 +385,39 @@ impl<C: LargeTableClient + Clone + Send + Sync + 'static> queue_grpc_rust::Queue
 {
     fn enqueue(
         &self,
-        _m: grpc::RequestOptions,
-        req: EnqueueRequest,
-    ) -> grpc::SingleResponse<EnqueueResponse> {
-        grpc::SingleResponse::completed(self.enqueue(req))
+        _: grpc::ServerHandlerContext,
+        req: grpc::ServerRequestSingle<EnqueueRequest>,
+        resp: grpc::ServerResponseUnarySink<EnqueueResponse>,
+    ) -> grpc::Result<()> {
+        resp.finish(self.enqueue(req.message))
     }
 
     fn update(
         &self,
-        _m: grpc::RequestOptions,
-        req: Message,
-    ) -> grpc::SingleResponse<UpdateResponse> {
-        grpc::SingleResponse::completed(self.update(req))
+        _: grpc::ServerHandlerContext,
+        req: grpc::ServerRequestSingle<Message>,
+        resp: grpc::ServerResponseUnarySink<UpdateResponse>,
+    ) -> grpc::Result<()> {
+        resp.finish(self.update(req.message))
     }
 
     fn consume(
         &self,
-        _m: grpc::RequestOptions,
-        req: ConsumeRequest,
-    ) -> grpc::SingleResponse<ConsumeResponse> {
-        grpc::SingleResponse::completed(self.consume(req))
+        _: grpc::ServerHandlerContext,
+        req: grpc::ServerRequestSingle<ConsumeRequest>,
+        resp: grpc::ServerResponseUnarySink<ConsumeResponse>,
+    ) -> grpc::Result<()> {
+        resp.finish(self.consume(req.message))
     }
 
     fn read(
         &self,
-        _m: grpc::RequestOptions,
-        req: ReadRequest,
-    ) -> grpc::SingleResponse<ReadResponse> {
+        _: grpc::ServerHandlerContext,
+        req: grpc::ServerRequestSingle<ReadRequest>,
+        resp: grpc::ServerResponseUnarySink<ReadResponse>,
+    ) -> grpc::Result<()> {
         let mut response = ReadResponse::new();
-        let maybe_message = self.read(&req.get_queue(), req.get_id());
+        let maybe_message = self.read(&req.message.get_queue(), req.message.get_id());
         match maybe_message {
             Some(m) => {
                 response.set_found(true);
@@ -421,42 +426,37 @@ impl<C: LargeTableClient + Clone + Send + Sync + 'static> queue_grpc_rust::Queue
             None => (),
         };
 
-        grpc::SingleResponse::completed(response)
+        resp.finish(response)
     }
 
     fn consume_stream(
         &self,
-        _m: grpc::RequestOptions,
-        req: ConsumeRequest,
-    ) -> grpc::StreamingResponse<ConsumeResponse> {
-        let (tx, rx) = mpsc::unbounded();
-        self.router.subscribe(req.get_queue().to_owned(), tx);
+        ctx: grpc::ServerHandlerContext,
+        req: grpc::ServerRequestSingle<ConsumeRequest>,
+        mut resp: grpc::ServerResponseSink<ConsumeResponse>,
+    ) -> grpc::Result<()> {
+        let (tx, mut rx) = mpsc::unbounded();
+        self.router
+            .subscribe(req.message.get_queue().to_owned(), tx);
 
-        let initial_response = self.consume(req);
-        let stream: Box<
-            dyn futures::Stream<Item = ConsumeResponse, Error = grpc::Error> + Send + 'static,
-        > = if initial_response.get_messages().len() > 0 {
-            Box::new(
-                futures::stream::iter_ok(vec![initial_response])
-                    .chain(rx.map(|m| {
-                        let mut resp = ConsumeResponse::new();
-                        resp.mut_messages().push(m);
-                        resp
-                    }))
-                    .map_err(|_| grpc::Error::Other("stream error")),
-            )
-        } else {
-            Box::new(
-                rx.map(|m| {
-                    let mut resp = ConsumeResponse::new();
-                    resp.mut_messages().push(m);
-                    resp
-                })
-                .map_err(|_| grpc::Error::Other("stream error")),
-            )
-        };
+        let loop_handle = ctx.loop_remote();
+        let req = req.message;
+        let _self = self.clone();
+        loop_handle.spawn(async move {
+            let initial_response = _self.consume(req);
+            resp.ready().await?;
+            resp.send_data(initial_response)?;
+            while let Some(r) = rx.next().await {
+                let mut msg = ConsumeResponse::new();
+                msg.mut_messages().push(r);
+                resp.ready().await?;
+                resp.send_data(msg);
+            }
 
-        grpc::StreamingResponse::no_metadata(stream.map_err(|_| grpc::Error::Other("stream error")))
+            resp.send_trailers(grpc::Metadata::new())
+        });
+
+        Ok(())
     }
 }
 

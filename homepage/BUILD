@@ -29,6 +29,7 @@ rust_image(
         "//auth:auth_client",
         "//util/flags",
         "//util/ws",
+        "//third_party:tokio",
     ],
 )
 
@@ -47,6 +48,7 @@ rust_binary(
         "//auth:auth_client",
         "//util/flags",
         "//util/ws",
+        "//third_party:tokio",
     ],
 )
 

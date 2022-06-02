@@ -37,7 +37,7 @@ alias(
 
 alias(
     name = "futures",
-    actual = "@rules_rust_proto__futures__0_1_29//:futures",
+    actual = "@rules_rust_proto__futures__0_3_21//:futures",
 )
 
 alias(
@@ -47,7 +47,12 @@ alias(
 
 alias(
     name = "hyper",
-    actual = "//third_party/vendor/hyper-0.12.24:hyper",
+    actual = "@rules_rust_proto__hyper__0_13_10//:hyper",
+)
+
+alias(
+    name = "hyper_tls",
+    actual = "//third_party/vendor/hyper-tls-0.4.3:hyper_tls",
 )
 
 alias(
@@ -76,18 +81,13 @@ alias(
 )
 
 alias(
-    name = "hyper_tls",
-    actual = "//third_party/vendor/hyper-tls-0.3.2:hyper_tls",
-)
-
-alias(
     name = "lazy_static",
     actual = "//third_party/vendor/lazy_static-0.2.11:lazy_static",
 )
 
 alias(
     name = "tls_api",
-    actual = "@rules_rust//proto/raze:tls_api",
+    actual = "@rules_rust_proto__tls_api__0_4_0//:tls_api",
 )
 
 alias(
@@ -97,7 +97,7 @@ alias(
 
 alias(
     name = "tokio",
-    actual = "//third_party/vendor/tokio-0.1.18:tokio",
+    actual = "@rules_rust_proto__tokio__0_2_25//:tokio",
 )
 
 alias(

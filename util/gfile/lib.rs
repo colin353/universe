@@ -1,17 +1,8 @@
 use auth_client::AuthServer;
-use futures::future;
-use futures::future::Future;
-use futures::stream::Stream;
-use std::fs::File;
 use std::path::Path;
-
-use std::io::Read;
-use std::io::Seek;
-use std::io::Write;
 
 const STORAGE_API: &'static str = "https://storage.googleapis.com/storage/v1/b";
 const UPLOAD_API: &'static str = "https://storage.googleapis.com/upload/storage/v1/b";
-const BUCKET: &'static str = "colossus";
 const BUFFER_SIZE: usize = 1048576;
 
 pub enum GFile {
@@ -69,7 +60,7 @@ impl<'a> GPath<'a> {
 impl GFile {
     pub fn open<P: AsRef<Path>>(path: P) -> std::io::Result<GFile> {
         match GPath::from_path(path.as_ref()) {
-            GPath::LocalPath(p) => {
+            GPath::LocalPath(_) => {
                 let f = std::fs::File::open(path)?;
                 Ok(GFile::LocalFile(f))
             }
@@ -151,29 +142,7 @@ impl GoogleCloudFile {
             .body(hyper::Body::from(String::new()))
             .unwrap();
 
-        let https = hyper_tls::HttpsConnector::new(1).unwrap();
-        let client = hyper::client::Client::builder().build::<_, hyper::Body>(https);
-
-        let f = Box::new(
-            client
-                .request(req)
-                .map_err(|_| ())
-                .and_then(|res| {
-                    if res.status() == hyper::StatusCode::OK {
-                        future::ok(res.into_body().concat2().map_err(|_| ()))
-                    } else {
-                        future::err(())
-                    }
-                })
-                .and_then(|res| res)
-                .and_then(move |response| {
-                    let response = String::from_utf8(response.into_bytes().to_vec()).unwrap();
-                    future::ok(response)
-                }),
-        );
-
-        let mut runtime = tokio::runtime::Runtime::new().unwrap();
-        let output = match runtime.block_on(f) {
+        let m = match requests::request(req) {
             Ok(m) => m,
             Err(_) => {
                 return Err(std::io::Error::new(
@@ -183,7 +152,14 @@ impl GoogleCloudFile {
             }
         };
 
-        let parsed = json::parse(&output).unwrap();
+        if m.status_code != 200 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "file does not exist",
+            ));
+        }
+
+        let parsed = json::parse(std::str::from_utf8(&m.body).unwrap()).unwrap();
         let size: u64 = parsed["size"].as_str().unwrap().parse().unwrap();
 
         Ok(Self {
@@ -214,20 +190,7 @@ impl GoogleCloudFile {
         )))
         .unwrap();
 
-        let https = hyper_tls::HttpsConnector::new(1).unwrap();
-        let client = hyper::client::Client::builder().build::<_, hyper::Body>(https);
-
-        let f = Box::new(client.request(req).map_err(|e| ()).and_then(|res| {
-            if res.status() == hyper::StatusCode::OK {
-                if let Some(l) = res.headers().get("Location") {
-                    return future::ok(l.to_str().unwrap().to_string());
-                }
-            }
-            future::err(())
-        }));
-
-        let mut runtime = tokio::runtime::Runtime::new().unwrap();
-        let output = match runtime.block_on(f) {
+        let m = match requests::request(req) {
             Ok(m) => m,
             Err(_) => {
                 return Err(std::io::Error::new(
@@ -237,18 +200,35 @@ impl GoogleCloudFile {
             }
         };
 
+        if m.status_code != 200 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "file does not exist",
+            ));
+        }
+
+        let location;
+        if let Some(l) = m.headers.get("Location") {
+            location = l.to_str().unwrap().to_string()
+        } else {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "file does not exist",
+            ));
+        }
+
         let mut s = Self {
             token: token.to_string(),
             bucket: bucket.to_string(),
             object: object.to_string(),
-            resumable_url: Some(output),
+            resumable_url: Some(location),
             buf: Vec::new(),
             size: 0,
             index: 0,
             mode: Mode::Write,
             buf_start_index: 0,
         };
-        s.confirm_reupload_status();
+        s.confirm_reupload_status()?;
 
         Ok(s)
     }
@@ -279,29 +259,7 @@ impl GoogleCloudFile {
         .body(hyper::Body::from(String::new()))
         .unwrap();
 
-        let https = hyper_tls::HttpsConnector::new(1).unwrap();
-        let client = hyper::client::Client::builder().build::<_, hyper::Body>(https);
-
-        let f = Box::new(
-            client
-                .request(req)
-                .map_err(|_| ())
-                .and_then(|res| {
-                    if res.status().is_success() {
-                        future::ok(res.into_body().concat2().map_err(|_| ()))
-                    } else {
-                        future::err(())
-                    }
-                })
-                .and_then(|res| res)
-                .and_then(move |response| {
-                    let response = response.into_bytes().to_vec();
-                    future::ok(response)
-                }),
-        );
-
-        let mut runtime = tokio::runtime::Runtime::new().unwrap();
-        let output = match runtime.block_on(f) {
+        let m = match requests::request(req) {
             Ok(m) => m,
             Err(_) => {
                 return Err(std::io::Error::new(
@@ -311,7 +269,14 @@ impl GoogleCloudFile {
             }
         };
 
-        std::mem::replace(&mut self.buf, output);
+        if m.status_code != 200 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "file does not exist",
+            ));
+        }
+
+        self.buf = m.body;
         self.index = index;
         self.buf_start_index = start;
 
@@ -338,7 +303,7 @@ impl GoogleCloudFile {
             .body(hyper::Body::from(String::new()))
             .unwrap();
 
-        let response = requests::request(req)?;
+        requests::request(req)?;
 
         Ok(())
     }
@@ -385,9 +350,6 @@ impl GoogleCloudFile {
             .header(hyper::header::CONTENT_RANGE, "bytes */*")
             .body(hyper::Body::from(String::new()))
             .unwrap();
-
-        let https = hyper_tls::HttpsConnector::new(1).unwrap();
-        let client = hyper::client::Client::builder().build::<_, hyper::Body>(https);
 
         let response = match requests::request(req) {
             Ok(r) => r,
@@ -515,29 +477,7 @@ impl GoogleCloudFile {
             .body(hyper::Body::from(String::new()))
             .unwrap();
 
-        let https = hyper_tls::HttpsConnector::new(1).unwrap();
-        let client = hyper::client::Client::builder().build::<_, hyper::Body>(https);
-
-        let f = Box::new(
-            client
-                .request(req)
-                .map_err(|_| ())
-                .and_then(|res| {
-                    if res.status() == hyper::StatusCode::OK {
-                        future::ok(res.into_body().concat2().map_err(|_| ()))
-                    } else {
-                        future::err(())
-                    }
-                })
-                .and_then(|res| res)
-                .and_then(move |response| {
-                    let response = String::from_utf8(response.into_bytes().to_vec()).unwrap();
-                    future::ok(response)
-                }),
-        );
-
-        let mut runtime = tokio::runtime::Runtime::new().unwrap();
-        let output = match runtime.block_on(f) {
+        let m = match requests::request(req) {
             Ok(m) => m,
             Err(_) => {
                 return Err(std::io::Error::new(
@@ -547,7 +487,7 @@ impl GoogleCloudFile {
             }
         };
 
-        let parsed = json::parse(&output).unwrap();
+        let parsed = json::parse(std::str::from_utf8(&m.body).unwrap()).unwrap();
         let mut output = Vec::new();
         for item in parsed["items"].members() {
             output.push(format!(
@@ -574,7 +514,7 @@ impl std::io::Write for GFile {
             GFile::LocalFile(f) => f.flush(),
             // We don't actually support flushing arbitrarily small buffers. Google
             // will just not allow it.
-            GFile::RemoteFile(f) => Ok(()),
+            GFile::RemoteFile(_) => Ok(()),
         }
     }
 }
@@ -615,6 +555,8 @@ mod tests {
     use super::*;
     extern crate primitive;
     extern crate recordio;
+
+    use std::io::Read;
 
     #[test]
     fn test_get_path() {

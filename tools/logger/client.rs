@@ -180,7 +180,7 @@ impl LoggerClient {
         self.logcache.write().unwrap().insert(log, Mutex::new(logs));
     }
 
-    pub fn start_logging(&mut self) {
+    pub async fn start_logging(&mut self) {
         if self.client.is_none() && self.hostname.is_empty() {
             return;
         }
@@ -220,7 +220,7 @@ impl LoggerClient {
                             .as_ref()
                             .unwrap()
                             .log(Default::default(), req)
-                            .wait()
+                            .await
                         {
                             Ok(_) => (),
                             Err(_) => eprintln!("Failed to log some messages! Logs lost!"),

@@ -11,7 +11,8 @@ use std::io::Read;
 
 use ws::Server;
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let server_hostname = define_flag!(
         "server_hostname",
         String::from("localhost:8001"),
@@ -106,6 +107,9 @@ fn main() {
         auth_client::AuthClient::new(&auth_hostname.value(), auth_port.value())
     };
 
-    server::ReviewServer::new(client, static_files.value(), base_url.value(), auth, queue)
-        .serve(port.value());
+    ws::serve(
+        server::ReviewServer::new(client, static_files.value(), base_url.value(), auth, queue),
+        port.value(),
+    )
+    .await;
 }

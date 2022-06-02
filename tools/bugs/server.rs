@@ -34,7 +34,6 @@ fn main() {
 
     let mut server = grpc::ServerBuilder::<tls_api_stub::TlsAcceptor>::new();
     server.http.set_port(port.value());
-    server.http.set_cpu_pool_threads(2);
 
     let auth = auth_client::AuthClient::new(&auth_hostname.value(), auth_port.value());
 

@@ -1,5 +1,5 @@
 use grpc::ClientStubExt;
-use metal_grpc_rust::{MetalService, TaskState};
+use metal_grpc_rust::TaskState;
 use std::convert::TryInto;
 
 #[macro_use]
@@ -19,6 +19,10 @@ fn render_time(ts: u64) -> String {
         units = "hours"
     };
     format!("{} {}", time, units)
+}
+
+fn wait<T: Send + Sync>(resp: grpc::SingleResponse<T>) -> Result<T, grpc::Error> {
+    futures::executor::block_on(resp.join_metadata_result()).map(|r| r.1)
 }
 
 fn update(down: bool, filename: &str, client: &metal_grpc_rust::MetalServiceClient) {
@@ -42,8 +46,8 @@ fn update(down: bool, filename: &str, client: &metal_grpc_rust::MetalServiceClie
     req.set_config(cfg);
     req.set_down(down);
 
-    let resp = match client.update(grpc::RequestOptions::new(), req).wait() {
-        Ok(r) => r.1,
+    let resp = match wait(client.update(grpc::RequestOptions::new(), req)) {
+        Ok(r) => r,
         Err(_) => {
             eprintln!("failed to connect to metal service, is the metal service running?");
             std::process::exit(1);
@@ -87,8 +91,8 @@ fn status(args: &[String], client: &metal_grpc_rust::MetalServiceClient) {
     if args.len() == 1 {
         req.set_selector(args[0].to_string());
     }
-    let response = match client.status(grpc::RequestOptions::new(), req).wait() {
-        Ok(r) => r.1,
+    let response = match wait(client.status(grpc::RequestOptions::new(), req)) {
+        Ok(r) => r,
         Err(_) => {
             eprintln!("failed to connect to metal service, is the metal service running?");
             std::process::exit(1);
@@ -146,8 +150,8 @@ fn logs(
     let mut req = metal_grpc_rust::GetLogsRequest::new();
     req.set_resource_name(args[0].to_string());
 
-    let response = match client.get_logs(grpc::RequestOptions::new(), req).wait() {
-        Ok(r) => r.1,
+    let response = match wait(client.get_logs(grpc::RequestOptions::new(), req)) {
+        Ok(r) => r,
         Err(_) => {
             eprintln!("failed to connect to metal service, is the metal service running?");
             std::process::exit(1);
@@ -227,8 +231,8 @@ fn resolve(args: &[String], client: &metal_grpc_rust::MetalServiceClient) {
     let mut req = metal_grpc_rust::ResolveRequest::new();
     req.set_service_name(args[0].to_string());
 
-    let response = match client.resolve(grpc::RequestOptions::new(), req).wait() {
-        Ok(r) => r.1,
+    let response = match wait(client.resolve(grpc::RequestOptions::new(), req)) {
+        Ok(r) => r,
         Err(_) => {
             eprintln!("failed to connect to metal service, is the metal service running?");
             std::process::exit(1);

@@ -33,7 +33,6 @@ fn main() {
     server.add_service(metal_grpc_rust::MetalServiceServer::new_service_def(
         handler,
     ));
-    server.http.set_cpu_pool_threads(8);
 
     let _server = server.build().expect("failed to build server");
 

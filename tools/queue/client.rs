@@ -1,3 +1,4 @@
+use futures::StreamExt;
 use grpc::ClientStubExt;
 pub use queue_grpc_rust::*;
 
@@ -12,6 +13,10 @@ pub fn get_timestamp_usec() -> u64 {
     let now = std::time::SystemTime::now();
     let since_epoch = now.duration_since(std::time::UNIX_EPOCH).unwrap();
     (since_epoch.as_secs() as u64) * 1_000_000 + (since_epoch.subsec_nanos() / 1000) as u64
+}
+
+fn wait<T: Send + Sync>(resp: grpc::SingleResponse<T>) -> Result<T, grpc::Error> {
+    futures::executor::block_on(resp.join_metadata_result()).map(|r| r.1)
 }
 
 impl QueueClient {
@@ -39,12 +44,7 @@ impl QueueClient {
 
         *req.mut_msg() = msg;
 
-        let response = self
-            .client
-            .enqueue(Default::default(), req)
-            .wait()
-            .unwrap()
-            .1;
+        let response = wait(self.client.enqueue(Default::default(), req)).unwrap();
         response.get_id()
     }
 
@@ -53,7 +53,7 @@ impl QueueClient {
         req.set_queue(queue);
         req.set_id(id);
 
-        let mut response = self.client.read(Default::default(), req).wait().unwrap().1;
+        let mut response = wait(self.client.read(Default::default(), req)).unwrap();
 
         if response.get_found() {
             Some(response.take_msg())
@@ -70,17 +70,12 @@ impl QueueClient {
         message.write_to_vec(&mut data);
         req.mut_msg().set_protobuf(data);
 
-        let response = self
-            .client
-            .enqueue(Default::default(), req)
-            .wait()
-            .unwrap()
-            .1;
+        let response = wait(self.client.enqueue(Default::default(), req)).unwrap();
         response.get_id()
     }
 
     pub fn update(&self, message: Message) -> Result<(), ()> {
-        match self.client.update(Default::default(), message).wait() {
+        match wait(self.client.update(Default::default(), message)) {
             Ok(_) => Ok(()),
             Err(_) => Err(()),
         }
@@ -90,8 +85,8 @@ impl QueueClient {
         let mut req = ConsumeRequest::new();
         req.set_queue(queue);
 
-        let mut response = match self.client.consume(Default::default(), req.clone()).wait() {
-            Ok(r) => r.1,
+        let mut response = match wait(self.client.consume(Default::default(), req.clone())) {
+            Ok(r) => r,
             Err(_) => return Vec::new(),
         };
 
@@ -102,23 +97,18 @@ impl QueueClient {
         let mut req = ConsumeRequest::new();
         req.set_queue(queue);
 
-        let iter = match self
-            .client
-            .consume_stream(Default::default(), req.clone())
-            .wait()
-        {
-            Ok(r) => r.1,
-            Err(_) => return Vec::new(),
+        let mut result = match futures::executor::block_on(
+            self.client
+                .consume_stream(Default::default(), req.clone())
+                .drop_metadata()
+                .take(1)
+                .next(),
+        ) {
+            Some(Ok(r)) => r,
+            _ => return Vec::new(),
         };
 
-        for result in iter {
-            match result {
-                Ok(mut r) => return r.take_messages().into_vec(),
-                Err(_) => break,
-            }
-        }
-
-        Vec::new()
+        return result.take_messages().into_vec();
     }
 }
 
@@ -311,7 +301,7 @@ pub trait Consumer {
 
             // If the state didn't change since the last try, it means that the same operation
             // failed at the same step, so wait a bit to throttle requests
-            if (state == prev_state) {
+            if state == prev_state {
                 std::thread::sleep(std::time::Duration::from_secs(1));
             }
             prev_state = state;

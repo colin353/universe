@@ -1,7 +1,7 @@
 use chat_grpc_rust::*;
 
+use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use futures::stream::Stream;
-use futures::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 
@@ -21,7 +21,7 @@ pub struct ChatServiceHandler {
 
 impl ChatServiceHandler {
     pub fn new() -> Self {
-        let (sender, receiver) = futures::sync::mpsc::unbounded();
+        let (sender, receiver) = futures::channel::mpsc::unbounded();
         let out = Self {
             sender,
             channels: Arc::new(RwLock::new(HashMap::new())),
@@ -31,7 +31,7 @@ impl ChatServiceHandler {
     }
 
     pub fn subscribe(&self, user: &str) -> UnboundedReceiver<ChatServiceEvent> {
-        let (sender, reciever) = futures::sync::mpsc::unbounded();
+        let (sender, reciever) = futures::channel::mpsc::unbounded();
         let mut us = self.users.write().unwrap();
         if let Some(u) = us.get_mut(user) {
             u.push(sender);
@@ -91,18 +91,20 @@ impl ChatServiceHandler {
 impl ChatService for ChatServiceHandler {
     fn read(
         &self,
-        _m: grpc::RequestOptions,
-        mut req: ReadRequest,
-    ) -> grpc::SingleResponse<ReadResponse> {
-        grpc::SingleResponse::completed(ReadResponse::new())
+        _: grpc::ServerHandlerContext,
+        req: grpc::ServerRequestSingle<ReadRequest>,
+        resp: grpc::ServerResponseUnarySink<ReadResponse>,
+    ) -> grpc::Result<()> {
+        resp.finish(ReadResponse::new())
     }
 
     fn send(
         &self,
-        _m: grpc::RequestOptions,
-        mut req: Message,
-    ) -> grpc::SingleResponse<SendResponse> {
-        self.send(req);
-        grpc::SingleResponse::completed(SendResponse::new())
+        _: grpc::ServerHandlerContext,
+        req: grpc::ServerRequestSingle<Message>,
+        resp: grpc::ServerResponseUnarySink<SendResponse>,
+    ) -> grpc::Result<()> {
+        self.send(req.message);
+        resp.finish(SendResponse::new())
     }
 }

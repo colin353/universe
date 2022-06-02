@@ -37,6 +37,7 @@ rust_binary(
     data = ["template.html"],
     deps = [
         ":ws",
+        "//third_party:tokio",
         "//util/tmpl",
     ],
 )

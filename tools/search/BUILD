@@ -50,6 +50,7 @@ rust_binary(
         "//auth:auth_client",
         "//third_party:base64",
         "//third_party:json",
+        "//third_party:tokio",
         "//util/flags",
         "//util/markdown",
         "//util/tmpl",
@@ -93,6 +94,7 @@ rust_binary(
         "//auth:auth_client",
         "//third_party:base64",
         "//third_party:json",
+        "//third_party:tokio",
         "//util/flags",
         "//util/markdown",
         "//util/tmpl",
@@ -137,11 +139,10 @@ rust_library(
     edition = "2018",
     deps = [
         ":search_grpc_rust",
-        "//third_party:tls_api_openssl",
+        "//third_party:futures",
         "//util/grpc_tls",
         "@rules_rust//proto/raze:grpc",
         "@rules_rust//proto/raze:tls_api",
-        #"@raze__httpbis__0_7_0//:httpbis",
     ],
 )
 

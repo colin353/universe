@@ -91,8 +91,8 @@ impl LoggerWebServer {
             }
         };
 
-        let extractor = match extractors.iter().find(|(name, f)| name == &extractor_name) {
-            Some((name, f)) => f,
+        let extractor = match extractors.iter().find(|(name, _)| name == &extractor_name) {
+            Some((_, f)) => f,
             None => {
                 return Response::new(Body::from(format!("unknown extractor: {}", extractor_name)));
             }
@@ -109,7 +109,7 @@ impl LoggerWebServer {
             Some(x) => {
                 let mut filters = Vec::new();
                 for f in x.split(",") {
-                    match available_filters.iter().find(|(fname, filter)| &f == fname) {
+                    match available_filters.iter().find(|(fname, _)| &f == fname) {
                         Some((_, filter)) => filters.push(filter),
                         None => {
                             return Response::new(Body::from(format!("unknown filter: {}", f)));

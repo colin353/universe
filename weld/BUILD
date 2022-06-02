@@ -38,7 +38,7 @@ rust_library(
         "@rules_rust//proto/raze:grpc",
         "@rules_rust//proto/raze:protobuf",
         "@rules_rust//proto/raze:tls_api",
-        "@rules_rust_proto__httpbis__0_7_0//:httpbis",
+        "@rules_rust_proto__httpbis__0_9_1//:httpbis",
     ],
 )
 

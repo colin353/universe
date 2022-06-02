@@ -46,10 +46,10 @@ impl<W: std::io::Write, T: Serializable> SSTableBuilder<T, W> {
 
         let key_bytes = key.as_bytes();
         self.writer
-            .write_u16::<LittleEndian>(key_bytes.len() as u16);
-        self.writer.write_all(key_bytes);
-        self.writer.write_u32::<LittleEndian>(value.len() as u32);
-        self.writer.write_all(value);
+            .write_u16::<LittleEndian>(key_bytes.len() as u16)?;
+        self.writer.write_all(key_bytes)?;
+        self.writer.write_u32::<LittleEndian>(value.len() as u32)?;
+        self.writer.write_all(value)?;
 
         // If we've written the first entry, or we've crossed a block boundary while writing, write
         // an index entry

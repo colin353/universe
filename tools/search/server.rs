@@ -4,12 +4,12 @@ extern crate flags;
 extern crate tmpl;
 
 use std::sync::Arc;
-use ws::Server;
 
 mod render;
 mod webserver;
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let web_port = define_flag!("web_port", 9898, "The port to bind to (for web)");
     let grpc_port = define_flag!("grpc_port", 9899, "The port to bind to (for grpc)");
     let index_dir = define_flag!(
@@ -55,7 +55,6 @@ fn main() {
 
     let mut server = grpc::ServerBuilder::<tls_api_stub::TlsAcceptor>::new();
     server.http.set_port(grpc_port.value());
-    server.http.set_cpu_pool_threads(2);
 
     let searcher = Arc::new(search_lib::Searcher::new(&index_dir.path()));
 
@@ -70,12 +69,15 @@ fn main() {
     ));
     let _server = server.build().unwrap();
 
-    webserver::SearchWebserver::new(
-        searcher,
-        static_files.value(),
-        base_url.value(),
-        auth,
-        js_src.value(),
+    ws::serve(
+        webserver::SearchWebserver::new(
+            searcher,
+            static_files.value(),
+            base_url.value(),
+            auth,
+            js_src.value(),
+        ),
+        web_port.value(),
     )
-    .serve(web_port.value());
+    .await;
 }

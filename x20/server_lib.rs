@@ -135,34 +135,38 @@ impl<C: LargeTableClient + Clone> X20ServiceHandler<C> {
 impl<C: LargeTableClient + Clone> x20::X20Service for X20ServiceHandler<C> {
     fn get_binaries(
         &self,
-        _: grpc::RequestOptions,
-        _req: x20::GetBinariesRequest,
-    ) -> grpc::SingleResponse<x20::GetBinariesResponse> {
-        grpc::SingleResponse::completed(self.get_binaries())
+        _: grpc::ServerHandlerContext,
+        req: grpc::ServerRequestSingle<x20::GetBinariesRequest>,
+        resp: grpc::ServerResponseUnarySink<x20::GetBinariesResponse>,
+    ) -> grpc::Result<()> {
+        resp.finish(self.get_binaries())
     }
 
     fn publish_binary(
         &self,
-        _: grpc::RequestOptions,
-        req: x20::PublishBinaryRequest,
-    ) -> grpc::SingleResponse<x20::PublishBinaryResponse> {
-        grpc::SingleResponse::completed(self.publish_binary(req, true))
+        _: grpc::ServerHandlerContext,
+        req: grpc::ServerRequestSingle<x20::PublishBinaryRequest>,
+        resp: grpc::ServerResponseUnarySink<x20::PublishBinaryResponse>,
+    ) -> grpc::Result<()> {
+        resp.finish(self.publish_binary(req.message, true))
     }
 
     fn get_configs(
         &self,
-        _: grpc::RequestOptions,
-        req: x20::GetConfigsRequest,
-    ) -> grpc::SingleResponse<x20::GetConfigsResponse> {
-        grpc::SingleResponse::completed(self.get_configs(req))
+        _: grpc::ServerHandlerContext,
+        req: grpc::ServerRequestSingle<x20::GetConfigsRequest>,
+        resp: grpc::ServerResponseUnarySink<x20::GetConfigsResponse>,
+    ) -> grpc::Result<()> {
+        resp.finish(self.get_configs(req.message))
     }
 
     fn publish_config(
         &self,
-        _: grpc::RequestOptions,
-        req: x20::PublishConfigRequest,
-    ) -> grpc::SingleResponse<x20::PublishConfigResponse> {
-        grpc::SingleResponse::completed(self.publish_config(req))
+        _: grpc::ServerHandlerContext,
+        req: grpc::ServerRequestSingle<x20::PublishConfigRequest>,
+        resp: grpc::ServerResponseUnarySink<x20::PublishConfigResponse>,
+    ) -> grpc::Result<()> {
+        resp.finish(self.publish_config(req.message))
     }
 }
 

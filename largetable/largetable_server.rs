@@ -20,7 +20,8 @@ extern crate test;
 
 use std::thread;
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let port = define_flag!("port", 50051 as u16, "The port to bind to.");
     let memory_limit = define_flag!(
         "memory_limit",
@@ -66,16 +67,13 @@ fn main() {
         logger.clone(),
     );
 
-    std::thread::spawn(move || {
-        logger.start_logging();
-    });
+    tokio::spawn(async move { logger.start_logging().await });
 
     let mut server = grpc::ServerBuilder::<tls_api_stub::TlsAcceptor>::new();
     server.http.set_port(port.value());
     server.add_service(
         largetable_grpc_rust::LargeTableServiceServer::new_service_def(handler.clone()),
     );
-    server.http.set_cpu_pool_threads(16);
 
     let _server = server.build().expect("server");
 

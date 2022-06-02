@@ -155,65 +155,69 @@ mod tests {
 impl<C: LargeTableClient + Clone> bugs::BugService for BugServiceHandler<C> {
     fn get_bugs(
         &self,
-        _: grpc::RequestOptions,
-        req: bugs::GetBugsRequest,
-    ) -> grpc::SingleResponse<bugs::GetBugsResponse> {
-        if !self.authenticate(req.get_token()) {
+        _: grpc::ServerHandlerContext,
+        mut req: grpc::ServerRequestSingle<bugs::GetBugsRequest>,
+        resp: grpc::ServerResponseUnarySink<bugs::GetBugsResponse>,
+    ) -> grpc::Result<()> {
+        if !self.authenticate(req.message.get_token()) {
             let mut response = bugs::GetBugsResponse::new();
             response.set_error(bugs::Error::AUTHENTICATION);
-            return grpc::SingleResponse::completed(response);
+            return resp.finish(response);
         }
 
-        grpc::SingleResponse::completed(self.get_bugs(&req))
+        resp.finish(self.get_bugs(&req.message))
     }
 
     fn get_bug(
         &self,
-        _: grpc::RequestOptions,
-        req: bugs::GetBugRequest,
-    ) -> grpc::SingleResponse<bugs::GetBugResponse> {
-        if !self.authenticate(req.get_token()) {
+        _: grpc::ServerHandlerContext,
+        mut req: grpc::ServerRequestSingle<bugs::GetBugRequest>,
+        resp: grpc::ServerResponseUnarySink<bugs::GetBugResponse>,
+    ) -> grpc::Result<()> {
+        if !self.authenticate(req.message.get_token()) {
             let mut response = bugs::GetBugResponse::new();
             response.set_error(bugs::Error::AUTHENTICATION);
-            return grpc::SingleResponse::completed(response);
+            return resp.finish(response);
         }
 
         let mut response = bugs::GetBugResponse::new();
-        *response.mut_bug() = self.get_bug(req.get_bug());
+        *response.mut_bug() = self.get_bug(req.message.get_bug());
         if response.get_bug().get_id() > 0 {
             response.set_found(true);
         }
-        grpc::SingleResponse::completed(response)
+        resp.finish(response)
     }
 
     fn create_bug(
         &self,
-        _: grpc::RequestOptions,
-        mut req: bugs::CreateBugRequest,
-    ) -> grpc::SingleResponse<bugs::CreateBugResponse> {
-        if !self.authenticate(req.get_token()) {
+        _: grpc::ServerHandlerContext,
+        mut req: grpc::ServerRequestSingle<bugs::CreateBugRequest>,
+        resp: grpc::ServerResponseUnarySink<bugs::CreateBugResponse>,
+    ) -> grpc::Result<()> {
+        if !self.authenticate(req.message.get_token()) {
             let mut response = bugs::CreateBugResponse::new();
             response.set_error(bugs::Error::AUTHENTICATION);
-            return grpc::SingleResponse::completed(response);
+            return resp.finish(response);
         }
 
         let mut response = bugs::CreateBugResponse::new();
-        *response.mut_bug() = self.create_bug(req.take_bug());
-        grpc::SingleResponse::completed(response)
+        *response.mut_bug() = self.create_bug(req.message.take_bug());
+        resp.finish(response)
     }
 
     fn update_bug(
         &self,
-        _: grpc::RequestOptions,
-        mut req: bugs::UpdateBugRequest,
-    ) -> grpc::SingleResponse<bugs::UpdateBugResponse> {
-        if !self.authenticate(req.get_token()) {
+        _: grpc::ServerHandlerContext,
+        mut req: grpc::ServerRequestSingle<bugs::UpdateBugRequest>,
+        resp: grpc::ServerResponseUnarySink<bugs::UpdateBugResponse>,
+    ) -> grpc::Result<()> {
+        if !self.authenticate(req.message.get_token()) {
             let mut response = bugs::UpdateBugResponse::new();
             response.set_error(bugs::Error::AUTHENTICATION);
-            return grpc::SingleResponse::completed(response);
+            return resp.finish(response);
         }
 
-        self.update_bug(req.take_bug());
-        grpc::SingleResponse::completed(bugs::UpdateBugResponse::new())
+        self.update_bug(req.message.take_bug());
+        resp.finish(bugs::UpdateBugResponse::new())
     }
 }

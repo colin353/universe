@@ -9,8 +9,12 @@ use cache::Cache;
 use grpc::{ClientStub, ClientStubExt};
 use std::sync::{Arc, RwLock};
 
+fn wait<T: Send + Sync>(resp: grpc::SingleResponse<T>) -> Result<T, grpc::Error> {
+    futures::executor::block_on(resp.join_metadata_result()).map(|r| r.1)
+}
+
 lazy_static! {
-    static ref GLOBAL_CLIENT: RwLock<Option<AuthClient>> = { RwLock::new(None) };
+    static ref GLOBAL_CLIENT: RwLock<Option<AuthClient>> = RwLock::new(None);
 }
 
 pub fn get_timestamp() -> u64 {
@@ -103,14 +107,7 @@ impl AuthServer for AuthClient {
 
         let mut req = AuthenticateRequest::new();
         req.set_token(token.clone());
-        let result = self
-            .client
-            .as_ref()
-            .unwrap()
-            .authenticate(self.opts(), req)
-            .wait()
-            .expect("rpc")
-            .1;
+        let result = wait(self.client.as_ref().unwrap().authenticate(self.opts(), req)).unwrap();
 
         if result.get_success() {
             self.auth_cache.insert(token, result.clone());
@@ -120,13 +117,13 @@ impl AuthServer for AuthClient {
     }
 
     fn login(&self) -> LoginChallenge {
-        self.client
-            .as_ref()
-            .unwrap()
-            .login(self.opts(), LoginRequest::new())
-            .wait()
-            .expect("rpc")
-            .1
+        wait(
+            self.client
+                .as_ref()
+                .unwrap()
+                .login(self.opts(), LoginRequest::new()),
+        )
+        .unwrap()
     }
 
     fn get_gcp_token(&self, token: String) -> GCPTokenResponse {
@@ -139,24 +136,18 @@ impl AuthServer for AuthClient {
         let mut req = GCPTokenRequest::new();
         req.set_token(token);
 
-        self.client
-            .as_ref()
-            .unwrap()
-            .get_gcp_token(self.opts(), req)
-            .wait()
-            .expect("rpc")
-            .1
+        wait(
+            self.client
+                .as_ref()
+                .unwrap()
+                .get_gcp_token(self.opts(), req),
+        )
+        .unwrap()
     }
 
     fn login_then_redirect(&self, return_url: String) -> LoginChallenge {
         let mut req = LoginRequest::new();
         req.set_return_url(return_url);
-        self.client
-            .as_ref()
-            .unwrap()
-            .login(self.opts(), req)
-            .wait()
-            .expect("rpc")
-            .1
+        wait(self.client.as_ref().unwrap().login(self.opts(), req)).unwrap()
     }
 }

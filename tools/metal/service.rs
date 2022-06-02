@@ -178,42 +178,47 @@ impl MetalServiceHandlerInner {
 impl metal_grpc_rust::MetalService for MetalServiceHandler {
     fn update(
         &self,
-        _m: grpc::RequestOptions,
-        req: metal_grpc_rust::UpdateRequest,
-    ) -> grpc::SingleResponse<metal_grpc_rust::UpdateResponse> {
-        grpc::SingleResponse::completed(self.0.update(req))
+        _: grpc::ServerHandlerContext,
+        req: grpc::ServerRequestSingle<metal_grpc_rust::UpdateRequest>,
+        resp: grpc::ServerResponseUnarySink<metal_grpc_rust::UpdateResponse>,
+    ) -> grpc::Result<()> {
+        resp.finish(self.0.update(req.message))
     }
 
     fn diff(
         &self,
-        _m: grpc::RequestOptions,
-        req: metal_grpc_rust::UpdateRequest,
-    ) -> grpc::SingleResponse<metal_grpc_rust::DiffResponse> {
-        grpc::SingleResponse::completed(self.0.diff(req))
+        _: grpc::ServerHandlerContext,
+        req: grpc::ServerRequestSingle<metal_grpc_rust::UpdateRequest>,
+        resp: grpc::ServerResponseUnarySink<metal_grpc_rust::DiffResponse>,
+    ) -> grpc::Result<()> {
+        resp.finish(self.0.diff(req.message))
     }
 
     fn resolve(
         &self,
-        _m: grpc::RequestOptions,
-        req: metal_grpc_rust::ResolveRequest,
-    ) -> grpc::SingleResponse<metal_grpc_rust::ResolveResponse> {
-        grpc::SingleResponse::completed(self.0.resolve(req))
+        _: grpc::ServerHandlerContext,
+        req: grpc::ServerRequestSingle<metal_grpc_rust::ResolveRequest>,
+        resp: grpc::ServerResponseUnarySink<metal_grpc_rust::ResolveResponse>,
+    ) -> grpc::Result<()> {
+        resp.finish(self.0.resolve(req.message))
     }
 
     fn status(
         &self,
-        _m: grpc::RequestOptions,
-        req: metal_grpc_rust::StatusRequest,
-    ) -> grpc::SingleResponse<metal_grpc_rust::StatusResponse> {
-        grpc::SingleResponse::completed(self.0.status(req))
+        _: grpc::ServerHandlerContext,
+        req: grpc::ServerRequestSingle<metal_grpc_rust::StatusRequest>,
+        resp: grpc::ServerResponseUnarySink<metal_grpc_rust::StatusResponse>,
+    ) -> grpc::Result<()> {
+        resp.finish(self.0.status(req.message))
     }
 
     fn get_logs(
         &self,
-        _m: grpc::RequestOptions,
-        req: metal_grpc_rust::GetLogsRequest,
-    ) -> grpc::SingleResponse<metal_grpc_rust::GetLogsResponse> {
-        grpc::SingleResponse::completed(self.0.get_logs(req))
+        _: grpc::ServerHandlerContext,
+        req: grpc::ServerRequestSingle<metal_grpc_rust::GetLogsRequest>,
+        resp: grpc::ServerResponseUnarySink<metal_grpc_rust::GetLogsResponse>,
+    ) -> grpc::Result<()> {
+        resp.finish(self.0.get_logs(req.message))
     }
 }
 

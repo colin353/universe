@@ -35,6 +35,7 @@ rust_library(
         ":lockserv_grpc_rust",
         "@rules_rust//proto/raze:grpc",
         "@rules_rust//proto/raze:protobuf",
+        "//third_party:futures",
     ],
 )
 
