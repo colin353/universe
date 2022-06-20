@@ -18,3 +18,19 @@ rust_test(
     name = "car_test",
     crate = ":car",
 )
+
+rust_library(
+    name = "parser",
+    srcs = [
+        "parser.rs",
+        "ast.rs",
+    ],
+    deps = [
+        "//util/ggen"
+    ]
+)
+
+rust_test(
+    name = "parser_test",
+    crate = ":parser",
+)
