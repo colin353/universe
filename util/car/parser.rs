@@ -7,25 +7,24 @@ mod ast;
 #[derive(Clone, Debug)]
 pub enum CarError {
     ParseError(ggen::ParseError),
-    InvalidSchema(String, usize, usize),
 }
 
 pub struct Module {
-    messages: Vec<MessageDefinition>,
+    pub messages: Vec<MessageDefinition>,
 }
 
 pub struct MessageDefinition {
-    name: String,
-    fields: Vec<FieldDefinition>,
-    ast: ast::MessageDefinition,
+    pub name: String,
+    pub fields: Vec<FieldDefinition>,
+    pub ast: ast::MessageDefinition,
 }
 
 pub struct FieldDefinition {
-    repeated: bool,
-    field_type: FieldType,
-    field_name: String,
-    tag: u32,
-    ast: ast::FieldDefinition,
+    pub repeated: bool,
+    pub field_type: FieldType,
+    pub field_name: String,
+    pub tag: u32,
+    pub ast: ast::FieldDefinition,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -44,10 +43,10 @@ pub enum FieldType {
 impl FieldType {
     fn from(s: &str) -> Self {
         match s {
-            "u64" => Self::Tu64,
-            "u32" => Self::Tu32,
-            "u16" => Self::Tu16,
-            "u8" => Self::Tu8,
+            "uint64" => Self::Tu64,
+            "uint32" => Self::Tu32,
+            "uint16" => Self::Tu16,
+            "uint8" => Self::Tu8,
             "bool" => Self::Tbool,
             "string" => Self::Tstring,
             "float" => Self::Tfloat,
@@ -60,11 +59,12 @@ impl FieldType {
 fn convert_field(f: &ast::FieldDefinition, data: &str) -> Result<FieldDefinition, CarError> {
     if f.tag.value < 0 {
         let (start, end) = f.tag.range();
-        return Err(CarError::InvalidSchema(
+        return Err(CarError::ParseError(ggen::ParseError::from_string(
             String::from("field numbers must be greater than zero"),
+            "",
             start,
             end,
-        ));
+        )));
     }
 
     Ok(FieldDefinition {
@@ -85,14 +85,15 @@ fn convert_message(msg: ast::MessageDefinition, data: &str) -> Result<MessageDef
             fields.push(cf);
         } else {
             let (start, end) = f.range();
-            return Err(CarError::InvalidSchema(
+            return Err(CarError::ParseError(ggen::ParseError::from_string(
                 format!(
                     "a field named `{}` already exists in this message",
                     cf.field_name
                 ),
+                "",
                 start,
                 end,
-            ));
+            )));
         }
     }
     Ok(MessageDefinition {
@@ -114,11 +115,12 @@ pub fn parse(data: &str) -> Result<Module, CarError> {
             messages.push(m);
         } else {
             let (start, end) = m.ast.name.range();
-            return Err(CarError::InvalidSchema(
+            return Err(CarError::ParseError(ggen::ParseError::from_string(
                 format!("a message named `{}` already exists", m.name),
+                "",
                 start,
                 end,
-            ));
+            )));
         }
     }
 
@@ -128,11 +130,12 @@ pub fn parse(data: &str) -> Result<Module, CarError> {
             if let FieldType::Other(s) = &field.field_type {
                 if !types.contains(s) {
                     let (start, end) = field.ast.type_name.range();
-                    return Err(CarError::InvalidSchema(
+                    return Err(CarError::ParseError(ggen::ParseError::from_string(
                         format!("unrecognized field type `{}`", &s),
+                        "",
                         start,
                         end,
-                    ));
+                    )));
                 }
             }
         }
