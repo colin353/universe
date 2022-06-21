@@ -22,10 +22,39 @@ pub struct MessageDefinition {
 
 pub struct FieldDefinition {
     repeated: bool,
-    type_name: String,
+    field_type: FieldType,
     field_name: String,
     tag: u32,
     ast: ast::FieldDefinition,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum FieldType {
+    Tu64,
+    Tu32,
+    Tu16,
+    Tu8,
+    Tbool,
+    Tstring,
+    Tfloat,
+    Tbytes,
+    Other(String),
+}
+
+impl FieldType {
+    fn from(s: &str) -> Self {
+        match s {
+            "u64" => Self::Tu64,
+            "u32" => Self::Tu32,
+            "u16" => Self::Tu16,
+            "u8" => Self::Tu8,
+            "bool" => Self::Tbool,
+            "string" => Self::Tstring,
+            "float" => Self::Tfloat,
+            "bytes" => Self::Tbytes,
+            _ => Self::Other(s.to_owned()),
+        }
+    }
 }
 
 fn convert_field(f: &ast::FieldDefinition, data: &str) -> Result<FieldDefinition, CarError> {
@@ -40,7 +69,7 @@ fn convert_field(f: &ast::FieldDefinition, data: &str) -> Result<FieldDefinition
 
     Ok(FieldDefinition {
         repeated: f.repeated.is_some(),
-        type_name: f.type_name.as_str(data).to_owned(),
+        field_type: FieldType::from(f.type_name.as_str(data)),
         field_name: f.field_name.as_str(data).to_owned(),
         tag: f.tag.value as u32,
         ast: f.clone(),
@@ -77,8 +106,36 @@ pub fn parse(data: &str) -> Result<Module, CarError> {
     let (module, _, _) = ast::Module::try_match(data, 0).map_err(|e| CarError::ParseError(e))?;
 
     let mut messages = Vec::new();
+    let mut types = HashSet::new();
     for msg in module.definitions.into_iter() {
-        messages.push(convert_message(msg, data)?);
+        let m = convert_message(msg, data)?;
+
+        if types.insert(m.name.clone()) {
+            messages.push(m);
+        } else {
+            let (start, end) = m.ast.name.range();
+            return Err(CarError::InvalidSchema(
+                format!("a message named `{}` already exists", m.name),
+                start,
+                end,
+            ));
+        }
+    }
+
+    // Validate that all types are resolved
+    for msg in &messages {
+        for field in &msg.fields {
+            if let FieldType::Other(s) = &field.field_type {
+                if !types.contains(s) {
+                    let (start, end) = field.ast.type_name.range();
+                    return Err(CarError::InvalidSchema(
+                        format!("unrecognized field type `{}`", &s),
+                        start,
+                        end,
+                    ));
+                }
+            }
+        }
     }
 
     Ok(Module { messages })
@@ -92,14 +149,14 @@ mod tests {
     fn test_parse_module() {
         let content = r#"
 message Something {
-    repeated int32 size = 1;
+    repeated u32 size = 1;
 }
         "#;
         let module = parse(content).unwrap();
         assert_eq!(module.messages.len(), 1);
         assert_eq!(module.messages[0].fields.len(), 1);
         assert_eq!(module.messages[0].fields[0].repeated, true);
-        assert_eq!(&module.messages[0].fields[0].type_name, "int32");
+        assert_eq!(module.messages[0].fields[0].field_type, FieldType::Tu32);
         assert_eq!(&module.messages[0].fields[0].field_name, "size");
         assert_eq!(module.messages[0].fields[0].tag, 1);
     }

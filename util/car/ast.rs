@@ -1,4 +1,4 @@
-use ggen::{AtLeastOne, Comment, GrammarUnit, Identifier, Integer, RepeatWithSeparator, EOF};
+use ggen::{AtLeastOne, Comment, GrammarUnit, Identifier, Integer, EOF};
 
 ggen::char_rule!(Whitespace, |ch: char| ch.is_whitespace() && ch != '\n');
 ggen::char_rule!(Separator, |ch: char| ch.is_whitespace());
