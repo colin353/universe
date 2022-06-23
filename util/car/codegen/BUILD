@@ -13,3 +13,19 @@ rust_binary(
         "//util/flags",
     ]
 )
+
+rust_library(
+    name = "test",
+    srcs = [
+        "test.rs",
+        "test_test.rs",
+    ],
+    deps = [
+        "//util/car",
+    ]
+)
+
+rust_test(
+    name = "test_test",
+    crate = "test",
+)

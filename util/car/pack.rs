@@ -1,5 +1,6 @@
 use crate::varint;
 
+#[derive(Clone)]
 pub struct Pack<'a> {
     data: &'a [u8],
     offsets: &'a [u32],

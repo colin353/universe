@@ -2,18 +2,37 @@ use crate::pack;
 use crate::varint;
 use crate::Serializable;
 
-pub struct RepeatedField<'a> {
+pub enum RepeatedField<'a, T: Serializable<'a>> {
+    Encoded(EncodedStruct<'a>),
+    DecodedOwned(Vec<T>),
+    DecodedReference(&'a [T]),
+}
+
+#[derive(Clone)]
+pub struct EncodedStruct<'a> {
     data: &'a [u8],
     fields_index: pack::Pack<'a>,
     empty: bool,
 }
 
-pub struct RepeatedFieldBuilder<W: std::io::Write> {
+pub struct EncodedStructBuilder<W: std::io::Write> {
     sizes: Vec<u32>,
     writer: W,
 }
 
-impl<W: std::io::Write> RepeatedFieldBuilder<W> {
+impl<'a> Serializable<'a> for EncodedStruct<'a> {
+    fn encode<W: std::io::Write>(&self, writer: &mut W) -> Result<usize, std::io::Error> {
+        unimplemented!()
+    }
+    fn decode(bytes: &'a [u8]) -> Result<Self, std::io::Error> {
+        Ok(Self::new(bytes)?)
+    }
+    fn zero() -> Self {
+        Self::new(&[]).unwrap()
+    }
+}
+
+impl<W: std::io::Write> EncodedStructBuilder<W> {
     pub fn new(writer: W) -> Self {
         Self {
             sizes: Vec::new(),
@@ -48,7 +67,7 @@ impl<W: std::io::Write> RepeatedFieldBuilder<W> {
     }
 }
 
-impl<'a> RepeatedField<'a> {
+impl<'a> EncodedStruct<'a> {
     pub fn new(data: &'a [u8]) -> Result<Self, std::io::Error> {
         let (footer, footer_size) = varint::decode_reverse_varint(data);
         if footer == 0 {
@@ -66,6 +85,26 @@ impl<'a> RepeatedField<'a> {
             data: &data[0..data_length],
             fields_index: pack::Pack::new(&data[data_length..data.len() - footer_size])?,
         })
+    }
+
+    pub fn get_struct(&'a self, idx: usize) -> Option<Result<Self, std::io::Error>> {
+        if self.empty {
+            return None;
+        }
+
+        let start = if idx == 0 {
+            0
+        } else {
+            self.fields_index.get(idx - 1)? as usize
+        };
+
+        let end = if let Some(end) = self.fields_index.get(idx) {
+            end as usize
+        } else {
+            self.data.len()
+        };
+
+        Some(EncodedStruct::new(&self.data[start..end]))
     }
 
     pub fn get<T: Serializable<'a>>(&'a self, idx: usize) -> Option<Result<T, std::io::Error>> {
@@ -108,12 +147,12 @@ mod tests {
     #[test]
     fn test_repeated_field() {
         let mut buf = Vec::new();
-        let mut b = RepeatedFieldBuilder::new(&mut buf);
+        let mut b = EncodedStructBuilder::new(&mut buf);
         b.push("asdf").unwrap();
         b.push("fdsa").unwrap();
         b.finish().unwrap();
 
-        let rf = RepeatedField::new(&buf).unwrap();
+        let rf = EncodedStruct::new(&buf).unwrap();
         assert_eq!(rf.len(), 2);
         assert_eq!(rf.is_empty(), false);
         assert_eq!(rf.get::<&str>(0).unwrap().unwrap(), "asdf");
@@ -124,10 +163,10 @@ mod tests {
     #[test]
     fn test_empty_repeated_field() {
         let mut buf = Vec::new();
-        let mut b = RepeatedFieldBuilder::new(&mut buf);
+        let mut b = EncodedStructBuilder::new(&mut buf);
         b.finish().unwrap();
 
-        let rf = RepeatedField::new(&buf).unwrap();
+        let rf = EncodedStruct::new(&buf).unwrap();
         assert_eq!(rf.len(), 0);
         assert_eq!(rf.is_empty(), true);
         assert_eq!(rf.get::<&str>(0).is_none(), true);
@@ -136,11 +175,11 @@ mod tests {
     #[test]
     fn test_repeated_field_one_empty_item() {
         let mut buf = Vec::new();
-        let mut b = RepeatedFieldBuilder::new(&mut buf);
+        let mut b = EncodedStructBuilder::new(&mut buf);
         b.push("").unwrap(); // encoded size: zero
         b.finish().unwrap();
 
-        let rf = RepeatedField::new(&buf).unwrap();
+        let rf = EncodedStruct::new(&buf).unwrap();
         assert_eq!(rf.len(), 1);
         assert_eq!(rf.is_empty(), false);
         assert_eq!(rf.get::<&str>(0).unwrap().unwrap(), "");

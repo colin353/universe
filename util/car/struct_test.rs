@@ -1,4 +1,4 @@
-use crate::repeated_field::RepeatedField;
+use crate::repeated_field::EncodedStruct;
 use crate::Serializable;
 
 struct MyMessageOwned {
@@ -8,7 +8,7 @@ struct MyMessageOwned {
 }
 
 enum MyMessage<'a> {
-    Encoded(RepeatedField<'a>),
+    Encoded(EncodedStruct<'a>),
     Decoded(MyMessageOwned),
 }
 

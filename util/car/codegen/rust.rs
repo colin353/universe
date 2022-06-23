@@ -8,47 +8,86 @@ const DONOTEDIT: &'static str = r#"/*
  */
 "#;
 
+const IMPORTS: &'static str = r#"
+use car::{EncodedStruct, RepeatedField};
+
+"#;
+
 pub fn generate<W: std::io::Write>(
     module: &parser::Module,
     w: &mut W,
 ) -> Result<(), std::io::Error> {
-    write!(w, "{}\n", DONOTEDIT);
+    write!(w, "{}", DONOTEDIT);
+    write!(w, "{}", IMPORTS);
 
     for message in &module.messages {
-        generate_module(&message, w)?;
+        generate_message(&message, w)?;
     }
 
     Ok(())
 }
 
-const MESSAGE_ENUM: &'static str = r#"enum {name}<'a> {
-    Encoded(RepeatedField<'a>),
-    Decoded({name}Owned<'a>),
-}
-"#;
+fn get_type_name(f: &parser::FieldDefinition) -> String {
+    let typ = match &f.field_type {
+        FieldType::Tu64 => "u64",
+        FieldType::Tu32 => "u32",
+        FieldType::Tu16 => "u16",
+        FieldType::Tu8 => "u8",
+        FieldType::Tbool => "bool",
+        FieldType::Tstring => "String",
+        FieldType::Tfloat => "f32",
+        FieldType::Tbytes => "Vec<u8>",
+        FieldType::Other(s) => s.as_str(),
+    };
 
-fn generate_module<W: std::io::Write>(
+    let typ = if let FieldType::Other(s) = &f.field_type {
+        format!("{}Owned", typ)
+    } else {
+        typ.to_owned()
+    };
+
+    if f.repeated {
+        format!("Vec<{}>", typ)
+    } else {
+        typ
+    }
+}
+
+fn get_return_type_name(f: &parser::FieldDefinition) -> String {
+    let typ = match &f.field_type {
+        FieldType::Tu64 => "u64",
+        FieldType::Tu32 => "u32",
+        FieldType::Tu16 => "u16",
+        FieldType::Tu8 => "u8",
+        FieldType::Tbool => "bool",
+        FieldType::Tstring => "&String",
+        FieldType::Tfloat => "f32",
+        FieldType::Tbytes => "&[u8]",
+        FieldType::Other(s) => s.as_str(),
+    };
+    if f.repeated {
+        format!("RepeatedField<'a, {}>", typ)
+    } else if let FieldType::Other(_) = &f.field_type {
+        format!("{}", typ)
+    } else {
+        typ.to_owned()
+    }
+}
+
+fn generate_message<W: std::io::Write>(
     msg: &parser::MessageDefinition,
     w: &mut W,
 ) -> Result<(), std::io::Error> {
-    write!(w, "struct {name}Owned {{\n", name = msg.name);
+    write!(
+        w,
+        r#"#[derive(Clone, Default)]
+struct {name}Owned {{
+"#,
+        name = msg.name
+    );
     for field in &msg.fields {
-        let typ = match &field.field_type {
-            FieldType::Tu64 => "u64",
-            FieldType::Tu32 => "u32",
-            FieldType::Tu16 => "u16",
-            FieldType::Tu8 => "u8",
-            FieldType::Tbool => "bool",
-            FieldType::Tstring => "string",
-            FieldType::Tfloat => "f32",
-            FieldType::Tbytes => "Vec<u8>",
-            FieldType::Other(s) => s.as_str(),
-        };
-        let typ = if field.repeated {
-            format!("Vec<{}>", typ)
-        } else {
-            typ.to_owned()
-        };
+        let typ = get_type_name(&field);
+
         write!(
             w,
             "    {name}: {typ},\n",
@@ -60,13 +99,143 @@ fn generate_module<W: std::io::Write>(
 
     write!(
         w,
-        r#"enum {name}<'a> {{
-    Encoded(RepeatedField<'a>),
-    Decoded({name}Owned<'a>),
+        r#"#[derive(Clone)]
+enum {name}<'a> {{
+    Encoded(EncodedStruct<'a>),
+    DecodedOwned({name}Owned),
+    DecodedReference(&'a {name}Owned),
+}}
+
+impl<'a> Default for {name}<'a> {{
+    fn default() -> Self {{
+        Self::DecodedOwned({name}Owned::default())
+    }}
 }}
 
 "#,
         name = msg.name
     );
+
+    write!(w, "impl<'a> {name}<'a> {{\n", name = msg.name);
+
+    // Implement new constructor
+    write!(
+        w,
+        r#"    pub fn new() -> Self {{
+        Self::DecodedOwned({name}Owned {{
+            ..Default::default()
+        }})
+    }}
+"#,
+        name = msg.name
+    );
+
+    // Implement to_owned, which converts to an owned type
+    write!(
+        w,
+        r#"    pub fn to_owned(&self) -> Self {{
+        match self {{
+            Self::DecodedOwned(t) => Self::DecodedOwned(t.clone()),
+            Self::DecodedReference(t) => Self::DecodedOwned((*t).clone()),
+            Self::Encoded(t) => {{
+                unimplemented!()
+            }}
+        }}
+    }}
+"#,
+    );
+
+    // Implement field getters
+    for (idx, field) in msg.fields.iter().enumerate() {
+        let owned_type = get_type_name(&field);
+        let mut typ = get_return_type_name(&field);
+
+        write!(
+            w,
+            r#"    pub fn get_{name}(&'a self) -> {field_type} {{
+        match self {{
+"#,
+            name = field.field_name,
+            field_type = typ
+        );
+
+        if field.repeated {
+            write!(
+                w,
+                r#"            Self::DecodedOwned(x) => RepeatedField::DecodedReference(x.{name}.as_slice()),
+            Self::DecodedReference(x) => RepeatedField::DecodedReference(x.{name}.as_slice()),
+"#,
+                name = field.field_name,
+            );
+
+            write!(
+                w,
+                r#"            Self::Encoded(x) => RepeatedField::Encoded(x.get({idx}).unwrap().unwrap()),
+        }}
+    }}
+"#,
+                idx = idx,
+            );
+        } else if let FieldType::Other(s) = &field.field_type {
+            write!(
+                w,
+                r#"            Self::DecodedOwned(x) => {field_type}::DecodedReference(&x.{name}),
+            Self::DecodedReference(x) => {field_type}::DecodedReference(&x.{name}),
+"#,
+                name = field.field_name,
+                field_type = typ,
+            );
+
+            write!(
+                w,
+                r#"            Self::Encoded(x) => {name}::Encoded(x.get({idx}).unwrap().unwrap()),
+        }}
+    }}
+"#,
+                name = s,
+                idx = idx,
+            );
+        } else {
+            write!(
+                w,
+                r#"            Self::DecodedOwned(x) => x.{name},
+            Self::DecodedReference(x) => x.{name},
+
+"#,
+                name = field.field_name,
+            );
+
+            write!(
+                w,
+                r#"            Self::Encoded(x) => x.get({idx}).unwrap().unwrap(),
+        }}
+    }}
+"#,
+                idx = idx,
+            );
+        }
+
+        // Implement setters
+        write!(
+            w,
+            r#"    pub fn set_{name}(&mut self, value: {field_type}) {{
+        match self {{
+            Self::Encoded(_) | Self::DecodedReference(_) => {{
+                *self = self.to_owned();
+                self.set_{name}(value);
+            }}
+            Self::DecodedOwned(v) => {{
+                v.{name} = value;
+            }}
+        }}
+    }}
+"#,
+            name = field.field_name,
+            field_type = owned_type
+        );
+    }
+
+    write!(w, "}}\n");
+
     Ok(())
 }
