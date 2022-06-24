@@ -1,8 +1,8 @@
 use crate::pack;
 use crate::varint;
-use crate::Serializable;
+use crate::{Deserialize, DeserializeOwned, Serialize};
 
-pub enum RepeatedField<'a, T: Serializable<'a>> {
+pub enum RepeatedField<'a, T> {
     Encoded(EncodedStruct<'a>),
     DecodedOwned(Vec<T>),
     DecodedReference(&'a [T]),
@@ -20,18 +20,6 @@ pub struct EncodedStructBuilder<W: std::io::Write> {
     writer: W,
 }
 
-impl<'a> Serializable<'a> for EncodedStruct<'a> {
-    fn encode<W: std::io::Write>(&self, writer: &mut W) -> Result<usize, std::io::Error> {
-        unimplemented!()
-    }
-    fn decode(bytes: &'a [u8]) -> Result<Self, std::io::Error> {
-        Ok(Self::new(bytes)?)
-    }
-    fn zero() -> Self {
-        Self::new(&[]).unwrap()
-    }
-}
-
 impl<W: std::io::Write> EncodedStructBuilder<W> {
     pub fn new(writer: W) -> Self {
         Self {
@@ -40,7 +28,7 @@ impl<W: std::io::Write> EncodedStructBuilder<W> {
         }
     }
 
-    pub fn push<'a, T: Serializable<'a>>(&mut self, value: T) -> Result<(), std::io::Error> {
+    pub fn push<'a, T: Serialize>(&mut self, value: &T) -> Result<(), std::io::Error> {
         let length = value.encode(&mut self.writer)?;
         self.sizes.push(length as u32);
         Ok(())
@@ -64,6 +52,21 @@ impl<W: std::io::Write> EncodedStructBuilder<W> {
         let footer_size = varint::encode_reverse_varint((pack_size + 1) as u32, &mut self.writer)?;
 
         Ok(data_size as usize + pack_size + footer_size)
+    }
+}
+
+impl<'a> Serialize for EncodedStruct<'a> {
+    fn encode<W: std::io::Write>(&self, writer: &mut W) -> Result<usize, std::io::Error> {
+        writer.write_all(&self.data)?;
+        let pack_size = self.fields_index.encode(writer)?;
+        let footer_size = varint::encode_reverse_varint((pack_size + 1) as u32, writer)?;
+        Ok(self.data.len() + pack_size + footer_size)
+    }
+}
+
+impl<'a> Deserialize<'a> for EncodedStruct<'a> {
+    fn decode(bytes: &'a [u8]) -> Result<Self, std::io::Error> {
+        Ok(Self::new(bytes)?)
     }
 }
 
@@ -107,7 +110,27 @@ impl<'a> EncodedStruct<'a> {
         Some(EncodedStruct::new(&self.data[start..end]))
     }
 
-    pub fn get<T: Serializable<'a>>(&'a self, idx: usize) -> Option<Result<T, std::io::Error>> {
+    pub fn get_owned<T: DeserializeOwned>(&self, idx: usize) -> Option<Result<T, std::io::Error>> {
+        if self.empty {
+            return None;
+        }
+
+        let start = if idx == 0 {
+            0
+        } else {
+            self.fields_index.get(idx - 1)? as usize
+        };
+
+        let end = if let Some(end) = self.fields_index.get(idx) {
+            end as usize
+        } else {
+            self.data.len()
+        };
+
+        Some(T::decode_owned(&self.data[start..end]))
+    }
+
+    pub fn get<T: Deserialize<'a>>(&'a self, idx: usize) -> Option<Result<T, std::io::Error>> {
         if self.empty {
             return None;
         }
@@ -137,6 +160,22 @@ impl<'a> EncodedStruct<'a> {
 
     pub fn is_empty(&self) -> bool {
         self.empty
+    }
+}
+
+impl<T: Serialize> Serialize for Vec<T> {
+    fn encode<W: std::io::Write>(&self, writer: &mut W) -> Result<usize, std::io::Error> {
+        let mut builder = EncodedStructBuilder::new(writer);
+        for element in self {
+            builder.push(element)?;
+        }
+        builder.finish()
+    }
+}
+
+impl<T: DeserializeOwned> DeserializeOwned for Vec<T> {
+    fn decode_owned(bytes: &[u8]) -> Result<Self, std::io::Error> {
+        unimplemented!()
     }
 }
 

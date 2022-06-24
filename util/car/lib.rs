@@ -6,5 +6,5 @@ mod varint;
 #[cfg(test)]
 mod struct_test;
 
-pub use repeated_field::{EncodedStruct, RepeatedField};
-pub use serializable::Serializable;
+pub use repeated_field::{EncodedStruct, EncodedStructBuilder, RepeatedField};
+pub use serializable::{Deserialize, DeserializeOwned, Serialize};

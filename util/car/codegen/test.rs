@@ -5,11 +5,16 @@
  *
  */
 
-use car::{EncodedStruct, RepeatedField};
+// TODO: remove this
+mod test_test;
+
+
+use car::{EncodedStruct, EncodedStructBuilder, RepeatedField, Serialize, Deserialize, DeserializeOwned};
 
 #[derive(Clone, Default)]
 struct ZootOwned {
-    size: u32,
+    toot: TootOwned,
+    size: Vec<u64>,
 }
 #[derive(Clone)]
 enum Zoot<'a> {
@@ -24,11 +29,28 @@ impl<'a> Default for Zoot<'a> {
     }
 }
 
+impl Serialize for ZootOwned {
+    fn encode<W: std::io::Write>(&self, writer: &mut W) -> Result<usize, std::io::Error> {
+        let mut builder = EncodedStructBuilder::new(writer);
+    builder.push(&self.toot)?;
+    builder.push(&self.size)?;
+    builder.finish()
+    }
+}
+
+impl DeserializeOwned for ZootOwned {
+    fn decode_owned(bytes: &[u8]) -> Result<Self, std::io::Error> {
+        unimplemented!()
+    }
+}
 impl<'a> Zoot<'a> {
     pub fn new() -> Self {
         Self::DecodedOwned(ZootOwned {
             ..Default::default()
         })
+    }
+    pub fn from_bytes(bytes: &'a [u8]) -> Result<Self, std::io::Error> {
+        Ok(Self::Encoded(EncodedStruct::new(bytes)?))
     }
     pub fn to_owned(&self) -> Self {
         match self {
@@ -39,15 +61,49 @@ impl<'a> Zoot<'a> {
             }
         }
     }
-    pub fn get_size(&'a self) -> u32 {
-        match self {
-            Self::DecodedOwned(x) => x.size,
-            Self::DecodedReference(x) => x.size,
 
-            Self::Encoded(x) => x.get(0).unwrap().unwrap(),
+    pub fn clone_owned(&self) -> ZootOwned {
+        match self {
+            Self::DecodedOwned(t) => t.clone(),
+            Self::DecodedReference(t) => (*t).clone(),
+            Self::Encoded(t) => {
+                unimplemented!()
+            }
         }
     }
-    pub fn set_size(&mut self, value: u32) {
+    pub fn encode<W: std::io::Write>(&self, writer: &mut W) -> Result<usize, std::io::Error> {
+        match self {
+            Self::DecodedOwned(t) => t.encode(writer),
+            Self::DecodedReference(t) => t.encode(writer),
+            Self::Encoded(t) => t.encode(writer),
+        }
+    }
+    pub fn get_toot(&'a self) -> Toot {
+        match self {
+            Self::DecodedOwned(x) => Toot::DecodedReference(&x.toot),
+            Self::DecodedReference(x) => Toot::DecodedReference(&x.toot),
+            Self::Encoded(x) => Toot::Encoded(x.get(0).unwrap().unwrap()),
+        }
+    }
+    pub fn set_toot(&mut self, value: Toot) {
+        match self {
+            Self::Encoded(_) | Self::DecodedReference(_) => {
+                *self = self.to_owned();
+                self.set_toot(value);
+            }
+            Self::DecodedOwned(v) => {
+                v.toot = value.clone_owned();
+            }
+        }
+    }
+    pub fn get_size(&'a self) -> RepeatedField<'a, u64> {
+        match self {
+            Self::DecodedOwned(x) => RepeatedField::DecodedReference(x.size.as_slice()),
+            Self::DecodedReference(x) => RepeatedField::DecodedReference(x.size.as_slice()),
+            Self::Encoded(x) => RepeatedField::Encoded(x.get(1).unwrap().unwrap()),
+        }
+    }
+    pub fn set_size(&mut self, value: Vec<u64>) {
         match self {
             Self::Encoded(_) | Self::DecodedReference(_) => {
                 *self = self.to_owned();
@@ -61,8 +117,7 @@ impl<'a> Zoot<'a> {
 }
 #[derive(Clone, Default)]
 struct TootOwned {
-    toot: ZootOwned,
-    id: Vec<u64>,
+    id: u32,
 }
 #[derive(Clone)]
 enum Toot<'a> {
@@ -77,11 +132,27 @@ impl<'a> Default for Toot<'a> {
     }
 }
 
+impl Serialize for TootOwned {
+    fn encode<W: std::io::Write>(&self, writer: &mut W) -> Result<usize, std::io::Error> {
+        let mut builder = EncodedStructBuilder::new(writer);
+    builder.push(&self.id)?;
+    builder.finish()
+    }
+}
+
+impl DeserializeOwned for TootOwned {
+    fn decode_owned(bytes: &[u8]) -> Result<Self, std::io::Error> {
+        unimplemented!()
+    }
+}
 impl<'a> Toot<'a> {
     pub fn new() -> Self {
         Self::DecodedOwned(TootOwned {
             ..Default::default()
         })
+    }
+    pub fn from_bytes(bytes: &'a [u8]) -> Result<Self, std::io::Error> {
+        Ok(Self::Encoded(EncodedStruct::new(bytes)?))
     }
     pub fn to_owned(&self) -> Self {
         match self {
@@ -92,32 +163,32 @@ impl<'a> Toot<'a> {
             }
         }
     }
-    pub fn get_toot(&'a self) -> Zoot {
+
+    pub fn clone_owned(&self) -> TootOwned {
         match self {
-            Self::DecodedOwned(x) => Zoot::DecodedReference(&x.toot),
-            Self::DecodedReference(x) => Zoot::DecodedReference(&x.toot),
-            Self::Encoded(x) => Zoot::Encoded(x.get(0).unwrap().unwrap()),
-        }
-    }
-    pub fn set_toot(&mut self, value: ZootOwned) {
-        match self {
-            Self::Encoded(_) | Self::DecodedReference(_) => {
-                *self = self.to_owned();
-                self.set_toot(value);
-            }
-            Self::DecodedOwned(v) => {
-                v.toot = value;
+            Self::DecodedOwned(t) => t.clone(),
+            Self::DecodedReference(t) => (*t).clone(),
+            Self::Encoded(t) => {
+                unimplemented!()
             }
         }
     }
-    pub fn get_id(&'a self) -> RepeatedField<'a, u64> {
+    pub fn encode<W: std::io::Write>(&self, writer: &mut W) -> Result<usize, std::io::Error> {
         match self {
-            Self::DecodedOwned(x) => RepeatedField::DecodedReference(x.id.as_slice()),
-            Self::DecodedReference(x) => RepeatedField::DecodedReference(x.id.as_slice()),
-            Self::Encoded(x) => RepeatedField::Encoded(x.get(1).unwrap().unwrap()),
+            Self::DecodedOwned(t) => t.encode(writer),
+            Self::DecodedReference(t) => t.encode(writer),
+            Self::Encoded(t) => t.encode(writer),
         }
     }
-    pub fn set_id(&mut self, value: Vec<u64>) {
+    pub fn get_id(&'a self) -> u32 {
+        match self {
+            Self::DecodedOwned(x) => x.id,
+            Self::DecodedReference(x) => x.id,
+
+            Self::Encoded(x) => x.get(0).unwrap().unwrap(),
+        }
+    }
+    pub fn set_id(&mut self, value: u32) {
         match self {
             Self::Encoded(_) | Self::DecodedReference(_) => {
                 *self = self.to_owned();

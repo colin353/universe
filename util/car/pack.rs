@@ -1,4 +1,5 @@
 use crate::varint;
+use crate::{Deserialize, Serialize};
 
 #[derive(Clone)]
 pub struct Pack<'a> {
@@ -88,6 +89,29 @@ impl<'a> Pack<'a> {
 
     pub fn is_empty(&self) -> bool {
         self.data.is_empty()
+    }
+}
+
+impl<'a> Serialize for Pack<'a> {
+    fn encode<W: std::io::Write>(&self, writer: &mut W) -> Result<usize, std::io::Error> {
+        writer.write_all(&self.data)?;
+        writer.write_all(&unsafe {
+            std::slice::from_raw_parts(self.offsets.as_ptr() as *const u8, self.offsets.len() * 4)
+        })?;
+        writer.write_all(&unsafe {
+            std::slice::from_raw_parts(
+                self.offsets_index.as_ptr() as *const u8,
+                self.offsets.len() * 4,
+            )
+        })?;
+        let footer_size = varint::encode_reverse_varint(self.offsets.len() as u32, writer)?;
+        Ok(self.data.len() + self.offsets.len() * 4 + self.offsets_index.len() * 4 + footer_size)
+    }
+}
+
+impl<'a> Deserialize<'a> for Pack<'a> {
+    fn decode(bytes: &'a [u8]) -> Result<Pack<'a>, std::io::Error> {
+        Ok(Self::new(bytes)?)
     }
 }
 

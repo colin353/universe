@@ -1,12 +1,24 @@
 use crate::varint;
 
-pub trait Serializable<'a>: Sized {
+pub trait Serialize: Sized {
     fn encode<W: std::io::Write>(&self, writer: &mut W) -> Result<usize, std::io::Error>;
-    fn decode(bytes: &'a [u8]) -> Result<Self, std::io::Error>;
-    fn zero() -> Self;
 }
 
-impl<'a> Serializable<'a> for u8 {
+pub trait Deserialize<'a>: Sized {
+    fn decode(bytes: &'a [u8]) -> Result<Self, std::io::Error>;
+}
+
+pub trait DeserializeOwned: Sized {
+    fn decode_owned(bytes: &[u8]) -> Result<Self, std::io::Error>;
+}
+
+impl<'a, T: DeserializeOwned> Deserialize<'a> for T {
+    fn decode(bytes: &'a [u8]) -> Result<Self, std::io::Error> {
+        T::decode_owned(bytes)
+    }
+}
+
+impl Serialize for u8 {
     fn encode<W: std::io::Write>(&self, writer: &mut W) -> Result<usize, std::io::Error> {
         if *self == 0 {
             return Ok(0);
@@ -14,78 +26,68 @@ impl<'a> Serializable<'a> for u8 {
         writer.write_all(&[*self])?;
         Ok(1)
     }
+}
 
-    fn decode(bytes: &[u8]) -> Result<Self, std::io::Error> {
+impl DeserializeOwned for u8 {
+    fn decode_owned(bytes: &[u8]) -> Result<Self, std::io::Error> {
         if bytes.len() == 0 {
             return Ok(0);
         }
         Ok(bytes[0])
     }
-
-    fn zero() -> u8 {
-        0
-    }
 }
 
-impl<'a> Serializable<'a> for u16 {
+impl Serialize for u16 {
     fn encode<W: std::io::Write>(&self, writer: &mut W) -> Result<usize, std::io::Error> {
         varint::encode_varint(*self as u64, writer)
     }
+}
 
-    fn decode(bytes: &[u8]) -> Result<Self, std::io::Error> {
+impl DeserializeOwned for u16 {
+    fn decode_owned(bytes: &[u8]) -> Result<Self, std::io::Error> {
         let (x, _) = varint::decode_varint(bytes);
         Ok(x as u16)
     }
-
-    fn zero() -> u16 {
-        0
-    }
 }
 
-impl<'a> Serializable<'a> for u32 {
+impl Serialize for u32 {
     fn encode<W: std::io::Write>(&self, writer: &mut W) -> Result<usize, std::io::Error> {
         varint::encode_varint(*self as u64, writer)
     }
+}
 
-    fn decode(bytes: &[u8]) -> Result<Self, std::io::Error> {
+impl DeserializeOwned for u32 {
+    fn decode_owned(bytes: &[u8]) -> Result<Self, std::io::Error> {
         let (x, _) = varint::decode_varint(bytes);
         Ok(x as u32)
     }
-
-    fn zero() -> u32 {
-        0
-    }
 }
 
-impl<'a> Serializable<'a> for u64 {
+impl Serialize for u64 {
     fn encode<W: std::io::Write>(&self, writer: &mut W) -> Result<usize, std::io::Error> {
         varint::encode_varint(*self, writer)
     }
+}
 
-    fn decode(bytes: &[u8]) -> Result<Self, std::io::Error> {
+impl DeserializeOwned for u64 {
+    fn decode_owned(bytes: &[u8]) -> Result<Self, std::io::Error> {
         let (x, _) = varint::decode_varint(bytes);
         Ok(x as u64)
     }
-
-    fn zero() -> u64 {
-        0
-    }
 }
 
-impl<'a> Serializable<'a> for &'a str {
+impl<'a> Serialize for &'a str {
     fn encode<W: std::io::Write>(&self, writer: &mut W) -> Result<usize, std::io::Error> {
         let buf = self.as_bytes();
         writer.write_all(buf)?;
         Ok(buf.len())
     }
+}
 
+impl<'a> Deserialize<'a> for &'a str {
     fn decode(bytes: &'a [u8]) -> Result<Self, std::io::Error> {
         std::str::from_utf8(bytes)
             .map_err(|_| std::io::Error::from(std::io::ErrorKind::InvalidData))
-    }
-
-    fn zero() -> &'a str {
-        ""
     }
 }
 

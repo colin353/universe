@@ -1,0 +1,8 @@
+message Zoot {
+   Toot toot = 1;
+   repeated uint64 size = 2;
+}
+
+message Toot {
+   uint32 id = 1;
+}
