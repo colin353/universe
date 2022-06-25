@@ -39,11 +39,9 @@ impl<W: std::io::Write> EncodedStructBuilder<W> {
             return Ok(0);
         }
 
-        let mut data_size = 0;
         let mut pack = pack::PackBuilder::new(&mut self.writer);
-        for size in &self.sizes[0..self.sizes.len() - 1] {
+        for size in &self.sizes[0..self.sizes.len()] {
             pack.push(*size)?;
-            data_size += *size;
         }
 
         let pack_size = pack.finish()?;
@@ -51,6 +49,7 @@ impl<W: std::io::Write> EncodedStructBuilder<W> {
         // Write the footer, which is the number of encoded elements
         let footer_size = varint::encode_reverse_varint((pack_size + 1) as u32, &mut self.writer)?;
 
+        let data_size: u32 = self.sizes.iter().sum();
         Ok(data_size as usize + pack_size + footer_size)
     }
 }
@@ -82,6 +81,12 @@ impl<'a> EncodedStruct<'a> {
         }
 
         let pack_size = footer - 1;
+        println!(
+            "data.len(): {}, pack_size: {}, footer_size: {}",
+            data.len(),
+            pack_size,
+            footer_size
+        );
         let data_length = data.len() - pack_size - footer_size;
         Ok(Self {
             empty: false,
@@ -147,6 +152,8 @@ impl<'a> EncodedStruct<'a> {
             self.data.len()
         };
 
+        println!("get: {:?}", &self.data[start..end]);
+
         Some(T::decode(&self.data[start..end]))
     }
 
@@ -175,7 +182,13 @@ impl<T: Serialize> Serialize for Vec<T> {
 
 impl<T: DeserializeOwned> DeserializeOwned for Vec<T> {
     fn decode_owned(bytes: &[u8]) -> Result<Self, std::io::Error> {
-        unimplemented!()
+        let e = EncodedStruct::new(bytes)?;
+        let mut out = Vec::new();
+        // TODO: use iterators instead!
+        for i in 0..e.len() {
+            out.push(e.get_owned(i).unwrap()?);
+        }
+        Ok(out)
     }
 }
 

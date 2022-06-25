@@ -76,6 +76,21 @@ impl DeserializeOwned for u64 {
     }
 }
 
+impl<'a> Serialize for String {
+    fn encode<W: std::io::Write>(&self, writer: &mut W) -> Result<usize, std::io::Error> {
+        let buf = self.as_bytes();
+        writer.write_all(buf)?;
+        Ok(buf.len())
+    }
+}
+
+impl DeserializeOwned for String {
+    fn decode_owned(bytes: &[u8]) -> Result<Self, std::io::Error> {
+        String::from_utf8(bytes.to_owned())
+            .map_err(|_| std::io::Error::from(std::io::ErrorKind::InvalidData))
+    }
+}
+
 impl<'a> Serialize for &'a str {
     fn encode<W: std::io::Write>(&self, writer: &mut W) -> Result<usize, std::io::Error> {
         let buf = self.as_bytes();

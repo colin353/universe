@@ -8,13 +8,15 @@
 // TODO: remove this
 mod test_test;
 
-
-use car::{EncodedStruct, EncodedStructBuilder, RepeatedField, Serialize, Deserialize, DeserializeOwned};
+use car::{
+    Deserialize, DeserializeOwned, EncodedStruct, EncodedStructBuilder, RepeatedField, Serialize,
+};
 
 #[derive(Clone, Default)]
 struct ZootOwned {
     toot: TootOwned,
     size: Vec<u64>,
+    name: String,
 }
 #[derive(Clone)]
 enum Zoot<'a> {
@@ -32,15 +34,21 @@ impl<'a> Default for Zoot<'a> {
 impl Serialize for ZootOwned {
     fn encode<W: std::io::Write>(&self, writer: &mut W) -> Result<usize, std::io::Error> {
         let mut builder = EncodedStructBuilder::new(writer);
-    builder.push(&self.toot)?;
-    builder.push(&self.size)?;
-    builder.finish()
+        builder.push(&self.toot)?;
+        builder.push(&self.size)?;
+        builder.push(&self.name)?;
+        builder.finish()
     }
 }
 
 impl DeserializeOwned for ZootOwned {
     fn decode_owned(bytes: &[u8]) -> Result<Self, std::io::Error> {
-        unimplemented!()
+        let s = EncodedStruct::new(bytes)?;
+        Ok(Self {
+            toot: s.get_owned(0).unwrap()?,
+            size: s.get_owned(1).unwrap()?,
+            name: s.get_owned(2).unwrap()?,
+        })
     }
 }
 impl<'a> Zoot<'a> {
@@ -52,23 +60,23 @@ impl<'a> Zoot<'a> {
     pub fn from_bytes(bytes: &'a [u8]) -> Result<Self, std::io::Error> {
         Ok(Self::Encoded(EncodedStruct::new(bytes)?))
     }
-    pub fn to_owned(&self) -> Self {
+    pub fn to_owned(&self) -> Result<Self, std::io::Error> {
         match self {
-            Self::DecodedOwned(t) => Self::DecodedOwned(t.clone()),
-            Self::DecodedReference(t) => Self::DecodedOwned((*t).clone()),
-            Self::Encoded(t) => {
-                unimplemented!()
-            }
+            Self::DecodedOwned(t) => Ok(Self::DecodedOwned(t.clone())),
+            Self::DecodedReference(t) => Ok(Self::DecodedOwned((*t).clone())),
+            Self::Encoded(t) => Ok(Self::DecodedOwned(self.clone_owned()?)),
         }
     }
 
-    pub fn clone_owned(&self) -> ZootOwned {
+    pub fn clone_owned(&self) -> Result<ZootOwned, std::io::Error> {
         match self {
-            Self::DecodedOwned(t) => t.clone(),
-            Self::DecodedReference(t) => (*t).clone(),
-            Self::Encoded(t) => {
-                unimplemented!()
-            }
+            Self::DecodedOwned(t) => Ok(t.clone()),
+            Self::DecodedReference(t) => Ok((*t).clone()),
+            Self::Encoded(t) => Ok(ZootOwned {
+                toot: t.get_owned(0).unwrap()?,
+                size: t.get_owned(1).unwrap()?,
+                name: t.get_owned(2).unwrap()?,
+            }),
         }
     }
     pub fn encode<W: std::io::Write>(&self, writer: &mut W) -> Result<usize, std::io::Error> {
@@ -85,16 +93,17 @@ impl<'a> Zoot<'a> {
             Self::Encoded(x) => Toot::Encoded(x.get(0).unwrap().unwrap()),
         }
     }
-    pub fn set_toot(&mut self, value: Toot) {
+    pub fn set_toot(&mut self, value: Toot) -> Result<(), std::io::Error> {
         match self {
             Self::Encoded(_) | Self::DecodedReference(_) => {
-                *self = self.to_owned();
+                *self = self.to_owned()?;
                 self.set_toot(value);
             }
             Self::DecodedOwned(v) => {
-                v.toot = value.clone_owned();
+                v.toot = value.clone_owned()?;
             }
         }
+        Ok(())
     }
     pub fn get_size(&'a self) -> RepeatedField<'a, u64> {
         match self {
@@ -103,16 +112,37 @@ impl<'a> Zoot<'a> {
             Self::Encoded(x) => RepeatedField::Encoded(x.get(1).unwrap().unwrap()),
         }
     }
-    pub fn set_size(&mut self, value: Vec<u64>) {
+    pub fn set_size(&mut self, value: Vec<u64>) -> Result<(), std::io::Error> {
         match self {
             Self::Encoded(_) | Self::DecodedReference(_) => {
-                *self = self.to_owned();
+                *self = self.to_owned()?;
                 self.set_size(value);
             }
             Self::DecodedOwned(v) => {
                 v.size = value;
             }
         }
+        Ok(())
+    }
+    pub fn get_name(&'a self) -> &str {
+        match self {
+            Self::DecodedOwned(x) => x.name.as_str(),
+            Self::DecodedReference(x) => x.name.as_str(),
+
+            Self::Encoded(x) => x.get(2).unwrap().unwrap(),
+        }
+    }
+    pub fn set_name(&mut self, value: String) -> Result<(), std::io::Error> {
+        match self {
+            Self::Encoded(_) | Self::DecodedReference(_) => {
+                *self = self.to_owned()?;
+                self.set_name(value);
+            }
+            Self::DecodedOwned(v) => {
+                v.name = value;
+            }
+        }
+        Ok(())
     }
 }
 #[derive(Clone, Default)]
@@ -135,14 +165,17 @@ impl<'a> Default for Toot<'a> {
 impl Serialize for TootOwned {
     fn encode<W: std::io::Write>(&self, writer: &mut W) -> Result<usize, std::io::Error> {
         let mut builder = EncodedStructBuilder::new(writer);
-    builder.push(&self.id)?;
-    builder.finish()
+        builder.push(&self.id)?;
+        builder.finish()
     }
 }
 
 impl DeserializeOwned for TootOwned {
     fn decode_owned(bytes: &[u8]) -> Result<Self, std::io::Error> {
-        unimplemented!()
+        let s = EncodedStruct::new(bytes)?;
+        Ok(Self {
+            id: s.get_owned(0).unwrap()?,
+        })
     }
 }
 impl<'a> Toot<'a> {
@@ -154,23 +187,21 @@ impl<'a> Toot<'a> {
     pub fn from_bytes(bytes: &'a [u8]) -> Result<Self, std::io::Error> {
         Ok(Self::Encoded(EncodedStruct::new(bytes)?))
     }
-    pub fn to_owned(&self) -> Self {
+    pub fn to_owned(&self) -> Result<Self, std::io::Error> {
         match self {
-            Self::DecodedOwned(t) => Self::DecodedOwned(t.clone()),
-            Self::DecodedReference(t) => Self::DecodedOwned((*t).clone()),
-            Self::Encoded(t) => {
-                unimplemented!()
-            }
+            Self::DecodedOwned(t) => Ok(Self::DecodedOwned(t.clone())),
+            Self::DecodedReference(t) => Ok(Self::DecodedOwned((*t).clone())),
+            Self::Encoded(t) => Ok(Self::DecodedOwned(self.clone_owned()?)),
         }
     }
 
-    pub fn clone_owned(&self) -> TootOwned {
+    pub fn clone_owned(&self) -> Result<TootOwned, std::io::Error> {
         match self {
-            Self::DecodedOwned(t) => t.clone(),
-            Self::DecodedReference(t) => (*t).clone(),
-            Self::Encoded(t) => {
-                unimplemented!()
-            }
+            Self::DecodedOwned(t) => Ok(t.clone()),
+            Self::DecodedReference(t) => Ok((*t).clone()),
+            Self::Encoded(t) => Ok(TootOwned {
+                id: t.get_owned(0).unwrap()?,
+            }),
         }
     }
     pub fn encode<W: std::io::Write>(&self, writer: &mut W) -> Result<usize, std::io::Error> {
@@ -188,15 +219,16 @@ impl<'a> Toot<'a> {
             Self::Encoded(x) => x.get(0).unwrap().unwrap(),
         }
     }
-    pub fn set_id(&mut self, value: u32) {
+    pub fn set_id(&mut self, value: u32) -> Result<(), std::io::Error> {
         match self {
             Self::Encoded(_) | Self::DecodedReference(_) => {
-                *self = self.to_owned();
+                *self = self.to_owned()?;
                 self.set_id(value);
             }
             Self::DecodedOwned(v) => {
                 v.id = value;
             }
         }
+        Ok(())
     }
 }

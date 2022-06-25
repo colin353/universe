@@ -9,11 +9,12 @@ const DONOTEDIT: &'static str = r#"/*
 
 // TODO: remove this
 mod test_test;
-
 "#;
 
 const IMPORTS: &'static str = r#"
-use car::{EncodedStruct, EncodedStructBuilder, RepeatedField, Serialize, Deserialize, DeserializeOwned};
+use car::{
+    Deserialize, DeserializeOwned, EncodedStruct, EncodedStructBuilder, RepeatedField, Serialize,
+};
 
 "#;
 
@@ -64,7 +65,7 @@ fn get_return_type_name(f: &parser::FieldDefinition) -> String {
         FieldType::Tu16 => "u16",
         FieldType::Tu8 => "u8",
         FieldType::Tbool => "bool",
-        FieldType::Tstring => "&String",
+        FieldType::Tstring => "&str",
         FieldType::Tfloat => "f32",
         FieldType::Tbytes => "&[u8]",
         FieldType::Other(s) => s.as_str(),
@@ -133,14 +134,14 @@ impl<'a> Default for {name}<'a> {{
     for (idx, field) in msg.fields.iter().enumerate() {
         write!(
             w,
-            "    builder.push(&self.{field_name})?;\n",
+            "        builder.push(&self.{field_name})?;\n",
             field_name = field.field_name
         );
     }
 
     write!(
         w,
-        "    builder.finish()
+        "        builder.finish()
     }}
 }}
 
@@ -152,7 +153,23 @@ impl DeserializeOwned for {name}Owned {{
     write!(
         w,
         r#"    fn decode_owned(bytes: &[u8]) -> Result<Self, std::io::Error> {{
-        unimplemented!()
+        let s = EncodedStruct::new(bytes)?;
+        Ok(Self {{
+"#,
+    );
+
+    for (idx, field) in msg.fields.iter().enumerate() {
+        write!(
+            w,
+            "            {field_name}: s.get_owned({idx}).unwrap()?,\n",
+            field_name = field.field_name,
+            idx = idx,
+        );
+    }
+
+    write!(
+        w,
+        r#"        }})
     }}
 }}
 "#,
@@ -185,27 +202,38 @@ impl DeserializeOwned for {name}Owned {{
     // Implement to_owned, which converts to an owned type
     write!(
         w,
-        r#"    pub fn to_owned(&self) -> Self {{
+        r#"    pub fn to_owned(&self) -> Result<Self, std::io::Error> {{
         match self {{
-            Self::DecodedOwned(t) => Self::DecodedOwned(t.clone()),
-            Self::DecodedReference(t) => Self::DecodedOwned((*t).clone()),
-            Self::Encoded(t) => {{
-                unimplemented!()
-            }}
+            Self::DecodedOwned(t) => Ok(Self::DecodedOwned(t.clone())),
+            Self::DecodedReference(t) => Ok(Self::DecodedOwned((*t).clone())),
+            Self::Encoded(t) => Ok(Self::DecodedOwned(self.clone_owned()?)),
         }}
     }}
 
-    pub fn clone_owned(&self) -> {name}Owned {{
+    pub fn clone_owned(&self) -> Result<{name}Owned, std::io::Error> {{
         match self {{
-            Self::DecodedOwned(t) => t.clone(),
-            Self::DecodedReference(t) => (*t).clone(),
-            Self::Encoded(t) => {{
-                unimplemented!()
-            }}
+            Self::DecodedOwned(t) => Ok(t.clone()),
+            Self::DecodedReference(t) => Ok((*t).clone()),
+            Self::Encoded(t) => Ok({name}Owned {{
+"#,
+        name = msg.name,
+    );
+
+    for (idx, field) in msg.fields.iter().enumerate() {
+        write!(
+            w,
+            "                {field_name}: t.get_owned({idx}).unwrap()?,\n",
+            field_name = field.field_name,
+            idx = idx,
+        );
+    }
+
+    write!(
+        w,
+        r#"            }}),
         }}
     }}
 "#,
-        name = msg.name,
     );
 
     write!(
@@ -270,6 +298,24 @@ impl DeserializeOwned for {name}Owned {{
                 name = s,
                 idx = idx,
             );
+        } else if field.field_type == FieldType::Tstring {
+            write!(
+                w,
+                r#"            Self::DecodedOwned(x) => x.{name}.as_str(),
+            Self::DecodedReference(x) => x.{name}.as_str(),
+
+"#,
+                name = field.field_name,
+            );
+
+            write!(
+                w,
+                r#"            Self::Encoded(x) => x.get({idx}).unwrap().unwrap(),
+        }}
+    }}
+"#,
+                idx = idx,
+            );
         } else {
             write!(
                 w,
@@ -294,16 +340,17 @@ impl DeserializeOwned for {name}Owned {{
         if let FieldType::Other(s) = &field.field_type {
             write!(
                 w,
-                r#"    pub fn set_{name}(&mut self, value: {field_type}) {{
+                r#"    pub fn set_{name}(&mut self, value: {field_type}) -> Result<(), std::io::Error> {{
         match self {{
             Self::Encoded(_) | Self::DecodedReference(_) => {{
-                *self = self.to_owned();
+                *self = self.to_owned()?;
                 self.set_{name}(value);
             }}
             Self::DecodedOwned(v) => {{
-                v.{name} = value.clone_owned();
+                v.{name} = value.clone_owned()?;
             }}
         }}
+        Ok(())
     }}
 "#,
                 name = field.field_name,
@@ -312,16 +359,17 @@ impl DeserializeOwned for {name}Owned {{
         } else {
             write!(
                 w,
-                r#"    pub fn set_{name}(&mut self, value: {field_type}) {{
+                r#"    pub fn set_{name}(&mut self, value: {field_type}) -> Result<(), std::io::Error> {{
         match self {{
             Self::Encoded(_) | Self::DecodedReference(_) => {{
-                *self = self.to_owned();
+                *self = self.to_owned()?;
                 self.set_{name}(value);
             }}
             Self::DecodedOwned(v) => {{
                 v.{name} = value;
             }}
         }}
+        Ok(())
     }}
 "#,
                 name = field.field_name,

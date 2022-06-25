@@ -1,6 +1,7 @@
 message Zoot {
    Toot toot = 1;
    repeated uint64 size = 2;
+   string name = 3;
 }
 
 message Toot {
