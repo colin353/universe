@@ -10,7 +10,6 @@ rust_library(
         "varint.rs",
         "pack.rs",
         "repeated_field.rs",
-        "struct_test.rs",
     ],
 )
 

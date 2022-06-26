@@ -1,7 +1,7 @@
 use crate::varint;
 use crate::{Deserialize, Serialize};
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Pack<'a> {
     data: &'a [u8],
     offsets: &'a [u32],
@@ -89,6 +89,104 @@ impl<'a> Pack<'a> {
 
     pub fn is_empty(&self) -> bool {
         self.data.is_empty()
+    }
+
+    pub fn iter(&'a self) -> PackIterator<'a> {
+        PackIterator {
+            pack: self,
+            idx: 0,
+            offset_idx: 0,
+            offset: 0,
+        }
+    }
+
+    pub fn iter_from(&'a self, index: usize) -> PackIterator<'a> {
+        if index >= self.data.len() {
+            return PackIterator {
+                pack: self,
+                idx: usize::MAX,
+                offset_idx: 0,
+                offset: 0,
+            };
+        }
+
+        if index == 0 {
+            return self.iter();
+        }
+
+        let idx = index - 1;
+
+        let block_start = idx & 0xFFFFFFF0;
+        let block_end = std::cmp::min(self.data.len(), block_start + 16);
+        let block: u128 = read_u128(&self.data[block_start..block_end]);
+
+        // Figure out the offset at the start of this block
+        let block_offset_idx = idx / 16;
+        let block_offset_position = if block_offset_idx > 0 {
+            self.offsets_index[block_offset_idx - 1]
+        } else {
+            0
+        };
+
+        // Count any additional offsets marked during this block
+        let right_shift = (15 - (idx % 16)) * 8;
+        let mask = 0x80808080808080808080808080808080 >> right_shift;
+
+        let extra_offset_count = (block & mask).count_ones();
+
+        // Find the offset
+        let offset_position = (block_offset_position + extra_offset_count) as usize;
+        let offset = if offset_position > 0 {
+            self.offsets[offset_position - 1]
+        } else {
+            0
+        };
+
+        // Add up all the deltas between the last offset and this one
+        let last_overflow = if block & mask > 0 {
+            block_start + 16 - ((block & mask).leading_zeros() / 8) as usize
+        } else {
+            block_start
+        };
+
+        let delta: u32 = self.data[last_overflow..idx + 1]
+            .iter()
+            .map(|x| *x as u32)
+            .sum();
+
+        PackIterator {
+            pack: self,
+            idx: index,
+            offset_idx: offset_position,
+            offset: offset + delta,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct PackIterator<'a> {
+    pack: &'a Pack<'a>,
+    idx: usize,
+    offset_idx: usize,
+    offset: u32,
+}
+
+impl<'a> Iterator for PackIterator<'a> {
+    type Item = u32;
+    fn next(&mut self) -> Option<u32> {
+        if self.idx >= self.pack.data.len() {
+            return None;
+        }
+        let value = self.pack.data[self.idx];
+        self.idx += 1;
+        if value & 128 == 0 {
+            self.offset += value as u32;
+            return Some(self.offset);
+        } else {
+            self.offset = self.pack.offsets[self.offset_idx];
+            self.offset_idx += 1;
+            return Some(self.offset);
+        }
     }
 }
 
@@ -312,5 +410,52 @@ mod tests {
         assert_eq!(p.get(10), Some(55000));
         assert_eq!(p.get(15), Some(120000));
         assert_eq!(p.get(25), None);
+    }
+
+    #[test]
+    fn test_iteration() {
+        let mut buf = Vec::new();
+        let mut b = PackBuilder::new(&mut buf);
+        for i in 0..20 {
+            b.push(1).unwrap();
+        }
+        b.finish().unwrap();
+        let p = Pack::new(&buf).unwrap();
+        for (idx, item) in p.iter().enumerate() {
+            assert_eq!(1 + idx as u32, item);
+        }
+        assert_eq!(p.iter().count(), 20);
+
+        // Jump to the 10th item
+        assert_eq!(p.get(15), Some(16));
+        let mut iter = p.iter_from(15);
+        assert_eq!(iter.next(), Some(16));
+        assert_eq!(iter.next(), Some(17));
+        assert_eq!(iter.next(), Some(18));
+        assert_eq!(iter.next(), Some(19));
+        assert_eq!(iter.next(), Some(20));
+        assert_eq!(iter.next(), None);
+
+        // Go over the end
+        let mut iter = p.iter_from(25);
+        assert_eq!(iter.next(), None);
+    }
+
+    #[test]
+    fn test_longer_iteration() {
+        let mut buf = Vec::new();
+        let mut b = PackBuilder::new(&mut buf);
+        for i in 0..4096 {
+            b.push(i % 64).unwrap();
+        }
+        b.finish().unwrap();
+
+        let p = Pack::new(&buf).unwrap();
+        assert_eq!(p.iter().count(), 4096);
+        let mut sum = 0;
+        for (i, value) in p.iter().enumerate() {
+            sum += i % 64;
+            assert_eq!(value, sum as u32);
+        }
     }
 }

@@ -8,6 +8,29 @@ pub enum RepeatedField<'a, T> {
     DecodedReference(&'a [T]),
 }
 
+impl<'a, T> RepeatedField<'a, T>
+where
+    &'a T: Deserialize<'a>,
+{
+    pub fn get(&'a self, index: usize) -> Option<&'a T> {
+        match self {
+            RepeatedField::Encoded(s) => s.get(index).map(|x| x.unwrap()),
+            RepeatedField::DecodedOwned(v) => Some(&v[index]),
+            RepeatedField::DecodedReference(v) => Some(&v[index]),
+        }
+    }
+}
+
+impl<'a> RepeatedField<'a, u64> {
+    pub fn get(&'a self, index: usize) -> Option<u64> {
+        match self {
+            RepeatedField::Encoded(s) => s.get_owned(index).map(|x| x.unwrap()),
+            RepeatedField::DecodedOwned(v) => Some(v[index]),
+            RepeatedField::DecodedReference(v) => Some(v[index]),
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct EncodedStruct<'a> {
     data: &'a [u8],
@@ -28,7 +51,7 @@ impl<W: std::io::Write> EncodedStructBuilder<W> {
         }
     }
 
-    pub fn push<'a, T: Serialize>(&mut self, value: &T) -> Result<(), std::io::Error> {
+    pub fn push<'a, T: Serialize>(&mut self, value: T) -> Result<(), std::io::Error> {
         let length = value.encode(&mut self.writer)?;
         self.sizes.push(length as u32);
         Ok(())
@@ -40,7 +63,7 @@ impl<W: std::io::Write> EncodedStructBuilder<W> {
         }
 
         let mut pack = pack::PackBuilder::new(&mut self.writer);
-        for size in &self.sizes[0..self.sizes.len()] {
+        for size in &self.sizes[0..self.sizes.len() - 1] {
             pack.push(*size)?;
         }
 
@@ -70,6 +93,13 @@ impl<'a> Deserialize<'a> for EncodedStruct<'a> {
 }
 
 impl<'a> EncodedStruct<'a> {
+    // The EncodedStruct layout is:
+    //
+    // [ data u8 ... ] [ Pack ... ] [ footer ]
+    //
+    // See the Pack data structure for info on that layout. The pack contains
+    // offsets for each field in the data payload. The footer describes the
+    // length of the pack.
     pub fn new(data: &'a [u8]) -> Result<Self, std::io::Error> {
         let (footer, footer_size) = varint::decode_reverse_varint(data);
         if footer == 0 {
@@ -152,7 +182,7 @@ impl<'a> EncodedStruct<'a> {
             self.data.len()
         };
 
-        println!("get: {:?}", &self.data[start..end]);
+        println!("get: {:?}", &self.data);
 
         Some(T::decode(&self.data[start..end]))
     }

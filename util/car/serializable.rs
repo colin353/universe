@@ -18,6 +18,12 @@ impl<'a, T: DeserializeOwned> Deserialize<'a> for T {
     }
 }
 
+impl<T: Serialize> Serialize for &T {
+    fn encode<W: std::io::Write>(&self, writer: &mut W) -> Result<usize, std::io::Error> {
+        self.encode(writer)
+    }
+}
+
 impl Serialize for u8 {
     fn encode<W: std::io::Write>(&self, writer: &mut W) -> Result<usize, std::io::Error> {
         if *self == 0 {
@@ -110,7 +116,7 @@ impl<'a> Deserialize<'a> for &'a str {
 mod tests {
     use super::*;
 
-    fn test_encode_decode<'a, T: Serializable<'a> + std::fmt::Debug + PartialEq>(
+    fn test_encode_decode<'a, T: Serialize + Deserialize<'a> + std::fmt::Debug + PartialEq>(
         buf: &'a mut Vec<u8>,
         value: T,
     ) {

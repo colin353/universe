@@ -21,13 +21,13 @@ struct ZootOwned {
 #[derive(Clone)]
 enum Zoot<'a> {
     Encoded(EncodedStruct<'a>),
-    DecodedOwned(ZootOwned),
+    DecodedOwned(Box<ZootOwned>),
     DecodedReference(&'a ZootOwned),
 }
 
 impl<'a> Default for Zoot<'a> {
     fn default() -> Self {
-        Self::DecodedOwned(ZootOwned::default())
+        Self::DecodedOwned(Box::new(ZootOwned::default()))
     }
 }
 
@@ -53,9 +53,9 @@ impl DeserializeOwned for ZootOwned {
 }
 impl<'a> Zoot<'a> {
     pub fn new() -> Self {
-        Self::DecodedOwned(ZootOwned {
+        Self::DecodedOwned(Box::new(ZootOwned {
             ..Default::default()
-        })
+        }))
     }
     pub fn from_bytes(bytes: &'a [u8]) -> Result<Self, std::io::Error> {
         Ok(Self::Encoded(EncodedStruct::new(bytes)?))
@@ -63,14 +63,14 @@ impl<'a> Zoot<'a> {
     pub fn to_owned(&self) -> Result<Self, std::io::Error> {
         match self {
             Self::DecodedOwned(t) => Ok(Self::DecodedOwned(t.clone())),
-            Self::DecodedReference(t) => Ok(Self::DecodedOwned((*t).clone())),
-            Self::Encoded(t) => Ok(Self::DecodedOwned(self.clone_owned()?)),
+            Self::DecodedReference(t) => Ok(Self::DecodedOwned(Box::new((*t).clone()))),
+            Self::Encoded(t) => Ok(Self::DecodedOwned(Box::new(self.clone_owned()?))),
         }
     }
 
     pub fn clone_owned(&self) -> Result<ZootOwned, std::io::Error> {
         match self {
-            Self::DecodedOwned(t) => Ok(t.clone()),
+            Self::DecodedOwned(t) => Ok(t.as_ref().clone()),
             Self::DecodedReference(t) => Ok((*t).clone()),
             Self::Encoded(t) => Ok(ZootOwned {
                 toot: t.get_owned(0).unwrap()?,
@@ -105,6 +105,17 @@ impl<'a> Zoot<'a> {
         }
         Ok(())
     }
+    pub fn mut_toot(&mut self) -> Result<&mut TootOwned, std::io::Error> {
+        match self {
+            Self::Encoded(_) | Self::DecodedReference(_) => {
+                *self = self.to_owned()?;
+                self.mut_toot()
+            }
+            Self::DecodedOwned(v) => {
+                Ok(&mut v.toot)
+            }
+        }
+    }
     pub fn get_size(&'a self) -> RepeatedField<'a, u64> {
         match self {
             Self::DecodedOwned(x) => RepeatedField::DecodedReference(x.size.as_slice()),
@@ -123,6 +134,17 @@ impl<'a> Zoot<'a> {
             }
         }
         Ok(())
+    }
+    pub fn mut_size(&mut self) -> Result<&mut Vec<u64>, std::io::Error> {
+        match self {
+            Self::Encoded(_) | Self::DecodedReference(_) => {
+                *self = self.to_owned()?;
+                self.mut_size()
+            }
+            Self::DecodedOwned(v) => {
+                Ok(&mut v.size)
+            }
+        }
     }
     pub fn get_name(&'a self) -> &str {
         match self {
@@ -152,13 +174,13 @@ struct TootOwned {
 #[derive(Clone)]
 enum Toot<'a> {
     Encoded(EncodedStruct<'a>),
-    DecodedOwned(TootOwned),
+    DecodedOwned(Box<TootOwned>),
     DecodedReference(&'a TootOwned),
 }
 
 impl<'a> Default for Toot<'a> {
     fn default() -> Self {
-        Self::DecodedOwned(TootOwned::default())
+        Self::DecodedOwned(Box::new(TootOwned::default()))
     }
 }
 
@@ -180,9 +202,9 @@ impl DeserializeOwned for TootOwned {
 }
 impl<'a> Toot<'a> {
     pub fn new() -> Self {
-        Self::DecodedOwned(TootOwned {
+        Self::DecodedOwned(Box::new(TootOwned {
             ..Default::default()
-        })
+        }))
     }
     pub fn from_bytes(bytes: &'a [u8]) -> Result<Self, std::io::Error> {
         Ok(Self::Encoded(EncodedStruct::new(bytes)?))
@@ -190,14 +212,14 @@ impl<'a> Toot<'a> {
     pub fn to_owned(&self) -> Result<Self, std::io::Error> {
         match self {
             Self::DecodedOwned(t) => Ok(Self::DecodedOwned(t.clone())),
-            Self::DecodedReference(t) => Ok(Self::DecodedOwned((*t).clone())),
-            Self::Encoded(t) => Ok(Self::DecodedOwned(self.clone_owned()?)),
+            Self::DecodedReference(t) => Ok(Self::DecodedOwned(Box::new((*t).clone()))),
+            Self::Encoded(t) => Ok(Self::DecodedOwned(Box::new(self.clone_owned()?))),
         }
     }
 
     pub fn clone_owned(&self) -> Result<TootOwned, std::io::Error> {
         match self {
-            Self::DecodedOwned(t) => Ok(t.clone()),
+            Self::DecodedOwned(t) => Ok(t.as_ref().clone()),
             Self::DecodedReference(t) => Ok((*t).clone()),
             Self::Encoded(t) => Ok(TootOwned {
                 id: t.get_owned(0).unwrap()?,

@@ -107,13 +107,13 @@ struct {name}Owned {{
         r#"#[derive(Clone)]
 enum {name}<'a> {{
     Encoded(EncodedStruct<'a>),
-    DecodedOwned({name}Owned),
+    DecodedOwned(Box<{name}Owned>),
     DecodedReference(&'a {name}Owned),
 }}
 
 impl<'a> Default for {name}<'a> {{
     fn default() -> Self {{
-        Self::DecodedOwned({name}Owned::default())
+        Self::DecodedOwned(Box::new({name}Owned::default()))
     }}
 }}
 
@@ -182,9 +182,9 @@ impl DeserializeOwned for {name}Owned {{
     write!(
         w,
         r#"    pub fn new() -> Self {{
-        Self::DecodedOwned({name}Owned {{
+        Self::DecodedOwned(Box::new({name}Owned {{
             ..Default::default()
-        }})
+        }}))
     }}
 "#,
         name = msg.name
@@ -205,14 +205,14 @@ impl DeserializeOwned for {name}Owned {{
         r#"    pub fn to_owned(&self) -> Result<Self, std::io::Error> {{
         match self {{
             Self::DecodedOwned(t) => Ok(Self::DecodedOwned(t.clone())),
-            Self::DecodedReference(t) => Ok(Self::DecodedOwned((*t).clone())),
-            Self::Encoded(t) => Ok(Self::DecodedOwned(self.clone_owned()?)),
+            Self::DecodedReference(t) => Ok(Self::DecodedOwned(Box::new((*t).clone()))),
+            Self::Encoded(t) => Ok(Self::DecodedOwned(Box::new(self.clone_owned()?))),
         }}
     }}
 
     pub fn clone_owned(&self) -> Result<{name}Owned, std::io::Error> {{
         match self {{
-            Self::DecodedOwned(t) => Ok(t.clone()),
+            Self::DecodedOwned(t) => Ok(t.as_ref().clone()),
             Self::DecodedReference(t) => Ok((*t).clone()),
             Self::Encoded(t) => Ok({name}Owned {{
 "#,
@@ -374,6 +374,45 @@ impl DeserializeOwned for {name}Owned {{
 "#,
                 name = field.field_name,
                 field_type = owned_type
+            );
+        }
+
+        // Implement mut_... accessors
+        if field.repeated {
+            write!(
+                w,
+                r#"    pub fn mut_{name}(&mut self) -> Result<&mut {field_type}, std::io::Error> {{
+        match self {{
+            Self::Encoded(_) | Self::DecodedReference(_) => {{
+                *self = self.to_owned()?;
+                self.mut_{name}()
+            }}
+            Self::DecodedOwned(v) => {{
+                Ok(&mut v.{name})
+            }}
+        }}
+    }}
+"#,
+                name = field.field_name,
+                field_type = owned_type,
+            );
+        } else if let FieldType::Other(s) = &field.field_type {
+            write!(
+                w,
+                r#"    pub fn mut_{name}(&mut self) -> Result<&mut {field_type}Owned, std::io::Error> {{
+        match self {{
+            Self::Encoded(_) | Self::DecodedReference(_) => {{
+                *self = self.to_owned()?;
+                self.mut_{name}()
+            }}
+            Self::DecodedOwned(v) => {{
+                Ok(&mut v.{name})
+            }}
+        }}
+    }}
+"#,
+                name = field.field_name,
+                field_type = s,
             );
         }
     }
