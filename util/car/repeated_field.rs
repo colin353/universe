@@ -198,6 +198,43 @@ impl<'a> EncodedStruct<'a> {
     pub fn is_empty(&self) -> bool {
         self.empty
     }
+
+    pub fn iter(&'a self) -> EncodedStructIterator<'a> {
+        EncodedStructIterator {
+            last_offset: 0,
+            pack_iter: self.fields_index.iter(),
+            done: false,
+            data_size: self.data.len() as usize,
+        }
+    }
+}
+
+pub struct EncodedStructIterator<'a> {
+    last_offset: usize,
+    pack_iter: pack::PackIterator<'a>,
+    done: bool,
+    data_size: usize,
+}
+
+impl<'a> Iterator for EncodedStructIterator<'a> {
+    type Item = (usize, usize);
+    fn next(&mut self) -> Option<(usize, usize)> {
+        if self.done {
+            return None;
+        }
+
+        let start = self.last_offset;
+        let end = match self.pack_iter.next() {
+            Some(end) => end as usize,
+            None => {
+                self.done = true;
+                self.data_size
+            }
+        };
+
+        self.last_offset = end;
+        Some((start, end))
+    }
 }
 
 impl<T: Serialize> Serialize for Vec<T> {
@@ -214,9 +251,8 @@ impl<T: DeserializeOwned> DeserializeOwned for Vec<T> {
     fn decode_owned(bytes: &[u8]) -> Result<Self, std::io::Error> {
         let e = EncodedStruct::new(bytes)?;
         let mut out = Vec::new();
-        // TODO: use iterators instead!
-        for i in 0..e.len() {
-            out.push(e.get_owned(i).unwrap()?);
+        for (start, end) in e.iter() {
+            out.push(T::decode_owned(&e.data[start..end])?);
         }
         Ok(out)
     }
@@ -265,5 +301,22 @@ mod tests {
         assert_eq!(rf.len(), 1);
         assert_eq!(rf.is_empty(), false);
         assert_eq!(rf.get::<&str>(0).unwrap().unwrap(), "");
+    }
+
+    #[test]
+    fn test_field_index_iteration() {
+        let mut buf = Vec::new();
+        let mut b = EncodedStructBuilder::new(&mut buf);
+        b.push("hello to the world").unwrap(); // encoded size: 18 bytes
+        b.push("some more data").unwrap(); // encoded size: 14 bytes
+        b.push("additional stuff").unwrap(); // encoded size: 16 bytes
+        b.finish().unwrap();
+
+        let rf = EncodedStruct::new(&buf).unwrap();
+        let mut iter = rf.iter();
+        assert_eq!(iter.next(), Some((0, 18)));
+        assert_eq!(iter.next(), Some((18, 32)));
+        assert_eq!(iter.next(), Some((32, 48)));
+        assert_eq!(iter.next(), None);
     }
 }

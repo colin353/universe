@@ -20,7 +20,7 @@ impl<'a, T: DeserializeOwned> Deserialize<'a> for T {
 
 impl<T: Serialize> Serialize for &T {
     fn encode<W: std::io::Write>(&self, writer: &mut W) -> Result<usize, std::io::Error> {
-        self.encode(writer)
+        (*self).encode(writer)
     }
 }
 
