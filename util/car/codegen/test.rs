@@ -5,11 +5,14 @@
  *
  */
 
+// Allow dead code, since we're generating structs/accessors
+#![allow(dead_code)]
+
 // TODO: remove this
 mod test_test;
 
 use car::{
-    Deserialize, DeserializeOwned, EncodedStruct, EncodedStructBuilder, RepeatedField, Serialize,
+    DeserializeOwned, EncodedStruct, EncodedStructBuilder, RepeatedField, Serialize,
 };
 
 #[derive(Clone, Default)]
@@ -25,9 +28,20 @@ enum Zoot<'a> {
     DecodedReference(&'a ZootOwned),
 }
 
+
 impl<'a> Default for Zoot<'a> {
     fn default() -> Self {
         Self::DecodedOwned(Box::new(ZootOwned::default()))
+    }
+}
+
+impl<'a> std::fmt::Debug for Zoot<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Zoot")
+         .field("toot", &self.get_toot())
+         .field("size", &self.get_size())
+         .field("name", &self.get_name())
+         .finish()
     }
 }
 
@@ -64,7 +78,7 @@ impl<'a> Zoot<'a> {
         match self {
             Self::DecodedOwned(t) => Ok(Self::DecodedOwned(t.clone())),
             Self::DecodedReference(t) => Ok(Self::DecodedOwned(Box::new((*t).clone()))),
-            Self::Encoded(t) => Ok(Self::DecodedOwned(Box::new(self.clone_owned()?))),
+            Self::Encoded(_) => Ok(Self::DecodedOwned(Box::new(self.clone_owned()?))),
         }
     }
 
@@ -97,7 +111,7 @@ impl<'a> Zoot<'a> {
         match self {
             Self::Encoded(_) | Self::DecodedReference(_) => {
                 *self = self.to_owned()?;
-                self.set_toot(value);
+                self.set_toot(value)?;
             }
             Self::DecodedOwned(v) => {
                 v.toot = value.clone_owned()?;
@@ -127,7 +141,7 @@ impl<'a> Zoot<'a> {
         match self {
             Self::Encoded(_) | Self::DecodedReference(_) => {
                 *self = self.to_owned()?;
-                self.set_size(value);
+                self.set_size(value)?;
             }
             Self::DecodedOwned(v) => {
                 v.size = value;
@@ -158,7 +172,7 @@ impl<'a> Zoot<'a> {
         match self {
             Self::Encoded(_) | Self::DecodedReference(_) => {
                 *self = self.to_owned()?;
-                self.set_name(value);
+                self.set_name(value)?;
             }
             Self::DecodedOwned(v) => {
                 v.name = value;
@@ -178,9 +192,18 @@ enum Toot<'a> {
     DecodedReference(&'a TootOwned),
 }
 
+
 impl<'a> Default for Toot<'a> {
     fn default() -> Self {
         Self::DecodedOwned(Box::new(TootOwned::default()))
+    }
+}
+
+impl<'a> std::fmt::Debug for Toot<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Toot")
+         .field("id", &self.get_id())
+         .finish()
     }
 }
 
@@ -213,7 +236,7 @@ impl<'a> Toot<'a> {
         match self {
             Self::DecodedOwned(t) => Ok(Self::DecodedOwned(t.clone())),
             Self::DecodedReference(t) => Ok(Self::DecodedOwned(Box::new((*t).clone()))),
-            Self::Encoded(t) => Ok(Self::DecodedOwned(Box::new(self.clone_owned()?))),
+            Self::Encoded(_) => Ok(Self::DecodedOwned(Box::new(self.clone_owned()?))),
         }
     }
 
@@ -245,7 +268,7 @@ impl<'a> Toot<'a> {
         match self {
             Self::Encoded(_) | Self::DecodedReference(_) => {
                 *self = self.to_owned()?;
-                self.set_id(value);
+                self.set_id(value)?;
             }
             Self::DecodedOwned(v) => {
                 v.id = value;

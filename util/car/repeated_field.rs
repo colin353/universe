@@ -8,6 +8,32 @@ pub enum RepeatedField<'a, T> {
     DecodedReference(&'a [T]),
 }
 
+impl<'a, T: std::fmt::Debug + DeserializeOwned> std::fmt::Debug for RepeatedField<'a, T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Encoded(_) => {
+                write!(f, "[")?;
+                let mut iter = self.iter();
+                let mut next = iter.next();
+                while let Some(item) = next {
+                    if let Ok(i) = item.as_ref() {
+                        write!(f, "{:?}", i)?;
+                    } else {
+                        write!(f, "??")?;
+                    }
+                    next = iter.next();
+                    if next.is_some() {
+                        write!(f, ", ")?;
+                    }
+                }
+                write!(f, "]")
+            }
+            Self::DecodedOwned(v) => v.fmt(f),
+            Self::DecodedReference(v) => v.fmt(f),
+        }
+    }
+}
+
 impl<'a, T> RepeatedField<'a, T>
 where
     &'a T: Deserialize<'a>,
@@ -24,9 +50,22 @@ where
 impl<'a> RepeatedField<'a, u64> {
     pub fn get(&'a self, index: usize) -> Option<u64> {
         match self {
-            RepeatedField::Encoded(s) => s.get_owned(index).map(|x| x.unwrap()),
+            RepeatedField::Encoded(s) => s.get(index).map(|x| x.unwrap()),
             RepeatedField::DecodedOwned(v) => Some(v[index]),
             RepeatedField::DecodedReference(v) => Some(v[index]),
+        }
+    }
+}
+
+impl<'a, T> RepeatedField<'a, T>
+where
+    T: DeserializeOwned,
+{
+    pub fn iter(&'a self) -> RepeatedFieldIterator<'a, T> {
+        match self {
+            Self::Encoded(e) => RepeatedFieldIterator::Encoded(e.iter()),
+            Self::DecodedOwned(i) => RepeatedFieldIterator::DecodedOwned(i.iter()),
+            Self::DecodedReference(i) => RepeatedFieldIterator::DecodedReference(i.iter()),
         }
     }
 }
@@ -201,6 +240,7 @@ impl<'a> EncodedStruct<'a> {
 
     pub fn iter(&'a self) -> EncodedStructIterator<'a> {
         EncodedStructIterator {
+            data: &self.data,
             last_offset: 0,
             pack_iter: self.fields_index.iter(),
             done: false,
@@ -210,10 +250,17 @@ impl<'a> EncodedStruct<'a> {
 }
 
 pub struct EncodedStructIterator<'a> {
+    data: &'a [u8],
     last_offset: usize,
     pack_iter: pack::PackIterator<'a>,
     done: bool,
     data_size: usize,
+}
+
+impl<'a> EncodedStructIterator<'a> {
+    pub fn get(&self, start: usize, end: usize) -> &'a [u8] {
+        &self.data[start..end]
+    }
 }
 
 impl<'a> Iterator for EncodedStructIterator<'a> {
@@ -234,6 +281,44 @@ impl<'a> Iterator for EncodedStructIterator<'a> {
 
         self.last_offset = end;
         Some((start, end))
+    }
+}
+
+pub enum RefContainer<'a, T> {
+    Reference(&'a T),
+    Owned(Box<T>),
+    DecodingFailed,
+}
+
+impl<'a, T> RefContainer<'a, T> {
+    fn as_ref(&'a self) -> Result<&'a T, std::io::Error> {
+        match self {
+            Self::Reference(r) => Ok(r),
+            Self::Owned(b) => Ok(b.as_ref()),
+            Self::DecodingFailed => Err(std::io::Error::from(std::io::ErrorKind::InvalidData)),
+        }
+    }
+}
+
+pub enum RepeatedFieldIterator<'a, T> {
+    Encoded(EncodedStructIterator<'a>),
+    DecodedOwned(std::slice::Iter<'a, T>),
+    DecodedReference(std::slice::Iter<'a, T>),
+}
+
+impl<'a, T: DeserializeOwned> Iterator for RepeatedFieldIterator<'a, T> {
+    type Item = RefContainer<'a, T>;
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::Encoded(si) => {
+                let (start, end) = si.next()?;
+                Some(RefContainer::Owned(Box::new(
+                    T::decode_owned(si.get(start, end)).unwrap(),
+                )))
+            }
+            Self::DecodedOwned(i) => Some(RefContainer::Reference(i.next()?)),
+            Self::DecodedReference(i) => Some(RefContainer::Reference(i.next()?)),
+        }
     }
 }
 
