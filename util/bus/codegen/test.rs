@@ -11,7 +11,7 @@
 // TODO: remove this
 mod test_test;
 
-use car::{
+use bus::{
     Deserialize, DeserializeOwned, EncodedStruct, EncodedStructBuilder, RepeatedField,
     RepeatedFieldIterator, RepeatedString, Serialize,
 };
@@ -147,14 +147,18 @@ impl<'a> ZootView<'a> {
     }
     pub fn get_toot(&'a self) -> TootView<'a> {
         match self {
-           Self::Decoded(x) => TootView::Decoded(&x.toot),
-            Self::Encoded(x) => TootView::Encoded(x.get(0).transpose().unwrap_or_default().unwrap_or_default()),
+            Self::Decoded(x) => TootView::Decoded(&x.toot),
+            Self::Encoded(x) => {
+                TootView::Encoded(x.get(0).transpose().unwrap_or_default().unwrap_or_default())
+            }
         }
     }
     pub fn get_size(&'a self) -> RepeatedField<'a, u64> {
         match self {
             Self::Decoded(x) => RepeatedField::Decoded(x.size.as_slice()),
-            Self::Encoded(x) => RepeatedField::Encoded(x.get(1).transpose().unwrap_or_default().unwrap_or_default()),
+            Self::Encoded(x) => {
+                RepeatedField::Encoded(x.get(1).transpose().unwrap_or_default().unwrap_or_default())
+            }
         }
     }
     pub fn get_name(&'a self) -> &str {
@@ -175,9 +179,7 @@ enum TootView<'a> {
 }
 impl<'a> std::fmt::Debug for TootView<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Toot")
-            .field("id", &self.get_id())
-            .finish()
+        f.debug_struct("Toot").field("id", &self.get_id()).finish()
     }
 }
 
@@ -417,13 +419,17 @@ impl<'a> ContainerView<'a> {
     pub fn get_values(&'a self) -> RepeatedToot<'a> {
         match self {
             Self::Decoded(x) => RepeatedToot::Decoded(&x.values.as_slice()),
-            Self::Encoded(x) => RepeatedToot::Encoded(RepeatedField::Encoded(x.get(0).transpose().unwrap_or_default().unwrap_or_default())),
+            Self::Encoded(x) => RepeatedToot::Encoded(RepeatedField::Encoded(
+                x.get(0).transpose().unwrap_or_default().unwrap_or_default(),
+            )),
         }
     }
     pub fn get_names(&'a self) -> RepeatedString<'a> {
         match self {
             Self::Decoded(x) => RepeatedString::Decoded(x.names.as_slice()),
-            Self::Encoded(x) => RepeatedString::Encoded(x.get(1).transpose().unwrap_or_default().unwrap_or_default()),
+            Self::Encoded(x) => RepeatedString::Encoded(
+                x.get(1).transpose().unwrap_or_default().unwrap_or_default(),
+            ),
         }
     }
 }

@@ -9,7 +9,7 @@ rust_binary(
         "rust.rs",
     ],
     deps = [
-        "//util/car:parser",
+        "//util/bus:parser",
         "//util/flags",
     ]
 )
@@ -21,7 +21,7 @@ rust_library(
         "test_test.rs",
     ],
     deps = [
-        "//util/car",
+        "//util/bus",
     ]
 )
 

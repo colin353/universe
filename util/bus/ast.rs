@@ -1,4 +1,4 @@
-use ggen::{AtLeastOne, Comment, GrammarUnit, Identifier, Integer, EOF};
+use ggen::{AtLeastOne, Comment, Identifier, Integer, EOF};
 
 ggen::char_rule!(Whitespace, |ch: char| ch.is_whitespace() && ch != '\n');
 ggen::char_rule!(Separator, |ch: char| ch.is_whitespace());
@@ -61,6 +61,7 @@ ggen::sequence!(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ggen::GrammarUnit;
 
     #[test]
     fn test_field_definition_match() {

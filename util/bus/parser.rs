@@ -152,7 +152,7 @@ mod tests {
     fn test_parse_module() {
         let content = r#"
 message Something {
-    repeated u32 size = 1;
+    repeated uint32 size = 1;
 }
         "#;
         let module = parse(content).unwrap();

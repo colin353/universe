@@ -3,19 +3,20 @@ package(default_visibility = ["//visibility:public"])
 load("@rules_rust//rust:defs.bzl", "rust_library", "rust_binary", "rust_test")
 
 rust_library(
-    name = "car",
+    name = "bus",
     srcs = [
         "lib.rs",
         "serializable.rs",
         "varint.rs",
         "pack.rs",
         "repeated_field.rs",
+        "encoded_struct.rs",
     ],
 )
 
 rust_test(
-    name = "car_test",
-    crate = ":car",
+    name = "bus_test",
+    crate = ":bus",
 )
 
 rust_library(

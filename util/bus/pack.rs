@@ -416,7 +416,7 @@ mod tests {
     fn test_iteration() {
         let mut buf = Vec::new();
         let mut b = PackBuilder::new(&mut buf);
-        for i in 0..20 {
+        for _ in 0..20 {
             b.push(1).unwrap();
         }
         b.finish().unwrap();

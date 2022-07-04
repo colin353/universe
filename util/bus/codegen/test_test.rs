@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
     use crate::{Container, ContainerView, Toot, TootView, Zoot, ZootView};
-    use car::Serialize;
+    use bus::Serialize;
     #[test]
     fn test_nested_struct_encode_decode() {
         let mut t = Toot::new();
