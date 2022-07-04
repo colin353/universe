@@ -12,7 +12,8 @@
 mod test_test;
 
 use car::{
-    DeserializeOwned, EncodedStruct, EncodedStructBuilder, RepeatedField, Serialize, RefContainer, RepeatedFieldIterator, RepeatedString
+    DeserializeOwned, EncodedStruct, EncodedStructBuilder, RepeatedField, RefContainer,
+    RepeatedFieldIterator, RepeatedString, Serialize,
 };
 
 #[derive(Clone, Debug, Default)]
@@ -38,10 +39,10 @@ impl<'a> Default for ZootView<'a> {
 impl<'a> std::fmt::Debug for ZootView<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Zoot")
-         .field("toot", &self.get_toot())
-         .field("size", &self.get_size())
-         .field("name", &self.get_name())
-         .finish()
+      .field("toot", &self.get_toot())
+      .field("size", &self.get_size())
+      .field("name", &self.get_name())
+      .finish()
     }
 }
 
@@ -194,8 +195,8 @@ impl<'a> Default for TootView<'a> {
 impl<'a> std::fmt::Debug for TootView<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Toot")
-         .field("id", &self.get_id())
-         .finish()
+      .field("id", &self.get_id())
+      .finish()
     }
 }
 
@@ -330,9 +331,9 @@ impl<'a> Default for ContainerView<'a> {
 impl<'a> std::fmt::Debug for ContainerView<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Container")
-         .field("values", &self.get_values())
-         .field("names", &self.get_names())
-         .finish()
+      .field("values", &self.get_values())
+      .field("names", &self.get_names())
+      .finish()
     }
 }
 
