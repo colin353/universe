@@ -207,6 +207,18 @@ impl DeserializeOwned for {name}Owned {{
 "#,
     )?;
 
+    // Implement DeserializeOwned for the non-owned version
+    write!(
+        w,
+        r#"impl<'a> DeserializeOwned for {name}<'a> {{
+    fn decode_owned(bytes: &[u8]) -> Result<Self, std::io::Error> {{
+        Ok(Self::DecodedOwned(Box::new({name}Owned::decode_owned(bytes)?)))
+    }}
+}}
+"#,
+        name = msg.name,
+    )?;
+
     // Implement enum version
     write!(w, "impl<'a> {name}<'a> {{\n", name = msg.name)?;
 
