@@ -82,27 +82,6 @@ impl<'a, T: Copy + Deserialize<'a>> IntoIterator for &'a RepeatedField<'a, T> {
     }
 }
 
-impl<T: Serialize> Serialize for Vec<T> {
-    fn encode<W: std::io::Write>(&self, writer: &mut W) -> Result<usize, std::io::Error> {
-        let mut builder = EncodedStructBuilder::new(writer);
-        for element in self {
-            builder.push(element)?;
-        }
-        builder.finish()
-    }
-}
-
-impl<T: DeserializeOwned> DeserializeOwned for Vec<T> {
-    fn decode_owned(bytes: &[u8]) -> Result<Self, std::io::Error> {
-        let e = EncodedStruct::new(bytes)?;
-        let mut out = Vec::new();
-        for (start, end) in e.iter() {
-            out.push(T::decode_owned(&e.data[start..end])?);
-        }
-        Ok(out)
-    }
-}
-
 pub enum RepeatedFieldIterator<'a, T> {
     Encoded(EncodedStructIterator<'a>),
     Decoded(std::slice::Iter<'a, T>),

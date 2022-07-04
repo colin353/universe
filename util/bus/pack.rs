@@ -296,6 +296,15 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_simple_pack() {
+        let mut buf = Vec::new();
+        let mut p = PackBuilder::new(&mut buf);
+        p.push(1).unwrap();
+        p.finish().unwrap();
+        assert_eq!(&buf, &[1, 1]);
+    }
+
+    #[test]
     fn test_pack_builder() {
         // Empty pack should be zero bytes
         let mut buf = Vec::new();

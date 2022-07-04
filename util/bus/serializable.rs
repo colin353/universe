@@ -112,6 +112,45 @@ impl<'a> Deserialize<'a> for &'a str {
     }
 }
 
+// Packed... is a wrapper struct to distinguish between Vec<T: Serializable> and fixed size Vecs,
+// e.g. Vec<u8> or Vec<u16>, which should just be written packed together, without an EncodedStruct
+// wrapping them.
+pub struct PackedIn<T>(pub Vec<T>);
+pub struct PackedOut<'a, T>(pub &'a [T]);
+
+impl<T> Default for PackedIn<T> {
+    fn default() -> Self {
+        PackedIn(Vec::new())
+    }
+}
+
+impl<'a> Serialize for PackedOut<'a, u8> {
+    fn encode<W: std::io::Write>(&self, writer: &mut W) -> Result<usize, std::io::Error> {
+        writer.write_all(&self.0)?;
+        Ok(self.0.len())
+    }
+}
+
+impl DeserializeOwned for PackedIn<u8> {
+    fn decode_owned(bytes: &[u8]) -> Result<Self, std::io::Error> {
+        Ok(PackedIn(bytes.to_owned()))
+    }
+}
+
+impl<'a> Serialize for &'a [u8] {
+    fn encode<W: std::io::Write>(&self, writer: &mut W) -> Result<usize, std::io::Error> {
+        println!("encode {:?} ({} bytes)", self, self.len());
+        writer.write_all(self)?;
+        Ok(self.len())
+    }
+}
+
+impl<'a> Deserialize<'a> for &'a [u8] {
+    fn decode(bytes: &'a [u8]) -> Result<Self, std::io::Error> {
+        Ok(bytes)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

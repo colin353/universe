@@ -8,4 +8,4 @@ pub use pack::Pack;
 
 pub use encoded_struct::{EncodedStruct, EncodedStructBuilder};
 pub use repeated_field::{RepeatedField, RepeatedFieldIterator, RepeatedString};
-pub use serializable::{Deserialize, DeserializeOwned, Serialize};
+pub use serializable::{Deserialize, DeserializeOwned, PackedIn, PackedOut, Serialize};

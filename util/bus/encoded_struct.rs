@@ -24,6 +24,7 @@ impl<W: std::io::Write> EncodedStructBuilder<W> {
 
     pub fn push<'a, T: Serialize>(&mut self, value: T) -> Result<(), std::io::Error> {
         let length = value.encode(&mut self.writer)?;
+        println!("push value (length = {})", length);
         self.sizes.push(length as u32);
         Ok(())
     }
@@ -189,6 +190,27 @@ pub struct EncodedStructIterator<'a> {
     pack_iter: pack::PackIterator<'a>,
     done: bool,
     data_size: usize,
+}
+
+impl<T: Serialize> Serialize for Vec<T> {
+    fn encode<W: std::io::Write>(&self, writer: &mut W) -> Result<usize, std::io::Error> {
+        let mut builder = EncodedStructBuilder::new(writer);
+        for element in self {
+            builder.push(element)?;
+        }
+        builder.finish()
+    }
+}
+
+impl<T: DeserializeOwned> DeserializeOwned for Vec<T> {
+    fn decode_owned(bytes: &[u8]) -> Result<Self, std::io::Error> {
+        let e = EncodedStruct::new(bytes)?;
+        let mut out = Vec::new();
+        for (start, end) in e.iter() {
+            out.push(T::decode_owned(&e.data[start..end])?);
+        }
+        Ok(out)
+    }
 }
 
 impl<'a> EncodedStructIterator<'a> {

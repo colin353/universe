@@ -6,6 +6,7 @@ message Zoot {
 
 message Toot {
   id: u32 = 1;
+  data: bytes = 2;
 }
 
 message Container {

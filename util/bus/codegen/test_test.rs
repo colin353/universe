@@ -62,11 +62,31 @@ mod tests {
     }
 
     #[test]
+    fn test_bytes() {
+        let t = Toot {
+            id: 5,
+            data: vec![1, 2, 3, 4],
+        };
+        let mut buf = Vec::new();
+        t.encode(&mut buf).unwrap();
+
+        assert_eq!(
+            &buf,
+            &[
+                5, // f0
+                1, 2, 3, 4, // f1
+                1, 1, // pack<1>
+                3  // footer
+            ]
+        );
+    }
+
+    #[test]
     fn test_debug_representation() {
         let mut t = Toot::new();
         t.id = 15;
         let out = format!("{:?}", t);
-        assert_eq!(out, r#"Toot { id: 15 }"#);
+        assert_eq!(out, r#"Toot { id: 15, data: [] }"#);
 
         let mut z = Zoot::new();
         {
@@ -85,14 +105,23 @@ mod tests {
         let out = format!("{:?}", bz);
         assert_eq!(
             out,
-            r#"Zoot { toot: Toot { id: 77 }, size: [5, 10, 15, 20], name: "" }"#
+            r#"Zoot { toot: Toot { id: 77, data: [] }, size: [5, 10, 15, 20], name: "" }"#
         );
     }
 
     #[test]
     fn test_repeated_struct() {
         let mut c = Container::new();
-        c.values = vec![Toot { id: 23 }, Toot { id: 34 }];
+        c.values = vec![
+            Toot {
+                id: 23,
+                data: vec![],
+            },
+            Toot {
+                id: 34,
+                data: vec![],
+            },
+        ];
 
         let cv = c.as_view();
 
@@ -122,12 +151,21 @@ mod tests {
     #[test]
     fn test_repeated_string() {
         let mut c = Container::new();
-        c.values = vec![Toot { id: 23 }, Toot { id: 34 }];
+        c.values = vec![
+            Toot {
+                id: 23,
+                data: vec![1, 2, 3],
+            },
+            Toot {
+                id: 34,
+                data: vec![4, 5, 6],
+            },
+        ];
         c.names = vec![String::from("asdf"), String::from("fdsa")];
 
         assert_eq!(
             format!("{:?}", c.as_view()),
-            "Container { values: [Toot { id: 23 }, Toot { id: 34 }], names: [\"asdf\", \"fdsa\"] }"
+            "Container { values: [Toot { id: 23, data: [1, 2, 3] }, Toot { id: 34, data: [4, 5, 6] }], names: [\"asdf\", \"fdsa\"] }"
         );
 
         let cv = c.as_view();
@@ -148,7 +186,7 @@ mod tests {
 
         assert_eq!(
             format!("{:?}", bc),
-            "Container { values: [Toot { id: 23 }, Toot { id: 34 }], names: [\"asdf\", \"fdsa\"] }"
+            "Container { values: [Toot { id: 23, data: [1, 2, 3] }, Toot { id: 34, data: [4, 5, 6] }], names: [\"asdf\", \"fdsa\"] }"
         );
 
         for (idx, v) in bc.get_names().iter().enumerate() {
