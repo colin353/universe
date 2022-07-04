@@ -185,7 +185,7 @@ impl DeserializeOwned for {name} {{
     for (idx, field) in msg.fields.iter().enumerate() {
         write!(
             w,
-            "            {field_name}: s.get_owned({idx}).unwrap()?,\n",
+            "            {field_name}: s.get_owned({idx}).transpose()?.unwrap_or_default(),\n",
             field_name = field.field_name,
             idx = idx,
         )?;
@@ -314,7 +314,7 @@ impl<'a> Iterator for Repeated{name}Iterator<'a> {{
     for (idx, field) in msg.fields.iter().enumerate() {
         write!(
             w,
-            "                {field_name}: t.get_owned({idx}).unwrap()?,\n",
+            "                {field_name}: t.get_owned({idx}).transpose()?.unwrap_or_default(),\n",
             field_name = field.field_name,
             idx = idx,
         )?;
@@ -366,8 +366,7 @@ impl<'a> Iterator for Repeated{name}Iterator<'a> {{
                 write!(
                     w,
                     r#"            Self::Decoded(x) => Repeated{field_type}::Decoded(&x.{name}.as_slice()),
-            // TODO: remove unwrap
-            Self::Encoded(x) => Repeated{field_type}::Encoded(RepeatedField::Encoded(x.get({idx}).unwrap().unwrap())),
+            Self::Encoded(x) => Repeated{field_type}::Encoded(RepeatedField::Encoded(x.get({idx}).transpose().unwrap_or_default().unwrap_or_default())),
 "#,
                     field_type = s,
                     name = field.field_name,
@@ -377,7 +376,7 @@ impl<'a> Iterator for Repeated{name}Iterator<'a> {{
                 write!(
                     w,
                     r#"           Self::Decoded(x) => {field_type}View::Decoded(&x.{name}),
-            Self::Encoded(x) => {field_type}View::Encoded(x.get({idx}).unwrap().unwrap()),
+            Self::Encoded(x) => {field_type}View::Encoded(x.get({idx}).transpose().unwrap_or_default().unwrap_or_default()),
 "#,
                     name = field.field_name,
                     field_type = s,
@@ -389,7 +388,7 @@ impl<'a> Iterator for Repeated{name}Iterator<'a> {{
                 write!(
                     w,
                     r#"            Self::Decoded(x) => RepeatedString::Decoded(x.{name}.as_slice()),
-            Self::Encoded(x) => RepeatedString::Encoded(x.get({idx}).unwrap().unwrap()),
+            Self::Encoded(x) => RepeatedString::Encoded(x.get({idx}).transpose().unwrap_or_default().unwrap_or_default()),
 "#,
                     name = field.field_name,
                     idx = idx,
@@ -398,7 +397,7 @@ impl<'a> Iterator for Repeated{name}Iterator<'a> {{
                 write!(
                     w,
                     r#"            Self::Decoded(x) => RepeatedField::Decoded(x.{name}.as_slice()),
-            Self::Encoded(x) => RepeatedField::Encoded(x.get({idx}).unwrap().unwrap()),
+            Self::Encoded(x) => RepeatedField::Encoded(x.get({idx}).transpose().unwrap_or_default().unwrap_or_default()),
 "#,
                     name = field.field_name,
                     idx = idx,
@@ -408,7 +407,7 @@ impl<'a> Iterator for Repeated{name}Iterator<'a> {{
             write!(
                 w,
                 r#"            Self::Decoded(x) => x.{name}.as_str(),
-            Self::Encoded(x) => x.get({idx}).unwrap().unwrap(),
+            Self::Encoded(x) => x.get({idx}).transpose().unwrap_or_default().unwrap_or_default(),
 "#,
                 name = field.field_name,
                 idx = idx,
@@ -423,7 +422,7 @@ impl<'a> Iterator for Repeated{name}Iterator<'a> {{
 
             write!(
                 w,
-                r#"            Self::Encoded(x) => x.get({idx}).unwrap().unwrap(),
+                r#"            Self::Encoded(x) => x.get({idx}).transpose().unwrap_or_default().unwrap_or_default(),
 "#,
                 idx = idx,
             )?;

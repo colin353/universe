@@ -51,9 +51,9 @@ impl DeserializeOwned for Zoot {
     fn decode_owned(bytes: &[u8]) -> Result<Self, std::io::Error> {
         let s = EncodedStruct::new(bytes)?;
         Ok(Self {
-            toot: s.get_owned(0).unwrap()?,
-            size: s.get_owned(1).unwrap()?,
-            name: s.get_owned(2).unwrap()?,
+            toot: s.get_owned(0).transpose()?.unwrap_or_default(),
+            size: s.get_owned(1).transpose()?.unwrap_or_default(),
+            name: s.get_owned(2).transpose()?.unwrap_or_default(),
         })
     }
 }
@@ -133,9 +133,9 @@ impl<'a> ZootView<'a> {
         match self {
             Self::Decoded(t) => Ok((*t).clone()),
             Self::Encoded(t) => Ok(Zoot {
-                toot: t.get_owned(0).unwrap()?,
-                size: t.get_owned(1).unwrap()?,
-                name: t.get_owned(2).unwrap()?,
+                toot: t.get_owned(0).transpose()?.unwrap_or_default(),
+                size: t.get_owned(1).transpose()?.unwrap_or_default(),
+                name: t.get_owned(2).transpose()?.unwrap_or_default(),
             }),
         }
     }
@@ -148,19 +148,19 @@ impl<'a> ZootView<'a> {
     pub fn get_toot(&'a self) -> TootView<'a> {
         match self {
            Self::Decoded(x) => TootView::Decoded(&x.toot),
-            Self::Encoded(x) => TootView::Encoded(x.get(0).unwrap().unwrap()),
+            Self::Encoded(x) => TootView::Encoded(x.get(0).transpose().unwrap_or_default().unwrap_or_default()),
         }
     }
     pub fn get_size(&'a self) -> RepeatedField<'a, u64> {
         match self {
             Self::Decoded(x) => RepeatedField::Decoded(x.size.as_slice()),
-            Self::Encoded(x) => RepeatedField::Encoded(x.get(1).unwrap().unwrap()),
+            Self::Encoded(x) => RepeatedField::Encoded(x.get(1).transpose().unwrap_or_default().unwrap_or_default()),
         }
     }
     pub fn get_name(&'a self) -> &str {
         match self {
             Self::Decoded(x) => x.name.as_str(),
-            Self::Encoded(x) => x.get(2).unwrap().unwrap(),
+            Self::Encoded(x) => x.get(2).transpose().unwrap_or_default().unwrap_or_default(),
         }
     }
 }
@@ -193,7 +193,7 @@ impl DeserializeOwned for Toot {
     fn decode_owned(bytes: &[u8]) -> Result<Self, std::io::Error> {
         let s = EncodedStruct::new(bytes)?;
         Ok(Self {
-            id: s.get_owned(0).unwrap()?,
+            id: s.get_owned(0).transpose()?.unwrap_or_default(),
         })
     }
 }
@@ -273,7 +273,7 @@ impl<'a> TootView<'a> {
         match self {
             Self::Decoded(t) => Ok((*t).clone()),
             Self::Encoded(t) => Ok(Toot {
-                id: t.get_owned(0).unwrap()?,
+                id: t.get_owned(0).transpose()?.unwrap_or_default(),
             }),
         }
     }
@@ -286,7 +286,7 @@ impl<'a> TootView<'a> {
     pub fn get_id(&'a self) -> u32 {
         match self {
             Self::Decoded(x) => x.id,
-            Self::Encoded(x) => x.get(0).unwrap().unwrap(),
+            Self::Encoded(x) => x.get(0).transpose().unwrap_or_default().unwrap_or_default(),
         }
     }
 }
@@ -322,8 +322,8 @@ impl DeserializeOwned for Container {
     fn decode_owned(bytes: &[u8]) -> Result<Self, std::io::Error> {
         let s = EncodedStruct::new(bytes)?;
         Ok(Self {
-            values: s.get_owned(0).unwrap()?,
-            names: s.get_owned(1).unwrap()?,
+            values: s.get_owned(0).transpose()?.unwrap_or_default(),
+            names: s.get_owned(1).transpose()?.unwrap_or_default(),
         })
     }
 }
@@ -403,8 +403,8 @@ impl<'a> ContainerView<'a> {
         match self {
             Self::Decoded(t) => Ok((*t).clone()),
             Self::Encoded(t) => Ok(Container {
-                values: t.get_owned(0).unwrap()?,
-                names: t.get_owned(1).unwrap()?,
+                values: t.get_owned(0).transpose()?.unwrap_or_default(),
+                names: t.get_owned(1).transpose()?.unwrap_or_default(),
             }),
         }
     }
@@ -417,14 +417,13 @@ impl<'a> ContainerView<'a> {
     pub fn get_values(&'a self) -> RepeatedToot<'a> {
         match self {
             Self::Decoded(x) => RepeatedToot::Decoded(&x.values.as_slice()),
-            // TODO: remove unwrap
-            Self::Encoded(x) => RepeatedToot::Encoded(RepeatedField::Encoded(x.get(0).unwrap().unwrap())),
+            Self::Encoded(x) => RepeatedToot::Encoded(RepeatedField::Encoded(x.get(0).transpose().unwrap_or_default().unwrap_or_default())),
         }
     }
     pub fn get_names(&'a self) -> RepeatedString<'a> {
         match self {
             Self::Decoded(x) => RepeatedString::Decoded(x.names.as_slice()),
-            Self::Encoded(x) => RepeatedString::Encoded(x.get(1).unwrap().unwrap()),
+            Self::Encoded(x) => RepeatedString::Encoded(x.get(1).transpose().unwrap_or_default().unwrap_or_default()),
         }
     }
 }

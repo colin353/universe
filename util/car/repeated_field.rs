@@ -35,7 +35,7 @@ where
 {
     pub fn get(&'a self, index: usize) -> Option<&'a T> {
         match self {
-            RepeatedField::Encoded(s) => s.get(index).map(|x| x.unwrap()),
+            RepeatedField::Encoded(s) => s.get(index).map(|x| x.ok()).flatten(),
             RepeatedField::Decoded(v) => Some(&v[index]),
         }
     }
@@ -44,7 +44,7 @@ where
 impl<'a> RepeatedField<'a, u64> {
     pub fn get(&'a self, index: usize) -> Option<u64> {
         match self {
-            RepeatedField::Encoded(s) => s.get(index).map(|x| x.unwrap()),
+            RepeatedField::Encoded(s) => s.get(index).map(|x| x.ok()).flatten(),
             RepeatedField::Decoded(v) => Some(v[index]),
         }
     }
@@ -117,6 +117,12 @@ impl<'a> Serialize for EncodedStruct<'a> {
 impl<'a> Deserialize<'a> for EncodedStruct<'a> {
     fn decode(bytes: &'a [u8]) -> Result<Self, std::io::Error> {
         Ok(Self::new(bytes)?)
+    }
+}
+
+impl<'a> Default for EncodedStruct<'a> {
+    fn default() -> Self {
+        Self::from_bytes(&[]).unwrap()
     }
 }
 
@@ -280,7 +286,7 @@ impl<'a, T: Deserialize<'a> + Copy> Iterator for RepeatedFieldIterator<'a, T> {
         match self {
             Self::Encoded(si) => {
                 let (start, end) = si.next()?;
-                Some(T::decode(si.get(start, end)).unwrap())
+                Some(T::decode(si.get(start, end)).ok()?)
             }
             Self::Decoded(i) => Some(*i.next()?),
         }
