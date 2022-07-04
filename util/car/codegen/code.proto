@@ -12,4 +12,5 @@ message Toot {
 message Container {
   // Comment
   repeated Toot values = 1;
+  repeated string names = 2;
 }

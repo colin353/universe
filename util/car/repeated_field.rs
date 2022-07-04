@@ -57,6 +57,16 @@ impl<'a> RepeatedField<'a, u64> {
     }
 }
 
+impl<'a> RepeatedField<'a, &'a str> {
+    pub fn iter(&'a self) -> RepeatedFieldIterator<'a, &'a str> {
+        match self {
+            Self::Encoded(e) => RepeatedFieldIterator::Encoded(e.iter()),
+            Self::DecodedOwned(i) => RepeatedFieldIterator::DecodedOwned(i.iter()),
+            Self::DecodedReference(i) => RepeatedFieldIterator::DecodedReference(i.iter()),
+        }
+    }
+}
+
 impl<'a, T> RepeatedField<'a, T>
 where
     T: DeserializeOwned,
@@ -298,6 +308,23 @@ pub enum RepeatedFieldIterator<'a, T> {
     DecodedReference(std::slice::Iter<'a, T>),
 }
 
+impl<'a> Iterator for RepeatedFieldIterator<'a, &'a str> {
+    type Item = &'a str;
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::Encoded(si) => {
+                let (start, end) = si.next()?;
+                match Deserialize::decode(si.get(start, end)) {
+                    Ok(x) => Some(x),
+                    Err(_) => None,
+                }
+            }
+            Self::DecodedOwned(i) => Some(i.next()?),
+            Self::DecodedReference(i) => Some(i.next()?),
+        }
+    }
+}
+
 impl<'a, T: DeserializeOwned> Iterator for RepeatedFieldIterator<'a, T> {
     type Item = RefContainer<'a, T>;
     fn next(&mut self) -> Option<Self::Item> {
@@ -332,6 +359,59 @@ impl<T: DeserializeOwned> DeserializeOwned for Vec<T> {
             out.push(T::decode_owned(&e.data[start..end])?);
         }
         Ok(out)
+    }
+}
+
+pub enum RepeatedString<'a> {
+    Encoded(EncodedStruct<'a>),
+    Decoded(&'a [String]),
+}
+
+pub enum RepeatedStringIterator<'a> {
+    Encoded(EncodedStructIterator<'a>),
+    Decoded(std::slice::Iter<'a, String>),
+}
+
+impl<'a> RepeatedString<'a> {
+    pub fn iter(&'a self) -> RepeatedStringIterator<'a> {
+        match self {
+            Self::Encoded(x) => RepeatedStringIterator::Encoded(x.iter()),
+            Self::Decoded(x) => RepeatedStringIterator::Decoded(x.iter()),
+        }
+    }
+}
+
+impl<'a> Iterator for RepeatedStringIterator<'a> {
+    type Item = &'a str;
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::Encoded(r) => {
+                let (start, end) = r.next()?;
+                Deserialize::decode(r.get(start, end)).ok()
+            }
+            Self::Decoded(s) => s.next().map(|s| s.as_str()),
+        }
+    }
+}
+
+impl<'a> std::fmt::Debug for RepeatedString<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Encoded(_) => {
+                write!(f, "[")?;
+                let mut iter = self.iter();
+                let mut next = iter.next();
+                while let Some(item) = next {
+                    write!(f, "{:?}", item)?;
+                    next = iter.next();
+                    if next.is_some() {
+                        write!(f, ", ")?;
+                    }
+                }
+                write!(f, "]")
+            }
+            Self::Decoded(v) => v.fmt(f),
+        }
     }
 }
 

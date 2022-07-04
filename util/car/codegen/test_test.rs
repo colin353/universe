@@ -116,4 +116,37 @@ mod tests {
         }
         assert_eq!(bc.get_values().iter().count(), 2);
     }
+
+    #[test]
+    fn test_repeated_string() {
+        let mut c = Container::new();
+        c.set_values(vec![TootOwned { id: 23 }, TootOwned { id: 34 }])
+            .unwrap();
+        c.set_names(vec![String::from("asdf"), String::from("fdsa")])
+            .unwrap();
+
+        assert_eq!(format!("{:?}", c), "Container { values: [TootOwned { id: 23 }, TootOwned { id: 34 }], names: [\"asdf\", \"fdsa\"] }");
+
+        for (idx, v) in c.get_names().iter().enumerate() {
+            if idx == 0 {
+                assert_eq!(v, "asdf");
+            } else {
+                assert_eq!(v, "fdsa");
+            }
+        }
+        assert_eq!(c.get_names().iter().count(), 2);
+
+        let mut buf = Vec::new();
+        c.encode(&mut buf).unwrap();
+
+        let bc = Container::from_bytes(&buf).unwrap();
+        for (idx, v) in bc.get_names().iter().enumerate() {
+            if idx == 0 {
+                assert_eq!(v, "asdf");
+            } else {
+                assert_eq!(v, "fdsa");
+            }
+        }
+        assert_eq!(bc.get_names().iter().count(), 2);
+    }
 }

@@ -16,7 +16,7 @@ mod test_test;
 
 const IMPORTS: &'static str = r#"
 use car::{
-    DeserializeOwned, EncodedStruct, EncodedStructBuilder, RepeatedField, Serialize, RefContainer, RepeatedFieldIterator
+    DeserializeOwned, EncodedStruct, EncodedStructBuilder, RepeatedField, Serialize, RefContainer, RepeatedFieldIterator, RepeatedString
 };
 
 "#;
@@ -222,10 +222,18 @@ impl DeserializeOwned for {name}Owned {{
     // Define repeated struct
     write!(
         w,
-        r#"#[derive(Debug)]
-enum Repeated{name}<'a> {{
+        r#"enum Repeated{name}<'a> {{
     Encoded(RepeatedField<'a, {name}<'a>>),
     Decoded(&'a [{name}Owned]),
+}}
+
+impl<'a> std::fmt::Debug for Repeated{name}<'a> {{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {{
+        match self {{
+            Self::Encoded(v) => v.fmt(f),
+            Self::Decoded(v) => v.fmt(f),
+        }}
+    }}
 }}
 
 enum Repeated{name}Iterator<'a> {{
@@ -336,9 +344,11 @@ impl<'a> Iterator for Repeated{name}Iterator<'a> {{
     for (idx, field) in msg.fields.iter().enumerate() {
         let owned_type = get_type_name(&field);
         let mut typ = get_return_type_name(&field);
-        if let FieldType::Other(s) = &field.field_type {
-            if field.repeated {
+        if field.repeated {
+            if let FieldType::Other(s) = &field.field_type {
                 typ = format!("Repeated{name}<'a>", name = s);
+            } else if field.field_type == FieldType::Tstring {
+                typ = String::from("RepeatedString<'a>");
             }
         }
 
@@ -377,15 +387,27 @@ impl<'a> Iterator for Repeated{name}Iterator<'a> {{
                 )?;
             }
         } else if field.repeated {
-            write!(
-                w,
-                r#"            Self::DecodedOwned(x) => RepeatedField::DecodedReference(x.{name}.as_slice()),
+            if field.field_type == FieldType::Tstring {
+                write!(
+                    w,
+                    r#"            Self::DecodedOwned(x) => RepeatedString::Decoded(x.{name}.as_slice()),
+            Self::DecodedReference(x) => RepeatedString::Decoded(x.{name}.as_slice()),
+            Self::Encoded(x) => RepeatedString::Encoded(x.get({idx}).unwrap().unwrap()),
+"#,
+                    name = field.field_name,
+                    idx = idx,
+                )?;
+            } else {
+                write!(
+                    w,
+                    r#"            Self::DecodedOwned(x) => RepeatedField::DecodedReference(x.{name}.as_slice()),
             Self::DecodedReference(x) => RepeatedField::DecodedReference(x.{name}.as_slice()),
             Self::Encoded(x) => RepeatedField::Encoded(x.get({idx}).unwrap().unwrap()),
 "#,
-                name = field.field_name,
-                idx = idx,
-            )?;
+                    name = field.field_name,
+                    idx = idx,
+                )?;
+            }
         } else if field.field_type == FieldType::Tstring {
             write!(
                 w,
@@ -414,7 +436,7 @@ impl<'a> Iterator for Repeated{name}Iterator<'a> {{
             )?;
         }
 
-        write!(w, "        }}\n    }}\n");
+        write!(w, "        }}\n    }}\n")?;
 
         // Implement setters
         if let FieldType::Other(s) = &field.field_type {
