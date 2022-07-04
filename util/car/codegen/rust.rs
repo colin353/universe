@@ -16,7 +16,7 @@ mod test_test;
 
 const IMPORTS: &'static str = r#"
 use car::{
-    DeserializeOwned, EncodedStruct, EncodedStructBuilder, RepeatedField, Serialize,
+    DeserializeOwned, EncodedStruct, EncodedStructBuilder, RepeatedField, Serialize, RefContainer, RepeatedFieldIterator
 };
 
 "#;
@@ -88,7 +88,7 @@ fn generate_message<W: std::io::Write>(
 ) -> Result<(), std::io::Error> {
     write!(
         w,
-        r#"#[derive(Clone, Default)]
+        r#"#[derive(Clone, Debug, Default)]
 struct {name}Owned {{
 "#,
         name = msg.name
@@ -219,6 +219,46 @@ impl DeserializeOwned for {name}Owned {{
         name = msg.name,
     )?;
 
+    // Define repeated struct
+    write!(
+        w,
+        r#"#[derive(Debug)]
+enum Repeated{name}<'a> {{
+    Encoded(RepeatedField<'a, {name}<'a>>),
+    Decoded(&'a [{name}Owned]),
+}}
+
+enum Repeated{name}Iterator<'a> {{
+    Encoded(RepeatedFieldIterator<'a, {name}<'a>>),
+    Decoded(std::slice::Iter<'a, {name}Owned>),
+}}
+
+impl<'a> Repeated{name}<'a> {{
+    pub fn iter(&'a self) -> Repeated{name}Iterator<'a> {{
+        match self {{
+            Self::Encoded(r) => Repeated{name}Iterator::Encoded(r.iter()),
+            Self::Decoded(s) => Repeated{name}Iterator::Decoded(s.iter()),
+        }}
+    }}
+}}
+
+impl<'a> Iterator for Repeated{name}Iterator<'a> {{
+    type Item = {name}<'a>;
+    fn next(&mut self) -> Option<Self::Item> {{
+        match self {{
+            Self::Encoded(it) => match it.next()? {{
+                RefContainer::Owned(b) => Some(*b),
+                _ => None,
+            }},
+            Self::Decoded(it) => Some({name}::DecodedReference(it.next()?)),
+        }}
+    }}
+}}
+
+"#,
+        name = msg.name
+    )?;
+
     // Implement enum version
     write!(w, "impl<'a> {name}<'a> {{\n", name = msg.name)?;
 
@@ -295,7 +335,12 @@ impl DeserializeOwned for {name}Owned {{
     // Implement field getters
     for (idx, field) in msg.fields.iter().enumerate() {
         let owned_type = get_type_name(&field);
-        let typ = get_return_type_name(&field);
+        let mut typ = get_return_type_name(&field);
+        if let FieldType::Other(s) = &field.field_type {
+            if field.repeated {
+                typ = format!("Repeated{name}<'a>", name = s);
+            }
+        }
 
         write!(
             w,
@@ -306,40 +351,39 @@ impl DeserializeOwned for {name}Owned {{
             field_type = typ
         )?;
 
-        if field.repeated {
+        if let FieldType::Other(s) = &field.field_type {
+            if field.repeated {
+                write!(
+                    w,
+                    r#"            Self::DecodedOwned(x) => Repeated{field_type}::Decoded(x.{name}.as_slice()),
+            Self::DecodedReference(x) => Repeated{field_type}::Decoded(&x.{name}.as_slice()),
+            // TODO: remove unwrap
+            Self::Encoded(x) => Repeated{field_type}::Encoded(RepeatedField::Encoded(x.get({idx}).unwrap().unwrap())),
+"#,
+                    field_type = s,
+                    name = field.field_name,
+                    idx = idx,
+                )?;
+            } else {
+                write!(
+                    w,
+                    r#"            Self::DecodedOwned(x) => {field_type}::DecodedReference(&x.{name}),
+            Self::DecodedReference(x) => {field_type}::DecodedReference(&x.{name}),
+            Self::Encoded(x) => {field_type}::Encoded(x.get({idx}).unwrap().unwrap()),
+"#,
+                    name = field.field_name,
+                    field_type = typ,
+                    idx = idx,
+                )?;
+            }
+        } else if field.repeated {
             write!(
                 w,
                 r#"            Self::DecodedOwned(x) => RepeatedField::DecodedReference(x.{name}.as_slice()),
             Self::DecodedReference(x) => RepeatedField::DecodedReference(x.{name}.as_slice()),
+            Self::Encoded(x) => RepeatedField::Encoded(x.get({idx}).unwrap().unwrap()),
 "#,
                 name = field.field_name,
-            )?;
-
-            write!(
-                w,
-                r#"            Self::Encoded(x) => RepeatedField::Encoded(x.get({idx}).unwrap().unwrap()),
-        }}
-    }}
-"#,
-                idx = idx,
-            )?;
-        } else if let FieldType::Other(s) = &field.field_type {
-            write!(
-                w,
-                r#"            Self::DecodedOwned(x) => {field_type}::DecodedReference(&x.{name}),
-            Self::DecodedReference(x) => {field_type}::DecodedReference(&x.{name}),
-"#,
-                name = field.field_name,
-                field_type = typ,
-            )?;
-
-            write!(
-                w,
-                r#"            Self::Encoded(x) => {name}::Encoded(x.get({idx}).unwrap().unwrap()),
-        }}
-    }}
-"#,
-                name = s,
                 idx = idx,
             )?;
         } else if field.field_type == FieldType::Tstring {
@@ -347,17 +391,9 @@ impl DeserializeOwned for {name}Owned {{
                 w,
                 r#"            Self::DecodedOwned(x) => x.{name}.as_str(),
             Self::DecodedReference(x) => x.{name}.as_str(),
-
+            Self::Encoded(x) => x.get({idx}).unwrap().unwrap(),
 "#,
                 name = field.field_name,
-            )?;
-
-            write!(
-                w,
-                r#"            Self::Encoded(x) => x.get({idx}).unwrap().unwrap(),
-        }}
-    }}
-"#,
                 idx = idx,
             )?;
         } else {
@@ -373,18 +409,38 @@ impl DeserializeOwned for {name}Owned {{
             write!(
                 w,
                 r#"            Self::Encoded(x) => x.get({idx}).unwrap().unwrap(),
-        }}
-    }}
 "#,
                 idx = idx,
             )?;
         }
 
+        write!(w, "        }}\n    }}\n");
+
         // Implement setters
         if let FieldType::Other(s) = &field.field_type {
-            write!(
-                w,
-                r#"    pub fn set_{name}(&mut self, value: {field_type}) -> Result<(), std::io::Error> {{
+            if field.repeated {
+                write!(
+                    w,
+                    r#"    pub fn set_{name}(&mut self, values: Vec<{field_type}Owned>) -> Result<(), std::io::Error> {{
+        match self {{
+            Self::Encoded(_) | Self::DecodedReference(_) => {{
+                *self = self.to_owned()?;
+                self.set_{name}(values)?;
+            }}
+            Self::DecodedOwned(v) => {{
+                v.{name} = values;
+            }}
+        }}
+        Ok(())
+    }}
+"#,
+                    name = field.field_name,
+                    field_type = s
+                )?;
+            } else {
+                write!(
+                    w,
+                    r#"    pub fn set_{name}(&mut self, value: {field_type}) -> Result<(), std::io::Error> {{
         match self {{
             Self::Encoded(_) | Self::DecodedReference(_) => {{
                 *self = self.to_owned()?;
@@ -397,9 +453,10 @@ impl DeserializeOwned for {name}Owned {{
         Ok(())
     }}
 "#,
-                name = field.field_name,
-                field_type = s
-            )?;
+                    name = field.field_name,
+                    field_type = s
+                )?;
+            }
         } else {
             write!(
                 w,

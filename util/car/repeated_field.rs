@@ -6,13 +6,12 @@ pub enum RepeatedField<'a, T> {
     Encoded(EncodedStruct<'a>),
     DecodedOwned(Vec<T>),
     DecodedReference(&'a [T]),
-    Translated(&'a dyn RepeatedFieldTranslator<Item = T>),
 }
 
 impl<'a, T: std::fmt::Debug + DeserializeOwned> std::fmt::Debug for RepeatedField<'a, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Encoded(_) | Self::Translated(_) => {
+            Self::Encoded(_) => {
                 write!(f, "[")?;
                 let mut iter = self.iter();
                 let mut next = iter.next();
@@ -44,7 +43,6 @@ where
             RepeatedField::Encoded(s) => s.get(index).map(|x| x.unwrap()),
             RepeatedField::DecodedOwned(v) => Some(&v[index]),
             RepeatedField::DecodedReference(v) => Some(&v[index]),
-            RepeatedField::Translated(_) => unreachable!(),
         }
     }
 }
@@ -55,7 +53,6 @@ impl<'a> RepeatedField<'a, u64> {
             RepeatedField::Encoded(s) => s.get(index).map(|x| x.unwrap()),
             RepeatedField::DecodedOwned(v) => Some(v[index]),
             RepeatedField::DecodedReference(v) => Some(v[index]),
-            RepeatedField::Translated(_) => unreachable!(),
         }
     }
 }
@@ -69,21 +66,8 @@ where
             Self::Encoded(e) => RepeatedFieldIterator::Encoded(e.iter()),
             Self::DecodedOwned(i) => RepeatedFieldIterator::DecodedOwned(i.iter()),
             Self::DecodedReference(i) => RepeatedFieldIterator::DecodedReference(i.iter()),
-            Self::Translated(t) => RepeatedFieldIterator::Translated(*t, 0),
         }
     }
-}
-
-impl<'a, T, R: RepeatedFieldTranslator<Item = T>> RepeatedFieldTranslator for &R {
-    type Item = T;
-    fn get(&self, index: usize) -> Option<Self::Item> {
-        (*self).get(index)
-    }
-}
-
-pub trait RepeatedFieldTranslator {
-    type Item;
-    fn get(&self, index: usize) -> Option<Self::Item>;
 }
 
 #[derive(Clone)]
@@ -312,7 +296,6 @@ pub enum RepeatedFieldIterator<'a, T> {
     Encoded(EncodedStructIterator<'a>),
     DecodedOwned(std::slice::Iter<'a, T>),
     DecodedReference(std::slice::Iter<'a, T>),
-    Translated(&'a dyn RepeatedFieldTranslator<Item = T>, usize),
 }
 
 impl<'a, T: DeserializeOwned> Iterator for RepeatedFieldIterator<'a, T> {
@@ -327,11 +310,6 @@ impl<'a, T: DeserializeOwned> Iterator for RepeatedFieldIterator<'a, T> {
             }
             Self::DecodedOwned(i) => Some(RefContainer::Reference(i.next()?)),
             Self::DecodedReference(i) => Some(RefContainer::Reference(i.next()?)),
-            Self::Translated(t, ref mut pos) => {
-                let out = t.get(*pos)?;
-                *pos += 1;
-                Some(RefContainer::Owned(Box::new(out)))
-            }
         }
     }
 }

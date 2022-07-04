@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use crate::{Toot, Zoot};
+    use crate::{Container, Toot, TootOwned, Zoot};
     #[test]
     fn test_nested_struct_encode_decode() {
         let mut t = Toot::new();
@@ -86,5 +86,34 @@ mod tests {
             out,
             r#"Zoot { toot: Toot { id: 77 }, size: [5, 10, 15, 20], name: "" }"#
         );
+    }
+
+    #[test]
+    fn test_repeated_struct() {
+        let mut c = Container::new();
+        c.set_values(vec![TootOwned { id: 23 }, TootOwned { id: 34 }])
+            .unwrap();
+
+        for (idx, v) in c.get_values().iter().enumerate() {
+            if idx == 0 {
+                assert_eq!(v.get_id(), 23);
+            } else {
+                assert_eq!(v.get_id(), 34);
+            }
+        }
+        assert_eq!(c.get_values().iter().count(), 2);
+
+        let mut buf = Vec::new();
+        c.encode(&mut buf).unwrap();
+
+        let bc = Container::from_bytes(&buf).unwrap();
+        for (idx, v) in bc.get_values().iter().enumerate() {
+            if idx == 0 {
+                assert_eq!(v.get_id(), 23);
+            } else {
+                assert_eq!(v.get_id(), 34);
+            }
+        }
+        assert_eq!(bc.get_values().iter().count(), 2);
     }
 }
