@@ -49,7 +49,7 @@ fn get_type_name(f: &parser::FieldDefinition) -> String {
     };
 
     let typ = if let FieldType::Other(_) = &f.field_type {
-        format!("{}Owned", typ)
+        format!("{}", typ)
     } else {
         typ.to_owned()
     };
@@ -89,7 +89,7 @@ fn generate_message<W: std::io::Write>(
     write!(
         w,
         r#"#[derive(Clone, Debug, Default)]
-struct {name}Owned {{
+struct {name} {{
 "#,
         name = msg.name
     )?;
@@ -108,16 +108,16 @@ struct {name}Owned {{
     write!(
         w,
         r#"#[derive(Clone)]
-enum {name}<'a> {{
+enum {name}View<'a> {{
     Encoded(EncodedStruct<'a>),
-    DecodedOwned(Box<{name}Owned>),
-    DecodedReference(&'a {name}Owned),
+    DecodedOwned(Box<{name}>),
+    DecodedReference(&'a {name}),
 }}
 
 
-impl<'a> Default for {name}<'a> {{
+impl<'a> Default for {name}View<'a> {{
     fn default() -> Self {{
-        Self::DecodedOwned(Box::new({name}Owned::default()))
+        Self::DecodedOwned(Box::new({name}::default()))
     }}
 }}
 
@@ -128,7 +128,7 @@ impl<'a> Default for {name}<'a> {{
     // Implement Debug for the enum type
     write!(
         w,
-        r#"impl<'a> std::fmt::Debug for {name}<'a> {{
+        r#"impl<'a> std::fmt::Debug for {name}View<'a> {{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {{
         f.debug_struct("{name}")
 "#,
@@ -154,7 +154,7 @@ impl<'a> Default for {name}<'a> {{
     )?;
 
     // Implement Serialize for the owned version
-    write!(w, "impl Serialize for {name}Owned {{\n", name = msg.name)?;
+    write!(w, "impl Serialize for {name} {{\n", name = msg.name)?;
 
     write!(
         w,
@@ -177,7 +177,7 @@ impl<'a> Default for {name}<'a> {{
     }}
 }}
 
-impl DeserializeOwned for {name}Owned {{
+impl DeserializeOwned for {name} {{
 ",
         name = msg.name,
     )?;
@@ -210,9 +210,9 @@ impl DeserializeOwned for {name}Owned {{
     // Implement DeserializeOwned for the non-owned version
     write!(
         w,
-        r#"impl<'a> DeserializeOwned for {name}<'a> {{
+        r#"impl<'a> DeserializeOwned for {name}View<'a> {{
     fn decode_owned(bytes: &[u8]) -> Result<Self, std::io::Error> {{
-        Ok(Self::DecodedOwned(Box::new({name}Owned::decode_owned(bytes)?)))
+        Ok(Self::DecodedOwned(Box::new({name}::decode_owned(bytes)?)))
     }}
 }}
 "#,
@@ -223,8 +223,8 @@ impl DeserializeOwned for {name}Owned {{
     write!(
         w,
         r#"enum Repeated{name}<'a> {{
-    Encoded(RepeatedField<'a, {name}<'a>>),
-    Decoded(&'a [{name}Owned]),
+    Encoded(RepeatedField<'a, {name}View<'a>>),
+    Decoded(&'a [{name}]),
 }}
 
 impl<'a> std::fmt::Debug for Repeated{name}<'a> {{
@@ -237,8 +237,8 @@ impl<'a> std::fmt::Debug for Repeated{name}<'a> {{
 }}
 
 enum Repeated{name}Iterator<'a> {{
-    Encoded(RepeatedFieldIterator<'a, {name}<'a>>),
-    Decoded(std::slice::Iter<'a, {name}Owned>),
+    Encoded(RepeatedFieldIterator<'a, {name}View<'a>>),
+    Decoded(std::slice::Iter<'a, {name}>),
 }}
 
 impl<'a> Repeated{name}<'a> {{
@@ -251,14 +251,14 @@ impl<'a> Repeated{name}<'a> {{
 }}
 
 impl<'a> Iterator for Repeated{name}Iterator<'a> {{
-    type Item = {name}<'a>;
+    type Item = {name}View<'a>;
     fn next(&mut self) -> Option<Self::Item> {{
         match self {{
             Self::Encoded(it) => match it.next()? {{
                 RefContainer::Owned(b) => Some(*b),
                 _ => None,
             }},
-            Self::Decoded(it) => Some({name}::DecodedReference(it.next()?)),
+            Self::Decoded(it) => Some({name}View::DecodedReference(it.next()?)),
         }}
     }}
 }}
@@ -267,14 +267,34 @@ impl<'a> Iterator for Repeated{name}Iterator<'a> {{
         name = msg.name
     )?;
 
-    // Implement enum version
-    write!(w, "impl<'a> {name}<'a> {{\n", name = msg.name)?;
+    // Implement owned version
+    write!(
+        w,
+        r#"impl {name} {{
+    pub fn new() -> Self {{
+        Self::default()
+    }}
+
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, std::io::Error> {{
+        {name}View::from_bytes(bytes)?.to_owned()
+    }}
+
+    pub fn as_view<'a>(&'a self) -> {name}View {{
+        {name}View::DecodedReference(self)
+    }}
+}}
+"#,
+        name = msg.name
+    )?;
+
+    // Implement view version
+    write!(w, "impl<'a> {name}View<'a> {{\n", name = msg.name)?;
 
     // Implement new constructor
     write!(
         w,
         r#"    pub fn new() -> Self {{
-        Self::DecodedOwned(Box::new({name}Owned {{
+        Self::DecodedOwned(Box::new({name} {{
             ..Default::default()
         }}))
     }}
@@ -294,19 +314,11 @@ impl<'a> Iterator for Repeated{name}Iterator<'a> {{
     // Implement to_owned, which converts to an owned type
     write!(
         w,
-        r#"    pub fn to_owned(&self) -> Result<Self, std::io::Error> {{
-        match self {{
-            Self::DecodedOwned(t) => Ok(Self::DecodedOwned(t.clone())),
-            Self::DecodedReference(t) => Ok(Self::DecodedOwned(Box::new((*t).clone()))),
-            Self::Encoded(_) => Ok(Self::DecodedOwned(Box::new(self.clone_owned()?))),
-        }}
-    }}
-
-    pub fn clone_owned(&self) -> Result<{name}Owned, std::io::Error> {{
+        r#"    pub fn to_owned(&self) -> Result<{name}, std::io::Error> {{
         match self {{
             Self::DecodedOwned(t) => Ok(t.as_ref().clone()),
             Self::DecodedReference(t) => Ok((*t).clone()),
-            Self::Encoded(t) => Ok({name}Owned {{
+            Self::Encoded(t) => Ok({name} {{
 "#,
         name = msg.name,
     )?;
@@ -342,7 +354,6 @@ impl<'a> Iterator for Repeated{name}Iterator<'a> {{
 
     // Implement field getters
     for (idx, field) in msg.fields.iter().enumerate() {
-        let owned_type = get_type_name(&field);
         let mut typ = get_return_type_name(&field);
         if field.repeated {
             if let FieldType::Other(s) = &field.field_type {
@@ -350,6 +361,8 @@ impl<'a> Iterator for Repeated{name}Iterator<'a> {{
             } else if field.field_type == FieldType::Tstring {
                 typ = String::from("RepeatedString<'a>");
             }
+        } else if let FieldType::Other(s) = &field.field_type {
+            typ = format!("{name}View<'a>", name = s);
         }
 
         write!(
@@ -377,12 +390,12 @@ impl<'a> Iterator for Repeated{name}Iterator<'a> {{
             } else {
                 write!(
                     w,
-                    r#"            Self::DecodedOwned(x) => {field_type}::DecodedReference(&x.{name}),
-            Self::DecodedReference(x) => {field_type}::DecodedReference(&x.{name}),
-            Self::Encoded(x) => {field_type}::Encoded(x.get({idx}).unwrap().unwrap()),
+                    r#"            Self::DecodedOwned(x) => {field_type}View::DecodedReference(&x.{name}),
+            Self::DecodedReference(x) => {field_type}View::DecodedReference(&x.{name}),
+            Self::Encoded(x) => {field_type}View::Encoded(x.get({idx}).unwrap().unwrap()),
 "#,
                     name = field.field_name,
-                    field_type = typ,
+                    field_type = s,
                     idx = idx,
                 )?;
             }
@@ -437,107 +450,6 @@ impl<'a> Iterator for Repeated{name}Iterator<'a> {{
         }
 
         write!(w, "        }}\n    }}\n")?;
-
-        // Implement setters
-        if let FieldType::Other(s) = &field.field_type {
-            if field.repeated {
-                write!(
-                    w,
-                    r#"    pub fn set_{name}(&mut self, values: Vec<{field_type}Owned>) -> Result<(), std::io::Error> {{
-        match self {{
-            Self::Encoded(_) | Self::DecodedReference(_) => {{
-                *self = self.to_owned()?;
-                self.set_{name}(values)?;
-            }}
-            Self::DecodedOwned(v) => {{
-                v.{name} = values;
-            }}
-        }}
-        Ok(())
-    }}
-"#,
-                    name = field.field_name,
-                    field_type = s
-                )?;
-            } else {
-                write!(
-                    w,
-                    r#"    pub fn set_{name}(&mut self, value: {field_type}) -> Result<(), std::io::Error> {{
-        match self {{
-            Self::Encoded(_) | Self::DecodedReference(_) => {{
-                *self = self.to_owned()?;
-                self.set_{name}(value)?;
-            }}
-            Self::DecodedOwned(v) => {{
-                v.{name} = value.clone_owned()?;
-            }}
-        }}
-        Ok(())
-    }}
-"#,
-                    name = field.field_name,
-                    field_type = s
-                )?;
-            }
-        } else {
-            write!(
-                w,
-                r#"    pub fn set_{name}(&mut self, value: {field_type}) -> Result<(), std::io::Error> {{
-        match self {{
-            Self::Encoded(_) | Self::DecodedReference(_) => {{
-                *self = self.to_owned()?;
-                self.set_{name}(value)?;
-            }}
-            Self::DecodedOwned(v) => {{
-                v.{name} = value;
-            }}
-        }}
-        Ok(())
-    }}
-"#,
-                name = field.field_name,
-                field_type = owned_type
-            )?;
-        }
-
-        // Implement mut_... accessors
-        if field.repeated {
-            write!(
-                w,
-                r#"    pub fn mut_{name}(&mut self) -> Result<&mut {field_type}, std::io::Error> {{
-        match self {{
-            Self::Encoded(_) | Self::DecodedReference(_) => {{
-                *self = self.to_owned()?;
-                self.mut_{name}()
-            }}
-            Self::DecodedOwned(v) => {{
-                Ok(&mut v.{name})
-            }}
-        }}
-    }}
-"#,
-                name = field.field_name,
-                field_type = owned_type,
-            )?;
-        } else if let FieldType::Other(s) = &field.field_type {
-            write!(
-                w,
-                r#"    pub fn mut_{name}(&mut self) -> Result<&mut {field_type}Owned, std::io::Error> {{
-        match self {{
-            Self::Encoded(_) | Self::DecodedReference(_) => {{
-                *self = self.to_owned()?;
-                self.mut_{name}()
-            }}
-            Self::DecodedOwned(v) => {{
-                Ok(&mut v.{name})
-            }}
-        }}
-    }}
-"#,
-                name = field.field_name,
-                field_type = s,
-            )?;
-        }
     }
 
     write!(w, "}}\n")?;
