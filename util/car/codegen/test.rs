@@ -12,7 +12,7 @@
 mod test_test;
 
 use car::{
-    DeserializeOwned, EncodedStruct, EncodedStructBuilder, RepeatedField, RefContainer,
+    DeserializeOwned, EncodedStruct, EncodedStructBuilder, RefContainer, RepeatedField,
     RepeatedFieldIterator, RepeatedString, Serialize,
 };
 
@@ -29,7 +29,6 @@ enum ZootView<'a> {
     DecodedReference(&'a Zoot),
 }
 
-
 impl<'a> Default for ZootView<'a> {
     fn default() -> Self {
         Self::DecodedOwned(Box::new(Zoot::default()))
@@ -39,10 +38,10 @@ impl<'a> Default for ZootView<'a> {
 impl<'a> std::fmt::Debug for ZootView<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Zoot")
-      .field("toot", &self.get_toot())
-      .field("size", &self.get_size())
-      .field("name", &self.get_name())
-      .finish()
+            .field("toot", &self.get_toot())
+            .field("size", &self.get_size())
+            .field("name", &self.get_name())
+            .finish()
     }
 }
 
@@ -185,7 +184,6 @@ enum TootView<'a> {
     DecodedReference(&'a Toot),
 }
 
-
 impl<'a> Default for TootView<'a> {
     fn default() -> Self {
         Self::DecodedOwned(Box::new(Toot::default()))
@@ -194,9 +192,7 @@ impl<'a> Default for TootView<'a> {
 
 impl<'a> std::fmt::Debug for TootView<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Toot")
-      .field("id", &self.get_id())
-      .finish()
+        f.debug_struct("Toot").field("id", &self.get_id()).finish()
     }
 }
 
@@ -321,7 +317,6 @@ enum ContainerView<'a> {
     DecodedReference(&'a Container),
 }
 
-
 impl<'a> Default for ContainerView<'a> {
     fn default() -> Self {
         Self::DecodedOwned(Box::new(Container::default()))
@@ -331,9 +326,9 @@ impl<'a> Default for ContainerView<'a> {
 impl<'a> std::fmt::Debug for ContainerView<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Container")
-      .field("values", &self.get_values())
-      .field("names", &self.get_names())
-      .finish()
+            .field("values", &self.get_values())
+            .field("names", &self.get_names())
+            .finish()
     }
 }
 
@@ -357,7 +352,9 @@ impl DeserializeOwned for Container {
 }
 impl<'a> DeserializeOwned for ContainerView<'a> {
     fn decode_owned(bytes: &[u8]) -> Result<Self, std::io::Error> {
-        Ok(Self::DecodedOwned(Box::new(Container::decode_owned(bytes)?)))
+        Ok(Self::DecodedOwned(Box::new(Container::decode_owned(
+            bytes,
+        )?)))
     }
 }
 enum RepeatedContainer<'a> {
@@ -445,7 +442,9 @@ impl<'a> ContainerView<'a> {
             Self::DecodedOwned(x) => RepeatedToot::Decoded(x.values.as_slice()),
             Self::DecodedReference(x) => RepeatedToot::Decoded(&x.values.as_slice()),
             // TODO: remove unwrap
-            Self::Encoded(x) => RepeatedToot::Encoded(RepeatedField::Encoded(x.get(0).unwrap().unwrap())),
+            Self::Encoded(x) => {
+                RepeatedToot::Encoded(RepeatedField::Encoded(x.get(0).unwrap().unwrap()))
+            }
         }
     }
     pub fn get_names(&'a self) -> RepeatedString<'a> {

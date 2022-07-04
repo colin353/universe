@@ -139,7 +139,7 @@ impl<'a> Default for {name}View<'a> {{
     for (_, field) in msg.fields.iter().enumerate() {
         write!(
             w,
-            r#"      .field("{field_name}", &self.get_{field_name}())
+            r#"            .field("{field_name}", &self.get_{field_name}())
 "#,
             field_name = field.field_name
         )?;
@@ -147,7 +147,7 @@ impl<'a> Default for {name}View<'a> {{
 
     write!(
         w,
-        "      .finish()
+        "            .finish()
     }}
 }}
 
