@@ -1,7 +1,7 @@
 use crate::varint;
 use crate::{Deserialize, Serialize};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Copy)]
 pub struct Pack<'a> {
     data: &'a [u8],
     offsets: &'a [u32],

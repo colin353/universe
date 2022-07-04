@@ -145,6 +145,12 @@ mod tests {
         cv.encode(&mut buf).unwrap();
 
         let bc = ContainerView::from_bytes(&buf).unwrap();
+
+        assert_eq!(
+            format!("{:?}", bc),
+            "Container { values: [Toot { id: 23 }, Toot { id: 34 }], names: [\"asdf\", \"fdsa\"] }"
+        );
+
         for (idx, v) in bc.get_names().iter().enumerate() {
             if idx == 0 {
                 assert_eq!(v, "asdf");

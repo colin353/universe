@@ -12,7 +12,7 @@
 mod test_test;
 
 use car::{
-    DeserializeOwned, EncodedStruct, EncodedStructBuilder, RefContainer, RepeatedField,
+    Deserialize, DeserializeOwned, EncodedStruct, EncodedStructBuilder, RepeatedField,
     RepeatedFieldIterator, RepeatedString, Serialize,
 };
 
@@ -22,19 +22,11 @@ struct Zoot {
     size: Vec<u64>,
     name: String,
 }
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 enum ZootView<'a> {
     Encoded(EncodedStruct<'a>),
-    DecodedOwned(Box<Zoot>),
-    DecodedReference(&'a Zoot),
+    Decoded(&'a Zoot),
 }
-
-impl<'a> Default for ZootView<'a> {
-    fn default() -> Self {
-        Self::DecodedOwned(Box::new(Zoot::default()))
-    }
-}
-
 impl<'a> std::fmt::Debug for ZootView<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Zoot")
@@ -65,9 +57,9 @@ impl DeserializeOwned for Zoot {
         })
     }
 }
-impl<'a> DeserializeOwned for ZootView<'a> {
-    fn decode_owned(bytes: &[u8]) -> Result<Self, std::io::Error> {
-        Ok(Self::DecodedOwned(Box::new(Zoot::decode_owned(bytes)?)))
+impl<'a> Deserialize<'a> for ZootView<'a> {
+    fn decode(bytes: &'a [u8]) -> Result<Self, std::io::Error> {
+        Ok(Self::Encoded(EncodedStruct::from_bytes(bytes)?))
     }
 }
 enum RepeatedZoot<'a> {
@@ -78,7 +70,19 @@ enum RepeatedZoot<'a> {
 impl<'a> std::fmt::Debug for RepeatedZoot<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Encoded(v) => v.fmt(f),
+            Self::Encoded(v) => {
+                write!(f, "[")?;
+                let mut first = true;
+                for item in v {
+                    if first {
+                        first = false;
+                    } else {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{:?}", item)?;
+                }
+                write!(f, "]")
+            }
             Self::Decoded(v) => v.fmt(f),
         }
     }
@@ -102,11 +106,8 @@ impl<'a> Iterator for RepeatedZootIterator<'a> {
     type Item = ZootView<'a>;
     fn next(&mut self) -> Option<Self::Item> {
         match self {
-            Self::Encoded(it) => match it.next()? {
-                RefContainer::Owned(b) => Some(*b),
-                _ => None,
-            },
-            Self::Decoded(it) => Some(ZootView::DecodedReference(it.next()?)),
+            Self::Encoded(it) => it.next(),
+            Self::Decoded(it) => Some(ZootView::Decoded(it.next()?)),
         }
     }
 }
@@ -121,22 +122,16 @@ impl Zoot {
     }
 
     pub fn as_view<'a>(&'a self) -> ZootView {
-        ZootView::DecodedReference(self)
+        ZootView::Decoded(self)
     }
 }
 impl<'a> ZootView<'a> {
-    pub fn new() -> Self {
-        Self::DecodedOwned(Box::new(Zoot {
-            ..Default::default()
-        }))
-    }
     pub fn from_bytes(bytes: &'a [u8]) -> Result<Self, std::io::Error> {
         Ok(Self::Encoded(EncodedStruct::new(bytes)?))
     }
     pub fn to_owned(&self) -> Result<Zoot, std::io::Error> {
         match self {
-            Self::DecodedOwned(t) => Ok(t.as_ref().clone()),
-            Self::DecodedReference(t) => Ok((*t).clone()),
+            Self::Decoded(t) => Ok((*t).clone()),
             Self::Encoded(t) => Ok(Zoot {
                 toot: t.get_owned(0).unwrap()?,
                 size: t.get_owned(1).unwrap()?,
@@ -146,29 +141,25 @@ impl<'a> ZootView<'a> {
     }
     pub fn encode<W: std::io::Write>(&self, writer: &mut W) -> Result<usize, std::io::Error> {
         match self {
-            Self::DecodedOwned(t) => t.encode(writer),
-            Self::DecodedReference(t) => t.encode(writer),
+            Self::Decoded(t) => t.encode(writer),
             Self::Encoded(t) => t.encode(writer),
         }
     }
     pub fn get_toot(&'a self) -> TootView<'a> {
         match self {
-            Self::DecodedOwned(x) => TootView::DecodedReference(&x.toot),
-            Self::DecodedReference(x) => TootView::DecodedReference(&x.toot),
+           Self::Decoded(x) => TootView::Decoded(&x.toot),
             Self::Encoded(x) => TootView::Encoded(x.get(0).unwrap().unwrap()),
         }
     }
     pub fn get_size(&'a self) -> RepeatedField<'a, u64> {
         match self {
-            Self::DecodedOwned(x) => RepeatedField::DecodedReference(x.size.as_slice()),
-            Self::DecodedReference(x) => RepeatedField::DecodedReference(x.size.as_slice()),
+            Self::Decoded(x) => RepeatedField::Decoded(x.size.as_slice()),
             Self::Encoded(x) => RepeatedField::Encoded(x.get(1).unwrap().unwrap()),
         }
     }
     pub fn get_name(&'a self) -> &str {
         match self {
-            Self::DecodedOwned(x) => x.name.as_str(),
-            Self::DecodedReference(x) => x.name.as_str(),
+            Self::Decoded(x) => x.name.as_str(),
             Self::Encoded(x) => x.get(2).unwrap().unwrap(),
         }
     }
@@ -177,22 +168,16 @@ impl<'a> ZootView<'a> {
 struct Toot {
     id: u32,
 }
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 enum TootView<'a> {
     Encoded(EncodedStruct<'a>),
-    DecodedOwned(Box<Toot>),
-    DecodedReference(&'a Toot),
+    Decoded(&'a Toot),
 }
-
-impl<'a> Default for TootView<'a> {
-    fn default() -> Self {
-        Self::DecodedOwned(Box::new(Toot::default()))
-    }
-}
-
 impl<'a> std::fmt::Debug for TootView<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Toot").field("id", &self.get_id()).finish()
+        f.debug_struct("Toot")
+            .field("id", &self.get_id())
+            .finish()
     }
 }
 
@@ -212,9 +197,9 @@ impl DeserializeOwned for Toot {
         })
     }
 }
-impl<'a> DeserializeOwned for TootView<'a> {
-    fn decode_owned(bytes: &[u8]) -> Result<Self, std::io::Error> {
-        Ok(Self::DecodedOwned(Box::new(Toot::decode_owned(bytes)?)))
+impl<'a> Deserialize<'a> for TootView<'a> {
+    fn decode(bytes: &'a [u8]) -> Result<Self, std::io::Error> {
+        Ok(Self::Encoded(EncodedStruct::from_bytes(bytes)?))
     }
 }
 enum RepeatedToot<'a> {
@@ -225,7 +210,19 @@ enum RepeatedToot<'a> {
 impl<'a> std::fmt::Debug for RepeatedToot<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Encoded(v) => v.fmt(f),
+            Self::Encoded(v) => {
+                write!(f, "[")?;
+                let mut first = true;
+                for item in v {
+                    if first {
+                        first = false;
+                    } else {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{:?}", item)?;
+                }
+                write!(f, "]")
+            }
             Self::Decoded(v) => v.fmt(f),
         }
     }
@@ -249,11 +246,8 @@ impl<'a> Iterator for RepeatedTootIterator<'a> {
     type Item = TootView<'a>;
     fn next(&mut self) -> Option<Self::Item> {
         match self {
-            Self::Encoded(it) => match it.next()? {
-                RefContainer::Owned(b) => Some(*b),
-                _ => None,
-            },
-            Self::Decoded(it) => Some(TootView::DecodedReference(it.next()?)),
+            Self::Encoded(it) => it.next(),
+            Self::Decoded(it) => Some(TootView::Decoded(it.next()?)),
         }
     }
 }
@@ -268,22 +262,16 @@ impl Toot {
     }
 
     pub fn as_view<'a>(&'a self) -> TootView {
-        TootView::DecodedReference(self)
+        TootView::Decoded(self)
     }
 }
 impl<'a> TootView<'a> {
-    pub fn new() -> Self {
-        Self::DecodedOwned(Box::new(Toot {
-            ..Default::default()
-        }))
-    }
     pub fn from_bytes(bytes: &'a [u8]) -> Result<Self, std::io::Error> {
         Ok(Self::Encoded(EncodedStruct::new(bytes)?))
     }
     pub fn to_owned(&self) -> Result<Toot, std::io::Error> {
         match self {
-            Self::DecodedOwned(t) => Ok(t.as_ref().clone()),
-            Self::DecodedReference(t) => Ok((*t).clone()),
+            Self::Decoded(t) => Ok((*t).clone()),
             Self::Encoded(t) => Ok(Toot {
                 id: t.get_owned(0).unwrap()?,
             }),
@@ -291,16 +279,13 @@ impl<'a> TootView<'a> {
     }
     pub fn encode<W: std::io::Write>(&self, writer: &mut W) -> Result<usize, std::io::Error> {
         match self {
-            Self::DecodedOwned(t) => t.encode(writer),
-            Self::DecodedReference(t) => t.encode(writer),
+            Self::Decoded(t) => t.encode(writer),
             Self::Encoded(t) => t.encode(writer),
         }
     }
     pub fn get_id(&'a self) -> u32 {
         match self {
-            Self::DecodedOwned(x) => x.id,
-            Self::DecodedReference(x) => x.id,
-
+            Self::Decoded(x) => x.id,
             Self::Encoded(x) => x.get(0).unwrap().unwrap(),
         }
     }
@@ -310,19 +295,11 @@ struct Container {
     values: Vec<Toot>,
     names: Vec<String>,
 }
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 enum ContainerView<'a> {
     Encoded(EncodedStruct<'a>),
-    DecodedOwned(Box<Container>),
-    DecodedReference(&'a Container),
+    Decoded(&'a Container),
 }
-
-impl<'a> Default for ContainerView<'a> {
-    fn default() -> Self {
-        Self::DecodedOwned(Box::new(Container::default()))
-    }
-}
-
 impl<'a> std::fmt::Debug for ContainerView<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Container")
@@ -350,11 +327,9 @@ impl DeserializeOwned for Container {
         })
     }
 }
-impl<'a> DeserializeOwned for ContainerView<'a> {
-    fn decode_owned(bytes: &[u8]) -> Result<Self, std::io::Error> {
-        Ok(Self::DecodedOwned(Box::new(Container::decode_owned(
-            bytes,
-        )?)))
+impl<'a> Deserialize<'a> for ContainerView<'a> {
+    fn decode(bytes: &'a [u8]) -> Result<Self, std::io::Error> {
+        Ok(Self::Encoded(EncodedStruct::from_bytes(bytes)?))
     }
 }
 enum RepeatedContainer<'a> {
@@ -365,7 +340,19 @@ enum RepeatedContainer<'a> {
 impl<'a> std::fmt::Debug for RepeatedContainer<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Encoded(v) => v.fmt(f),
+            Self::Encoded(v) => {
+                write!(f, "[")?;
+                let mut first = true;
+                for item in v {
+                    if first {
+                        first = false;
+                    } else {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{:?}", item)?;
+                }
+                write!(f, "]")
+            }
             Self::Decoded(v) => v.fmt(f),
         }
     }
@@ -389,11 +376,8 @@ impl<'a> Iterator for RepeatedContainerIterator<'a> {
     type Item = ContainerView<'a>;
     fn next(&mut self) -> Option<Self::Item> {
         match self {
-            Self::Encoded(it) => match it.next()? {
-                RefContainer::Owned(b) => Some(*b),
-                _ => None,
-            },
-            Self::Decoded(it) => Some(ContainerView::DecodedReference(it.next()?)),
+            Self::Encoded(it) => it.next(),
+            Self::Decoded(it) => Some(ContainerView::Decoded(it.next()?)),
         }
     }
 }
@@ -408,22 +392,16 @@ impl Container {
     }
 
     pub fn as_view<'a>(&'a self) -> ContainerView {
-        ContainerView::DecodedReference(self)
+        ContainerView::Decoded(self)
     }
 }
 impl<'a> ContainerView<'a> {
-    pub fn new() -> Self {
-        Self::DecodedOwned(Box::new(Container {
-            ..Default::default()
-        }))
-    }
     pub fn from_bytes(bytes: &'a [u8]) -> Result<Self, std::io::Error> {
         Ok(Self::Encoded(EncodedStruct::new(bytes)?))
     }
     pub fn to_owned(&self) -> Result<Container, std::io::Error> {
         match self {
-            Self::DecodedOwned(t) => Ok(t.as_ref().clone()),
-            Self::DecodedReference(t) => Ok((*t).clone()),
+            Self::Decoded(t) => Ok((*t).clone()),
             Self::Encoded(t) => Ok(Container {
                 values: t.get_owned(0).unwrap()?,
                 names: t.get_owned(1).unwrap()?,
@@ -432,25 +410,20 @@ impl<'a> ContainerView<'a> {
     }
     pub fn encode<W: std::io::Write>(&self, writer: &mut W) -> Result<usize, std::io::Error> {
         match self {
-            Self::DecodedOwned(t) => t.encode(writer),
-            Self::DecodedReference(t) => t.encode(writer),
+            Self::Decoded(t) => t.encode(writer),
             Self::Encoded(t) => t.encode(writer),
         }
     }
     pub fn get_values(&'a self) -> RepeatedToot<'a> {
         match self {
-            Self::DecodedOwned(x) => RepeatedToot::Decoded(x.values.as_slice()),
-            Self::DecodedReference(x) => RepeatedToot::Decoded(&x.values.as_slice()),
+            Self::Decoded(x) => RepeatedToot::Decoded(&x.values.as_slice()),
             // TODO: remove unwrap
-            Self::Encoded(x) => {
-                RepeatedToot::Encoded(RepeatedField::Encoded(x.get(0).unwrap().unwrap()))
-            }
+            Self::Encoded(x) => RepeatedToot::Encoded(RepeatedField::Encoded(x.get(0).unwrap().unwrap())),
         }
     }
     pub fn get_names(&'a self) -> RepeatedString<'a> {
         match self {
-            Self::DecodedOwned(x) => RepeatedString::Decoded(x.names.as_slice()),
-            Self::DecodedReference(x) => RepeatedString::Decoded(x.names.as_slice()),
+            Self::Decoded(x) => RepeatedString::Decoded(x.names.as_slice()),
             Self::Encoded(x) => RepeatedString::Encoded(x.get(1).unwrap().unwrap()),
         }
     }

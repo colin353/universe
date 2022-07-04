@@ -16,7 +16,7 @@ mod test_test;
 
 const IMPORTS: &'static str = r#"
 use car::{
-    DeserializeOwned, EncodedStruct, EncodedStructBuilder, RepeatedField, RefContainer,
+    Deserialize, DeserializeOwned, EncodedStruct, EncodedStructBuilder, RepeatedField,
     RepeatedFieldIterator, RepeatedString, Serialize,
 };
 
@@ -108,20 +108,11 @@ struct {name} {{
 
     write!(
         w,
-        r#"#[derive(Clone)]
+        r#"#[derive(Clone, Copy)]
 enum {name}View<'a> {{
     Encoded(EncodedStruct<'a>),
-    DecodedOwned(Box<{name}>),
-    DecodedReference(&'a {name}),
+    Decoded(&'a {name}),
 }}
-
-
-impl<'a> Default for {name}View<'a> {{
-    fn default() -> Self {{
-        Self::DecodedOwned(Box::new({name}::default()))
-    }}
-}}
-
 "#,
         name = msg.name
     )?;
@@ -208,16 +199,16 @@ impl DeserializeOwned for {name} {{
 "#,
     )?;
 
-    // Implement DeserializeOwned for the non-owned version
+    // Implement Deserialize for the view
     write!(
         w,
-        r#"impl<'a> DeserializeOwned for {name}View<'a> {{
-    fn decode_owned(bytes: &[u8]) -> Result<Self, std::io::Error> {{
-        Ok(Self::DecodedOwned(Box::new({name}::decode_owned(bytes)?)))
+        r#"impl<'a> Deserialize<'a> for {name}View<'a> {{
+    fn decode(bytes: &'a [u8]) -> Result<Self, std::io::Error> {{
+        Ok(Self::Encoded(EncodedStruct::from_bytes(bytes)?))
     }}
 }}
 "#,
-        name = msg.name,
+        name = msg.name
     )?;
 
     // Define repeated struct
@@ -231,7 +222,19 @@ impl DeserializeOwned for {name} {{
 impl<'a> std::fmt::Debug for Repeated{name}<'a> {{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {{
         match self {{
-            Self::Encoded(v) => v.fmt(f),
+            Self::Encoded(v) => {{
+                write!(f, "[")?;
+                let mut first = true;
+                for item in v {{
+                    if first {{
+                        first = false;
+                    }} else {{
+                        write!(f, ", ")?;
+                    }}
+                    write!(f, "{{:?}}", item)?;
+                }}
+                write!(f, "]")
+            }}
             Self::Decoded(v) => v.fmt(f),
         }}
     }}
@@ -255,11 +258,8 @@ impl<'a> Iterator for Repeated{name}Iterator<'a> {{
     type Item = {name}View<'a>;
     fn next(&mut self) -> Option<Self::Item> {{
         match self {{
-            Self::Encoded(it) => match it.next()? {{
-                RefContainer::Owned(b) => Some(*b),
-                _ => None,
-            }},
-            Self::Decoded(it) => Some({name}View::DecodedReference(it.next()?)),
+            Self::Encoded(it) => it.next(),
+            Self::Decoded(it) => Some({name}View::Decoded(it.next()?)),
         }}
     }}
 }}
@@ -281,7 +281,7 @@ impl<'a> Iterator for Repeated{name}Iterator<'a> {{
     }}
 
     pub fn as_view<'a>(&'a self) -> {name}View {{
-        {name}View::DecodedReference(self)
+        {name}View::Decoded(self)
     }}
 }}
 "#,
@@ -290,18 +290,6 @@ impl<'a> Iterator for Repeated{name}Iterator<'a> {{
 
     // Implement view version
     write!(w, "impl<'a> {name}View<'a> {{\n", name = msg.name)?;
-
-    // Implement new constructor
-    write!(
-        w,
-        r#"    pub fn new() -> Self {{
-        Self::DecodedOwned(Box::new({name} {{
-            ..Default::default()
-        }}))
-    }}
-"#,
-        name = msg.name
-    )?;
 
     // Implement from_bytes constructor
     write!(
@@ -317,8 +305,7 @@ impl<'a> Iterator for Repeated{name}Iterator<'a> {{
         w,
         r#"    pub fn to_owned(&self) -> Result<{name}, std::io::Error> {{
         match self {{
-            Self::DecodedOwned(t) => Ok(t.as_ref().clone()),
-            Self::DecodedReference(t) => Ok((*t).clone()),
+            Self::Decoded(t) => Ok((*t).clone()),
             Self::Encoded(t) => Ok({name} {{
 "#,
         name = msg.name,
@@ -345,8 +332,7 @@ impl<'a> Iterator for Repeated{name}Iterator<'a> {{
         w,
         r#"    pub fn encode<W: std::io::Write>(&self, writer: &mut W) -> Result<usize, std::io::Error> {{
         match self {{
-            Self::DecodedOwned(t) => t.encode(writer),
-            Self::DecodedReference(t) => t.encode(writer),
+            Self::Decoded(t) => t.encode(writer),
             Self::Encoded(t) => t.encode(writer),
         }}
     }}
@@ -379,8 +365,7 @@ impl<'a> Iterator for Repeated{name}Iterator<'a> {{
             if field.repeated {
                 write!(
                     w,
-                    r#"            Self::DecodedOwned(x) => Repeated{field_type}::Decoded(x.{name}.as_slice()),
-            Self::DecodedReference(x) => Repeated{field_type}::Decoded(&x.{name}.as_slice()),
+                    r#"            Self::Decoded(x) => Repeated{field_type}::Decoded(&x.{name}.as_slice()),
             // TODO: remove unwrap
             Self::Encoded(x) => Repeated{field_type}::Encoded(RepeatedField::Encoded(x.get({idx}).unwrap().unwrap())),
 "#,
@@ -391,8 +376,7 @@ impl<'a> Iterator for Repeated{name}Iterator<'a> {{
             } else {
                 write!(
                     w,
-                    r#"            Self::DecodedOwned(x) => {field_type}View::DecodedReference(&x.{name}),
-            Self::DecodedReference(x) => {field_type}View::DecodedReference(&x.{name}),
+                    r#"           Self::Decoded(x) => {field_type}View::Decoded(&x.{name}),
             Self::Encoded(x) => {field_type}View::Encoded(x.get({idx}).unwrap().unwrap()),
 "#,
                     name = field.field_name,
@@ -404,8 +388,7 @@ impl<'a> Iterator for Repeated{name}Iterator<'a> {{
             if field.field_type == FieldType::Tstring {
                 write!(
                     w,
-                    r#"            Self::DecodedOwned(x) => RepeatedString::Decoded(x.{name}.as_slice()),
-            Self::DecodedReference(x) => RepeatedString::Decoded(x.{name}.as_slice()),
+                    r#"            Self::Decoded(x) => RepeatedString::Decoded(x.{name}.as_slice()),
             Self::Encoded(x) => RepeatedString::Encoded(x.get({idx}).unwrap().unwrap()),
 "#,
                     name = field.field_name,
@@ -414,8 +397,7 @@ impl<'a> Iterator for Repeated{name}Iterator<'a> {{
             } else {
                 write!(
                     w,
-                    r#"            Self::DecodedOwned(x) => RepeatedField::DecodedReference(x.{name}.as_slice()),
-            Self::DecodedReference(x) => RepeatedField::DecodedReference(x.{name}.as_slice()),
+                    r#"            Self::Decoded(x) => RepeatedField::Decoded(x.{name}.as_slice()),
             Self::Encoded(x) => RepeatedField::Encoded(x.get({idx}).unwrap().unwrap()),
 "#,
                     name = field.field_name,
@@ -425,8 +407,7 @@ impl<'a> Iterator for Repeated{name}Iterator<'a> {{
         } else if field.field_type == FieldType::Tstring {
             write!(
                 w,
-                r#"            Self::DecodedOwned(x) => x.{name}.as_str(),
-            Self::DecodedReference(x) => x.{name}.as_str(),
+                r#"            Self::Decoded(x) => x.{name}.as_str(),
             Self::Encoded(x) => x.get({idx}).unwrap().unwrap(),
 "#,
                 name = field.field_name,
@@ -435,9 +416,7 @@ impl<'a> Iterator for Repeated{name}Iterator<'a> {{
         } else {
             write!(
                 w,
-                r#"            Self::DecodedOwned(x) => x.{name},
-            Self::DecodedReference(x) => x.{name},
-
+                r#"            Self::Decoded(x) => x.{name},
 "#,
                 name = field.field_name,
             )?;

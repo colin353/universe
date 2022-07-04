@@ -3,8 +3,9 @@ mod repeated_field;
 mod serializable;
 mod varint;
 
+pub use pack::Pack;
+
 pub use repeated_field::{
-    EncodedStruct, EncodedStructBuilder, RefContainer, RepeatedField, RepeatedFieldIterator,
-    RepeatedString,
+    EncodedStruct, EncodedStructBuilder, RepeatedField, RepeatedFieldIterator, RepeatedString,
 };
 pub use serializable::{Deserialize, DeserializeOwned, Serialize};

@@ -4,23 +4,19 @@ use crate::{Deserialize, DeserializeOwned, Serialize};
 
 pub enum RepeatedField<'a, T> {
     Encoded(EncodedStruct<'a>),
-    DecodedOwned(Vec<T>),
-    DecodedReference(&'a [T]),
+    Decoded(&'a [T]),
 }
 
-impl<'a, T: std::fmt::Debug + DeserializeOwned> std::fmt::Debug for RepeatedField<'a, T> {
+impl<'a, T: std::fmt::Debug + Copy + DeserializeOwned> std::fmt::Debug for RepeatedField<'a, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Encoded(_) => {
                 write!(f, "[")?;
-                let mut iter = self.iter();
+                let z = &self;
+                let mut iter = z.into_iter();
                 let mut next = iter.next();
                 while let Some(item) = next {
-                    if let Ok(i) = item.as_ref() {
-                        write!(f, "{:?}", i)?;
-                    } else {
-                        write!(f, "??")?;
-                    }
+                    write!(f, "{:?}", item)?;
                     next = iter.next();
                     if next.is_some() {
                         write!(f, ", ")?;
@@ -28,8 +24,7 @@ impl<'a, T: std::fmt::Debug + DeserializeOwned> std::fmt::Debug for RepeatedFiel
                 }
                 write!(f, "]")
             }
-            Self::DecodedOwned(v) => v.fmt(f),
-            Self::DecodedReference(v) => v.fmt(f),
+            Self::Decoded(v) => v.fmt(f),
         }
     }
 }
@@ -41,8 +36,7 @@ where
     pub fn get(&'a self, index: usize) -> Option<&'a T> {
         match self {
             RepeatedField::Encoded(s) => s.get(index).map(|x| x.unwrap()),
-            RepeatedField::DecodedOwned(v) => Some(&v[index]),
-            RepeatedField::DecodedReference(v) => Some(&v[index]),
+            RepeatedField::Decoded(v) => Some(&v[index]),
         }
     }
 }
@@ -51,36 +45,21 @@ impl<'a> RepeatedField<'a, u64> {
     pub fn get(&'a self, index: usize) -> Option<u64> {
         match self {
             RepeatedField::Encoded(s) => s.get(index).map(|x| x.unwrap()),
-            RepeatedField::DecodedOwned(v) => Some(v[index]),
-            RepeatedField::DecodedReference(v) => Some(v[index]),
+            RepeatedField::Decoded(v) => Some(v[index]),
         }
     }
 }
 
-impl<'a> RepeatedField<'a, &'a str> {
-    pub fn iter(&'a self) -> RepeatedFieldIterator<'a, &'a str> {
-        match self {
-            Self::Encoded(e) => RepeatedFieldIterator::Encoded(e.iter()),
-            Self::DecodedOwned(i) => RepeatedFieldIterator::DecodedOwned(i.iter()),
-            Self::DecodedReference(i) => RepeatedFieldIterator::DecodedReference(i.iter()),
-        }
-    }
-}
-
-impl<'a, T> RepeatedField<'a, T>
-where
-    T: DeserializeOwned,
-{
+impl<'a, T> RepeatedField<'a, T> {
     pub fn iter(&'a self) -> RepeatedFieldIterator<'a, T> {
         match self {
             Self::Encoded(e) => RepeatedFieldIterator::Encoded(e.iter()),
-            Self::DecodedOwned(i) => RepeatedFieldIterator::DecodedOwned(i.iter()),
-            Self::DecodedReference(i) => RepeatedFieldIterator::DecodedReference(i.iter()),
+            Self::Decoded(i) => RepeatedFieldIterator::Decoded(i.iter()),
         }
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct EncodedStruct<'a> {
     data: &'a [u8],
     fields_index: pack::Pack<'a>,
@@ -142,6 +121,10 @@ impl<'a> Deserialize<'a> for EncodedStruct<'a> {
 }
 
 impl<'a> EncodedStruct<'a> {
+    pub fn from_bytes(data: &'a [u8]) -> Result<Self, std::io::Error> {
+        Self::new(data)
+    }
+
     // The EncodedStruct layout is:
     //
     // [ data u8 ... ] [ Pack ... ] [ footer ]
@@ -286,57 +269,31 @@ impl<'a> Iterator for EncodedStructIterator<'a> {
     }
 }
 
-pub enum RefContainer<'a, T> {
-    Reference(&'a T),
-    Owned(Box<T>),
-    DecodingFailed,
-}
-
-impl<'a, T> RefContainer<'a, T> {
-    fn as_ref(&'a self) -> Result<&'a T, std::io::Error> {
-        match self {
-            Self::Reference(r) => Ok(r),
-            Self::Owned(b) => Ok(b.as_ref()),
-            Self::DecodingFailed => Err(std::io::Error::from(std::io::ErrorKind::InvalidData)),
-        }
-    }
-}
-
 pub enum RepeatedFieldIterator<'a, T> {
     Encoded(EncodedStructIterator<'a>),
-    DecodedOwned(std::slice::Iter<'a, T>),
-    DecodedReference(std::slice::Iter<'a, T>),
+    Decoded(std::slice::Iter<'a, T>),
 }
 
-impl<'a> Iterator for RepeatedFieldIterator<'a, &'a str> {
-    type Item = &'a str;
+impl<'a, T: Deserialize<'a> + Copy> Iterator for RepeatedFieldIterator<'a, T> {
+    type Item = T;
     fn next(&mut self) -> Option<Self::Item> {
         match self {
             Self::Encoded(si) => {
                 let (start, end) = si.next()?;
-                match Deserialize::decode(si.get(start, end)) {
-                    Ok(x) => Some(x),
-                    Err(_) => None,
-                }
+                Some(T::decode(si.get(start, end)).unwrap())
             }
-            Self::DecodedOwned(i) => Some(i.next()?),
-            Self::DecodedReference(i) => Some(i.next()?),
+            Self::Decoded(i) => Some(*i.next()?),
         }
     }
 }
 
-impl<'a, T: DeserializeOwned> Iterator for RepeatedFieldIterator<'a, T> {
-    type Item = RefContainer<'a, T>;
-    fn next(&mut self) -> Option<Self::Item> {
+impl<'a, T: Copy + Deserialize<'a>> IntoIterator for &'a RepeatedField<'a, T> {
+    type Item = T;
+    type IntoIter = RepeatedFieldIterator<'a, T>;
+    fn into_iter(self) -> Self::IntoIter {
         match self {
-            Self::Encoded(si) => {
-                let (start, end) = si.next()?;
-                Some(RefContainer::Owned(Box::new(
-                    T::decode_owned(si.get(start, end)).unwrap(),
-                )))
-            }
-            Self::DecodedOwned(i) => Some(RefContainer::Reference(i.next()?)),
-            Self::DecodedReference(i) => Some(RefContainer::Reference(i.next()?)),
+            RepeatedField::Encoded(x) => RepeatedFieldIterator::Encoded(x.iter()),
+            RepeatedField::Decoded(x) => RepeatedFieldIterator::Decoded(x.iter()),
         }
     }
 }
