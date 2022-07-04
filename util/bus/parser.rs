@@ -43,10 +43,10 @@ pub enum FieldType {
 impl FieldType {
     fn from(s: &str) -> Self {
         match s {
-            "uint64" => Self::Tu64,
-            "uint32" => Self::Tu32,
-            "uint16" => Self::Tu16,
-            "uint8" => Self::Tu8,
+            "u64" => Self::Tu64,
+            "u32" => Self::Tu32,
+            "u16" => Self::Tu16,
+            "u8" => Self::Tu8,
             "bool" => Self::Tbool,
             "string" => Self::Tstring,
             "float" => Self::Tfloat,
@@ -152,7 +152,7 @@ mod tests {
     fn test_parse_module() {
         let content = r#"
 message Something {
-    repeated uint32 size = 1;
+    size: repeated uint32 = 1;
 }
         "#;
         let module = parse(content).unwrap();

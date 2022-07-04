@@ -1,0 +1,14 @@
+message Zoot {
+  toot: Toot = 0
+  size: repeated u64 = 1
+  name: string = 2
+}
+
+message Toot {
+  id: u32 = 1;
+}
+
+message Container {
+  values: repeated Toot = 0;
+  names: repeated string = 1;
+}

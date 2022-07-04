@@ -45,14 +45,16 @@ ggen::unit!(Semicolon, ";");
 
 ggen::sequence!(
     FieldDefinition,
-    repeated: Option<Repeated>,
-    _ws1: Option<Whitespace>,
-    type_name: Identifier,
-    _ws2: Option<Whitespace>,
     field_name: Identifier,
+    _ws1: Option<Whitespace>,
+    ":",
+    _ws2: Option<Whitespace>,
+    repeated: Option<Repeated>,
     _ws3: Option<Whitespace>,
-    "=",
+    type_name: Identifier,
     _ws4: Option<Whitespace>,
+    "=",
+    _ws5: Option<Whitespace>,
     tag: Integer,
     _trailing_semicolon: Option<Semicolon>,
     _trailing_newline: AtLeastOne<WhitespaceNewlineComment>,
@@ -65,8 +67,8 @@ mod tests {
 
     #[test]
     fn test_field_definition_match() {
-        FieldDefinition::try_match("repeated int32 age = 1;\n", 0).unwrap();
-        FieldDefinition::try_match("string name = 2;\n", 0).unwrap();
+        FieldDefinition::try_match("age: repeated int32 = 1;\n", 0).unwrap();
+        FieldDefinition::try_match("name: string = 2;\n", 0).unwrap();
         assert!(FieldDefinition::try_match("fake", 0).is_err());
     }
 
@@ -74,7 +76,7 @@ mod tests {
     fn test_message_definition_match() {
         MessageDefinition::try_match(
             r#"message MyMessage {
-            string name = 1;
+            name: string = 1;
         }"#,
             0,
         )
@@ -85,8 +87,8 @@ mod tests {
 
         MessageDefinition::try_match(
             r#"message Empty {
-            repeated int32 z = 1;
-            repeated string query = 2;
+            z: repeated i32 = 1;
+            query: repeated string = 2;
         }"#,
             0,
         )
