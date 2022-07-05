@@ -16,6 +16,7 @@ impl<'a> Pack<'a> {
     // The footer encodes the number of offsets.
     // The offsets index is always 1/16th as long as the data bytes.
     pub fn new(bytes: &'a [u8]) -> Result<Self, std::io::Error> {
+        println!("pack: {:?}", bytes);
         let (num_values, footer_size) = varint::decode_reverse_varint(bytes);
         let offset_index_start = bytes.len() - footer_size - (num_values / 16) * 4;
         let offset_index_end = bytes.len() - footer_size;
@@ -258,7 +259,11 @@ impl<W: std::io::Write> PackBuilder<W> {
             self.writer.write_all(&value.to_le_bytes())?;
         }
         let footer_size = varint::encode_reverse_varint(self.count as u32, &mut self.writer)?;
-        Ok(self.count + (self.count / 4) + num_offsets * 4 + footer_size)
+        println!(
+            "count = {}, num_offsets = {}, footer_size = {}",
+            self.count, num_offsets, footer_size
+        );
+        Ok(self.count + (self.count / 16) * 4 + num_offsets * 4 + footer_size)
     }
 }
 
@@ -466,5 +471,37 @@ mod tests {
             sum += i % 64;
             assert_eq!(value, sum as u32);
         }
+    }
+
+    #[test]
+    fn test_push_zeroes() {
+        let mut buf = Vec::new();
+        let mut b = PackBuilder::new(&mut buf);
+        b.push(0).unwrap();
+        b.push(0).unwrap();
+        b.push(0).unwrap();
+        b.push(1).unwrap();
+        b.push(0).unwrap();
+        b.push(1).unwrap();
+        assert_eq!(b.finish().unwrap(), buf.len());
+
+        assert_eq!(&buf, &[0, 0, 0, 1, 0, 1, 6]);
+
+        let p = Pack::new(&buf).unwrap();
+        let mut iter = p.iter();
+        assert_eq!(iter.next(), Some(0));
+        assert_eq!(iter.next(), Some(0));
+        assert_eq!(iter.next(), Some(0));
+        assert_eq!(iter.next(), Some(1));
+        assert_eq!(iter.next(), Some(1));
+        assert_eq!(iter.next(), Some(2));
+        assert_eq!(iter.next(), None);
+
+        assert_eq!(p.get(0), Some(0));
+        assert_eq!(p.get(1), Some(0));
+        assert_eq!(p.get(2), Some(0));
+        assert_eq!(p.get(3), Some(1));
+        assert_eq!(p.get(4), Some(1));
+        assert_eq!(p.get(5), Some(2));
     }
 }

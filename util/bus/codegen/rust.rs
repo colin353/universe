@@ -155,7 +155,13 @@ enum {name}View<'a> {{
 "#,
     )?;
 
-    for (_, field) in msg.fields.iter().enumerate() {
+    let mut idx = 0;
+    for field in &msg.fields {
+        for i in idx..field.tag {
+            write!(w, "        builder.advance();\n",)?;
+        }
+        idx = field.tag + 1;
+
         if field.field_type == FieldType::Tbytes {
             write!(
                 w,
@@ -190,7 +196,8 @@ impl DeserializeOwned for {name} {{
 "#,
     )?;
 
-    for (idx, field) in msg.fields.iter().enumerate() {
+    let mut fields_iter = msg.fields.iter();
+    for field in &msg.fields {
         if field.field_type == FieldType::Tbytes {
             write!(
                 w,
@@ -200,7 +207,7 @@ impl DeserializeOwned for {name} {{
             }},
 ",
                 field_name = field.field_name,
-                idx = idx,
+                idx = field.tag,
                 typ = if field.repeated { "Vec<u8>" } else { "u8" }
             )?;
         } else {
@@ -208,7 +215,7 @@ impl DeserializeOwned for {name} {{
                 w,
                 "            {field_name}: s.get_owned({idx}).transpose()?.unwrap_or_default(),\n",
                 field_name = field.field_name,
-                idx = idx,
+                idx = field.tag,
             )?;
         }
     }
@@ -333,12 +340,12 @@ impl<'a> Iterator for Repeated{name}Iterator<'a> {{
         name = msg.name,
     )?;
 
-    for (idx, field) in msg.fields.iter().enumerate() {
+    for field in &msg.fields {
         write!(
             w,
             "                {field_name}: t.get_owned({idx}).transpose()?.unwrap_or_default(),\n",
             field_name = field.field_name,
-            idx = idx,
+            idx = field.tag,
         )?;
     }
 
@@ -362,7 +369,7 @@ impl<'a> Iterator for Repeated{name}Iterator<'a> {{
     )?;
 
     // Implement field getters
-    for (idx, field) in msg.fields.iter().enumerate() {
+    for field in &msg.fields {
         let mut typ = get_return_type_name(&field);
         if field.repeated {
             if let FieldType::Other(s) = &field.field_type {
@@ -394,7 +401,7 @@ impl<'a> Iterator for Repeated{name}Iterator<'a> {{
 "#,
                     field_type = s,
                     name = field.field_name,
-                    idx = idx,
+                    idx = field.tag,
                 )?;
             } else {
                 write!(
@@ -404,7 +411,7 @@ impl<'a> Iterator for Repeated{name}Iterator<'a> {{
 "#,
                     name = field.field_name,
                     field_type = s,
-                    idx = idx,
+                    idx = field.tag,
                 )?;
             }
         } else if field.repeated {
@@ -415,7 +422,7 @@ impl<'a> Iterator for Repeated{name}Iterator<'a> {{
             Self::Encoded(x) => RepeatedString::Encoded(x.get({idx}).transpose().unwrap_or_default().unwrap_or_default()),
 "#,
                     name = field.field_name,
-                    idx = idx,
+                    idx = field.tag,
                 )?;
             } else if field.field_type == FieldType::Tbytes {
                 write!(
@@ -424,7 +431,7 @@ impl<'a> Iterator for Repeated{name}Iterator<'a> {{
             Self::Encoded(x) => RepeatedBytes::Encoded(x.get({idx}).transpose().unwrap_or_default().unwrap_or_default()),
 "#,
                     name = field.field_name,
-                    idx = idx,
+                    idx = field.tag,
                 )?;
             } else {
                 write!(
@@ -433,7 +440,7 @@ impl<'a> Iterator for Repeated{name}Iterator<'a> {{
             Self::Encoded(x) => RepeatedField::Encoded(x.get({idx}).transpose().unwrap_or_default().unwrap_or_default()),
 "#,
                     name = field.field_name,
-                    idx = idx,
+                    idx = field.tag,
                 )?;
             }
         } else if field.field_type == FieldType::Tstring {
@@ -443,7 +450,7 @@ impl<'a> Iterator for Repeated{name}Iterator<'a> {{
             Self::Encoded(x) => x.get({idx}).transpose().unwrap_or_default().unwrap_or_default(),
 "#,
                 name = field.field_name,
-                idx = idx,
+                idx = field.tag,
             )?;
         } else if field.field_type == FieldType::Tbytes {
             write!(
@@ -452,7 +459,7 @@ impl<'a> Iterator for Repeated{name}Iterator<'a> {{
             Self::Encoded(x) => x.get({idx}).transpose().unwrap_or_default().unwrap_or_default(),
 "#,
                 name = field.field_name,
-                idx = idx,
+                idx = field.tag,
             )?;
         } else {
             write!(
@@ -461,7 +468,7 @@ impl<'a> Iterator for Repeated{name}Iterator<'a> {{
             Self::Encoded(x) => x.get({idx}).transpose().unwrap_or_default().unwrap_or_default(),
 "#,
                 name = field.field_name,
-                idx = idx,
+                idx = field.tag,
             )?;
         }
 

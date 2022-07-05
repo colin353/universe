@@ -12,8 +12,8 @@
 mod test_test;
 
 use bus::{
-    Deserialize, DeserializeOwned, EncodedStruct, EncodedStructBuilder, RepeatedField,
-    RepeatedFieldIterator, RepeatedBytes, RepeatedString, Serialize, PackedIn, PackedOut
+    Deserialize, DeserializeOwned, EncodedStruct, EncodedStructBuilder, PackedIn, PackedOut,
+    RepeatedBytes, RepeatedField, RepeatedFieldIterator, RepeatedString, Serialize,
 };
 
 #[derive(Clone, Debug, Default)]
@@ -147,14 +147,18 @@ impl<'a> ZootView<'a> {
     }
     pub fn get_toot(&'a self) -> TootView<'a> {
         match self {
-           Self::Decoded(x) => TootView::Decoded(&x.toot),
-            Self::Encoded(x) => TootView::Encoded(x.get(0).transpose().unwrap_or_default().unwrap_or_default()),
+            Self::Decoded(x) => TootView::Decoded(&x.toot),
+            Self::Encoded(x) => {
+                TootView::Encoded(x.get(0).transpose().unwrap_or_default().unwrap_or_default())
+            }
         }
     }
     pub fn get_size(&'a self) -> RepeatedField<'a, u64> {
         match self {
             Self::Decoded(x) => RepeatedField::Decoded(x.size.as_slice()),
-            Self::Encoded(x) => RepeatedField::Encoded(x.get(1).transpose().unwrap_or_default().unwrap_or_default()),
+            Self::Encoded(x) => {
+                RepeatedField::Encoded(x.get(1).transpose().unwrap_or_default().unwrap_or_default())
+            }
         }
     }
     pub fn get_name(&'a self) -> &str {
@@ -431,13 +435,17 @@ impl<'a> ContainerView<'a> {
     pub fn get_values(&'a self) -> RepeatedToot<'a> {
         match self {
             Self::Decoded(x) => RepeatedToot::Decoded(&x.values.as_slice()),
-            Self::Encoded(x) => RepeatedToot::Encoded(RepeatedField::Encoded(x.get(0).transpose().unwrap_or_default().unwrap_or_default())),
+            Self::Encoded(x) => RepeatedToot::Encoded(RepeatedField::Encoded(
+                x.get(0).transpose().unwrap_or_default().unwrap_or_default(),
+            )),
         }
     }
     pub fn get_names(&'a self) -> RepeatedString<'a> {
         match self {
             Self::Decoded(x) => RepeatedString::Decoded(x.names.as_slice()),
-            Self::Encoded(x) => RepeatedString::Encoded(x.get(1).transpose().unwrap_or_default().unwrap_or_default()),
+            Self::Encoded(x) => RepeatedString::Encoded(
+                x.get(1).transpose().unwrap_or_default().unwrap_or_default(),
+            ),
         }
     }
 }
@@ -566,7 +574,342 @@ impl<'a> BlortView<'a> {
     pub fn get_payloads(&'a self) -> RepeatedBytes<'a> {
         match self {
             Self::Decoded(x) => RepeatedBytes::Decoded(x.payloads.as_slice()),
-            Self::Encoded(x) => RepeatedBytes::Encoded(x.get(0).transpose().unwrap_or_default().unwrap_or_default()),
+            Self::Encoded(x) => {
+                RepeatedBytes::Encoded(x.get(0).transpose().unwrap_or_default().unwrap_or_default())
+            }
+        }
+    }
+}
+#[derive(Clone, Debug, Default)]
+struct Multiplicand {
+    divisor: u32,
+    quotient: u32,
+}
+#[derive(Clone, Copy)]
+enum MultiplicandView<'a> {
+    Encoded(EncodedStruct<'a>),
+    Decoded(&'a Multiplicand),
+}
+impl<'a> std::fmt::Debug for MultiplicandView<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Multiplicand")
+            .field("divisor", &self.get_divisor())
+            .field("quotient", &self.get_quotient())
+            .finish()
+    }
+}
+
+impl Serialize for Multiplicand {
+    fn encode<W: std::io::Write>(&self, writer: &mut W) -> Result<usize, std::io::Error> {
+        let mut builder = EncodedStructBuilder::new(writer);
+        builder.advance();
+        builder.advance();
+        builder.advance();
+        builder.push(&self.divisor)?;
+        builder.advance();
+        builder.push(&self.quotient)?;
+        builder.finish()
+    }
+}
+
+impl DeserializeOwned for Multiplicand {
+    fn decode_owned(bytes: &[u8]) -> Result<Self, std::io::Error> {
+        let s = EncodedStruct::new(bytes)?;
+        Ok(Self {
+            divisor: s.get_owned(3).transpose()?.unwrap_or_default(),
+            quotient: s.get_owned(5).transpose()?.unwrap_or_default(),
+        })
+    }
+}
+impl<'a> Deserialize<'a> for MultiplicandView<'a> {
+    fn decode(bytes: &'a [u8]) -> Result<Self, std::io::Error> {
+        Ok(Self::Encoded(EncodedStruct::from_bytes(bytes)?))
+    }
+}
+enum RepeatedMultiplicand<'a> {
+    Encoded(RepeatedField<'a, MultiplicandView<'a>>),
+    Decoded(&'a [Multiplicand]),
+}
+
+impl<'a> std::fmt::Debug for RepeatedMultiplicand<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Encoded(v) => {
+                write!(f, "[")?;
+                let mut first = true;
+                for item in v {
+                    if first {
+                        first = false;
+                    } else {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{:?}", item)?;
+                }
+                write!(f, "]")
+            }
+            Self::Decoded(v) => v.fmt(f),
+        }
+    }
+}
+
+enum RepeatedMultiplicandIterator<'a> {
+    Encoded(RepeatedFieldIterator<'a, MultiplicandView<'a>>),
+    Decoded(std::slice::Iter<'a, Multiplicand>),
+}
+
+impl<'a> RepeatedMultiplicand<'a> {
+    pub fn iter(&'a self) -> RepeatedMultiplicandIterator<'a> {
+        match self {
+            Self::Encoded(r) => RepeatedMultiplicandIterator::Encoded(r.iter()),
+            Self::Decoded(s) => RepeatedMultiplicandIterator::Decoded(s.iter()),
+        }
+    }
+}
+
+impl<'a> Iterator for RepeatedMultiplicandIterator<'a> {
+    type Item = MultiplicandView<'a>;
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::Encoded(it) => it.next(),
+            Self::Decoded(it) => Some(MultiplicandView::Decoded(it.next()?)),
+        }
+    }
+}
+
+impl Multiplicand {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, std::io::Error> {
+        MultiplicandView::from_bytes(bytes)?.to_owned()
+    }
+
+    pub fn as_view<'a>(&'a self) -> MultiplicandView {
+        MultiplicandView::Decoded(self)
+    }
+}
+impl<'a> MultiplicandView<'a> {
+    pub fn from_bytes(bytes: &'a [u8]) -> Result<Self, std::io::Error> {
+        Ok(Self::Encoded(EncodedStruct::new(bytes)?))
+    }
+    pub fn to_owned(&self) -> Result<Multiplicand, std::io::Error> {
+        match self {
+            Self::Decoded(t) => Ok((*t).clone()),
+            Self::Encoded(t) => Ok(Multiplicand {
+                divisor: t.get_owned(3).transpose()?.unwrap_or_default(),
+                quotient: t.get_owned(5).transpose()?.unwrap_or_default(),
+            }),
+        }
+    }
+    pub fn encode<W: std::io::Write>(&self, writer: &mut W) -> Result<usize, std::io::Error> {
+        match self {
+            Self::Decoded(t) => t.encode(writer),
+            Self::Encoded(t) => t.encode(writer),
+        }
+    }
+    pub fn get_divisor(&'a self) -> u32 {
+        match self {
+            Self::Decoded(x) => x.divisor,
+            Self::Encoded(x) => x.get(3).transpose().unwrap_or_default().unwrap_or_default(),
+        }
+    }
+    pub fn get_quotient(&'a self) -> u32 {
+        match self {
+            Self::Decoded(x) => x.quotient,
+            Self::Encoded(x) => x.get(5).transpose().unwrap_or_default().unwrap_or_default(),
+        }
+    }
+}
+#[derive(Clone, Debug, Default)]
+struct Summand {
+    left: u32,
+    right: u32,
+    middle: u32,
+    divisor: u32,
+    subtractand: u32,
+    quotient: u32,
+    product: u32,
+}
+#[derive(Clone, Copy)]
+enum SummandView<'a> {
+    Encoded(EncodedStruct<'a>),
+    Decoded(&'a Summand),
+}
+impl<'a> std::fmt::Debug for SummandView<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Summand")
+            .field("left", &self.get_left())
+            .field("right", &self.get_right())
+            .field("middle", &self.get_middle())
+            .field("divisor", &self.get_divisor())
+            .field("subtractand", &self.get_subtractand())
+            .field("quotient", &self.get_quotient())
+            .field("product", &self.get_product())
+            .finish()
+    }
+}
+
+impl Serialize for Summand {
+    fn encode<W: std::io::Write>(&self, writer: &mut W) -> Result<usize, std::io::Error> {
+        let mut builder = EncodedStructBuilder::new(writer);
+        builder.push(&self.left)?;
+        builder.push(&self.right)?;
+        builder.push(&self.middle)?;
+        builder.push(&self.divisor)?;
+        builder.push(&self.subtractand)?;
+        builder.push(&self.quotient)?;
+        builder.push(&self.product)?;
+        builder.finish()
+    }
+}
+
+impl DeserializeOwned for Summand {
+    fn decode_owned(bytes: &[u8]) -> Result<Self, std::io::Error> {
+        let s = EncodedStruct::new(bytes)?;
+        Ok(Self {
+            left: s.get_owned(0).transpose()?.unwrap_or_default(),
+            right: s.get_owned(1).transpose()?.unwrap_or_default(),
+            middle: s.get_owned(2).transpose()?.unwrap_or_default(),
+            divisor: s.get_owned(3).transpose()?.unwrap_or_default(),
+            subtractand: s.get_owned(4).transpose()?.unwrap_or_default(),
+            quotient: s.get_owned(5).transpose()?.unwrap_or_default(),
+            product: s.get_owned(6).transpose()?.unwrap_or_default(),
+        })
+    }
+}
+impl<'a> Deserialize<'a> for SummandView<'a> {
+    fn decode(bytes: &'a [u8]) -> Result<Self, std::io::Error> {
+        Ok(Self::Encoded(EncodedStruct::from_bytes(bytes)?))
+    }
+}
+enum RepeatedSummand<'a> {
+    Encoded(RepeatedField<'a, SummandView<'a>>),
+    Decoded(&'a [Summand]),
+}
+
+impl<'a> std::fmt::Debug for RepeatedSummand<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Encoded(v) => {
+                write!(f, "[")?;
+                let mut first = true;
+                for item in v {
+                    if first {
+                        first = false;
+                    } else {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{:?}", item)?;
+                }
+                write!(f, "]")
+            }
+            Self::Decoded(v) => v.fmt(f),
+        }
+    }
+}
+
+enum RepeatedSummandIterator<'a> {
+    Encoded(RepeatedFieldIterator<'a, SummandView<'a>>),
+    Decoded(std::slice::Iter<'a, Summand>),
+}
+
+impl<'a> RepeatedSummand<'a> {
+    pub fn iter(&'a self) -> RepeatedSummandIterator<'a> {
+        match self {
+            Self::Encoded(r) => RepeatedSummandIterator::Encoded(r.iter()),
+            Self::Decoded(s) => RepeatedSummandIterator::Decoded(s.iter()),
+        }
+    }
+}
+
+impl<'a> Iterator for RepeatedSummandIterator<'a> {
+    type Item = SummandView<'a>;
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::Encoded(it) => it.next(),
+            Self::Decoded(it) => Some(SummandView::Decoded(it.next()?)),
+        }
+    }
+}
+
+impl Summand {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, std::io::Error> {
+        SummandView::from_bytes(bytes)?.to_owned()
+    }
+
+    pub fn as_view<'a>(&'a self) -> SummandView {
+        SummandView::Decoded(self)
+    }
+}
+impl<'a> SummandView<'a> {
+    pub fn from_bytes(bytes: &'a [u8]) -> Result<Self, std::io::Error> {
+        Ok(Self::Encoded(EncodedStruct::new(bytes)?))
+    }
+    pub fn to_owned(&self) -> Result<Summand, std::io::Error> {
+        match self {
+            Self::Decoded(t) => Ok((*t).clone()),
+            Self::Encoded(t) => Ok(Summand {
+                left: t.get_owned(0).transpose()?.unwrap_or_default(),
+                right: t.get_owned(1).transpose()?.unwrap_or_default(),
+                middle: t.get_owned(2).transpose()?.unwrap_or_default(),
+                divisor: t.get_owned(3).transpose()?.unwrap_or_default(),
+                subtractand: t.get_owned(4).transpose()?.unwrap_or_default(),
+                quotient: t.get_owned(5).transpose()?.unwrap_or_default(),
+                product: t.get_owned(6).transpose()?.unwrap_or_default(),
+            }),
+        }
+    }
+    pub fn encode<W: std::io::Write>(&self, writer: &mut W) -> Result<usize, std::io::Error> {
+        match self {
+            Self::Decoded(t) => t.encode(writer),
+            Self::Encoded(t) => t.encode(writer),
+        }
+    }
+    pub fn get_left(&'a self) -> u32 {
+        match self {
+            Self::Decoded(x) => x.left,
+            Self::Encoded(x) => x.get(0).transpose().unwrap_or_default().unwrap_or_default(),
+        }
+    }
+    pub fn get_right(&'a self) -> u32 {
+        match self {
+            Self::Decoded(x) => x.right,
+            Self::Encoded(x) => x.get(1).transpose().unwrap_or_default().unwrap_or_default(),
+        }
+    }
+    pub fn get_middle(&'a self) -> u32 {
+        match self {
+            Self::Decoded(x) => x.middle,
+            Self::Encoded(x) => x.get(2).transpose().unwrap_or_default().unwrap_or_default(),
+        }
+    }
+    pub fn get_divisor(&'a self) -> u32 {
+        match self {
+            Self::Decoded(x) => x.divisor,
+            Self::Encoded(x) => x.get(3).transpose().unwrap_or_default().unwrap_or_default(),
+        }
+    }
+    pub fn get_subtractand(&'a self) -> u32 {
+        match self {
+            Self::Decoded(x) => x.subtractand,
+            Self::Encoded(x) => x.get(4).transpose().unwrap_or_default().unwrap_or_default(),
+        }
+    }
+    pub fn get_quotient(&'a self) -> u32 {
+        match self {
+            Self::Decoded(x) => x.quotient,
+            Self::Encoded(x) => x.get(5).transpose().unwrap_or_default().unwrap_or_default(),
+        }
+    }
+    pub fn get_product(&'a self) -> u32 {
+        match self {
+            Self::Decoded(x) => x.product,
+            Self::Encoded(x) => x.get(6).transpose().unwrap_or_default().unwrap_or_default(),
         }
     }
 }

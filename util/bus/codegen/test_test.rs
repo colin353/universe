@@ -1,6 +1,9 @@
 #[cfg(test)]
 mod tests {
-    use crate::{Blort, BlortView, Container, ContainerView, Toot, TootView, Zoot, ZootView};
+    use crate::{
+        Blort, BlortView, Container, ContainerView, Multiplicand, MultiplicandView, Summand,
+        SummandView, Toot, TootView, Zoot, ZootView,
+    };
     use bus::Serialize;
     #[test]
     fn test_nested_struct_encode_decode() {
@@ -223,5 +226,53 @@ mod tests {
             format!("{:?}", d),
             "Blort { payloads: [[1, 2, 3, 4], [5, 6, 7, 8]] }"
         );
+    }
+
+    #[test]
+    fn test_reserved_fields() {
+        // Decoding with missing fields, which are expanded as Default
+        let m = Multiplicand {
+            divisor: 1,
+            quotient: 3,
+        };
+
+        let mut buf = Vec::new();
+        m.encode(&mut buf).unwrap();
+
+        assert_eq!(
+            &buf,
+            &[
+                1, // f1
+                3, // f2
+                0, 0, 0, 1, 0, // ?
+                5, 7 // Footer (message)
+            ]
+        );
+
+        let z = SummandView::from_bytes(&buf).unwrap();
+        assert_eq!(z.get_left(), 0);
+        assert_eq!(z.get_right(), 0);
+        assert_eq!(z.get_middle(), 0);
+        assert_eq!(z.get_divisor(), 1);
+        assert_eq!(z.get_subtractand(), 0);
+        assert_eq!(z.get_quotient(), 3);
+        assert_eq!(z.get_product(), 0);
+
+        // Decoding with extra fields, which are ignored
+        let s = Summand {
+            left: 1,
+            right: 2,
+            middle: 3,
+            divisor: 4,
+            subtractand: 5,
+            quotient: 6,
+            product: 7,
+        };
+        let mut buf = Vec::new();
+        s.encode(&mut buf).unwrap();
+
+        let z = MultiplicandView::from_bytes(&buf).unwrap();
+        assert_eq!(z.get_divisor(), 4);
+        assert_eq!(z.get_quotient(), 6);
     }
 }

@@ -5,8 +5,8 @@ message Zoot {
 }
 
 message Toot {
-  id: u32 = 1;
-  data: bytes = 2;
+  id: u32 = 0;
+  data: bytes = 1;
 }
 
 message Container {
@@ -16,4 +16,21 @@ message Container {
 
 message Blort {
   payloads: repeated bytes = 0;
+}
+
+message Multiplicand {
+  // reserved: 1-3
+  divisor: u32 = 3;
+  // reserved: 4
+  quotient: u32 = 5;
+}
+
+message Summand {
+  left: u32 = 0;
+  right: u32 = 1;
+  middle: u32 = 2;
+  divisor: u32 = 3;
+  subtractand: u32 = 4;
+  quotient: u32 = 5;
+  product: u32 = 6;
 }
