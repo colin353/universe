@@ -4,6 +4,10 @@ message Zoot {
   name: string = 2
 }
 
+enum State {
+  Unknown = 0
+}
+
 message Toot {
   id: u32 = 0;
   data: bytes = 1;

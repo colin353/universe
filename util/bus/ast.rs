@@ -6,9 +6,11 @@ ggen::char_rule!(Separator, |ch: char| ch.is_whitespace());
 ggen::sequence!(
     Module,
     leading_comments: Vec<WhitespaceNewlineComment>,
-    definitions: Vec<MessageDefinition>,
+    definitions: Vec<Definition>,
     end: EOF,
 );
+
+ggen::one_of!(Definition, Message: MessageDefinition, Enum: EnumDefinition);
 
 ggen::sequence!(
     WhitespaceNewlineOrComment,
@@ -23,6 +25,31 @@ ggen::sequence!(
     comment: Option<Comment>,
     "\n",
     _ws2: Option<Whitespace>,
+);
+
+ggen::sequence!(
+    EnumDefinition,
+    "enum",
+    _ws1: Option<Whitespace>,
+    name: Identifier,
+    _ws2: Vec<WhitespaceNewlineOrComment>,
+    "{",
+    _ws3: Vec<WhitespaceNewlineOrComment>,
+    fields: Vec<EnumField>,
+    _ws4: Vec<WhitespaceNewlineOrComment>,
+    "}",
+    _ws5: Vec<WhitespaceNewlineOrComment>,
+);
+
+ggen::sequence!(
+    EnumField,
+    field_name: Identifier,
+    _ws1: Option<Whitespace>,
+    "=",
+    _ws2: Option<Whitespace>,
+    tag: Integer,
+    _trailing_semicolon: Option<Semicolon>,
+    _trailing_newline: AtLeastOne<WhitespaceNewlineComment>,
 );
 
 ggen::sequence!(
