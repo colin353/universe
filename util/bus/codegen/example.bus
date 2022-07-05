@@ -13,3 +13,7 @@ message Container {
   values: repeated Toot = 0;
   names: repeated string = 1;
 }
+
+message Blort {
+  payloads: repeated bytes = 0;
+}

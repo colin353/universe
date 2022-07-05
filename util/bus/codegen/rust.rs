@@ -17,7 +17,7 @@ mod test_test;
 const IMPORTS: &'static str = r#"
 use bus::{
     Deserialize, DeserializeOwned, EncodedStruct, EncodedStructBuilder, RepeatedField,
-    RepeatedFieldIterator, RepeatedString, Serialize, PackedIn, PackedOut
+    RepeatedFieldIterator, RepeatedBytes, RepeatedString, Serialize, PackedIn, PackedOut
 };
 
 "#;
@@ -195,12 +195,13 @@ impl DeserializeOwned for {name} {{
             write!(
                 w,
                 "            {field_name}: {{
-                let p: PackedIn<u8> = s.get_owned({idx}).transpose()?.unwrap_or_default();
+                let p: PackedIn<{typ}> = s.get_owned({idx}).transpose()?.unwrap_or_default();
                 p.0
-            }}
+            }},
 ",
                 field_name = field.field_name,
                 idx = idx,
+                typ = if field.repeated { "Vec<u8>" } else { "u8" }
             )?;
         } else {
             write!(
@@ -368,6 +369,8 @@ impl<'a> Iterator for Repeated{name}Iterator<'a> {{
                 typ = format!("Repeated{name}<'a>", name = s);
             } else if field.field_type == FieldType::Tstring {
                 typ = String::from("RepeatedString<'a>");
+            } else if field.field_type == FieldType::Tbytes {
+                typ = String::from("RepeatedBytes<'a>");
             }
         } else if let FieldType::Other(s) = &field.field_type {
             typ = format!("{name}View<'a>", name = s);
@@ -410,6 +413,15 @@ impl<'a> Iterator for Repeated{name}Iterator<'a> {{
                     w,
                     r#"            Self::Decoded(x) => RepeatedString::Decoded(x.{name}.as_slice()),
             Self::Encoded(x) => RepeatedString::Encoded(x.get({idx}).transpose().unwrap_or_default().unwrap_or_default()),
+"#,
+                    name = field.field_name,
+                    idx = idx,
+                )?;
+            } else if field.field_type == FieldType::Tbytes {
+                write!(
+                    w,
+                    r#"            Self::Decoded(x) => RepeatedBytes::Decoded(x.{name}.as_slice()),
+            Self::Encoded(x) => RepeatedBytes::Encoded(x.get({idx}).transpose().unwrap_or_default().unwrap_or_default()),
 "#,
                     name = field.field_name,
                     idx = idx,

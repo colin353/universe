@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use crate::{Container, ContainerView, Toot, TootView, Zoot, ZootView};
+    use crate::{Blort, BlortView, Container, ContainerView, Toot, TootView, Zoot, ZootView};
     use bus::Serialize;
     #[test]
     fn test_nested_struct_encode_decode() {
@@ -197,5 +197,31 @@ mod tests {
             }
         }
         assert_eq!(bc.get_names().iter().count(), 2);
+    }
+
+    #[test]
+    fn test_repeated_bytes() {
+        let b = Blort {
+            payloads: vec![vec![1, 2, 3, 4], vec![5, 6, 7, 8]],
+        };
+        let mut buf = Vec::new();
+        b.encode(&mut buf).unwrap();
+
+        assert_eq!(
+            &buf,
+            &[
+                1, 2, 3, 4, // f0
+                5, 6, 7, 8, // f1
+                4, 1, // Pack<5>
+                3, // Footer (repeated bytes)
+                1, // Footer (message)
+            ]
+        );
+
+        let d = BlortView::from_bytes(&buf).unwrap();
+        assert_eq!(
+            format!("{:?}", d),
+            "Blort { payloads: [[1, 2, 3, 4], [5, 6, 7, 8]] }"
+        );
     }
 }

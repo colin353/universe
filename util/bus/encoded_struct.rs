@@ -1,6 +1,6 @@
 use crate::pack;
 use crate::varint;
-use crate::{Deserialize, DeserializeOwned, Serialize};
+use crate::{Deserialize, DeserializeOwned, PackedIn, PackedOut, Serialize};
 
 #[derive(Clone, Copy)]
 pub struct EncodedStruct<'a> {
@@ -190,6 +190,28 @@ pub struct EncodedStructIterator<'a> {
     pack_iter: pack::PackIterator<'a>,
     done: bool,
     data_size: usize,
+}
+
+impl<'a> Serialize for PackedOut<'a, Vec<u8>> {
+    fn encode<W: std::io::Write>(&self, writer: &mut W) -> Result<usize, std::io::Error> {
+        let mut builder = EncodedStructBuilder::new(writer);
+        for element in self.0 {
+            builder.push(PackedOut((*element).as_slice()))?;
+        }
+        builder.finish()
+    }
+}
+
+impl DeserializeOwned for PackedIn<Vec<u8>> {
+    fn decode_owned(bytes: &[u8]) -> Result<Self, std::io::Error> {
+        let e = EncodedStruct::new(bytes)?;
+        let mut out = Vec::new();
+        for (start, end) in e.iter() {
+            let p = PackedIn::<u8>::decode_owned(&e.data[start..end])?;
+            out.push(p.0);
+        }
+        Ok(PackedIn(out))
+    }
 }
 
 impl<T: Serialize> Serialize for Vec<T> {

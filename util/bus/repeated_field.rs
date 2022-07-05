@@ -87,6 +87,59 @@ pub enum RepeatedFieldIterator<'a, T> {
     Decoded(std::slice::Iter<'a, T>),
 }
 
+pub enum RepeatedBytes<'a> {
+    Encoded(EncodedStruct<'a>),
+    Decoded(&'a [Vec<u8>]),
+}
+
+pub enum RepeatedBytesIterator<'a> {
+    Encoded(EncodedStructIterator<'a>),
+    Decoded(std::slice::Iter<'a, Vec<u8>>),
+}
+
+impl<'a> RepeatedBytes<'a> {
+    pub fn iter(&'a self) -> RepeatedBytesIterator<'a> {
+        match self {
+            Self::Encoded(x) => RepeatedBytesIterator::Encoded(x.iter()),
+            Self::Decoded(x) => RepeatedBytesIterator::Decoded(x.iter()),
+        }
+    }
+}
+
+impl<'a> Iterator for RepeatedBytesIterator<'a> {
+    type Item = &'a [u8];
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::Encoded(r) => {
+                let (start, end) = r.next()?;
+                Deserialize::decode(r.get(start, end)).ok()
+            }
+            Self::Decoded(s) => s.next().map(|s| s.as_slice()),
+        }
+    }
+}
+
+impl<'a> std::fmt::Debug for RepeatedBytes<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Encoded(_) => {
+                write!(f, "[")?;
+                let mut iter = self.iter();
+                let mut next = iter.next();
+                while let Some(item) = next {
+                    write!(f, "{:?}", item)?;
+                    next = iter.next();
+                    if next.is_some() {
+                        write!(f, ", ")?;
+                    }
+                }
+                write!(f, "]")
+            }
+            Self::Decoded(v) => v.fmt(f),
+        }
+    }
+}
+
 pub enum RepeatedString<'a> {
     Encoded(EncodedStruct<'a>),
     Decoded(&'a [String]),

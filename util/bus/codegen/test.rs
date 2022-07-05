@@ -13,7 +13,7 @@ mod test_test;
 
 use bus::{
     Deserialize, DeserializeOwned, EncodedStruct, EncodedStructBuilder, RepeatedField,
-    RepeatedFieldIterator, RepeatedString, Serialize, PackedIn, PackedOut
+    RepeatedFieldIterator, RepeatedBytes, RepeatedString, Serialize, PackedIn, PackedOut
 };
 
 #[derive(Clone, Debug, Default)]
@@ -200,7 +200,7 @@ impl DeserializeOwned for Toot {
             data: {
                 let p: PackedIn<u8> = s.get_owned(1).transpose()?.unwrap_or_default();
                 p.0
-            }
+            },
         })
     }
 }
@@ -438,6 +438,135 @@ impl<'a> ContainerView<'a> {
         match self {
             Self::Decoded(x) => RepeatedString::Decoded(x.names.as_slice()),
             Self::Encoded(x) => RepeatedString::Encoded(x.get(1).transpose().unwrap_or_default().unwrap_or_default()),
+        }
+    }
+}
+#[derive(Clone, Debug, Default)]
+struct Blort {
+    payloads: Vec<Vec<u8>>,
+}
+#[derive(Clone, Copy)]
+enum BlortView<'a> {
+    Encoded(EncodedStruct<'a>),
+    Decoded(&'a Blort),
+}
+impl<'a> std::fmt::Debug for BlortView<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Blort")
+            .field("payloads", &self.get_payloads())
+            .finish()
+    }
+}
+
+impl Serialize for Blort {
+    fn encode<W: std::io::Write>(&self, writer: &mut W) -> Result<usize, std::io::Error> {
+        let mut builder = EncodedStructBuilder::new(writer);
+        builder.push(PackedOut(&self.payloads))?;
+        builder.finish()
+    }
+}
+
+impl DeserializeOwned for Blort {
+    fn decode_owned(bytes: &[u8]) -> Result<Self, std::io::Error> {
+        let s = EncodedStruct::new(bytes)?;
+        Ok(Self {
+            payloads: {
+                let p: PackedIn<Vec<u8>> = s.get_owned(0).transpose()?.unwrap_or_default();
+                p.0
+            },
+        })
+    }
+}
+impl<'a> Deserialize<'a> for BlortView<'a> {
+    fn decode(bytes: &'a [u8]) -> Result<Self, std::io::Error> {
+        Ok(Self::Encoded(EncodedStruct::from_bytes(bytes)?))
+    }
+}
+enum RepeatedBlort<'a> {
+    Encoded(RepeatedField<'a, BlortView<'a>>),
+    Decoded(&'a [Blort]),
+}
+
+impl<'a> std::fmt::Debug for RepeatedBlort<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Encoded(v) => {
+                write!(f, "[")?;
+                let mut first = true;
+                for item in v {
+                    if first {
+                        first = false;
+                    } else {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{:?}", item)?;
+                }
+                write!(f, "]")
+            }
+            Self::Decoded(v) => v.fmt(f),
+        }
+    }
+}
+
+enum RepeatedBlortIterator<'a> {
+    Encoded(RepeatedFieldIterator<'a, BlortView<'a>>),
+    Decoded(std::slice::Iter<'a, Blort>),
+}
+
+impl<'a> RepeatedBlort<'a> {
+    pub fn iter(&'a self) -> RepeatedBlortIterator<'a> {
+        match self {
+            Self::Encoded(r) => RepeatedBlortIterator::Encoded(r.iter()),
+            Self::Decoded(s) => RepeatedBlortIterator::Decoded(s.iter()),
+        }
+    }
+}
+
+impl<'a> Iterator for RepeatedBlortIterator<'a> {
+    type Item = BlortView<'a>;
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::Encoded(it) => it.next(),
+            Self::Decoded(it) => Some(BlortView::Decoded(it.next()?)),
+        }
+    }
+}
+
+impl Blort {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, std::io::Error> {
+        BlortView::from_bytes(bytes)?.to_owned()
+    }
+
+    pub fn as_view<'a>(&'a self) -> BlortView {
+        BlortView::Decoded(self)
+    }
+}
+impl<'a> BlortView<'a> {
+    pub fn from_bytes(bytes: &'a [u8]) -> Result<Self, std::io::Error> {
+        Ok(Self::Encoded(EncodedStruct::new(bytes)?))
+    }
+    pub fn to_owned(&self) -> Result<Blort, std::io::Error> {
+        match self {
+            Self::Decoded(t) => Ok((*t).clone()),
+            Self::Encoded(t) => Ok(Blort {
+                payloads: t.get_owned(0).transpose()?.unwrap_or_default(),
+            }),
+        }
+    }
+    pub fn encode<W: std::io::Write>(&self, writer: &mut W) -> Result<usize, std::io::Error> {
+        match self {
+            Self::Decoded(t) => t.encode(writer),
+            Self::Encoded(t) => t.encode(writer),
+        }
+    }
+    pub fn get_payloads(&'a self) -> RepeatedBytes<'a> {
+        match self {
+            Self::Decoded(x) => RepeatedBytes::Decoded(x.payloads.as_slice()),
+            Self::Encoded(x) => RepeatedBytes::Encoded(x.get(0).transpose().unwrap_or_default().unwrap_or_default()),
         }
     }
 }
