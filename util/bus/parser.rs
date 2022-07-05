@@ -2,7 +2,7 @@ use ggen::GrammarUnit;
 
 use std::collections::{HashMap, HashSet};
 
-mod ast;
+pub mod ast;
 
 #[derive(Clone, Debug)]
 pub enum CarError {
@@ -227,6 +227,11 @@ enum SymbolType {
     Message,
     Enum,
     Service,
+}
+
+pub fn parse_ast(data: &str) -> Result<ast::Module, CarError> {
+    let (module, _, _) = ast::Module::try_match(data, 0).map_err(|e| CarError::ParseError(e))?;
+    Ok(module)
 }
 
 pub fn parse(data: &str) -> Result<Module, CarError> {

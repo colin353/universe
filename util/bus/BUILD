@@ -14,6 +14,22 @@ rust_library(
     ],
 )
 
+rust_library(
+    name = "fmt",
+    srcs = [
+        "fmt.rs",
+    ],
+    deps = [
+        ":parser",
+        "//util/ggen",
+    ]
+)
+
+rust_test(
+    name = "fmt_test",
+    crate = ":fmt",
+)
+
 rust_test(
     name = "bus_test",
     crate = ":bus",
