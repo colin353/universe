@@ -10,7 +10,12 @@ ggen::sequence!(
     end: EOF,
 );
 
-ggen::one_of!(Definition, Message: MessageDefinition, Enum: EnumDefinition);
+ggen::one_of!(
+    Definition,
+    Message: MessageDefinition,
+    Enum: EnumDefinition,
+    Service: ServiceDefinition
+);
 
 ggen::sequence!(
     WhitespaceNewlineOrComment,
@@ -87,6 +92,40 @@ ggen::sequence!(
     _trailing_newline: AtLeastOne<WhitespaceNewlineComment>,
 );
 
+ggen::sequence!(
+    ServiceDefinition,
+    "service",
+    _ws1: Option<Whitespace>,
+    name: Identifier,
+    _ws2: Vec<WhitespaceNewlineOrComment>,
+    "{",
+    _ws3: Vec<WhitespaceNewlineOrComment>,
+    fields: Vec<RpcDefinition>,
+    _ws4: Vec<WhitespaceNewlineOrComment>,
+    "}",
+    _ws5: Vec<WhitespaceNewlineOrComment>,
+);
+
+ggen::sequence!(
+    RpcDefinition,
+    _ws1: Option<Whitespace>,
+    "rpc",
+    _ws2: Whitespace,
+    name: Identifier,
+    _ws3: Option<Whitespace>,
+    "(",
+    _ws4: Option<Whitespace>,
+    argument_type: Identifier,
+    _ws5: Option<Whitespace>,
+    ")",
+    _ws6: Option<Whitespace>,
+    "->",
+    _ws7: Option<Whitespace>,
+    return_type: Identifier,
+    _trailing_semicolon: Option<Semicolon>,
+    _trailing_newline: AtLeastOne<WhitespaceNewlineComment>,
+);
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -117,6 +156,17 @@ mod tests {
             z: repeated i32 = 1;
             query: repeated string = 2;
         }"#,
+            0,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn test_service_definition_match() {
+        ServiceDefinition::try_match(
+            r#"service MyService {
+    rpc read(ReadRequest) -> ReadResponse;
+}"#,
             0,
         )
         .unwrap();

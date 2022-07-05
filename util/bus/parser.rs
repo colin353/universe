@@ -12,6 +12,20 @@ pub enum CarError {
 pub struct Module {
     pub messages: Vec<MessageDefinition>,
     pub enums: Vec<EnumDefinition>,
+    pub services: Vec<ServiceDefinition>,
+}
+
+pub struct ServiceDefinition {
+    pub name: String,
+    pub ast: ast::ServiceDefinition,
+    pub rpcs: Vec<RpcDefinition>,
+}
+
+pub struct RpcDefinition {
+    pub name: String,
+    pub argument_type: String,
+    pub return_type: String,
+    pub ast: ast::RpcDefinition,
 }
 
 pub struct MessageDefinition {
@@ -175,9 +189,44 @@ fn convert_message(msg: ast::MessageDefinition, data: &str) -> Result<MessageDef
     })
 }
 
+fn convert_service(
+    service: ast::ServiceDefinition,
+    data: &str,
+) -> Result<ServiceDefinition, CarError> {
+    let mut rpcs = Vec::new();
+    let mut names = HashSet::new();
+    for f in &service.fields {
+        let rpc = RpcDefinition {
+            name: f.name.as_str(data).to_owned(),
+            argument_type: f.argument_type.as_str(data).to_owned(),
+            return_type: f.return_type.as_str(data).to_owned(),
+            ast: f.clone(),
+        };
+
+        if names.insert(rpc.name.clone()) {
+            rpcs.push(rpc);
+        } else {
+            let (start, end) = f.range();
+            return Err(CarError::ParseError(ggen::ParseError::from_string(
+                format!("an rpc named `{}` already exists in this service", rpc.name),
+                "",
+                start,
+                end,
+            )));
+        }
+    }
+
+    Ok(ServiceDefinition {
+        name: service.name.as_str(data).to_owned(),
+        rpcs,
+        ast: service,
+    })
+}
+
 enum SymbolType {
     Message,
     Enum,
+    Service,
 }
 
 pub fn parse(data: &str) -> Result<Module, CarError> {
@@ -185,6 +234,7 @@ pub fn parse(data: &str) -> Result<Module, CarError> {
 
     let mut messages = Vec::new();
     let mut enums = Vec::new();
+    let mut services = Vec::new();
     let mut types = HashMap::new();
     for d in module.definitions.into_iter() {
         match d {
@@ -219,20 +269,35 @@ pub fn parse(data: &str) -> Result<Module, CarError> {
                     )));
                 }
             }
+            ast::Definition::Service(s) => {
+                let s = convert_service(*s, data)?;
+                if !types.contains_key(&s.name) {
+                    types.insert(s.name.clone(), SymbolType::Service);
+                    services.push(s);
+                } else {
+                    let (start, end) = s.ast.name.range();
+                    return Err(CarError::ParseError(ggen::ParseError::from_string(
+                        format!("the name `{}` already exists", s.name),
+                        "",
+                        start,
+                        end,
+                    )));
+                }
+            }
         }
     }
 
-    // Validate that all types are resolved
+    // Validate that all types referenced by messages are resolved
     for msg in &mut messages {
         for mut field in &mut msg.fields {
             match &field.field_type {
                 FieldType::Other(s) => match types.get(s.as_str()) {
                     Some(SymbolType::Message) => field.field_type = FieldType::Message(s.clone()),
                     Some(SymbolType::Enum) => field.field_type = FieldType::Enum(s.clone()),
-                    None => {
+                    _ => {
                         let (start, end) = field.ast.type_name.range();
                         return Err(CarError::ParseError(ggen::ParseError::from_string(
-                            format!("unrecognized field type `{}`", &s),
+                            format!("unrecognized type `{}`", &s),
                             "",
                             start,
                             end,
@@ -244,7 +309,60 @@ pub fn parse(data: &str) -> Result<Module, CarError> {
         }
     }
 
-    Ok(Module { messages, enums })
+    // Validate that all types referenced by services are resolved
+    for service in &services {
+        for rpc in &service.rpcs {
+            match types.get(&rpc.argument_type) {
+                Some(SymbolType::Message) => (),
+                Some(SymbolType::Enum) => {
+                    let (start, end) = rpc.ast.argument_type.range();
+                    return Err(CarError::ParseError(ggen::ParseError::from_string(
+                        format!("rpc arguments must be messages, not enums",),
+                        "",
+                        start,
+                        end,
+                    )));
+                }
+                _ => {
+                    let (start, end) = rpc.ast.argument_type.range();
+                    return Err(CarError::ParseError(ggen::ParseError::from_string(
+                        format!("unrecognized type `{}`", rpc.argument_type),
+                        "",
+                        start,
+                        end,
+                    )));
+                }
+            }
+
+            match types.get(&rpc.return_type) {
+                Some(SymbolType::Message) => (),
+                Some(SymbolType::Enum) => {
+                    let (start, end) = rpc.ast.return_type.range();
+                    return Err(CarError::ParseError(ggen::ParseError::from_string(
+                        format!("rpc return types must be messages, not enums"),
+                        "",
+                        start,
+                        end,
+                    )));
+                }
+                _ => {
+                    let (start, end) = rpc.ast.return_type.range();
+                    return Err(CarError::ParseError(ggen::ParseError::from_string(
+                        format!("unrecognized type `{}`", rpc.return_type),
+                        "",
+                        start,
+                        end,
+                    )));
+                }
+            }
+        }
+    }
+
+    Ok(Module {
+        messages,
+        enums,
+        services,
+    })
 }
 
 #[cfg(test)]
@@ -283,5 +401,24 @@ enum Something {
         assert_eq!(module.enums[0].fields[0].1, 0);
         assert_eq!(&module.enums[0].fields[1].0, "Basic");
         assert_eq!(module.enums[0].fields[1].1, 1);
+    }
+
+    #[test]
+    fn test_parse_service() {
+        let content = r#"
+message ReadRequest {}
+message ReadResponse {}
+enum ZZZ {}
+
+service MyService {
+    rpc read(ReadRequest) -> ReadResponse;
+}
+        "#;
+        let module = parse(content).unwrap();
+        assert_eq!(module.services.len(), 1);
+        assert_eq!(module.services[0].rpcs.len(), 1);
+        assert_eq!(&module.services[0].rpcs[0].name, "read");
+        assert_eq!(&module.services[0].rpcs[0].argument_type, "ReadRequest");
+        assert_eq!(&module.services[0].rpcs[0].return_type, "ReadResponse");
     }
 }
