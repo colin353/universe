@@ -1,8 +1,9 @@
 #[cfg(test)]
 mod tests {
     use crate::{
-        Blort, BlortView, Container, ContainerView, Multiplicand, MultiplicandView, Summand,
-        SummandView, Toot, TootView, Zoot, ZootView,
+        Blort, BlortView, Container, ContainerView, History, HistoryView, Multiplicand,
+        MultiplicandView, Request, RequestView, State, Summand, SummandView, Toot, TootView, Zoot,
+        ZootView,
     };
     use bus::Serialize;
     #[test]
@@ -274,5 +275,47 @@ mod tests {
         let z = MultiplicandView::from_bytes(&buf).unwrap();
         assert_eq!(z.get_divisor(), 4);
         assert_eq!(z.get_quotient(), 6);
+    }
+
+    #[test]
+    fn test_enums() {
+        let r = Request {
+            desired: State::Disabled,
+            actual: State::Maximum,
+        };
+
+        let mut buf = Vec::new();
+        r.encode(&mut buf).unwrap();
+
+        assert_eq!(
+            &buf,
+            &[
+                2, // f1 (f0 is unencoded since it's default)
+                0, 1, // Pack <0, 0, 1>
+                3  // footer
+            ]
+        );
+
+        let rv = RequestView::from_bytes(&buf).unwrap();
+        assert_eq!(rv.get_desired(), State::Disabled);
+        assert_eq!(rv.get_actual(), State::Maximum);
+    }
+
+    #[test]
+    fn test_repeated_enums() {
+        let h = History {
+            sequence: vec![State::Disabled, State::Partial, State::Maximum],
+        };
+
+        let mut buf = Vec::new();
+        h.encode(&mut buf).unwrap();
+
+        let hv = HistoryView::from_bytes(&buf).unwrap();
+        let rf = hv.get_sequence();
+        let mut iter = rf.iter();
+        assert_eq!(iter.next(), Some(State::Disabled));
+        assert_eq!(iter.next(), Some(State::Partial));
+        assert_eq!(iter.next(), Some(State::Maximum));
+        assert_eq!(iter.next(), None);
     }
 }

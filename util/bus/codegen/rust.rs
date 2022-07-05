@@ -29,6 +29,10 @@ pub fn generate<W: std::io::Write>(
     write!(w, "{}", DONOTEDIT)?;
     write!(w, "{}", IMPORTS)?;
 
+    for e in &module.enums {
+        generate_enum(&e, w)?;
+    }
+
     for message in &module.messages {
         generate_message(&message, w)?;
     }
@@ -46,10 +50,12 @@ fn get_type_name(f: &parser::FieldDefinition) -> String {
         FieldType::Tstring => "String",
         FieldType::Tfloat => "f32",
         FieldType::Tbytes => "Vec<u8>",
+        FieldType::Message(s) => s.as_str(),
+        FieldType::Enum(s) => s.as_str(),
         FieldType::Other(s) => s.as_str(),
     };
 
-    let typ = if let FieldType::Other(_) = &f.field_type {
+    let typ = if let FieldType::Message(_) = &f.field_type {
         format!("{}", typ)
     } else {
         typ.to_owned()
@@ -72,15 +78,136 @@ fn get_return_type_name(f: &parser::FieldDefinition) -> String {
         FieldType::Tstring => "&str",
         FieldType::Tfloat => "f32",
         FieldType::Tbytes => "&[u8]",
+        FieldType::Message(s) => s.as_str(),
+        FieldType::Enum(s) => s.as_str(),
         FieldType::Other(s) => s.as_str(),
     };
     if f.repeated {
         format!("RepeatedField<'a, {}>", typ)
-    } else if let FieldType::Other(_) = &f.field_type {
+    } else if let FieldType::Message(_) = &f.field_type {
         format!("{}", typ)
     } else {
         typ.to_owned()
     }
+}
+
+fn generate_enum<W: std::io::Write>(
+    e: &parser::EnumDefinition,
+    w: &mut W,
+) -> Result<(), std::io::Error> {
+    // Define the enum
+    write!(
+        w,
+        "#[derive(Clone, Debug, Copy, PartialEq)]
+enum {name} {{
+",
+        name = e.name
+    )?;
+
+    let mut zero_name = String::from("Unknown");
+    let mut has_zero_tag = false;
+    for (field, tag) in &e.fields {
+        write!(w, "    {fname},\n", fname = field)?;
+
+        if *tag == 0 {
+            has_zero_tag = true;
+            zero_name = field.clone();
+        }
+    }
+    if !has_zero_tag {
+        write!(w, "    Unknown,\n")?;
+    }
+    write!(w, "}}\n\n")?;
+
+    // Implement Default
+    write!(
+        w,
+        "impl Default for {name} {{
+    fn default() -> Self {{
+        Self::{zero_name}
+    }}
+}}
+
+",
+        name = e.name,
+        zero_name = zero_name,
+    )?;
+
+    // Implement Serialize
+    write!(
+        w,
+        "impl Serialize for {name} {{
+    fn encode<W: std::io::Write>(&self, writer: &mut W) -> Result<usize, std::io::Error> {{
+        let value = match self {{
+",
+        name = e.name,
+    )?;
+
+    for (field, tag) in &e.fields {
+        if *tag == 0 {
+            write!(
+                w,
+                "            Self::{field} => return Ok(0),\n",
+                field = field,
+            )?;
+        } else {
+            write!(
+                w,
+                "            Self::{field} => {tag},\n",
+                field = field,
+                tag = tag
+            )?;
+        }
+    }
+
+    write!(
+        w,
+        "        }};
+        writer.write_all(&[value])?;
+        Ok(1)
+    }}
+}}
+
+"
+    )?;
+
+    // Implement Deserialize
+    write!(
+        w,
+        "impl DeserializeOwned for {name} {{
+    fn decode_owned(bytes: &[u8]) -> Result<Self, std::io::Error> {{
+        if bytes.len() == 0 {{
+            return Ok(Self::{zero_name})
+        }}
+        match bytes[0] {{
+",
+        name = e.name,
+        zero_name = zero_name,
+    )?;
+
+    for (field, tag) in &e.fields {
+        if *tag != 0 {
+            write!(
+                w,
+                "            {tag} => Ok(Self::{field}),\n",
+                field = field,
+                tag = tag
+            )?;
+        }
+    }
+
+    write!(
+        w,
+        "            _ => Ok(Self::{zero_name}),
+        }}
+    }}
+}}
+
+",
+        zero_name = zero_name
+    )?;
+
+    Ok(())
 }
 
 fn generate_message<W: std::io::Write>(
@@ -104,7 +231,7 @@ struct {name} {{
             typ = typ
         )?;
     }
-    write!(w, "}}\n")?;
+    write!(w, "}}\n\n")?;
 
     write!(
         w,
@@ -113,6 +240,7 @@ enum {name}View<'a> {{
     Encoded(EncodedStruct<'a>),
     Decoded(&'a {name}),
 }}
+
 "#,
         name = msg.name
     )?;
@@ -157,7 +285,7 @@ enum {name}View<'a> {{
 
     let mut idx = 0;
     for field in &msg.fields {
-        for i in idx..field.tag {
+        for _ in idx..field.tag {
             write!(w, "        builder.advance();\n",)?;
         }
         idx = field.tag + 1;
@@ -196,7 +324,6 @@ impl DeserializeOwned for {name} {{
 "#,
     )?;
 
-    let mut fields_iter = msg.fields.iter();
     for field in &msg.fields {
         if field.field_type == FieldType::Tbytes {
             write!(
@@ -372,14 +499,14 @@ impl<'a> Iterator for Repeated{name}Iterator<'a> {{
     for field in &msg.fields {
         let mut typ = get_return_type_name(&field);
         if field.repeated {
-            if let FieldType::Other(s) = &field.field_type {
+            if let FieldType::Message(s) = &field.field_type {
                 typ = format!("Repeated{name}<'a>", name = s);
             } else if field.field_type == FieldType::Tstring {
                 typ = String::from("RepeatedString<'a>");
             } else if field.field_type == FieldType::Tbytes {
                 typ = String::from("RepeatedBytes<'a>");
             }
-        } else if let FieldType::Other(s) = &field.field_type {
+        } else if let FieldType::Message(s) = &field.field_type {
             typ = format!("{name}View<'a>", name = s);
         }
 
@@ -392,7 +519,7 @@ impl<'a> Iterator for Repeated{name}Iterator<'a> {{
             field_type = typ
         )?;
 
-        if let FieldType::Other(s) = &field.field_type {
+        if let FieldType::Message(s) = &field.field_type {
             if field.repeated {
                 write!(
                     w,

@@ -12,9 +12,47 @@
 mod test_test;
 
 use bus::{
-    Deserialize, DeserializeOwned, EncodedStruct, EncodedStructBuilder, PackedIn, PackedOut,
-    RepeatedBytes, RepeatedField, RepeatedFieldIterator, RepeatedString, Serialize,
+    Deserialize, DeserializeOwned, EncodedStruct, EncodedStructBuilder, RepeatedField,
+    RepeatedFieldIterator, RepeatedBytes, RepeatedString, Serialize, PackedIn, PackedOut
 };
+
+#[derive(Clone, Debug, Copy, PartialEq)]
+enum State {
+    Disabled,
+    Partial,
+    Maximum,
+}
+
+impl Default for State {
+    fn default() -> Self {
+        Self::Disabled
+    }
+}
+
+impl Serialize for State {
+    fn encode<W: std::io::Write>(&self, writer: &mut W) -> Result<usize, std::io::Error> {
+        let value = match self {
+            Self::Disabled => return Ok(0),
+            Self::Partial => 1,
+            Self::Maximum => 2,
+        };
+        writer.write_all(&[value])?;
+        Ok(1)
+    }
+}
+
+impl DeserializeOwned for State {
+    fn decode_owned(bytes: &[u8]) -> Result<Self, std::io::Error> {
+        if bytes.len() == 0 {
+            return Ok(Self::Disabled)
+        }
+        match bytes[0] {
+            1 => Ok(Self::Partial),
+            2 => Ok(Self::Maximum),
+            _ => Ok(Self::Disabled),
+        }
+    }
+}
 
 #[derive(Clone, Debug, Default)]
 struct Zoot {
@@ -22,11 +60,13 @@ struct Zoot {
     size: Vec<u64>,
     name: String,
 }
+
 #[derive(Clone, Copy)]
 enum ZootView<'a> {
     Encoded(EncodedStruct<'a>),
     Decoded(&'a Zoot),
 }
+
 impl<'a> std::fmt::Debug for ZootView<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Zoot")
@@ -147,18 +187,14 @@ impl<'a> ZootView<'a> {
     }
     pub fn get_toot(&'a self) -> TootView<'a> {
         match self {
-            Self::Decoded(x) => TootView::Decoded(&x.toot),
-            Self::Encoded(x) => {
-                TootView::Encoded(x.get(0).transpose().unwrap_or_default().unwrap_or_default())
-            }
+           Self::Decoded(x) => TootView::Decoded(&x.toot),
+            Self::Encoded(x) => TootView::Encoded(x.get(0).transpose().unwrap_or_default().unwrap_or_default()),
         }
     }
     pub fn get_size(&'a self) -> RepeatedField<'a, u64> {
         match self {
             Self::Decoded(x) => RepeatedField::Decoded(x.size.as_slice()),
-            Self::Encoded(x) => {
-                RepeatedField::Encoded(x.get(1).transpose().unwrap_or_default().unwrap_or_default())
-            }
+            Self::Encoded(x) => RepeatedField::Encoded(x.get(1).transpose().unwrap_or_default().unwrap_or_default()),
         }
     }
     pub fn get_name(&'a self) -> &str {
@@ -173,11 +209,13 @@ struct Toot {
     id: u32,
     data: Vec<u8>,
 }
+
 #[derive(Clone, Copy)]
 enum TootView<'a> {
     Encoded(EncodedStruct<'a>),
     Decoded(&'a Toot),
 }
+
 impl<'a> std::fmt::Debug for TootView<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Toot")
@@ -313,11 +351,13 @@ struct Container {
     values: Vec<Toot>,
     names: Vec<String>,
 }
+
 #[derive(Clone, Copy)]
 enum ContainerView<'a> {
     Encoded(EncodedStruct<'a>),
     Decoded(&'a Container),
 }
+
 impl<'a> std::fmt::Debug for ContainerView<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Container")
@@ -435,17 +475,13 @@ impl<'a> ContainerView<'a> {
     pub fn get_values(&'a self) -> RepeatedToot<'a> {
         match self {
             Self::Decoded(x) => RepeatedToot::Decoded(&x.values.as_slice()),
-            Self::Encoded(x) => RepeatedToot::Encoded(RepeatedField::Encoded(
-                x.get(0).transpose().unwrap_or_default().unwrap_or_default(),
-            )),
+            Self::Encoded(x) => RepeatedToot::Encoded(RepeatedField::Encoded(x.get(0).transpose().unwrap_or_default().unwrap_or_default())),
         }
     }
     pub fn get_names(&'a self) -> RepeatedString<'a> {
         match self {
             Self::Decoded(x) => RepeatedString::Decoded(x.names.as_slice()),
-            Self::Encoded(x) => RepeatedString::Encoded(
-                x.get(1).transpose().unwrap_or_default().unwrap_or_default(),
-            ),
+            Self::Encoded(x) => RepeatedString::Encoded(x.get(1).transpose().unwrap_or_default().unwrap_or_default()),
         }
     }
 }
@@ -453,11 +489,13 @@ impl<'a> ContainerView<'a> {
 struct Blort {
     payloads: Vec<Vec<u8>>,
 }
+
 #[derive(Clone, Copy)]
 enum BlortView<'a> {
     Encoded(EncodedStruct<'a>),
     Decoded(&'a Blort),
 }
+
 impl<'a> std::fmt::Debug for BlortView<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Blort")
@@ -574,9 +612,7 @@ impl<'a> BlortView<'a> {
     pub fn get_payloads(&'a self) -> RepeatedBytes<'a> {
         match self {
             Self::Decoded(x) => RepeatedBytes::Decoded(x.payloads.as_slice()),
-            Self::Encoded(x) => {
-                RepeatedBytes::Encoded(x.get(0).transpose().unwrap_or_default().unwrap_or_default())
-            }
+            Self::Encoded(x) => RepeatedBytes::Encoded(x.get(0).transpose().unwrap_or_default().unwrap_or_default()),
         }
     }
 }
@@ -585,11 +621,13 @@ struct Multiplicand {
     divisor: u32,
     quotient: u32,
 }
+
 #[derive(Clone, Copy)]
 enum MultiplicandView<'a> {
     Encoded(EncodedStruct<'a>),
     Decoded(&'a Multiplicand),
 }
+
 impl<'a> std::fmt::Debug for MultiplicandView<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Multiplicand")
@@ -731,11 +769,13 @@ struct Summand {
     quotient: u32,
     product: u32,
 }
+
 #[derive(Clone, Copy)]
 enum SummandView<'a> {
     Encoded(EncodedStruct<'a>),
     Decoded(&'a Summand),
 }
+
 impl<'a> std::fmt::Debug for SummandView<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Summand")
@@ -910,6 +950,273 @@ impl<'a> SummandView<'a> {
         match self {
             Self::Decoded(x) => x.product,
             Self::Encoded(x) => x.get(6).transpose().unwrap_or_default().unwrap_or_default(),
+        }
+    }
+}
+#[derive(Clone, Debug, Default)]
+struct Request {
+    desired: State,
+    actual: State,
+}
+
+#[derive(Clone, Copy)]
+enum RequestView<'a> {
+    Encoded(EncodedStruct<'a>),
+    Decoded(&'a Request),
+}
+
+impl<'a> std::fmt::Debug for RequestView<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Request")
+            .field("desired", &self.get_desired())
+            .field("actual", &self.get_actual())
+            .finish()
+    }
+}
+
+impl Serialize for Request {
+    fn encode<W: std::io::Write>(&self, writer: &mut W) -> Result<usize, std::io::Error> {
+        let mut builder = EncodedStructBuilder::new(writer);
+        builder.push(&self.desired)?;
+        builder.push(&self.actual)?;
+        builder.finish()
+    }
+}
+
+impl DeserializeOwned for Request {
+    fn decode_owned(bytes: &[u8]) -> Result<Self, std::io::Error> {
+        let s = EncodedStruct::new(bytes)?;
+        Ok(Self {
+            desired: s.get_owned(0).transpose()?.unwrap_or_default(),
+            actual: s.get_owned(1).transpose()?.unwrap_or_default(),
+        })
+    }
+}
+impl<'a> Deserialize<'a> for RequestView<'a> {
+    fn decode(bytes: &'a [u8]) -> Result<Self, std::io::Error> {
+        Ok(Self::Encoded(EncodedStruct::from_bytes(bytes)?))
+    }
+}
+enum RepeatedRequest<'a> {
+    Encoded(RepeatedField<'a, RequestView<'a>>),
+    Decoded(&'a [Request]),
+}
+
+impl<'a> std::fmt::Debug for RepeatedRequest<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Encoded(v) => {
+                write!(f, "[")?;
+                let mut first = true;
+                for item in v {
+                    if first {
+                        first = false;
+                    } else {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{:?}", item)?;
+                }
+                write!(f, "]")
+            }
+            Self::Decoded(v) => v.fmt(f),
+        }
+    }
+}
+
+enum RepeatedRequestIterator<'a> {
+    Encoded(RepeatedFieldIterator<'a, RequestView<'a>>),
+    Decoded(std::slice::Iter<'a, Request>),
+}
+
+impl<'a> RepeatedRequest<'a> {
+    pub fn iter(&'a self) -> RepeatedRequestIterator<'a> {
+        match self {
+            Self::Encoded(r) => RepeatedRequestIterator::Encoded(r.iter()),
+            Self::Decoded(s) => RepeatedRequestIterator::Decoded(s.iter()),
+        }
+    }
+}
+
+impl<'a> Iterator for RepeatedRequestIterator<'a> {
+    type Item = RequestView<'a>;
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::Encoded(it) => it.next(),
+            Self::Decoded(it) => Some(RequestView::Decoded(it.next()?)),
+        }
+    }
+}
+
+impl Request {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, std::io::Error> {
+        RequestView::from_bytes(bytes)?.to_owned()
+    }
+
+    pub fn as_view<'a>(&'a self) -> RequestView {
+        RequestView::Decoded(self)
+    }
+}
+impl<'a> RequestView<'a> {
+    pub fn from_bytes(bytes: &'a [u8]) -> Result<Self, std::io::Error> {
+        Ok(Self::Encoded(EncodedStruct::new(bytes)?))
+    }
+    pub fn to_owned(&self) -> Result<Request, std::io::Error> {
+        match self {
+            Self::Decoded(t) => Ok((*t).clone()),
+            Self::Encoded(t) => Ok(Request {
+                desired: t.get_owned(0).transpose()?.unwrap_or_default(),
+                actual: t.get_owned(1).transpose()?.unwrap_or_default(),
+            }),
+        }
+    }
+    pub fn encode<W: std::io::Write>(&self, writer: &mut W) -> Result<usize, std::io::Error> {
+        match self {
+            Self::Decoded(t) => t.encode(writer),
+            Self::Encoded(t) => t.encode(writer),
+        }
+    }
+    pub fn get_desired(&'a self) -> State {
+        match self {
+            Self::Decoded(x) => x.desired,
+            Self::Encoded(x) => x.get(0).transpose().unwrap_or_default().unwrap_or_default(),
+        }
+    }
+    pub fn get_actual(&'a self) -> State {
+        match self {
+            Self::Decoded(x) => x.actual,
+            Self::Encoded(x) => x.get(1).transpose().unwrap_or_default().unwrap_or_default(),
+        }
+    }
+}
+#[derive(Clone, Debug, Default)]
+struct History {
+    sequence: Vec<State>,
+}
+
+#[derive(Clone, Copy)]
+enum HistoryView<'a> {
+    Encoded(EncodedStruct<'a>),
+    Decoded(&'a History),
+}
+
+impl<'a> std::fmt::Debug for HistoryView<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("History")
+            .field("sequence", &self.get_sequence())
+            .finish()
+    }
+}
+
+impl Serialize for History {
+    fn encode<W: std::io::Write>(&self, writer: &mut W) -> Result<usize, std::io::Error> {
+        let mut builder = EncodedStructBuilder::new(writer);
+        builder.push(&self.sequence)?;
+        builder.finish()
+    }
+}
+
+impl DeserializeOwned for History {
+    fn decode_owned(bytes: &[u8]) -> Result<Self, std::io::Error> {
+        let s = EncodedStruct::new(bytes)?;
+        Ok(Self {
+            sequence: s.get_owned(0).transpose()?.unwrap_or_default(),
+        })
+    }
+}
+impl<'a> Deserialize<'a> for HistoryView<'a> {
+    fn decode(bytes: &'a [u8]) -> Result<Self, std::io::Error> {
+        Ok(Self::Encoded(EncodedStruct::from_bytes(bytes)?))
+    }
+}
+enum RepeatedHistory<'a> {
+    Encoded(RepeatedField<'a, HistoryView<'a>>),
+    Decoded(&'a [History]),
+}
+
+impl<'a> std::fmt::Debug for RepeatedHistory<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Encoded(v) => {
+                write!(f, "[")?;
+                let mut first = true;
+                for item in v {
+                    if first {
+                        first = false;
+                    } else {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{:?}", item)?;
+                }
+                write!(f, "]")
+            }
+            Self::Decoded(v) => v.fmt(f),
+        }
+    }
+}
+
+enum RepeatedHistoryIterator<'a> {
+    Encoded(RepeatedFieldIterator<'a, HistoryView<'a>>),
+    Decoded(std::slice::Iter<'a, History>),
+}
+
+impl<'a> RepeatedHistory<'a> {
+    pub fn iter(&'a self) -> RepeatedHistoryIterator<'a> {
+        match self {
+            Self::Encoded(r) => RepeatedHistoryIterator::Encoded(r.iter()),
+            Self::Decoded(s) => RepeatedHistoryIterator::Decoded(s.iter()),
+        }
+    }
+}
+
+impl<'a> Iterator for RepeatedHistoryIterator<'a> {
+    type Item = HistoryView<'a>;
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::Encoded(it) => it.next(),
+            Self::Decoded(it) => Some(HistoryView::Decoded(it.next()?)),
+        }
+    }
+}
+
+impl History {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, std::io::Error> {
+        HistoryView::from_bytes(bytes)?.to_owned()
+    }
+
+    pub fn as_view<'a>(&'a self) -> HistoryView {
+        HistoryView::Decoded(self)
+    }
+}
+impl<'a> HistoryView<'a> {
+    pub fn from_bytes(bytes: &'a [u8]) -> Result<Self, std::io::Error> {
+        Ok(Self::Encoded(EncodedStruct::new(bytes)?))
+    }
+    pub fn to_owned(&self) -> Result<History, std::io::Error> {
+        match self {
+            Self::Decoded(t) => Ok((*t).clone()),
+            Self::Encoded(t) => Ok(History {
+                sequence: t.get_owned(0).transpose()?.unwrap_or_default(),
+            }),
+        }
+    }
+    pub fn encode<W: std::io::Write>(&self, writer: &mut W) -> Result<usize, std::io::Error> {
+        match self {
+            Self::Decoded(t) => t.encode(writer),
+            Self::Encoded(t) => t.encode(writer),
+        }
+    }
+    pub fn get_sequence(&'a self) -> RepeatedField<'a, State> {
+        match self {
+            Self::Decoded(x) => RepeatedField::Decoded(x.sequence.as_slice()),
+            Self::Encoded(x) => RepeatedField::Encoded(x.get(0).transpose().unwrap_or_default().unwrap_or_default()),
         }
     }
 }

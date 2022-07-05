@@ -1,6 +1,6 @@
 use ggen::GrammarUnit;
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 mod ast;
 
@@ -44,6 +44,8 @@ pub enum FieldType {
     Tstring,
     Tfloat,
     Tbytes,
+    Message(String),
+    Enum(String),
     Other(String),
 }
 
@@ -83,6 +85,13 @@ fn convert_field(f: &ast::FieldDefinition, data: &str) -> Result<FieldDefinition
     })
 }
 
+fn allowed_default_name(value: &str) -> bool {
+    match value {
+        "Unknown" | "Disabled" | "Default" => true,
+        _ => false,
+    }
+}
+
 fn convert_enum(e: ast::EnumDefinition, data: &str) -> Result<EnumDefinition, CarError> {
     let mut fields = Vec::new();
     let mut names = HashSet::new();
@@ -98,10 +107,12 @@ fn convert_enum(e: ast::EnumDefinition, data: &str) -> Result<EnumDefinition, Ca
             )));
         }
 
-        if f.tag.value == 0 && name.as_str() != "Unknown" {
-            let (start, end) = f.tag.range();
+        if f.tag.value == 0 && !allowed_default_name(&name) {
+            let (start, end) = f.field_name.range();
             return Err(CarError::ParseError(ggen::ParseError::from_string(
-                String::from("the zero enum value must be called `Unknown`"),
+                String::from(
+                    "the zero enum value must be called `Unknown`, `Disabled` or `Default`",
+                ),
                 "",
                 start,
                 end,
@@ -164,18 +175,24 @@ fn convert_message(msg: ast::MessageDefinition, data: &str) -> Result<MessageDef
     })
 }
 
+enum SymbolType {
+    Message,
+    Enum,
+}
+
 pub fn parse(data: &str) -> Result<Module, CarError> {
     let (module, _, _) = ast::Module::try_match(data, 0).map_err(|e| CarError::ParseError(e))?;
 
     let mut messages = Vec::new();
     let mut enums = Vec::new();
-    let mut types = HashSet::new();
+    let mut types = HashMap::new();
     for d in module.definitions.into_iter() {
         match d {
             ast::Definition::Message(msg) => {
                 let m = convert_message(*msg, data)?;
 
-                if types.insert(m.name.clone()) {
+                if !types.contains_key(&m.name) {
+                    types.insert(m.name.clone(), SymbolType::Message);
                     messages.push(m);
                 } else {
                     let (start, end) = m.ast.name.range();
@@ -189,7 +206,8 @@ pub fn parse(data: &str) -> Result<Module, CarError> {
             }
             ast::Definition::Enum(e) => {
                 let e = convert_enum(*e, data)?;
-                if types.insert(e.name.clone()) {
+                if !types.contains_key(&e.name) {
+                    types.insert(e.name.clone(), SymbolType::Enum);
                     enums.push(e);
                 } else {
                     let (start, end) = e.ast.name.range();
@@ -205,18 +223,23 @@ pub fn parse(data: &str) -> Result<Module, CarError> {
     }
 
     // Validate that all types are resolved
-    for msg in &messages {
-        for field in &msg.fields {
-            if let FieldType::Other(s) = &field.field_type {
-                if !types.contains(s) {
-                    let (start, end) = field.ast.type_name.range();
-                    return Err(CarError::ParseError(ggen::ParseError::from_string(
-                        format!("unrecognized field type `{}`", &s),
-                        "",
-                        start,
-                        end,
-                    )));
-                }
+    for msg in &mut messages {
+        for mut field in &mut msg.fields {
+            match &field.field_type {
+                FieldType::Other(s) => match types.get(s.as_str()) {
+                    Some(SymbolType::Message) => field.field_type = FieldType::Message(s.clone()),
+                    Some(SymbolType::Enum) => field.field_type = FieldType::Enum(s.clone()),
+                    None => {
+                        let (start, end) = field.ast.type_name.range();
+                        return Err(CarError::ParseError(ggen::ParseError::from_string(
+                            format!("unrecognized field type `{}`", &s),
+                            "",
+                            start,
+                            end,
+                        )));
+                    }
+                },
+                _ => (),
             }
         }
     }

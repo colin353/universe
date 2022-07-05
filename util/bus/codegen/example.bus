@@ -5,7 +5,9 @@ message Zoot {
 }
 
 enum State {
-  Unknown = 0
+  Disabled = 0
+  Partial = 1
+  Maximum = 2
 }
 
 message Toot {
@@ -37,4 +39,13 @@ message Summand {
   subtractand: u32 = 4;
   quotient: u32 = 5;
   product: u32 = 6;
+}
+
+message Request {
+  desired: State = 0;
+  actual: State = 1;
+}
+
+message History {
+  sequence: repeated State = 0;
 }
