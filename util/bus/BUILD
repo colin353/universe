@@ -25,6 +25,16 @@ rust_library(
     ]
 )
 
+rust_binary(
+    name = "busfmt",
+    srcs = [ "busfmt.rs" ],
+    deps = [
+        ":parser",
+        ":fmt",
+        "//util/flags",
+    ]
+)
+
 rust_test(
     name = "fmt_test",
     crate = ":fmt",

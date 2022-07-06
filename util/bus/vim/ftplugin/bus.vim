@@ -17,19 +17,20 @@ function! bus#PreWrite()
 
   let l:command = "busfmt 2> " .l:stderr_tmpname
   let l:buffer = getline(1, '$')
-  silent let out = systemlist(l:command, l:buffer)
+  silent let l:out = systemlist(l:command, l:buffer)
 
   let l:stderr = readfile(l:stderr_tmpname)
+
   call delete(l:stderr_tmpname)
 
   try | silent undojoin | catch | endtry
 
   if len(l:stderr) == 0 
     call setline(1, l:out)
-    call bus#DeleteLines(len(l:out), line('$'))
+    call bus#DeleteLines(len(l:out) + 1, line('$'))
   endif
 
   call winrestview(l:view)
 endfunction
 
-autocmd BufWritePre *.bus silent! call bus#PreWrite()
+autocmd BufWritePre *.bus call bus#PreWrite()

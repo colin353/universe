@@ -7,6 +7,7 @@ ggen::sequence!(
     Module,
     leading_comments: Vec<WhitespaceNewlineComment>,
     definitions: Vec<Definition>,
+    trailing_comments: Vec<WhitespaceNewlineComment>,
     end: EOF,
 );
 
@@ -34,6 +35,7 @@ ggen::sequence!(
 
 ggen::sequence!(
     EnumDefinition,
+    _leading_comments: Vec<WhitespaceNewlineComment>,
     "enum",
     _ws1: Option<Whitespace>,
     name: Identifier,
@@ -43,7 +45,7 @@ ggen::sequence!(
     fields: Vec<EnumField>,
     _ws4: Vec<WhitespaceNewlineOrComment>,
     "}",
-    _ws5: Vec<WhitespaceNewlineOrComment>,
+    _ws5: Option<WhitespaceNewlineComment>,
 );
 
 ggen::sequence!(
@@ -59,6 +61,7 @@ ggen::sequence!(
 
 ggen::sequence!(
     MessageDefinition,
+    _leading_comments: Vec<WhitespaceNewlineComment>,
     "message",
     _ws1: Option<Whitespace>,
     name: Identifier,
@@ -68,7 +71,7 @@ ggen::sequence!(
     fields: Vec<FieldDefinition>,
     _ws4: Vec<WhitespaceNewlineOrComment>,
     "}",
-    _ws5: Vec<WhitespaceNewlineOrComment>,
+    _ws5: Option<WhitespaceNewlineComment>,
 );
 
 ggen::unit!(Repeated, "repeated");
@@ -94,6 +97,7 @@ ggen::sequence!(
 
 ggen::sequence!(
     ServiceDefinition,
+    _leading_comments: Vec<WhitespaceNewlineComment>,
     "service",
     _ws1: Option<Whitespace>,
     name: Identifier,
@@ -103,7 +107,7 @@ ggen::sequence!(
     fields: Vec<RpcDefinition>,
     _ws4: Vec<WhitespaceNewlineOrComment>,
     "}",
-    _ws5: Vec<WhitespaceNewlineOrComment>,
+    _ws5: Option<WhitespaceNewlineComment>,
 );
 
 ggen::sequence!(
