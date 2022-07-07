@@ -23,7 +23,7 @@ pub fn format<W: std::io::Write>(
 
 impl<'a, W: std::io::Write> Formatter<'a, W> {
     fn format(&mut self, module: ast::Module) -> Result<(), std::io::Error> {
-        self.format_newline_comment(module.leading_comments.as_slice(), false, true)?;
+        self.format_newline_comment(module.leading_comments.as_slice(), false, true, false)?;
 
         for (idx, defn) in module.definitions.iter().enumerate() {
             if idx != 0 {
@@ -36,7 +36,10 @@ impl<'a, W: std::io::Write> Formatter<'a, W> {
             }
         }
 
-        self.format_newline_comment(module.trailing_comments.as_slice(), false, true)?;
+        if self.contains_newline_comments(&module.trailing_comments) {
+            write!(self.writer, "\n")?;
+        }
+        self.format_newline_comment(module.trailing_comments.as_slice(), false, false, true)?;
 
         Ok(())
     }
@@ -49,16 +52,25 @@ impl<'a, W: std::io::Write> Formatter<'a, W> {
         &mut self,
         comments: &[ast::WhitespaceNewlineOrComment],
         mut directly_trailing: bool,
+        mut drop_leading_newlines: bool,
         drop_trailing_newlines: bool,
     ) -> Result<(), std::io::Error> {
         let mut accumulated_newlines = 0;
         let mut bare_newline_count = 0;
+        let mut has_comment = false;
         for wc in comments {
             if wc.comment.is_none() && !wc.as_str(self.content).contains("\n") {
                 continue;
             }
 
             if let Some(c) = &wc.comment {
+                if drop_leading_newlines {
+                    accumulated_newlines = 0;
+                    drop_leading_newlines = false;
+                }
+
+                has_comment = true;
+
                 if accumulated_newlines > 0 {
                     write!(self.writer, "{}", "\n".repeat(accumulated_newlines))?;
                     accumulated_newlines = 0;
@@ -69,7 +81,7 @@ impl<'a, W: std::io::Write> Formatter<'a, W> {
                 } else {
                     self.write_indent()?;
                 }
-                self.write_unit(c)?;
+                self.write_unit(c, drop_leading_newlines, drop_trailing_newlines)?;
                 bare_newline_count = 0;
             } else {
                 bare_newline_count += 1;
@@ -82,7 +94,12 @@ impl<'a, W: std::io::Write> Formatter<'a, W> {
             directly_trailing = false;
         }
 
-        if accumulated_newlines > 0 && !drop_trailing_newlines {
+        if (drop_trailing_newlines || drop_leading_newlines) && has_comment {
+            write!(self.writer, "\n")?;
+        } else if has_comment
+            && accumulated_newlines > 0
+            && (!drop_trailing_newlines || !drop_leading_newlines)
+        {
             write!(self.writer, "{}", "\n".repeat(accumulated_newlines))?;
         }
 
@@ -93,6 +110,7 @@ impl<'a, W: std::io::Write> Formatter<'a, W> {
         &mut self,
         comments: &[ast::WhitespaceNewlineComment],
         mut directly_trailing: bool,
+        mut drop_leading_newlines: bool,
         drop_trailing_newlines: bool,
     ) -> Result<(), std::io::Error> {
         let mut accumulated_newlines = 0;
@@ -103,6 +121,11 @@ impl<'a, W: std::io::Write> Formatter<'a, W> {
             }
 
             if let Some(c) = &wc.comment {
+                if drop_leading_newlines {
+                    accumulated_newlines = 0;
+                    drop_leading_newlines = false;
+                }
+
                 if accumulated_newlines > 0 {
                     write!(self.writer, "{}", "\n".repeat(accumulated_newlines))?;
                     accumulated_newlines = 0;
@@ -113,7 +136,7 @@ impl<'a, W: std::io::Write> Formatter<'a, W> {
                 } else {
                     self.write_indent()?;
                 }
-                self.write_unit(c)?;
+                self.write_unit(c, drop_leading_newlines, drop_trailing_newlines)?;
                 bare_newline_count = 0;
             } else {
                 bare_newline_count += 1;
@@ -126,7 +149,9 @@ impl<'a, W: std::io::Write> Formatter<'a, W> {
             directly_trailing = false;
         }
 
-        if accumulated_newlines > 0 && !drop_trailing_newlines {
+        if drop_leading_newlines {
+            // Drop newlines
+        } else if accumulated_newlines > 0 && !drop_trailing_newlines {
             write!(self.writer, "{}", "\n".repeat(accumulated_newlines))?;
         }
 
@@ -134,10 +159,7 @@ impl<'a, W: std::io::Write> Formatter<'a, W> {
     }
 
     fn format_message(&mut self, msg: &ast::MessageDefinition) -> Result<(), std::io::Error> {
-        self.format_newline_comment(&msg._leading_comments, false, true)?;
-        if self.contains_newline_comments(&msg._leading_comments) {
-            write!(self.writer, "\n");
-        }
+        self.format_newline_comment(&msg._leading_comments, false, false, true)?;
 
         write!(
             self.writer,
@@ -145,7 +167,7 @@ impl<'a, W: std::io::Write> Formatter<'a, W> {
             name = msg.name.as_str(self.content)
         )?;
 
-        self.format_comment(&msg._ws2, true, false)?;
+        self.format_comment(&msg._ws2, true, false, true)?;
 
         if !self.contains_comments(&msg._ws3)
             && msg.fields.is_empty()
@@ -153,7 +175,7 @@ impl<'a, W: std::io::Write> Formatter<'a, W> {
         {
             write!(self.writer, " {{}}")?;
             if let Some(c) = &msg._ws5 {
-                self.format_newline_comment(&[c.clone()], false, true)?;
+                self.format_newline_comment(&[c.clone()], false, false, true)?;
             }
             write!(self.writer, "\n")?;
             return Ok(());
@@ -162,12 +184,8 @@ impl<'a, W: std::io::Write> Formatter<'a, W> {
         write!(self.writer, " {{\n")?;
         self.indent += 1;
 
-        self.format_comment(msg._ws3.as_slice(), false, true)?;
-        if self.contains_comments(&msg._ws3) {
-            write!(self.writer, "\n");
-        }
-
-        for field in &msg.fields {
+        self.format_comment(&msg._ws3, false, true, false)?;
+        for (idx, field) in msg.fields.iter().enumerate() {
             self.write_indent()?;
             write!(
                 self.writer,
@@ -181,17 +199,22 @@ impl<'a, W: std::io::Write> Formatter<'a, W> {
                 type_name = field.type_name.as_str(self.content),
                 tag = field.tag.value,
             )?;
-            self.format_newline_comment(field._trailing_newline.inner.as_slice(), true, false)?;
+            let is_last_field = idx == msg.fields.len() - 1;
+            self.format_newline_comment(
+                field._trailing_newline.inner.as_slice(),
+                true,
+                false,
+                is_last_field,
+            )?;
         }
-        self.format_comment(msg._ws4.as_slice(), false, false)?;
+        self.format_comment(msg._ws4.as_slice(), false, false, true)?;
 
         self.indent -= 1;
-        write!(self.writer, "}}")?;
+        write!(self.writer, "\n}}")?;
 
         if let Some(c) = &msg._ws5 {
-            self.format_newline_comment(&[c.clone()], false, true)?;
+            self.format_newline_comment(&[c.clone()], false, false, true)?;
         }
-        write!(self.writer, "\n")?;
 
         Ok(())
     }
@@ -205,7 +228,7 @@ impl<'a, W: std::io::Write> Formatter<'a, W> {
     }
 
     fn format_enum(&mut self, e: &ast::EnumDefinition) -> Result<(), std::io::Error> {
-        self.format_newline_comment(&e._leading_comments, false, true)?;
+        self.format_newline_comment(&e._leading_comments, false, true, false)?;
 
         write!(
             self.writer,
@@ -213,7 +236,7 @@ impl<'a, W: std::io::Write> Formatter<'a, W> {
             name = e.name.as_str(self.content)
         )?;
 
-        self.format_comment(&e._ws2, true, false)?;
+        self.format_comment(&e._ws2, true, false, true)?;
 
         if !self.contains_comments(&e._ws3)
             && e.fields.is_empty()
@@ -221,7 +244,7 @@ impl<'a, W: std::io::Write> Formatter<'a, W> {
         {
             write!(self.writer, " {{}}")?;
             if let Some(c) = &e._ws5 {
-                self.format_newline_comment(&[c.clone()], false, false)?;
+                self.format_newline_comment(&[c.clone()], false, false, true)?;
             }
             write!(self.writer, "\n")?;
             return Ok(());
@@ -230,12 +253,12 @@ impl<'a, W: std::io::Write> Formatter<'a, W> {
         write!(self.writer, " {{\n")?;
         self.indent += 1;
 
-        self.format_comment(e._ws3.as_slice(), false, true)?;
+        self.format_comment(e._ws3.as_slice(), false, true, false)?;
         if self.contains_comments(&e._ws3) {
-            write!(self.writer, "\n");
+            write!(self.writer, "\n")?;
         }
 
-        for field in &e.fields {
+        for (idx, field) in e.fields.iter().enumerate() {
             self.write_indent()?;
             write!(
                 self.writer,
@@ -243,26 +266,28 @@ impl<'a, W: std::io::Write> Formatter<'a, W> {
                 field_name = field.field_name.as_str(self.content),
                 tag = field.tag.value,
             )?;
-            self.format_newline_comment(field._trailing_newline.inner.as_slice(), true, false)?;
+            let is_last_field = idx == e.fields.len() - 1;
+            self.format_newline_comment(
+                field._trailing_newline.inner.as_slice(),
+                true,
+                false,
+                is_last_field,
+            )?;
         }
-        self.format_comment(e._ws4.as_slice(), false, false)?;
+        self.format_comment(e._ws4.as_slice(), false, false, true)?;
 
         self.indent -= 1;
-        write!(self.writer, "}}")?;
+        write!(self.writer, "\n}}")?;
 
         if let Some(c) = &e._ws5 {
-            self.format_newline_comment(&[c.clone()], false, true)?;
+            self.format_newline_comment(&[c.clone()], false, false, true)?;
         }
-        write!(self.writer, "\n")?;
 
         Ok(())
     }
 
     fn format_service(&mut self, service: &ast::ServiceDefinition) -> Result<(), std::io::Error> {
-        self.format_newline_comment(&service._leading_comments, false, true)?;
-        if self.contains_newline_comments(&service._leading_comments) {
-            write!(self.writer, "\n");
-        }
+        self.format_newline_comment(&service._leading_comments, false, true, false)?;
 
         write!(
             self.writer,
@@ -270,7 +295,7 @@ impl<'a, W: std::io::Write> Formatter<'a, W> {
             name = service.name.as_str(self.content)
         )?;
 
-        self.format_comment(&service._ws2, true, false)?;
+        self.format_comment(&service._ws2, true, false, true)?;
 
         if !self.contains_comments(&service._ws3)
             && service.fields.is_empty()
@@ -278,7 +303,7 @@ impl<'a, W: std::io::Write> Formatter<'a, W> {
         {
             write!(self.writer, " {{}}")?;
             if let Some(c) = &service._ws5 {
-                self.format_newline_comment(&[c.clone()], false, true)?;
+                self.format_newline_comment(&[c.clone()], false, false, true)?;
             }
             write!(self.writer, "\n")?;
             return Ok(());
@@ -287,11 +312,8 @@ impl<'a, W: std::io::Write> Formatter<'a, W> {
         write!(self.writer, " {{\n")?;
         self.indent += 1;
 
-        self.format_comment(&service._ws3, false, true)?;
-        if self.contains_comments(&service._ws3) {
-            write!(self.writer, "\n");
-        }
-        for rpc in &service.fields {
+        self.format_comment(&service._ws3, false, true, false)?;
+        for (idx, rpc) in service.fields.iter().enumerate() {
             self.write_indent()?;
             write!(
                 self.writer,
@@ -300,24 +322,48 @@ impl<'a, W: std::io::Write> Formatter<'a, W> {
                 argtype = rpc.argument_type.as_str(self.content),
                 rettype = rpc.return_type.as_str(self.content),
             )?;
-            self.format_newline_comment(rpc._trailing_newline.inner.as_slice(), true, false)?;
+
+            let is_last_field = idx == service.fields.len() - 1;
+            self.format_newline_comment(
+                rpc._trailing_newline.inner.as_slice(),
+                true,
+                false,
+                is_last_field,
+            )?;
         }
-        self.format_comment(service._ws4.as_slice(), false, false)?;
+        self.format_comment(service._ws4.as_slice(), false, false, true)?;
 
         self.indent -= 1;
-        write!(self.writer, "}}")?;
+        write!(self.writer, "\n}}")?;
 
         if let Some(c) = &service._ws5 {
-            self.format_newline_comment(&[c.clone()], false, true)?;
+            self.format_newline_comment(&[c.clone()], false, false, true)?;
         }
-        write!(self.writer, "\n")?;
 
         Ok(())
     }
 
-    fn write_unit<G: GrammarUnit>(&mut self, unit: &G) -> Result<(), std::io::Error> {
+    fn write_unit<G: GrammarUnit>(
+        &mut self,
+        unit: &G,
+        drop_trailing_newlines: bool,
+        drop_leading_newlines: bool,
+    ) -> Result<(), std::io::Error> {
         let (start, end) = unit.range();
-        write!(self.writer, "{}", &self.content[start..end])
+        let data = &self.content[start..end];
+        let trimmed = if drop_leading_newlines {
+            data.trim_start()
+        } else {
+            data
+        };
+
+        let trimmed = if drop_trailing_newlines {
+            trimmed.trim_end()
+        } else {
+            trimmed
+        };
+
+        write!(self.writer, "{}", trimmed)
     }
 }
 
@@ -383,7 +429,6 @@ message Zoot {
     // Trailing comment
     value: Msg = 3 // field comment
 }
-
 // Suffix
 ";
         assert_fmt!(input, input,);
@@ -401,7 +446,6 @@ enum Quxx {
     // Trailing comment
     Baz = 2
 }
-
 // Suffix
 ";
         assert_fmt!(input, input,);
