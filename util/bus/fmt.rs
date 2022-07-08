@@ -56,8 +56,6 @@ impl<'a, W: std::io::Write> Formatter<'a, W> {
         drop_trailing_newlines: bool,
     ) -> Result<(), std::io::Error> {
         let mut accumulated_newlines = 0;
-        let mut bare_newline_count = 0;
-        let mut has_comment = false;
         for wc in comments {
             if wc.comment.is_none() && !wc.as_str(self.content).contains("\n") {
                 continue;
@@ -69,10 +67,12 @@ impl<'a, W: std::io::Write> Formatter<'a, W> {
                     drop_leading_newlines = false;
                 }
 
-                has_comment = true;
-
                 if accumulated_newlines > 0 {
-                    write!(self.writer, "{}", "\n".repeat(accumulated_newlines))?;
+                    write!(
+                        self.writer,
+                        "{}",
+                        "\n".repeat(std::cmp::min(2, accumulated_newlines))
+                    )?;
                     accumulated_newlines = 0;
                 }
 
@@ -81,26 +81,34 @@ impl<'a, W: std::io::Write> Formatter<'a, W> {
                 } else {
                     self.write_indent()?;
                 }
-                self.write_unit(c, drop_leading_newlines, drop_trailing_newlines)?;
-                bare_newline_count = 0;
-            } else {
-                bare_newline_count += 1;
+
+                let (start, end) = c.range();
+                let data = &self.content[start..end];
+
+                let trimmed = if drop_leading_newlines {
+                    data.trim_start()
+                } else {
+                    data
+                };
+
+                let end_trimmed = trimmed.trim_end();
+                accumulated_newlines += trimmed[end_trimmed.len()..].matches('\n').count();
+                write!(self.writer, "{}", end_trimmed)?;
             }
 
-            if bare_newline_count <= 2 {
-                accumulated_newlines += 1;
-            }
+            accumulated_newlines += 1;
 
             directly_trailing = false;
         }
 
-        if (drop_trailing_newlines || drop_leading_newlines) && has_comment {
-            write!(self.writer, "\n")?;
-        } else if has_comment
-            && accumulated_newlines > 0
-            && (!drop_trailing_newlines || !drop_leading_newlines)
-        {
-            write!(self.writer, "{}", "\n".repeat(accumulated_newlines))?;
+        if drop_leading_newlines {
+            // Drop newlines
+        } else if accumulated_newlines > 0 && !drop_trailing_newlines {
+            write!(
+                self.writer,
+                "{}",
+                "\n".repeat(std::cmp::min(2, accumulated_newlines))
+            )?;
         }
 
         Ok(())
@@ -114,7 +122,6 @@ impl<'a, W: std::io::Write> Formatter<'a, W> {
         drop_trailing_newlines: bool,
     ) -> Result<(), std::io::Error> {
         let mut accumulated_newlines = 0;
-        let mut bare_newline_count = 0;
         for wc in comments {
             if wc.comment.is_none() && !wc.as_str(self.content).contains("\n") {
                 continue;
@@ -127,7 +134,11 @@ impl<'a, W: std::io::Write> Formatter<'a, W> {
                 }
 
                 if accumulated_newlines > 0 {
-                    write!(self.writer, "{}", "\n".repeat(accumulated_newlines))?;
+                    write!(
+                        self.writer,
+                        "{}",
+                        "\n".repeat(std::cmp::min(2, accumulated_newlines))
+                    )?;
                     accumulated_newlines = 0;
                 }
 
@@ -136,15 +147,22 @@ impl<'a, W: std::io::Write> Formatter<'a, W> {
                 } else {
                     self.write_indent()?;
                 }
-                self.write_unit(c, drop_leading_newlines, drop_trailing_newlines)?;
-                bare_newline_count = 0;
-            } else {
-                bare_newline_count += 1;
+
+                let (start, end) = c.range();
+                let data = &self.content[start..end];
+
+                let trimmed = if drop_leading_newlines {
+                    data.trim_start()
+                } else {
+                    data
+                };
+
+                let end_trimmed = trimmed.trim_end();
+                accumulated_newlines += trimmed[end_trimmed.len()..].matches('\n').count();
+                write!(self.writer, "{}", end_trimmed)?;
             }
 
-            if bare_newline_count <= 2 {
-                accumulated_newlines += 1;
-            }
+            accumulated_newlines += 1;
 
             directly_trailing = false;
         }
@@ -152,7 +170,11 @@ impl<'a, W: std::io::Write> Formatter<'a, W> {
         if drop_leading_newlines {
             // Drop newlines
         } else if accumulated_newlines > 0 && !drop_trailing_newlines {
-            write!(self.writer, "{}", "\n".repeat(accumulated_newlines))?;
+            write!(
+                self.writer,
+                "{}",
+                "\n".repeat(std::cmp::min(2, accumulated_newlines))
+            )?;
         }
 
         Ok(())
@@ -342,29 +364,6 @@ impl<'a, W: std::io::Write> Formatter<'a, W> {
 
         Ok(())
     }
-
-    fn write_unit<G: GrammarUnit>(
-        &mut self,
-        unit: &G,
-        drop_trailing_newlines: bool,
-        drop_leading_newlines: bool,
-    ) -> Result<(), std::io::Error> {
-        let (start, end) = unit.range();
-        let data = &self.content[start..end];
-        let trimmed = if drop_leading_newlines {
-            data.trim_start()
-        } else {
-            data
-        };
-
-        let trimmed = if drop_trailing_newlines {
-            trimmed.trim_end()
-        } else {
-            trimmed
-        };
-
-        write!(self.writer, "{}", trimmed)
-    }
 }
 
 #[cfg(test)]
@@ -496,6 +495,32 @@ service MyService {}
 service AnotherOne {}
 
 service Third {}
+";
+
+        assert_fmt!(input, expected,);
+    }
+
+    #[test]
+    fn test_comment_newline() {
+        let input = "
+message XYZ {
+    id: u64 = 1;
+
+    // Pre comment
+
+
+    num: u64 = 2;
+
+}
+";
+        let expected = "
+message XYZ {
+    id: u64 = 1
+
+    // Pre comment
+
+    num: u64 = 2
+}
 ";
 
         assert_fmt!(input, expected,);
