@@ -27,7 +27,7 @@ impl<'a, W: std::io::Write> Formatter<'a, W> {
 
         for (idx, defn) in module.definitions.iter().enumerate() {
             if idx != 0 {
-                write!(self.writer, "\n")?;
+                write!(self.writer, "\n\n")?;
             }
             match defn {
                 ast::Definition::Message(m) => self.format_message(m)?,
@@ -199,7 +199,6 @@ impl<'a, W: std::io::Write> Formatter<'a, W> {
             if let Some(c) = &msg._ws5 {
                 self.format_newline_comment(&[c.clone()], false, false, true)?;
             }
-            write!(self.writer, "\n")?;
             return Ok(());
         }
 
@@ -268,7 +267,6 @@ impl<'a, W: std::io::Write> Formatter<'a, W> {
             if let Some(c) = &e._ws5 {
                 self.format_newline_comment(&[c.clone()], false, false, true)?;
             }
-            write!(self.writer, "\n")?;
             return Ok(());
         }
 
@@ -327,7 +325,6 @@ impl<'a, W: std::io::Write> Formatter<'a, W> {
             if let Some(c) = &service._ws5 {
                 self.format_newline_comment(&[c.clone()], false, false, true)?;
             }
-            write!(self.writer, "\n")?;
             return Ok(());
         }
 
@@ -520,6 +517,29 @@ message XYZ {
     // Pre comment
 
     num: u64 = 2
+}
+";
+
+        assert_fmt!(input, expected,);
+    }
+
+    #[test]
+    fn test_enforced_space() {
+        let input = "
+message XYZ {
+    id: u64 = 1;
+}
+message ABC {
+    size: u32 = 1;
+}
+";
+        let expected = "
+message XYZ {
+    id: u64 = 1
+}
+
+message ABC {
+    size: u32 = 1
 }
 ";
 
