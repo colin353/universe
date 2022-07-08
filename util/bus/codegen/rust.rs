@@ -466,12 +466,26 @@ impl<'a> Iterator for Repeated{name}Iterator<'a> {{
     )?;
 
     for field in &msg.fields {
-        write!(
-            w,
-            "                {field_name}: t.get_owned({idx}).transpose()?.unwrap_or_default(),\n",
-            field_name = field.field_name,
-            idx = field.tag,
-        )?;
+        if field.field_type == FieldType::Tbytes {
+            write!(
+                w,
+                "            {field_name}: {{
+                let p: PackedIn<{typ}> = t.get_owned({idx}).transpose()?.unwrap_or_default();
+                p.0
+            }},
+",
+                field_name = field.field_name,
+                idx = field.tag,
+                typ = if field.repeated { "Vec<u8>" } else { "u8" }
+            )?;
+        } else {
+            write!(
+                w,
+                "                {field_name}: t.get_owned({idx}).transpose()?.unwrap_or_default(),\n",
+                field_name = field.field_name,
+                idx = field.tag,
+            )?;
+        }
     }
 
     write!(

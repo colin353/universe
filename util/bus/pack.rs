@@ -17,8 +17,16 @@ impl<'a> Pack<'a> {
     // The offsets index is always 1/16th as long as the data bytes.
     pub fn new(bytes: &'a [u8]) -> Result<Self, std::io::Error> {
         let (num_values, footer_size) = varint::decode_reverse_varint(bytes);
+
+        if footer_size + (num_values / 16 * 4) > bytes.len() || num_values > bytes.len() {
+            return Err(std::io::Error::from(std::io::ErrorKind::UnexpectedEof));
+        }
         let offset_index_start = bytes.len() - footer_size - (num_values / 16) * 4;
         let offset_index_end = bytes.len() - footer_size;
+
+        if num_values > offset_index_start {
+            return Err(std::io::Error::from(std::io::ErrorKind::InvalidData));
+        }
 
         Ok(Self {
             data: &bytes[0..num_values],
@@ -31,7 +39,7 @@ impl<'a> Pack<'a> {
             offsets_index: unsafe {
                 std::slice::from_raw_parts(
                     bytes[offset_index_start..offset_index_end].as_ptr() as *const u32,
-                    num_values / 4,
+                    (num_values / 16) * 4,
                 )
             },
         })
@@ -62,7 +70,7 @@ impl<'a> Pack<'a> {
 
         // Find the offset
         let offset_position = (block_offset_position + extra_offset_count) as usize;
-        let offset = if offset_position > 0 {
+        let offset = if offset_position > 0 && offset_position < self.offsets.len() {
             self.offsets[offset_position - 1]
         } else {
             0

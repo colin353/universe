@@ -83,6 +83,10 @@ pub fn decode_reverse_varint(bytes: &[u8]) -> (usize, usize) {
             out |= ((byte & 0b01111111) as usize) << (bytes_read * 7);
             bytes_read += 1;
         }
+
+        if bytes_read > 9 {
+            break;
+        }
     }
     (out, bytes_read)
 }
@@ -138,5 +142,10 @@ mod tests {
     fn test_reverse_varint_extra_data() {
         let buf = vec![0xFF, 0xFF, 0xFF, 5];
         assert_eq!(decode_reverse_varint(&buf), (5, 1));
+    }
+
+    #[test]
+    fn test_encode_reverse_varint_max() {
+        decode_reverse_varint(&[0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]);
     }
 }

@@ -96,6 +96,10 @@ impl<'a> EncodedStruct<'a> {
         }
 
         let pack_size = footer - 1;
+
+        if pack_size + footer_size > data.len() {
+            return Err(std::io::Error::from(std::io::ErrorKind::UnexpectedEof));
+        }
         let data_length = data.len() - pack_size - footer_size;
         Ok(Self {
             empty: false,
@@ -140,6 +144,10 @@ impl<'a> EncodedStruct<'a> {
         } else {
             self.data.len()
         };
+
+        if start > end || end > self.data.len() {
+            return Some(Err(std::io::Error::from(std::io::ErrorKind::InvalidData)));
+        }
 
         Some(T::decode_owned(&self.data[start..end]))
     }
