@@ -31,7 +31,7 @@ fn main() {
         Err(e) => {
             // Nicely render the error
             match e {
-                parser::CarError::ParseError(e) => {
+                parser::BusError::ParseError(e) => {
                     eprintln!("{}", e.render(&content));
                 }
             }

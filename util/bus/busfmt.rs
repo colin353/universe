@@ -18,7 +18,7 @@ fn main() {
 
     let parsed = match parser::parse_ast(&content) {
         Ok(p) => p,
-        Err(parser::CarError::ParseError(g)) => {
+        Err(parser::BusError::ParseError(g)) => {
             eprintln!("{}", g.render(&content));
             std::process::exit(1);
         }

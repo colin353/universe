@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet};
 pub mod ast;
 
 #[derive(Clone, Debug)]
-pub enum CarError {
+pub enum BusError {
     ParseError(ggen::ParseError),
 }
 
@@ -79,10 +79,10 @@ impl FieldType {
     }
 }
 
-fn convert_field(f: &ast::FieldDefinition, data: &str) -> Result<FieldDefinition, CarError> {
+fn convert_field(f: &ast::FieldDefinition, data: &str) -> Result<FieldDefinition, BusError> {
     if f.tag.value < 0 {
         let (start, end) = f.tag.range();
-        return Err(CarError::ParseError(ggen::ParseError::from_string(
+        return Err(BusError::ParseError(ggen::ParseError::from_string(
             String::from("field numbers must be greater than zero"),
             "",
             start,
@@ -106,14 +106,14 @@ fn allowed_default_name(value: &str) -> bool {
     }
 }
 
-fn convert_enum(e: ast::EnumDefinition, data: &str) -> Result<EnumDefinition, CarError> {
+fn convert_enum(e: ast::EnumDefinition, data: &str) -> Result<EnumDefinition, BusError> {
     let mut fields = Vec::new();
     let mut names = HashSet::new();
     for f in e.fields.iter() {
         let name = f.field_name.as_str(data).to_owned();
         if f.tag.value < 0 {
             let (start, end) = f.tag.range();
-            return Err(CarError::ParseError(ggen::ParseError::from_string(
+            return Err(BusError::ParseError(ggen::ParseError::from_string(
                 String::from("field numbers must be greater than zero"),
                 "",
                 start,
@@ -123,7 +123,7 @@ fn convert_enum(e: ast::EnumDefinition, data: &str) -> Result<EnumDefinition, Ca
 
         if f.tag.value == 0 && !allowed_default_name(&name) {
             let (start, end) = f.field_name.range();
-            return Err(CarError::ParseError(ggen::ParseError::from_string(
+            return Err(BusError::ParseError(ggen::ParseError::from_string(
                 String::from(
                     "the zero enum value must be called `Unknown`, `Disabled` or `Default`",
                 ),
@@ -135,7 +135,7 @@ fn convert_enum(e: ast::EnumDefinition, data: &str) -> Result<EnumDefinition, Ca
 
         if f.tag.value > 255 {
             let (start, end) = f.tag.range();
-            return Err(CarError::ParseError(ggen::ParseError::from_string(
+            return Err(BusError::ParseError(ggen::ParseError::from_string(
                 String::from("a maximum of 255 values are allowed in an enum"),
                 "",
                 start,
@@ -147,7 +147,7 @@ fn convert_enum(e: ast::EnumDefinition, data: &str) -> Result<EnumDefinition, Ca
             fields.push((name, f.tag.value as u8));
         } else {
             let (start, end) = f.range();
-            return Err(CarError::ParseError(ggen::ParseError::from_string(
+            return Err(BusError::ParseError(ggen::ParseError::from_string(
                 format!("a field named `{}` already exists in this message", name,),
                 "",
                 start,
@@ -162,7 +162,7 @@ fn convert_enum(e: ast::EnumDefinition, data: &str) -> Result<EnumDefinition, Ca
     })
 }
 
-fn convert_message(msg: ast::MessageDefinition, data: &str) -> Result<MessageDefinition, CarError> {
+fn convert_message(msg: ast::MessageDefinition, data: &str) -> Result<MessageDefinition, BusError> {
     let mut fields = Vec::new();
     let mut names = HashSet::new();
     for f in msg.fields.iter() {
@@ -171,7 +171,7 @@ fn convert_message(msg: ast::MessageDefinition, data: &str) -> Result<MessageDef
             fields.push(cf);
         } else {
             let (start, end) = f.range();
-            return Err(CarError::ParseError(ggen::ParseError::from_string(
+            return Err(BusError::ParseError(ggen::ParseError::from_string(
                 format!(
                     "a field named `{}` already exists in this message",
                     cf.field_name
@@ -192,7 +192,7 @@ fn convert_message(msg: ast::MessageDefinition, data: &str) -> Result<MessageDef
 fn convert_service(
     service: ast::ServiceDefinition,
     data: &str,
-) -> Result<ServiceDefinition, CarError> {
+) -> Result<ServiceDefinition, BusError> {
     let mut rpcs = Vec::new();
     let mut names = HashSet::new();
     for f in &service.fields {
@@ -207,7 +207,7 @@ fn convert_service(
             rpcs.push(rpc);
         } else {
             let (start, end) = f.range();
-            return Err(CarError::ParseError(ggen::ParseError::from_string(
+            return Err(BusError::ParseError(ggen::ParseError::from_string(
                 format!("an rpc named `{}` already exists in this service", rpc.name),
                 "",
                 start,
@@ -229,13 +229,13 @@ enum SymbolType {
     Service,
 }
 
-pub fn parse_ast(data: &str) -> Result<ast::Module, CarError> {
-    let (module, _, _) = ast::Module::try_match(data, 0).map_err(|e| CarError::ParseError(e))?;
+pub fn parse_ast(data: &str) -> Result<ast::Module, BusError> {
+    let (module, _, _) = ast::Module::try_match(data, 0).map_err(|e| BusError::ParseError(e))?;
     Ok(module)
 }
 
-pub fn parse(data: &str) -> Result<Module, CarError> {
-    let (module, _, _) = ast::Module::try_match(data, 0).map_err(|e| CarError::ParseError(e))?;
+pub fn parse(data: &str) -> Result<Module, BusError> {
+    let (module, _, _) = ast::Module::try_match(data, 0).map_err(|e| BusError::ParseError(e))?;
 
     let mut messages = Vec::new();
     let mut enums = Vec::new();
@@ -251,7 +251,7 @@ pub fn parse(data: &str) -> Result<Module, CarError> {
                     messages.push(m);
                 } else {
                     let (start, end) = m.ast.name.range();
-                    return Err(CarError::ParseError(ggen::ParseError::from_string(
+                    return Err(BusError::ParseError(ggen::ParseError::from_string(
                         format!("the name `{}` already exists", m.name),
                         "",
                         start,
@@ -266,7 +266,7 @@ pub fn parse(data: &str) -> Result<Module, CarError> {
                     enums.push(e);
                 } else {
                     let (start, end) = e.ast.name.range();
-                    return Err(CarError::ParseError(ggen::ParseError::from_string(
+                    return Err(BusError::ParseError(ggen::ParseError::from_string(
                         format!("the name `{}` already exists", e.name),
                         "",
                         start,
@@ -281,7 +281,7 @@ pub fn parse(data: &str) -> Result<Module, CarError> {
                     services.push(s);
                 } else {
                     let (start, end) = s.ast.name.range();
-                    return Err(CarError::ParseError(ggen::ParseError::from_string(
+                    return Err(BusError::ParseError(ggen::ParseError::from_string(
                         format!("the name `{}` already exists", s.name),
                         "",
                         start,
@@ -301,7 +301,7 @@ pub fn parse(data: &str) -> Result<Module, CarError> {
                     Some(SymbolType::Enum) => field.field_type = FieldType::Enum(s.clone()),
                     _ => {
                         let (start, end) = field.ast.type_name.range();
-                        return Err(CarError::ParseError(ggen::ParseError::from_string(
+                        return Err(BusError::ParseError(ggen::ParseError::from_string(
                             format!("unrecognized type `{}`", &s),
                             "",
                             start,
@@ -321,7 +321,7 @@ pub fn parse(data: &str) -> Result<Module, CarError> {
                 Some(SymbolType::Message) => (),
                 Some(SymbolType::Enum) => {
                     let (start, end) = rpc.ast.argument_type.range();
-                    return Err(CarError::ParseError(ggen::ParseError::from_string(
+                    return Err(BusError::ParseError(ggen::ParseError::from_string(
                         format!("rpc arguments must be messages, not enums",),
                         "",
                         start,
@@ -330,7 +330,7 @@ pub fn parse(data: &str) -> Result<Module, CarError> {
                 }
                 _ => {
                     let (start, end) = rpc.ast.argument_type.range();
-                    return Err(CarError::ParseError(ggen::ParseError::from_string(
+                    return Err(BusError::ParseError(ggen::ParseError::from_string(
                         format!("unrecognized type `{}`", rpc.argument_type),
                         "",
                         start,
@@ -343,7 +343,7 @@ pub fn parse(data: &str) -> Result<Module, CarError> {
                 Some(SymbolType::Message) => (),
                 Some(SymbolType::Enum) => {
                     let (start, end) = rpc.ast.return_type.range();
-                    return Err(CarError::ParseError(ggen::ParseError::from_string(
+                    return Err(BusError::ParseError(ggen::ParseError::from_string(
                         format!("rpc return types must be messages, not enums"),
                         "",
                         start,
@@ -352,7 +352,7 @@ pub fn parse(data: &str) -> Result<Module, CarError> {
                 }
                 _ => {
                     let (start, end) = rpc.ast.return_type.range();
-                    return Err(CarError::ParseError(ggen::ParseError::from_string(
+                    return Err(BusError::ParseError(ggen::ParseError::from_string(
                         format!("unrecognized type `{}`", rpc.return_type),
                         "",
                         start,
