@@ -1,5 +1,5 @@
-use crate::encoded_struct::{EncodedStruct, EncodedStructBuilder, EncodedStructIterator};
-use crate::{Deserialize, DeserializeOwned, Serialize};
+use crate::encoded_struct::{EncodedStruct, EncodedStructIterator};
+use crate::{Deserialize, DeserializeOwned};
 
 pub enum RepeatedField<'a, T> {
     Encoded(EncodedStruct<'a>),

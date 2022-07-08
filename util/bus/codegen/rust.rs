@@ -9,9 +9,7 @@ const DONOTEDIT: &'static str = r#"/*
 
 // Allow dead code, since we're generating structs/accessors
 #![allow(dead_code)]
-
-// TODO: remove this
-mod test_test;
+#![allow(unused_imports)]
 "#;
 
 const IMPORTS: &'static str = r#"
@@ -217,7 +215,7 @@ fn generate_message<W: std::io::Write>(
     write!(
         w,
         r#"#[derive(Clone, Debug, Default)]
-struct {name} {{
+pub struct {name} {{
 "#,
         name = msg.name
     )?;
@@ -226,7 +224,7 @@ struct {name} {{
 
         write!(
             w,
-            "    {name}: {typ},\n",
+            "    pub {name}: {typ},\n",
             name = field.field_name,
             typ = typ
         )?;
@@ -236,7 +234,7 @@ struct {name} {{
     write!(
         w,
         r#"#[derive(Clone, Copy)]
-enum {name}View<'a> {{
+pub enum {name}View<'a> {{
     Encoded(EncodedStruct<'a>),
     Decoded(&'a {name}),
 }}

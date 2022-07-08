@@ -28,7 +28,6 @@ impl<W: std::io::Write> EncodedStructBuilder<W> {
 
     pub fn push<'a, T: Serialize>(&mut self, value: T) -> Result<(), std::io::Error> {
         let length = value.encode(&mut self.writer)?;
-        println!("push value (length = {})", length);
         self.sizes.push(length as u32);
         Ok(())
     }
@@ -146,7 +145,6 @@ impl<'a> EncodedStruct<'a> {
     }
 
     pub fn get<T: Deserialize<'a>>(&'a self, idx: usize) -> Option<Result<T, std::io::Error>> {
-        println!("idx = {}", idx);
         if self.empty {
             return None;
         }
@@ -163,7 +161,6 @@ impl<'a> EncodedStruct<'a> {
             self.data.len()
         };
 
-        println!("data: {:?}, start = {}, end = {}", self.data, start, end);
         Some(T::decode(&self.data[start..end]))
     }
 

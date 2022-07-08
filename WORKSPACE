@@ -95,8 +95,6 @@ load(
 container_repositories()
 container_deps()
 
-# 
-
 # Vendored node
 http_archive(
     name = "vendored_node",
@@ -119,3 +117,7 @@ container_pull(
     registry = "registry.hub.docker.com",
     repository = "colinmerkel/build",
 )
+
+# Bus toolchain
+load("//util/bus:bus.bzl", "register_bus_toolchain")
+register_bus_toolchain()
