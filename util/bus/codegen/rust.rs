@@ -97,7 +97,7 @@ fn generate_enum<W: std::io::Write>(
     write!(
         w,
         "#[derive(Clone, Debug, Copy, PartialEq)]
-enum {name} {{
+pub enum {name} {{
 ",
         name = e.name
     )?;
@@ -214,7 +214,7 @@ fn generate_message<W: std::io::Write>(
 ) -> Result<(), std::io::Error> {
     write!(
         w,
-        r#"#[derive(Clone, Debug, Default)]
+        r#"#[derive(Clone, Debug, Default, PartialEq)]
 pub struct {name} {{
 "#,
         name = msg.name
@@ -368,7 +368,7 @@ impl DeserializeOwned for {name} {{
     // Define repeated struct
     write!(
         w,
-        r#"enum Repeated{name}<'a> {{
+        r#"pub enum Repeated{name}<'a> {{
     Encoded(RepeatedField<'a, {name}View<'a>>),
     Decoded(&'a [{name}]),
 }}
@@ -394,7 +394,7 @@ impl<'a> std::fmt::Debug for Repeated{name}<'a> {{
     }}
 }}
 
-enum Repeated{name}Iterator<'a> {{
+pub enum Repeated{name}Iterator<'a> {{
     Encoded(RepeatedFieldIterator<'a, {name}View<'a>>),
     Decoded(std::slice::Iter<'a, {name}>),
 }}

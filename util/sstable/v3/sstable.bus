@@ -1,0 +1,26 @@
+message Record {
+    shared_prefix: u16 = 0
+    key_suffix: string = 1
+    data_length: u32 = 2
+}
+
+message BlockKey {
+    key: string = 0
+    offset: u64 = 1
+}
+
+enum Version {
+    Unknown = 0
+    V0 = 1
+}
+
+message Index {
+    keys: repeated BlockKey = 0
+}
+
+message Footer {
+    bloom_filter: bytes = 0
+    index: Index = 1
+    version: Version = 2
+    record_count: u64 = 3
+}
