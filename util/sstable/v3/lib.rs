@@ -10,6 +10,7 @@ const PREFIX_RESET: u64 = 64;
 pub struct SSTableBuilder<T, W> {
     index: sstable_bus::Index,
     writer: W,
+    prev_key: String,
     shared_prefix: String,
     bytes_written: u64,
     record_count: u64,
@@ -41,6 +42,7 @@ impl<W: std::io::Write, T: Serialize> SSTableBuilder<T, W> {
             writer,
             shared_prefix: String::new(),
             bytes_written: 0,
+            prev_key: String::new(),
             record_count: 0,
             _marker: std::marker::PhantomData,
             bloom_filter,
@@ -48,6 +50,16 @@ impl<W: std::io::Write, T: Serialize> SSTableBuilder<T, W> {
     }
 
     pub fn write_ordered(&mut self, key: &str, value: T) -> std::io::Result<()> {
+        if key < &self.prev_key {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!(
+                    "tried to write keys out of order, {:?} > {:?}",
+                    key, self.prev_key
+                ),
+            ));
+        }
+
         let used_prefix = if self.record_count % PREFIX_RESET == 0 {
             0
         } else {
@@ -88,6 +100,7 @@ impl<W: std::io::Write, T: Serialize> SSTableBuilder<T, W> {
         self.bytes_written += length;
         self.record_count += 1;
         self.bloom_filter.insert(key);
+        self.prev_key = key.to_owned();
 
         Ok(())
     }
@@ -128,6 +141,12 @@ impl<'a, T: Deserialize<'a>> SSTableReader<T> {
             Ok(d) => d,
             Err(_) => return Err(std::io::Error::from(std::io::ErrorKind::UnexpectedEof)),
         });
+
+        if (footer_length + 4) as usize > m.len() {
+            println!("footer_length: {}", footer_length);
+            println!("end of mmap: {:?}", &m[m.len() - 16..]);
+            return Err(std::io::Error::from(std::io::ErrorKind::UnexpectedEof));
+        }
 
         let footer_offset = m.len() - 4 - footer_length as usize;
         let footer = sstable_bus::FooterView::from_bytes(&m[footer_offset..m.len() - 4])?;
@@ -201,12 +220,27 @@ impl<'a, T: Deserialize<'a>> SSTableReader<T> {
 
         let mut iter = self.iter_at_offset(block.offset as usize, &block.key);
 
+        let mut first = true;
         while let Some((encoded_key, item)) = iter.next() {
-            if encoded_key.equals(&iter.prefix, key) {
-                return Some(item);
+            if first {
+                first = false;
+                println!("start with: {:?}", encoded_key);
+            }
+
+            match encoded_key.cmp(&iter.prefix, key) {
+                std::cmp::Ordering::Equal => return Some(item),
+                std::cmp::Ordering::Greater => {
+                    println!(
+                        "reached {:?} which is greater",
+                        encoded_key.as_string(&iter.prefix),
+                    );
+                    return None;
+                }
+                _ => (),
             }
         }
 
+        println!("ran out of items");
         None
     }
 
@@ -249,8 +283,8 @@ impl<'a> EncodedKey<'a> {
         EncodedKey { prefix, suffix }
     }
 
-    pub fn to_string(&self) -> String {
-        format!("{}{}", self.prefix, self.suffix)
+    pub fn as_string(&self, prefix: &str) -> String {
+        format!("{}{}", &prefix[0..self.prefix], self.suffix)
     }
 
     pub fn equals(&self, prefix: &str, other: &str) -> bool {
@@ -264,12 +298,23 @@ impl<'a> EncodedKey<'a> {
 
         &other[self.prefix..] == self.suffix
     }
+
+    pub fn cmp(&self, prefix: &str, other: &str) -> std::cmp::Ordering {
+        if !other.starts_with(&prefix[0..self.prefix]) {
+            return match &prefix[0..self.prefix] > other {
+                true => std::cmp::Ordering::Greater,
+                false => std::cmp::Ordering::Less,
+            };
+        }
+
+        self.suffix.cmp(&other[self.prefix..])
+    }
 }
 
 impl<'a, T: Deserialize<'a>> Iterator for SSTableIterator<'a, T> {
     type Item = (EncodedKey<'a>, T);
     fn next(&mut self) -> Option<Self::Item> {
-        if self.offset >= self.reader.mmap.len() {
+        if self.offset >= self.reader.footer_offset {
             return None;
         }
 
@@ -352,5 +397,36 @@ mod tests {
         assert_eq!(reader.get("abc_1").unwrap(), "apple");
         assert_eq!(reader.get("abc_2").unwrap(), "strawberry");
         assert_eq!(reader.get("abc_3").unwrap(), "pineapple");
+    }
+
+    #[test]
+    fn test_big_sstable() {
+        let mut buf = Vec::new();
+        let mut builder =
+            SSTableBuilder::with_bloom_filter(&mut buf, bloom_filter::BloomFilterBuilder::empty());
+
+        let mut keys = Vec::new();
+        for i in 0..1_000_000 {
+            keys.push(format!("{}", i));
+        }
+        keys.sort();
+
+        for key in &keys {
+            let payload = format!("{}=={}", key, key);
+            builder.write_ordered(key, payload).unwrap();
+        }
+        builder.finish().unwrap();
+
+        let reader = SSTableReader::<&str>::from_bytes(&buf).unwrap();
+
+        assert_eq!(reader.index.keys.len(), 382);
+
+        assert_eq!(reader.get(""), None);
+        assert_eq!(reader.get("-1"), None);
+        assert_eq!(reader.get("23456").unwrap(), "23456==23456");
+        assert_eq!(reader.get("234567").unwrap(), "234567==234567");
+        assert_eq!(reader.get("234567___"), None);
+        assert_eq!(reader.get("567891").unwrap(), "567891==567891");
+        assert_eq!(reader.get("999999").unwrap(), "999999==999999");
     }
 }
