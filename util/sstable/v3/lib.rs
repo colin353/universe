@@ -428,5 +428,6 @@ mod tests {
         assert_eq!(reader.get("234567___"), None);
         assert_eq!(reader.get("567891").unwrap(), "567891==567891");
         assert_eq!(reader.get("999999").unwrap(), "999999==999999");
+        assert_eq!(reader.get("9999999"), None);
     }
 }
