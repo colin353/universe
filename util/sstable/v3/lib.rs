@@ -244,11 +244,33 @@ impl<'a, T: Deserialize<'a>> SSTableReader<T> {
         None
     }
 
+    pub fn iter_at<'b>(&'b self, filter: Filter<'b>) -> SSTableIterator<'b, T> {
+        let block = match self.get_block(filter.start()) {
+            Some(b) => b,
+            None => {
+                return SSTableIterator {
+                    reader: self,
+                    offset: usize::MAX,
+                    prefix: "",
+                    filter: Filter::all(),
+                }
+            }
+        };
+
+        SSTableIterator {
+            reader: self,
+            offset: block.offset as usize,
+            prefix: &block.key,
+            filter,
+        }
+    }
+
     pub fn iter_at_offset<'b>(&'b self, offset: usize, prefix: &'b str) -> SSTableIterator<'b, T> {
         SSTableIterator {
             reader: self,
             offset,
             prefix,
+            filter: Filter::all(),
         }
     }
 
@@ -262,7 +284,90 @@ impl<'a, T: Deserialize<'a>> SSTableReader<T> {
             reader: self,
             offset: 0,
             prefix,
+            filter: Filter::all(),
         }
+    }
+}
+
+pub struct Filter<'a> {
+    spec: &'a str,
+    min: &'a str,
+    max: &'a str,
+}
+
+impl<'a> Filter<'a> {
+    pub fn all() -> Self {
+        Self {
+            spec: "",
+            min: "",
+            max: "",
+        }
+    }
+
+    pub fn from_spec(spec: &'a str) -> Self {
+        Self {
+            spec,
+            min: "",
+            max: "",
+        }
+    }
+
+    pub fn starting_at(min: &'a str) -> Self {
+        Self {
+            spec: "",
+            min,
+            max: "",
+        }
+    }
+
+    pub fn until(max: &'a str) -> Self {
+        Self {
+            spec: "",
+            min: "",
+            max,
+        }
+    }
+
+    pub fn from_range(min: &'a str, max: &'a str) -> Self {
+        Self { spec: "", min, max }
+    }
+
+    pub fn start(&self) -> &str {
+        std::cmp::max(self.spec, self.min)
+    }
+
+    pub fn matches(&self, key: &str) -> std::cmp::Ordering {
+        if key < self.spec || key < self.min {
+            return std::cmp::Ordering::Less;
+        }
+
+        if !key.starts_with(self.spec) {
+            return std::cmp::Ordering::Greater;
+        }
+
+        if !self.max.is_empty() && key >= self.max {
+            return std::cmp::Ordering::Greater;
+        }
+
+        std::cmp::Ordering::Equal
+    }
+
+    pub fn matches_encoded(&self, key: &EncodedKey, prefix: &str) -> std::cmp::Ordering {
+        if key.cmp(prefix, self.spec) == std::cmp::Ordering::Less
+            || key.cmp(prefix, self.min) == std::cmp::Ordering::Less
+        {
+            return std::cmp::Ordering::Less;
+        }
+
+        if !key.starts_with(prefix, self.spec) {
+            return std::cmp::Ordering::Greater;
+        }
+
+        if !self.max.is_empty() && key.cmp(prefix, self.max) != std::cmp::Ordering::Less {
+            return std::cmp::Ordering::Greater;
+        }
+
+        std::cmp::Ordering::Equal
     }
 }
 
@@ -270,6 +375,7 @@ pub struct SSTableIterator<'a, T> {
     reader: &'a SSTableReader<T>,
     offset: usize,
     prefix: &'a str,
+    filter: Filter<'a>,
 }
 
 #[derive(Debug)]
@@ -285,6 +391,20 @@ impl<'a> EncodedKey<'a> {
 
     pub fn as_string(&self, prefix: &str) -> String {
         format!("{}{}", &prefix[0..self.prefix], self.suffix)
+    }
+
+    pub fn starts_with(&self, prefix: &str, other: &str) -> bool {
+        if other.len() > self.prefix + self.suffix.len() {
+            return false;
+        }
+
+        let (left, right) = other.split_at(std::cmp::min(self.prefix, other.len()));
+
+        if !prefix[0..self.prefix].starts_with(left) {
+            return false;
+        }
+
+        self.suffix.starts_with(right)
     }
 
     pub fn equals(&self, prefix: &str, other: &str) -> bool {
@@ -346,12 +466,19 @@ impl<'a, T: Deserialize<'a>> Iterator for SSTableIterator<'a, T> {
         };
 
         self.offset += record_end + data_length;
+
         if record_end + data_length > data.len() {
             return None;
         }
-        let payload = T::decode(&data[record_end..record_end + data_length]).ok()?;
 
-        Some((encoded_key, payload))
+        return match self.filter.matches_encoded(&encoded_key, self.prefix) {
+            std::cmp::Ordering::Less => self.next(),
+            std::cmp::Ordering::Greater => None,
+            std::cmp::Ordering::Equal => {
+                let payload = T::decode(&data[record_end..record_end + data_length]).ok()?;
+                Some((encoded_key, payload))
+            }
+        };
     }
 }
 
@@ -429,5 +556,19 @@ mod tests {
         assert_eq!(reader.get("567891").unwrap(), "567891==567891");
         assert_eq!(reader.get("999999").unwrap(), "999999==999999");
         assert_eq!(reader.get("9999999"), None);
+
+        let mut iter = reader.iter_at(Filter::from_spec("23456")).map(|(_, v)| v);
+        assert_eq!(iter.next().unwrap(), "23456==23456");
+        assert_eq!(iter.next().unwrap(), "234560==234560");
+        assert_eq!(iter.next().unwrap(), "234561==234561");
+        assert_eq!(iter.next().unwrap(), "234562==234562");
+        assert_eq!(iter.next().unwrap(), "234563==234563");
+        assert_eq!(iter.next().unwrap(), "234564==234564");
+        assert_eq!(iter.next().unwrap(), "234565==234565");
+        assert_eq!(iter.next().unwrap(), "234566==234566");
+        assert_eq!(iter.next().unwrap(), "234567==234567");
+        assert_eq!(iter.next().unwrap(), "234568==234568");
+        assert_eq!(iter.next().unwrap(), "234569==234569");
+        assert_eq!(iter.next(), None);
     }
 }
