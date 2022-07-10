@@ -1,6 +1,6 @@
 message Record {
-    shared_prefix: u16 = 0
-    key_suffix: string = 1
+    prefix: u16 = 0
+    suffix: string = 1
     data_length: u32 = 2
 }
 

@@ -5,11 +5,12 @@ use std::convert::TryInto;
 mod bloom_filter;
 
 const BLOCK_SIZE: u64 = 65536;
+const PREFIX_RESET: u64 = 64;
 
 pub struct SSTableBuilder<T, W> {
     index: sstable_bus::Index,
     writer: W,
-    last_key: String,
+    shared_prefix: String,
     bytes_written: u64,
     record_count: u64,
     bloom_filter: bloom_filter::BloomFilterBuilder,
@@ -23,8 +24,8 @@ pub struct SSTableReader<T> {
 
     // NOTE: static due to unsafe alias of the mmap
     bloom_filter: bloom_filter::BloomFilter<'static>,
-    record_count: usize,
-    version: sstable_bus::Version,
+    pub record_count: usize,
+    pub version: sstable_bus::Version,
 
     _marker: std::marker::PhantomData<T>,
 }
@@ -38,7 +39,7 @@ impl<W: std::io::Write, T: Serialize> SSTableBuilder<T, W> {
         Self {
             index: sstable_bus::Index::new(),
             writer,
-            last_key: String::new(),
+            shared_prefix: String::new(),
             bytes_written: 0,
             record_count: 0,
             _marker: std::marker::PhantomData,
@@ -47,15 +48,22 @@ impl<W: std::io::Write, T: Serialize> SSTableBuilder<T, W> {
     }
 
     pub fn write_ordered(&mut self, key: &str, value: T) -> std::io::Result<()> {
-        let shared_prefix = key
-            .chars()
-            .zip(self.last_key.chars())
-            .take_while(|(x, y)| x == y)
-            .count();
+        let used_prefix = if self.record_count % PREFIX_RESET == 0 {
+            0
+        } else {
+            key.chars()
+                .zip(self.shared_prefix.chars())
+                .take_while(|(x, y)| x == y)
+                .count()
+        };
+
+        if used_prefix == 0 {
+            self.shared_prefix = key.to_owned();
+        }
 
         let mut record = sstable_bus::Record {
-            shared_prefix: shared_prefix as u16,
-            key_suffix: key[shared_prefix..].to_owned(),
+            prefix: used_prefix as u16,
+            suffix: key[used_prefix..].to_owned(),
             data_length: 0,
         };
 
@@ -99,7 +107,7 @@ impl<W: std::io::Write, T: Serialize> SSTableBuilder<T, W> {
     }
 }
 
-impl<'a, T: 'a + Deserialize<'a>> SSTableReader<T> {
+impl<'a, T: Deserialize<'a>> SSTableReader<T> {
     pub fn from_file(file: std::fs::File) -> std::io::Result<Self> {
         Self::from_mmap(unsafe { mmap::MmapOptions::new().map(&file)? })
     }
@@ -158,7 +166,13 @@ impl<'a, T: 'a + Deserialize<'a>> SSTableReader<T> {
         {
             // If the index is zero, that means our key is less than any block key, which means
             // it doesn't exist.
-            Ok(0) | Err(0) => return None,
+            Ok(0) | Err(0) => {
+                if self.index.keys[0].key == key {
+                    return Some(&self.index.keys[0]);
+                }
+
+                return None;
+            }
             Ok(x) | Err(x) => x - 1,
         };
 
@@ -172,7 +186,7 @@ impl<'a, T: 'a + Deserialize<'a>> SSTableReader<T> {
         Some(&self.index.keys[idx])
     }
 
-    pub fn get(&self, key: &str) -> Option<T> {
+    pub fn get(&'a self, key: &str) -> Option<T> {
         // Check the bloom filter to see if the key exists
         if !self.bloom_filter.contains(key) {
             return None;
@@ -180,17 +194,23 @@ impl<'a, T: 'a + Deserialize<'a>> SSTableReader<T> {
 
         let block = match self.get_block(key) {
             Some(b) => b,
-            None => return None,
+            None => {
+                return None;
+            }
         };
 
-        for item in self.iter_at_offset(block.offset as usize, block.key.clone()) {
-            return Some(item);
+        let mut iter = self.iter_at_offset(block.offset as usize, &block.key);
+
+        while let Some((encoded_key, item)) = iter.next() {
+            if encoded_key.equals(&iter.prefix, key) {
+                return Some(item);
+            }
         }
 
         None
     }
 
-    pub fn iter_at_offset(&self, offset: usize, prefix: String) -> SSTableIterator<'a, T> {
+    pub fn iter_at_offset<'b>(&'b self, offset: usize, prefix: &'b str) -> SSTableIterator<'b, T> {
         SSTableIterator {
             reader: self,
             offset,
@@ -198,10 +218,10 @@ impl<'a, T: 'a + Deserialize<'a>> SSTableReader<T> {
         }
     }
 
-    pub fn iter(&'a self) -> SSTableIterator<'a, T> {
+    pub fn iter<'b>(&'b self) -> SSTableIterator<'b, T> {
         let prefix = match self.index.keys.get(0) {
-            Some(k) => k.key.to_owned(),
-            None => String::new(),
+            Some(k) => &k.key,
+            None => "",
         };
 
         SSTableIterator {
@@ -215,18 +235,47 @@ impl<'a, T: 'a + Deserialize<'a>> SSTableReader<T> {
 pub struct SSTableIterator<'a, T> {
     reader: &'a SSTableReader<T>,
     offset: usize,
-    prefix: String,
+    prefix: &'a str,
+}
+
+#[derive(Debug)]
+pub struct EncodedKey<'a> {
+    prefix: usize,
+    suffix: &'a str,
+}
+
+impl<'a> EncodedKey<'a> {
+    fn new(prefix: usize, suffix: &'a str) -> Self {
+        EncodedKey { prefix, suffix }
+    }
+
+    pub fn to_string(&self) -> String {
+        format!("{}{}", self.prefix, self.suffix)
+    }
+
+    pub fn equals(&self, prefix: &str, other: &str) -> bool {
+        if self.prefix + self.suffix.len() != other.len() {
+            return false;
+        }
+
+        if !other.starts_with(&prefix[0..self.prefix]) {
+            return false;
+        }
+
+        &other[self.prefix..] == self.suffix
+    }
 }
 
 impl<'a, T: Deserialize<'a>> Iterator for SSTableIterator<'a, T> {
-    type Item = T;
+    type Item = (EncodedKey<'a>, T);
     fn next(&mut self) -> Option<Self::Item> {
-        let data = &self.reader.mmap[self.offset as usize..self.reader.footer_offset];
-        if self.offset >= data.len() {
+        if self.offset >= self.reader.mmap.len() {
             return None;
         }
 
-        let record_length = u32::from_le_bytes(match data[self.offset..4].try_into() {
+        let data = &self.reader.mmap[self.offset as usize..self.reader.footer_offset];
+
+        let record_length = u32::from_le_bytes(match data[0..4].try_into() {
             Ok(d) => d,
             Err(_) => return None,
         });
@@ -234,13 +283,30 @@ impl<'a, T: Deserialize<'a>> Iterator for SSTableIterator<'a, T> {
         let record = sstable_bus::RecordView::from_bytes(&data[4..record_end]).ok()?;
         let data_length = record.get_data_length() as usize;
 
+        let suffix = record.get_suffix();
+
+        // NOTE: this is safe, because the suffix string is actually a pointer into the
+        // mmap, which will live for the lifetime of the reader, 'a. But the compiler
+        // doesn't understand that.
+        let suffix_underlying: &'a str = unsafe {
+            let slice = std::slice::from_raw_parts(suffix.as_ptr(), suffix.len());
+            std::str::from_utf8_unchecked(slice)
+        };
+
+        let encoded_key = if record.get_prefix() == 0 {
+            self.prefix = suffix_underlying;
+            EncodedKey::new(self.prefix.len(), "")
+        } else {
+            EncodedKey::new(record.get_prefix() as usize, suffix_underlying)
+        };
+
         self.offset += record_end + data_length;
-        if self.offset >= data.len() {
+        if record_end + data_length > data.len() {
             return None;
         }
-        let payload = T::decode(&data[record_end..self.offset]).ok()?;
+        let payload = T::decode(&data[record_end..record_end + data_length]).ok()?;
 
-        Some(payload)
+        Some((encoded_key, payload))
     }
 }
 
@@ -266,6 +332,25 @@ mod tests {
             }
         );
 
-        assert_eq!(reader.get("bcd").unwrap(), "a");
+        assert_eq!(reader.get("abc").unwrap(), "apple");
+        assert_eq!(reader.get("bcd").unwrap(), "strawberry");
+        assert_eq!(reader.get("cde").unwrap(), "pineapple");
+        assert_eq!(reader.get("qqq"), None);
+        assert_eq!(reader.get(""), None);
+    }
+
+    #[test]
+    fn test_key_compression() {
+        let mut buf = Vec::new();
+        let mut builder = SSTableBuilder::new(&mut buf);
+        builder.write_ordered("abc_1", "apple").unwrap();
+        builder.write_ordered("abc_2", "strawberry").unwrap();
+        builder.write_ordered("abc_3", "pineapple").unwrap();
+        builder.finish().unwrap();
+
+        let reader = SSTableReader::<&str>::from_bytes(&buf).unwrap();
+        assert_eq!(reader.get("abc_1").unwrap(), "apple");
+        assert_eq!(reader.get("abc_2").unwrap(), "strawberry");
+        assert_eq!(reader.get("abc_3").unwrap(), "pineapple");
     }
 }
