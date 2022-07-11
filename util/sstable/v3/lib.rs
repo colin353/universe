@@ -15,6 +15,7 @@ pub struct SSTableBuilder<T, W> {
     bytes_written: u64,
     record_count: u64,
     bloom_filter: bloom_filter::BloomFilterBuilder,
+    contains_duplicate_keys: bool,
     _marker: std::marker::PhantomData<T>,
 }
 
@@ -27,6 +28,7 @@ pub struct SSTableReader<T> {
     bloom_filter: bloom_filter::BloomFilter<'static>,
     pub record_count: usize,
     pub version: sstable_bus::Version,
+    contains_duplicate_keys: bool,
 
     _marker: std::marker::PhantomData<T>,
 }
@@ -46,6 +48,7 @@ impl<W: std::io::Write, T: Serialize> SSTableBuilder<T, W> {
             record_count: 0,
             _marker: std::marker::PhantomData,
             bloom_filter,
+            contains_duplicate_keys: false,
         }
     }
 
@@ -58,6 +61,10 @@ impl<W: std::io::Write, T: Serialize> SSTableBuilder<T, W> {
                     key, self.prev_key
                 ),
             ));
+        }
+
+        if key == self.prev_key {
+            self.contains_duplicate_keys = true
         }
 
         let used_prefix = if self.record_count % PREFIX_RESET == 0 {
@@ -111,6 +118,7 @@ impl<W: std::io::Write, T: Serialize> SSTableBuilder<T, W> {
             index: self.index,
             record_count: self.record_count,
             version: sstable_bus::Version::V0,
+            contains_duplicate_keys: self.contains_duplicate_keys,
         };
 
         let footer_length = footer.encode(&mut self.writer)? as u32;
@@ -143,8 +151,6 @@ impl<'a, T: Deserialize<'a>> SSTableReader<T> {
         });
 
         if (footer_length + 4) as usize > m.len() {
-            println!("footer_length: {}", footer_length);
-            println!("end of mmap: {:?}", &m[m.len() - 16..]);
             return Err(std::io::Error::from(std::io::ErrorKind::UnexpectedEof));
         }
 
@@ -154,6 +160,7 @@ impl<'a, T: Deserialize<'a>> SSTableReader<T> {
         let version = footer.get_version();
         let record_count = footer.get_record_count() as usize;
         let index = footer.get_index().to_owned()?;
+        let contains_duplicate_keys = footer.get_contains_duplicate_keys();
 
         let bf = footer.get_bloom_filter();
         let bf_len = bf.len();
@@ -168,6 +175,7 @@ impl<'a, T: Deserialize<'a>> SSTableReader<T> {
             footer_offset,
             record_count,
             version,
+            contains_duplicate_keys,
 
             _marker: std::marker::PhantomData,
         })
@@ -198,8 +206,10 @@ impl<'a, T: Deserialize<'a>> SSTableReader<T> {
         // If our target key is exactly equal to a block key, seek backward until we find a block
         // key less than the target key. This can happen because `binary_search_by_key` can return
         // any equal value, but we want the first one.
-        while idx > 0 && self.index.keys[idx].key == key {
-            idx -= 1;
+        if self.contains_duplicate_keys {
+            while idx > 0 && self.index.keys[idx].key == key {
+                idx -= 1;
+            }
         }
 
         Some(&self.index.keys[idx])
@@ -224,23 +234,15 @@ impl<'a, T: Deserialize<'a>> SSTableReader<T> {
         while let Some((encoded_key, item)) = iter.next() {
             if first {
                 first = false;
-                println!("start with: {:?}", encoded_key);
             }
 
             match encoded_key.cmp(&iter.prefix, key) {
                 std::cmp::Ordering::Equal => return Some(item),
-                std::cmp::Ordering::Greater => {
-                    println!(
-                        "reached {:?} which is greater",
-                        encoded_key.as_string(&iter.prefix),
-                    );
-                    return None;
-                }
+                std::cmp::Ordering::Greater => return None,
                 _ => (),
             }
         }
 
-        println!("ran out of items");
         None
     }
 
@@ -527,6 +529,30 @@ mod tests {
     }
 
     #[test]
+    fn test_duplicate_keys() {
+        let mut buf = Vec::new();
+        let mut builder =
+            SSTableBuilder::with_bloom_filter(&mut buf, bloom_filter::BloomFilterBuilder::empty());
+        for i in 0..10000 {
+            builder
+                .write_ordered("my-heavily-duplicated-key", format!("{}{}{}", i, i, i))
+                .unwrap();
+        }
+        builder.finish().unwrap();
+
+        let reader = SSTableReader::<&str>::from_bytes(&buf).unwrap();
+
+        assert_eq!(reader.contains_duplicate_keys, true);
+        assert_eq!(reader.index.keys.len(), 3);
+
+        let mut iter = reader.iter().map(|(_, v)| v);
+        assert_eq!(iter.next().unwrap(), "000");
+        assert_eq!(iter.next().unwrap(), "111");
+        assert_eq!(iter.next().unwrap(), "222");
+        assert_eq!(iter.next().unwrap(), "333");
+    }
+
+    #[test]
     fn test_big_sstable() {
         let mut buf = Vec::new();
         let mut builder =
@@ -546,6 +572,7 @@ mod tests {
 
         let reader = SSTableReader::<&str>::from_bytes(&buf).unwrap();
 
+        assert_eq!(reader.contains_duplicate_keys, false);
         assert_eq!(reader.index.keys.len(), 382);
 
         assert_eq!(reader.get(""), None);

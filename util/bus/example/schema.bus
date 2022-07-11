@@ -2,4 +2,5 @@ message Data {
     id: u32 = 1
     name: string = 2
     payload: bytes = 3
+    flag: bool = 4
 }

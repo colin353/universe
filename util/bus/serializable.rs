@@ -112,6 +112,22 @@ impl<'a> Deserialize<'a> for &'a str {
     }
 }
 
+impl Serialize for bool {
+    fn encode<W: std::io::Write>(&self, writer: &mut W) -> Result<usize, std::io::Error> {
+        if *self {
+            writer.write_all(&[1])?;
+            return Ok(1);
+        }
+        Ok(0)
+    }
+}
+
+impl DeserializeOwned for bool {
+    fn decode_owned(bytes: &[u8]) -> Result<Self, std::io::Error> {
+        Ok(!bytes.is_empty())
+    }
+}
+
 // Packed... is a wrapper struct to distinguish between Vec<T: Serializable> and fixed size Vecs,
 // e.g. Vec<u8> or Vec<u16>, which should just be written packed together, without an EncodedStruct
 // wrapping them.

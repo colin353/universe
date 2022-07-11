@@ -23,4 +23,9 @@ message Footer {
     index: Index = 1
     version: Version = 2
     record_count: u64 = 3
+
+    // Whether the SSTable contains duplicate keys. Some optimizations
+    // are possible if duplicate keys don't exist in the table, which is
+    // often the case
+    contains_duplicate_keys: bool = 4
 }

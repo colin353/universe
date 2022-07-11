@@ -18,6 +18,7 @@ fn main() {
         data.id = 1234;
         data.name = String::from("asdf");
         data.payload = vec![0x0a, 0x0b, 0x0c];
+        data.flag = false;
 
         let mut buf = Vec::new();
         data.encode(&mut buf).unwrap();
