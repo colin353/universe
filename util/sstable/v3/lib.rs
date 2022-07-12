@@ -183,6 +183,7 @@ impl<'a, T: Deserialize<'a>> SSTableReader<T> {
 
     fn get_block(&self, key: &str) -> Option<&sstable_bus::BlockKey> {
         if self.index.keys.is_empty() {
+            println!("there are no keys");
             return None;
         }
 
@@ -193,12 +194,11 @@ impl<'a, T: Deserialize<'a>> SSTableReader<T> {
         {
             // If the index is zero, that means our key is less than any block key, which means
             // it doesn't exist.
+            //
+            // NOTE to self: this is wrong for range-based seeking, e.g. when you want to seek to
+            // the "" key to iterate everything!
             Ok(0) | Err(0) => {
-                if self.index.keys[0].key == key {
-                    return Some(&self.index.keys[0]);
-                }
-
-                return None;
+                return Some(&self.index.keys[0]);
             }
             Ok(x) | Err(x) => x - 1,
         };
@@ -255,10 +255,11 @@ impl<'a, T: Deserialize<'a>> SSTableReader<T> {
                     offset: usize::MAX,
                     prefix: "",
                     filter: Filter::all(),
-                }
+                };
             }
         };
 
+        println!("returned iter at: {}", block.offset);
         SSTableIterator {
             reader: self,
             offset: block.offset as usize,

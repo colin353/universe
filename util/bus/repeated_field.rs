@@ -30,18 +30,9 @@ impl<'a, T: std::fmt::Debug + Copy + DeserializeOwned> std::fmt::Debug for Repea
 
 impl<'a, T> RepeatedField<'a, T>
 where
-    &'a T: Deserialize<'a>,
+    T: Deserialize<'a> + Copy,
 {
-    pub fn get(&'a self, index: usize) -> Option<&'a T> {
-        match self {
-            RepeatedField::Encoded(s) => s.get(index).map(|x| x.ok()).flatten(),
-            RepeatedField::Decoded(v) => Some(&v[index]),
-        }
-    }
-}
-
-impl<'a> RepeatedField<'a, u64> {
-    pub fn get(&'a self, index: usize) -> Option<u64> {
+    pub fn get(&'a self, index: usize) -> Option<T> {
         match self {
             RepeatedField::Encoded(s) => s.get(index).map(|x| x.ok()).flatten(),
             RepeatedField::Decoded(v) => Some(v[index]),

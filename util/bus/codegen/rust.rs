@@ -406,6 +406,13 @@ impl<'a> Repeated{name}<'a> {{
             Self::Decoded(s) => Repeated{name}Iterator::Decoded(s.iter()),
         }}
     }}
+
+    pub fn get(&'a self, idx: usize) -> Option<{name}View<'a>> {{
+        match self {{
+            Self::Encoded(r) => r.get(idx),
+            Self::Decoded(r) => Some(r.get(idx)?.as_view()),
+        }}
+    }}
 }}
 
 impl<'a> Iterator for Repeated{name}Iterator<'a> {{

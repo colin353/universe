@@ -5,13 +5,13 @@ use bus::Serialize;
 
 use std::sync::RwLock;
 
-pub struct LargeTable<W: std::io::Write> {
+pub struct LargeTable<'a, W: std::io::Write> {
     mtables: Vec<RwLock<mtable::MTable>>,
-    dtables: Vec<RwLock<dtable::DTable>>,
+    dtables: Vec<RwLock<dtable::DTable<'a>>>,
     journals: Vec<RwLock<recordio::RecordIOBuilder<internals::JournalEntry, W>>>,
 }
 
-impl<'a, W: std::io::Write> LargeTable<W> {
+impl<'a, W: std::io::Write> LargeTable<'a, W> {
     pub fn new() -> Self {
         Self {
             mtables: Vec::new(),
@@ -104,4 +104,19 @@ impl<'a, W: std::io::Write> LargeTable<W> {
 
 pub fn serialize_key(row: &str, column: &str) -> String {
     format!("{}\x00{}", row, column)
+}
+
+pub fn get_record<'a>(
+    cell_data: internals::CellDataView<'a>,
+    timestamp: u64,
+) -> Option<internals::RecordView<'a>> {
+    let idx = cell_data
+        .get_timestamps()
+        .iter()
+        .take_while(|t| *t > timestamp)
+        .count();
+
+    // It's safe to do this transmute, because the reference from this get(...) is actually tied to
+    // the lifetime of the cell data, not the RepeatedField.
+    unsafe { std::mem::transmute(cell_data.get_records().get(idx)) }
 }
