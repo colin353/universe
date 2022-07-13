@@ -15,22 +15,22 @@ impl<'a> DTable<'a> {
         })
     }
 
-    pub fn read(
-        &self,
+    pub fn read<'b>(
+        &'b self,
         row: &str,
         column: &str,
         timestamp: u64,
-    ) -> Option<std::io::Result<internals::Record>> {
+    ) -> Option<internals::RecordView<'b>> {
         let cell = self.table.get(&crate::serialize_key(row, column))?;
         let record = crate::get_record(cell, timestamp)?;
-        Some(record.to_owned())
+        Some(record)
     }
 
     pub fn iter_at(
         &'a self,
         filter: sstable::Filter<'a>,
         timestamp: u64,
-    ) -> impl Iterator<Item = (sstable::EncodedKey<'a>, internals::RecordView<'a>)> {
+    ) -> impl Iterator<Item = (String, internals::RecordView<'a>)> {
         self.table
             .iter_at(filter)
             .filter_map(move |(key, cell_data)| {
@@ -52,8 +52,8 @@ mod tests {
             internals::Record {
                 data: vec![0x1, 0x2, 0x3],
                 deleted: false,
+                timestamp: 1234,
             },
-            1234,
         );
         m.write(
             String::from("aaa"),
@@ -61,8 +61,8 @@ mod tests {
             internals::Record {
                 data: vec![],
                 deleted: true,
+                timestamp: 2345,
             },
-            2345,
         );
         m.write(
             String::from("bbb"),
@@ -70,8 +70,8 @@ mod tests {
             internals::Record {
                 data: vec![0x2, 0x3, 0x4],
                 deleted: false,
+                timestamp: 12345,
             },
-            12345,
         );
 
         let mut buf = Vec::new();
@@ -80,13 +80,17 @@ mod tests {
         let d = DTable::from_bytes(&buf).unwrap();
         assert!(d.read("aaa", "bbb", 0).is_none());
         assert_eq!(
-            d.read("aaa", "bbb", 2222).unwrap().unwrap().data,
+            d.read("aaa", "bbb", 2222).unwrap().get_data(),
             &[0x1, 0x2, 0x3]
         );
-        assert_eq!(d.read("aaa", "bbb", 3333).unwrap().unwrap().deleted, true);
+        assert_eq!(d.read("aaa", "bbb", 3333).unwrap().get_deleted(), true);
 
-        let mut iter = d.iter_at(sstable::Filter::all(), 99999).map(|(k, v)| v);
+        let mut iter = d.iter_at(sstable::Filter::all(), 2222).map(|(_, v)| v);
         assert_eq!(iter.next().unwrap().get_data(), &[0x1, 0x2, 0x3]);
+        assert!(iter.next().is_none());
+
+        let mut iter = d.iter_at(sstable::Filter::all(), 99999).map(|(_, v)| v);
+        assert_eq!(iter.next().unwrap().get_deleted(), true);
         assert_eq!(iter.next().unwrap().get_data(), &[0x2, 0x3, 0x4]);
         assert!(iter.next().is_none());
     }

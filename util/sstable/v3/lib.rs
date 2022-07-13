@@ -228,7 +228,7 @@ impl<'a, T: Deserialize<'a>> SSTableReader<T> {
             }
         };
 
-        let mut iter = self.iter_at_offset(block.offset as usize, &block.key);
+        let mut iter = self.iter_ek_at_offset(block.offset as usize, &block.key);
 
         let mut first = true;
         while let Some((encoded_key, item)) = iter.next() {
@@ -246,11 +246,29 @@ impl<'a, T: Deserialize<'a>> SSTableReader<T> {
         None
     }
 
+    pub fn iter<'b>(&'b self) -> SSTableIterator<'b, T> {
+        SSTableIterator {
+            inner: self.iter_ek(),
+        }
+    }
+
     pub fn iter_at<'b>(&'b self, filter: Filter<'b>) -> SSTableIterator<'b, T> {
+        SSTableIterator {
+            inner: self.iter_ek_at(filter),
+        }
+    }
+
+    pub fn iter_at_offset<'b>(&'b self, offset: usize, prefix: &'b str) -> SSTableIterator<'b, T> {
+        SSTableIterator {
+            inner: self.iter_ek_at_offset(offset, prefix),
+        }
+    }
+
+    pub fn iter_ek_at<'b>(&'b self, filter: Filter<'b>) -> SSTableEKIterator<'b, T> {
         let block = match self.get_block(filter.start()) {
             Some(b) => b,
             None => {
-                return SSTableIterator {
+                return SSTableEKIterator {
                     reader: self,
                     offset: usize::MAX,
                     prefix: "",
@@ -259,8 +277,7 @@ impl<'a, T: Deserialize<'a>> SSTableReader<T> {
             }
         };
 
-        println!("returned iter at: {}", block.offset);
-        SSTableIterator {
+        SSTableEKIterator {
             reader: self,
             offset: block.offset as usize,
             prefix: &block.key,
@@ -268,8 +285,12 @@ impl<'a, T: Deserialize<'a>> SSTableReader<T> {
         }
     }
 
-    pub fn iter_at_offset<'b>(&'b self, offset: usize, prefix: &'b str) -> SSTableIterator<'b, T> {
-        SSTableIterator {
+    pub fn iter_ek_at_offset<'b>(
+        &'b self,
+        offset: usize,
+        prefix: &'b str,
+    ) -> SSTableEKIterator<'b, T> {
+        SSTableEKIterator {
             reader: self,
             offset,
             prefix,
@@ -277,13 +298,13 @@ impl<'a, T: Deserialize<'a>> SSTableReader<T> {
         }
     }
 
-    pub fn iter<'b>(&'b self) -> SSTableIterator<'b, T> {
+    pub fn iter_ek<'b>(&'b self) -> SSTableEKIterator<'b, T> {
         let prefix = match self.index.keys.get(0) {
             Some(k) => &k.key,
             None => "",
         };
 
-        SSTableIterator {
+        SSTableEKIterator {
             reader: self,
             offset: 0,
             prefix,
@@ -375,6 +396,10 @@ impl<'a> Filter<'a> {
 }
 
 pub struct SSTableIterator<'a, T> {
+    inner: SSTableEKIterator<'a, T>,
+}
+
+pub struct SSTableEKIterator<'a, T> {
     reader: &'a SSTableReader<T>,
     offset: usize,
     prefix: &'a str,
@@ -435,6 +460,14 @@ impl<'a> EncodedKey<'a> {
 }
 
 impl<'a, T: Deserialize<'a>> Iterator for SSTableIterator<'a, T> {
+    type Item = (String, T);
+    fn next(&mut self) -> Option<Self::Item> {
+        let (ek, value) = self.inner.next()?;
+        Some((ek.as_string(self.inner.prefix), value))
+    }
+}
+
+impl<'a, T: Deserialize<'a>> Iterator for SSTableEKIterator<'a, T> {
     type Item = (EncodedKey<'a>, T);
     fn next(&mut self) -> Option<Self::Item> {
         if self.offset >= self.reader.footer_offset {
@@ -546,7 +579,7 @@ mod tests {
         assert_eq!(reader.contains_duplicate_keys, true);
         assert_eq!(reader.index.keys.len(), 3);
 
-        let mut iter = reader.iter().map(|(_, v)| v);
+        let mut iter = reader.iter_ek().map(|(_, v)| v);
         assert_eq!(iter.next().unwrap(), "000");
         assert_eq!(iter.next().unwrap(), "111");
         assert_eq!(iter.next().unwrap(), "222");
@@ -585,7 +618,9 @@ mod tests {
         assert_eq!(reader.get("999999").unwrap(), "999999==999999");
         assert_eq!(reader.get("9999999"), None);
 
-        let mut iter = reader.iter_at(Filter::from_spec("23456")).map(|(_, v)| v);
+        let mut iter = reader
+            .iter_ek_at(Filter::from_spec("23456"))
+            .map(|(_, v)| v);
         assert_eq!(iter.next().unwrap(), "23456==23456");
         assert_eq!(iter.next().unwrap(), "234560==234560");
         assert_eq!(iter.next().unwrap(), "234561==234561");

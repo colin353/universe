@@ -1,16 +1,15 @@
 message Record {
     deleted: bool = 0
     data: bytes = 1
+    timestamp: u64 = 2
 }
 
 message CellData {
-    timestamps: repeated u64 = 0
     records: repeated Record = 1
 }
 
 message JournalEntry {
     record: Record = 0
-    timestamp: u64 = 1
-    row: string = 3
+    row: string = 1
     column: string = 2
 }

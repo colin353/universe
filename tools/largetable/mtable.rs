@@ -1,19 +1,20 @@
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 
 pub struct MTable {
-    tree: BTreeMap<MTableKey, internals::Record>,
+    tree: BTreeMap<MTableKey<'static>, internals::Record>,
 
     pub memory_usage: usize,
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct MTableKey {
-    row: String,
-    column: String,
+pub struct MTableKey<'a> {
+    row: Cow<'a, str>,
+    column: Cow<'a, str>,
     timestamp: u64,
 }
 
-impl Ord for MTableKey {
+impl<'a> Ord for MTableKey<'a> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         let row_ord = self.row.cmp(&other.row);
         if row_ord != std::cmp::Ordering::Equal {
@@ -30,7 +31,7 @@ impl Ord for MTableKey {
     }
 }
 
-impl PartialOrd for MTableKey {
+impl<'a> PartialOrd for MTableKey<'a> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
@@ -44,19 +45,13 @@ impl MTable {
         }
     }
 
-    pub fn write(
-        &mut self,
-        row: String,
-        column: String,
-        record: internals::Record,
-        timestamp: u64,
-    ) {
+    pub fn write(&mut self, row: String, column: String, record: internals::Record) {
         self.memory_usage += record.data.len();
         self.tree.insert(
             MTableKey {
-                row,
-                column,
-                timestamp,
+                row: Cow::Owned(row),
+                column: Cow::Owned(column),
+                timestamp: record.timestamp,
             },
             record,
         );
@@ -68,7 +63,7 @@ impl MTable {
         let mut working_key = None;
         for (key, value) in self.tree.iter() {
             if let Some((r, c)) = working_key {
-                if r != key.row || c != key.column {
+                if r != key.row.as_ref() || c != key.column.as_ref() {
                     dtable.write_ordered(&crate::serialize_key(r, c), cell_data)?;
                     cell_data = internals::CellData::new();
                     working_key = Some((&key.row, &key.column));
@@ -76,8 +71,6 @@ impl MTable {
             } else {
                 working_key = Some((&key.row, &key.column));
             }
-
-            cell_data.timestamps.push(key.timestamp);
             cell_data.records.push(value.clone());
         }
 
@@ -85,6 +78,29 @@ impl MTable {
             dtable.write_ordered(&crate::serialize_key(r, c), cell_data)?;
         }
         dtable.finish()
+    }
+
+    pub fn read<'a>(
+        &'a self,
+        row: &'a str,
+        column: &'a str,
+        timestamp: u64,
+    ) -> Option<&'a internals::Record> {
+        let mut iter = self.tree.range((
+            std::collections::Bound::Included(&MTableKey {
+                row: Cow::Borrowed(row),
+                column: Cow::Borrowed(column),
+                timestamp,
+            }),
+            std::collections::Bound::Unbounded,
+        ));
+
+        let value = iter.next()?;
+        if value.0.column != column || value.0.row != row {
+            return None;
+        }
+
+        Some(value.1)
     }
 }
 
@@ -101,8 +117,8 @@ mod tests {
             internals::Record {
                 data: vec![0x1, 0x2, 0x3],
                 deleted: false,
+                timestamp: 1234,
             },
-            1234,
         );
         m.write(
             String::from("aaa"),
@@ -110,8 +126,8 @@ mod tests {
             internals::Record {
                 data: vec![],
                 deleted: true,
+                timestamp: 2345,
             },
-            2345,
         );
         m.write(
             String::from("bbb"),
@@ -119,8 +135,8 @@ mod tests {
             internals::Record {
                 data: vec![0x1, 0x2, 0x3],
                 deleted: false,
+                timestamp: 3456,
             },
-            12345,
         );
 
         let mut buf = Vec::new();
@@ -129,12 +145,12 @@ mod tests {
         let reader = sstable::SSTableReader::from_bytes(&buf).unwrap();
         let cell: internals::CellData = reader.get(&crate::serialize_key("aaa", "bbb")).unwrap();
 
-        assert_eq!(&cell.timestamps, &[2345, 1234]);
+        assert_eq!(cell.records[0].timestamp, 2345);
         assert_eq!(cell.records[0].deleted, true);
 
         let cell = reader.get(&crate::serialize_key("bbb", "ccc")).unwrap();
 
-        assert_eq!(&cell.timestamps, &[12345]);
+        assert_eq!(cell.records[0].timestamp, 3456);
         assert_eq!(cell.records[0].data, &[0x1, 0x2, 0x3]);
     }
 }

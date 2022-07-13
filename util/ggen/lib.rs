@@ -217,7 +217,6 @@ impl<Unit: GrammarUnit, Separator: GrammarUnit> GrammarUnit
 {
     fn try_match(content: &str, offset: usize) -> Result<(Self, usize, Option<ParseError>)> {
         let mut took = 0;
-        let mut sep_took = 0;
         let mut values = Vec::new();
         let mut separators = Vec::new();
         let mut seq_error = None;

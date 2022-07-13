@@ -45,7 +45,7 @@ pub fn compact_shards(data: Vec<String>, target_shard_count: usize) -> Vec<Strin
 
     let mut i = 0;
     let mut retained = 0;
-    let mut num_to_jump = output.len() / num_to_mark;
+    let num_to_jump = output.len() / num_to_mark;
     output.retain(|_| {
         i += 1;
         let should_retain = (i % (num_to_jump) == 0) ^ inverted;

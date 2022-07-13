@@ -300,7 +300,7 @@ impl GrammarUnit for Identifier {
 
 // Comment starts with two slashes and extends to a newline
 impl GrammarUnit for Comment {
-    fn try_match(mut content: &str, offset: usize) -> Result<(Self, usize, Option<ParseError>)> {
+    fn try_match(content: &str, offset: usize) -> Result<(Self, usize, Option<ParseError>)> {
         if !content.starts_with("//") {
             return Err(ParseError::expected(Self::name(), offset, offset + 1));
         }
@@ -327,7 +327,7 @@ impl GrammarUnit for Comment {
 
 // Comment starts with two slashes and extends to a newline
 impl GrammarUnit for EOF {
-    fn try_match(mut content: &str, offset: usize) -> Result<(Self, usize, Option<ParseError>)> {
+    fn try_match(content: &str, offset: usize) -> Result<(Self, usize, Option<ParseError>)> {
         if content.is_empty() {
             return Ok((Self { pos: offset }, 0, None));
         }
