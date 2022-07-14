@@ -1,6 +1,8 @@
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 
+use crate::Filter;
+
 pub struct MTable {
     tree: BTreeMap<MTableKey<'static>, internals::Record>,
 
@@ -102,6 +104,78 @@ impl MTable {
 
         Some(value.1)
     }
+
+    pub fn iter_at<'b>(
+        &'b self,
+        filter: &'b Filter<'b>,
+        timestamp: u64,
+    ) -> impl Iterator<Item = (&'b str, internals::RecordView<'b>)> + 'b {
+        let end = MTableKey {
+            row: Cow::Borrowed(filter.row),
+            column: Cow::Borrowed(filter.max),
+            timestamp: u64::MAX,
+        };
+
+        let iter = self
+            .tree
+            .range((
+                std::collections::Bound::Included(&MTableKey {
+                    row: Cow::Borrowed(filter.row),
+                    column: Cow::Borrowed(filter.start()),
+                    timestamp,
+                }),
+                match filter.max {
+                    "" => std::collections::Bound::Unbounded,
+                    _ => std::collections::Bound::Excluded(&end),
+                },
+            ))
+            .peekable();
+        MTableIterator {
+            row: filter.row,
+            spec: filter.spec,
+            timestamp,
+            iter,
+        }
+    }
+}
+
+struct MTableIterator<'a, 'b> {
+    row: &'a str,
+    spec: &'a str,
+    timestamp: u64,
+    iter: std::iter::Peekable<
+        std::collections::btree_map::Range<'a, MTableKey<'b>, internals::Record>,
+    >,
+}
+
+impl<'a, 'b> Iterator for MTableIterator<'a, 'b> {
+    type Item = (&'a str, internals::RecordView<'a>);
+    fn next(&mut self) -> Option<Self::Item> {
+        while let Some((k, v)) = self.iter.next() {
+            println!("iterator: inspect {:?}", k);
+            if k.row != self.row || !k.column.starts_with(self.spec) {
+                println!("ran off the rails");
+                return None;
+            }
+
+            if k.timestamp > self.timestamp {
+                println!("ignore due to timestamp");
+                continue;
+            }
+
+            while let Some((nk, _)) = self.iter.peek() {
+                println!("check peek: {:?}", nk);
+                if nk.row != self.row || nk.column != k.column {
+                    break;
+                }
+                self.iter.next();
+            }
+
+            return Some((&k.column, v.as_view()));
+        }
+
+        None
+    }
 }
 
 #[cfg(test)]
@@ -152,5 +226,57 @@ mod tests {
 
         assert_eq!(cell.records[0].timestamp, 3456);
         assert_eq!(cell.records[0].data, &[0x1, 0x2, 0x3]);
+    }
+
+    #[test]
+    fn test_iteration() {
+        let mut m = MTable::new();
+        m.write(
+            String::from("aaa"),
+            String::from("bbb"),
+            internals::Record {
+                data: vec![0x1, 0x2, 0x3],
+                deleted: false,
+                timestamp: 1234,
+            },
+        );
+        m.write(
+            String::from("aaa"),
+            String::from("bbb"),
+            internals::Record {
+                data: vec![],
+                deleted: true,
+                timestamp: 2345,
+            },
+        );
+        m.write(
+            String::from("aaa"),
+            String::from("ccc"),
+            internals::Record {
+                data: vec![2, 3, 4],
+                deleted: false,
+                timestamp: 1234,
+            },
+        );
+        m.write(
+            String::from("bbb"),
+            String::from("ccc"),
+            internals::Record {
+                data: vec![0x1, 0x2, 0x3],
+                deleted: false,
+                timestamp: 3456,
+            },
+        );
+
+        // Iterating at this timestamp is useless because all records have a later timestamp
+        let filter = Filter::all("aaa");
+        let mut iter = m.iter_at(&filter, 123);
+        assert!(iter.next().is_none());
+
+        // This should only read the non-deleted value
+        let mut iter = m.iter_at(&filter, 2222);
+        assert_eq!(iter.next().unwrap().1.get_data(), &[1, 2, 3]);
+        assert_eq!(iter.next().unwrap().1.get_data(), &[2, 3, 4]);
+        assert!(iter.next().is_none());
     }
 }

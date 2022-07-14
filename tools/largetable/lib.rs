@@ -11,6 +11,13 @@ pub struct LargeTable<'a, W: std::io::Write> {
     journals: Vec<RwLock<recordio::RecordIOBuilder<internals::JournalEntry, W>>>,
 }
 
+pub struct Filter<'a> {
+    row: &'a str,
+    spec: &'a str,
+    min: &'a str,
+    max: &'a str,
+}
+
 impl<'a, W: std::io::Write> LargeTable<'a, W> {
     pub fn new() -> Self {
         Self {
@@ -113,7 +120,6 @@ impl<'a, W: std::io::Write> LargeTable<'a, W> {
         for table in &self.mtables {
             let _locked = table.read().expect("failed to readlock mtable");
             if let Some(r) = _locked.read(row, column, timestamp) {
-                println!("read value from mtable");
                 if r.timestamp > latest_ts {
                     latest_ts = r.timestamp;
                     if r.deleted {
@@ -122,8 +128,6 @@ impl<'a, W: std::io::Write> LargeTable<'a, W> {
                         record = Some(T::decode_owned(&r.data));
                     }
                 }
-            } else {
-                println!("mtable came back empty");
             }
         }
 
@@ -142,6 +146,101 @@ impl<'a, W: std::io::Write> LargeTable<'a, W> {
         }
 
         record
+    }
+
+    pub fn read_range<'b, T: DeserializeOwned>(
+        &self,
+        filter: Filter<'b>,
+        timestamp: u64,
+        limit: usize,
+    ) -> std::io::Result<Vec<T>> {
+        let spec = serialize_key(filter.row, filter.spec);
+        let min = serialize_key(filter.row, filter.min);
+        let max = if filter.max.is_empty() {
+            String::new()
+        } else {
+            serialize_key(filter.row, filter.min)
+        };
+        let sstable_filter = sstable::Filter {
+            spec: &spec,
+            min: &min,
+            max: &max,
+        };
+
+        let dtable_locks: Vec<_> = self
+            .dtables
+            .iter()
+            .map(|d| d.read().expect("failed to readlock dtable"))
+            .collect();
+        let mut dtable_iterators: Vec<_> = dtable_locks
+            .iter()
+            .map(|d| d.iter_at(sstable_filter, timestamp))
+            .collect();
+
+        let mtable_locks: Vec<_> = self
+            .mtables
+            .iter()
+            .map(|m| m.read().expect("failed to readlock mtable"))
+            .collect();
+        let mut mtable_iterators: Vec<_> = mtable_locks
+            .iter()
+            .map(|m| m.iter_at(&filter, timestamp))
+            .collect();
+
+        Ok(Vec::new())
+    }
+}
+
+impl<'a> Filter<'a> {
+    pub fn all(row: &'a str) -> Self {
+        Self {
+            row,
+            spec: "",
+            min: "",
+            max: "",
+        }
+    }
+
+    pub fn from_spec(row: &'a str, spec: &'a str) -> Self {
+        Self {
+            row,
+            spec,
+            min: "",
+            max: "",
+        }
+    }
+
+    pub fn until(row: &'a str, max: &'a str) -> Self {
+        Self {
+            row,
+            spec: "",
+            min: "",
+            max,
+        }
+    }
+
+    pub fn matches(&self, row: &str, col: &str) -> std::cmp::Ordering {
+        if row != self.row {
+            return row.cmp(self.row);
+        }
+
+        if col < self.spec || col < self.min {
+            return std::cmp::Ordering::Less;
+        }
+
+        if !col.starts_with(self.spec) {
+            return std::cmp::Ordering::Greater;
+        }
+
+        if !self.max.is_empty() && col >= self.max {
+            return std::cmp::Ordering::Greater;
+        }
+
+        std::cmp::Ordering::Equal
+    }
+
+    pub fn start(&self) -> &str {
+        std::cmp::max(self.spec, self.min)
     }
 }
 

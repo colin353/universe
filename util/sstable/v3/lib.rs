@@ -313,10 +313,11 @@ impl<'a, T: Deserialize<'a>> SSTableReader<T> {
     }
 }
 
+#[derive(Debug, Copy, Clone)]
 pub struct Filter<'a> {
-    spec: &'a str,
-    min: &'a str,
-    max: &'a str,
+    pub spec: &'a str,
+    pub min: &'a str,
+    pub max: &'a str,
 }
 
 impl<'a> Filter<'a> {
