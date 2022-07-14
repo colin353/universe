@@ -2,6 +2,7 @@ mod dtable;
 mod mtable;
 
 use bus::{DeserializeOwned, Serialize};
+use itertools::{MinHeap, KV};
 
 use std::sync::RwLock;
 
@@ -153,7 +154,7 @@ impl<'a, W: std::io::Write> LargeTable<'a, W> {
         filter: Filter<'b>,
         timestamp: u64,
         limit: usize,
-    ) -> std::io::Result<Vec<T>> {
+    ) -> std::io::Result<Vec<(String, T)>> {
         let spec = serialize_key(filter.row, filter.spec);
         let min = serialize_key(filter.row, filter.min);
         let max = if filter.max.is_empty() {
@@ -186,6 +187,59 @@ impl<'a, W: std::io::Write> LargeTable<'a, W> {
             .iter()
             .map(|m| m.iter_at(&filter, timestamp))
             .collect();
+
+        #[derive(Clone, Copy)]
+        enum IndexKind {
+            MTable(usize),
+            DTable(usize),
+        }
+
+        let mut heap = MinHeap::new();
+        for (idx, iter) in dtable_iterators.iter_mut().enumerate() {
+            if let Some((k, v)) = iter.next() {
+                heap.push(KV(k, (IndexKind::DTable(idx), v)));
+            }
+        }
+
+        for (idx, iter) in mtable_iterators.iter_mut().enumerate() {
+            if let Some((k, v)) = iter.next() {
+                heap.push(KV(k.to_owned(), (IndexKind::MTable(idx), v)));
+            }
+        }
+
+        let mut records = Vec::new();
+
+        let mut cur_key = "";
+        let mut cur_value = None;
+        let mut cur_timestamp = 0;
+        loop {
+            let idx = {
+                match heap.peek() {
+                    Some(KV(k, (idx, r))) => {
+                        if &cur_key != k {
+                            if cur_value.is_some() {
+                                records.push((std::mem::replace(&mut cur_key, k), r));
+                            } else {
+                                cur_key = k;
+                            }
+
+                            cur_value = Some(r);
+                        }
+                        idx.clone()
+                    }
+                    None => break,
+                }
+            };
+
+            match idx {
+                IndexKind::DTable(i) => {
+                    if let Some((k, v)) = dtable_iterators[*i].next() {
+                        heap.push(KV(k, (*idx, v)));
+                    }
+                }
+                IndexKind::MTable(i) => (),
+            }
+        }
 
         Ok(Vec::new())
     }

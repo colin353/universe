@@ -18,6 +18,7 @@ rust_library(
     deps = [
         ":internals",
         "//util/bus",
+        "//util/itertools",
         "//util/recordio/v2:recordio",
         "//util/sstable/v3:sstable",
     ],
