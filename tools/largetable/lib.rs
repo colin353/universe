@@ -54,6 +54,15 @@ impl<'a, W: std::io::Write> LargeTable<'a, W> {
         Ok(())
     }
 
+    pub fn delete(&self, row: String, column: String, timestamp: u64) -> std::io::Result<()> {
+        let record = internals::Record {
+            data: Vec::new(),
+            deleted: true,
+            timestamp,
+        };
+        self.write_record(row, column, record.as_view())
+    }
+
     pub fn write_record(
         &self,
         row: String,
@@ -496,6 +505,31 @@ mod tests {
                 ("aaa".to_string(), "starting value".to_string()),
                 ("def".to_string(), "updated".to_string()),
                 ("qrst".to_string(), "new value".to_string())
+            ]
+        );
+
+        // Delete something
+        t.delete("abc".to_string(), "qrst".to_string(), 400)
+            .unwrap();
+
+        // Check that the above iteration still works if before the defined time
+        let r: Vec<(String, String)> = t.read_range(Filter::all("abc"), 350, 10).unwrap();
+        assert_eq!(
+            &r,
+            &[
+                ("aaa".to_string(), "starting value".to_string()),
+                ("def".to_string(), "updated".to_string()),
+                ("qrst".to_string(), "new value".to_string())
+            ]
+        );
+
+        //
+        let r: Vec<(String, String)> = t.read_range(Filter::all("abc"), 450, 10).unwrap();
+        assert_eq!(
+            &r,
+            &[
+                ("aaa".to_string(), "starting value".to_string()),
+                ("def".to_string(), "updated".to_string()),
             ]
         );
     }
