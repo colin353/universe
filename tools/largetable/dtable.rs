@@ -31,11 +31,42 @@ impl<'a> DTable<'a> {
         filter: sstable::Filter<'a>,
         timestamp: u64,
     ) -> impl Iterator<Item = (String, internals::RecordView<'a>)> {
-        self.table
-            .iter_at(filter)
-            .filter_map(move |(key, cell_data)| {
-                Some((key, crate::get_record(cell_data, timestamp)?))
-            })
+        DTableIterator {
+            iter: self.table.iter_ek_at(filter),
+            timestamp,
+        }
+    }
+}
+
+struct DTableIterator<'a> {
+    iter: sstable::SSTableEKIterator<'a, internals::CellDataView<'a>>,
+    timestamp: u64,
+}
+
+impl<'a> Iterator for DTableIterator<'a> {
+    type Item = (String, internals::RecordView<'a>);
+    fn next(&mut self) -> Option<Self::Item> {
+        let (key, cell_data) = self.iter.next()?;
+        let record = match crate::get_record(cell_data, self.timestamp) {
+            Some(r) => r,
+            None => return self.next(),
+        };
+
+        // To avoid an extra allocation, let's try to figure out the column directly
+        // from the encoded key.
+        let prefix = &self.iter.prefix[0..key.prefix];
+        let column = if let Some(idx) = prefix.find("\x00") {
+            format!("{}{}", &prefix[idx + 1..], key.suffix)
+        } else {
+            String::from(
+                key.suffix
+                    .rsplit("\x00")
+                    .next()
+                    .expect("split always yields at least one value"),
+            )
+        };
+
+        Some((column, record))
     }
 }
 

@@ -188,7 +188,7 @@ impl<'a, W: std::io::Write> LargeTable<'a, W> {
             .map(|m| m.iter_at(&filter, timestamp))
             .collect();
 
-        #[derive(Clone, Copy)]
+        #[derive(Debug, Clone, Copy)]
         enum IndexKind {
             MTable(usize),
             DTable(usize),
@@ -209,20 +209,32 @@ impl<'a, W: std::io::Write> LargeTable<'a, W> {
 
         let mut records = Vec::new();
 
-        let mut cur_key = "";
+        let mut cur_key = String::new();
         let mut cur_value = None;
         let mut cur_timestamp = 0;
         loop {
             let idx = {
-                match heap.peek() {
+                match heap.pop() {
                     Some(KV(k, (idx, r))) => {
-                        if &cur_key != k {
+                        if cur_key != k {
                             if cur_value.is_some() {
-                                records.push((std::mem::replace(&mut cur_key, k), r));
+                                records.push((
+                                    std::mem::replace(&mut cur_key, k),
+                                    std::mem::replace(&mut cur_value, None)
+                                        .expect("we checked it is some"),
+                                ));
+
+                                if records.len() == limit {
+                                    break;
+                                }
                             } else {
                                 cur_key = k;
                             }
 
+                            cur_timestamp = r.get_timestamp();
+                            cur_value = Some(r);
+                        } else if r.get_timestamp() > cur_timestamp {
+                            cur_timestamp = r.get_timestamp();
                             cur_value = Some(r);
                         }
                         idx.clone()
@@ -233,15 +245,31 @@ impl<'a, W: std::io::Write> LargeTable<'a, W> {
 
             match idx {
                 IndexKind::DTable(i) => {
-                    if let Some((k, v)) = dtable_iterators[*i].next() {
-                        heap.push(KV(k, (*idx, v)));
+                    if let Some((k, v)) = dtable_iterators[i].next() {
+                        heap.push(KV(k, (idx, v)));
                     }
                 }
-                IndexKind::MTable(i) => (),
+                IndexKind::MTable(i) => {
+                    if let Some((k, v)) = mtable_iterators[i].next() {
+                        heap.push(KV(k.to_owned(), (idx, v)));
+                    }
+                }
             }
         }
 
-        Ok(Vec::new())
+        if let Some(v) = cur_value {
+            records.push((cur_key, v));
+        }
+
+        let mut out = Vec::new();
+        for (col, record) in records {
+            if record.get_deleted() {
+                continue;
+            }
+
+            out.push((col, T::decode_owned(record.get_data())?));
+        }
+        Ok(out)
     }
 }
 
@@ -361,5 +389,114 @@ mod tests {
 
         let r: String = t.read("abc", "def", 345).unwrap().unwrap();
         assert_eq!(r, "updated");
+    }
+
+    #[test]
+    fn test_read_range() {
+        let mut t = LargeTable::new();
+        t.add_mtable();
+
+        let mut buf = Vec::new();
+        t.add_journal(&mut buf);
+
+        t.write(String::from("abc"), String::from("def"), 123, "abc def")
+            .unwrap();
+
+        // Read from mtable
+        let r: Vec<(String, String)> = t.read_range(Filter::all("abc"), 345, 10).unwrap();
+        assert_eq!(&r, &[("def".to_string(), "abc def".to_string())]);
+
+        let mut dbuf = Vec::new();
+        t.mtables[0]
+            .read()
+            .unwrap()
+            .write_to_dtable(&mut dbuf)
+            .unwrap();
+
+        t.mtables.clear();
+        t.add_mtable();
+
+        // With no mtables available, should get None
+        let r: Vec<(String, String)> = t.read_range(Filter::all("abc"), 345, 10).unwrap();
+        assert_eq!(&r, &[]);
+
+        t.add_dtable_from_bytes(&dbuf).unwrap();
+
+        // Read from dtable, should get value back
+        let r: Vec<(String, String)> = t.read_range(Filter::all("abc"), 345, 10).unwrap();
+        assert_eq!(&r, &[("def".to_string(), "abc def".to_string())]);
+
+        // Write an updated value
+        t.write(String::from("abc"), String::from("def"), 234, "updated")
+            .unwrap();
+
+        let r: Vec<(String, String)> = t.read_range(Filter::all("abc"), 345, 10).unwrap();
+        assert_eq!(&r, &[("def".to_string(), "updated".to_string())]);
+
+        // Write some more values
+        t.write(String::from("abc"), String::from("qrst"), 234, "new value")
+            .unwrap();
+        t.write(
+            String::from("abc"),
+            String::from("aaa"),
+            234,
+            "starting value",
+        )
+        .unwrap();
+
+        let value: String = t.read("abc", "aaa", 333).unwrap().unwrap();
+        assert_eq!(&value, "starting value");
+
+        t.write(
+            String::from("abc"),
+            String::from("bbb"),
+            999,
+            "invisible value",
+        )
+        .unwrap();
+
+        {
+            let _l = t.mtables[0].read().unwrap();
+            let f = Filter::all("abc");
+            let mut iter = _l.iter_at(&f, 345);
+            let (k, v) = iter.next().unwrap();
+            assert_eq!(k, "aaa");
+            assert_eq!(v.get_data(), "starting value".as_bytes());
+        }
+
+        let r: Vec<(String, String)> = t.read_range(Filter::all("abc"), 345, 10).unwrap();
+        assert_eq!(
+            &r,
+            &[
+                ("aaa".to_string(), "starting value".to_string()),
+                ("def".to_string(), "updated".to_string()),
+                ("qrst".to_string(), "new value".to_string())
+            ]
+        );
+
+        assert_eq!(t.mtables.len(), 1);
+
+        // Persist everything to disk
+        let mut dbuf2 = Vec::new();
+        t.mtables[0]
+            .read()
+            .unwrap()
+            .write_to_dtable(&mut dbuf2)
+            .unwrap();
+
+        t.mtables.clear();
+        t.add_mtable();
+        t.add_dtable_from_bytes(&dbuf2).unwrap();
+
+        // Check that the above iteration still works
+        let r: Vec<(String, String)> = t.read_range(Filter::all("abc"), 345, 10).unwrap();
+        assert_eq!(
+            &r,
+            &[
+                ("aaa".to_string(), "starting value".to_string()),
+                ("def".to_string(), "updated".to_string()),
+                ("qrst".to_string(), "new value".to_string())
+            ]
+        );
     }
 }

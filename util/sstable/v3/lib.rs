@@ -183,7 +183,6 @@ impl<'a, T: Deserialize<'a>> SSTableReader<T> {
 
     fn get_block(&self, key: &str) -> Option<&sstable_bus::BlockKey> {
         if self.index.keys.is_empty() {
-            println!("there are no keys");
             return None;
         }
 
@@ -403,14 +402,14 @@ pub struct SSTableIterator<'a, T> {
 pub struct SSTableEKIterator<'a, T> {
     reader: &'a SSTableReader<T>,
     offset: usize,
-    prefix: &'a str,
+    pub prefix: &'a str,
     filter: Filter<'a>,
 }
 
 #[derive(Debug)]
 pub struct EncodedKey<'a> {
-    prefix: usize,
-    suffix: &'a str,
+    pub prefix: usize,
+    pub suffix: &'a str,
 }
 
 impl<'a> EncodedKey<'a> {

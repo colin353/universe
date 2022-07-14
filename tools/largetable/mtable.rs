@@ -152,19 +152,15 @@ impl<'a, 'b> Iterator for MTableIterator<'a, 'b> {
     type Item = (&'a str, internals::RecordView<'a>);
     fn next(&mut self) -> Option<Self::Item> {
         while let Some((k, v)) = self.iter.next() {
-            println!("iterator: inspect {:?}", k);
             if k.row != self.row || !k.column.starts_with(self.spec) {
-                println!("ran off the rails");
                 return None;
             }
 
             if k.timestamp > self.timestamp {
-                println!("ignore due to timestamp");
                 continue;
             }
 
             while let Some((nk, _)) = self.iter.peek() {
-                println!("check peek: {:?}", nk);
                 if nk.row != self.row || nk.column != k.column {
                     break;
                 }

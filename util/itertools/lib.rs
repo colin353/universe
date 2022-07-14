@@ -88,6 +88,7 @@ where
     }
 }
 
+#[derive(Debug)]
 pub struct MinHeap<T>(BinaryHeap<Reverse<T>>);
 
 impl<T> MinHeap<T>
