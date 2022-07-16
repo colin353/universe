@@ -15,3 +15,17 @@ rust_binary(
         "//util/flags",
     ],
 )
+
+rust_bus_library(
+    name = "fortune_bus",
+    srcs = ["fortune.bus"],
+)
+
+rust_binary(
+    name = "fortune_server",
+    srcs = ["fortune_server.rs"],
+    deps = [
+        ":fortune_bus",
+        "//util/bus",
+    ],
+)

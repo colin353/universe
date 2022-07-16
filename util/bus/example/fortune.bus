@@ -1,0 +1,9 @@
+message FortuneRequest {}
+
+message FortuneResponse {
+    fortune: string = 1
+}
+
+service Fortune {
+    rpc fortune(FortuneRequest) -> FortuneResponse
+}

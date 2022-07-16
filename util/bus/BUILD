@@ -60,3 +60,15 @@ rust_test(
     name = "parser_test",
     crate = ":parser",
 )
+
+rust_library(
+    name = "bus_rpc",
+    srcs = [
+        "rpc.rs",
+    ],
+    deps = [
+        "//third_party:futures",
+        "//third_party:hyper",
+        "//third_party:tokio",
+    ]
+)

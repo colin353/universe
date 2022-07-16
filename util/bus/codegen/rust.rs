@@ -10,6 +10,8 @@ const DONOTEDIT: &'static str = r#"/*
 // Allow dead code, since we're generating structs/accessors
 #![allow(dead_code)]
 #![allow(unused_imports)]
+#![allow(unused_variables)]
+#![allow(unused_mut)]
 "#;
 
 const IMPORTS: &'static str = r#"
@@ -33,6 +35,10 @@ pub fn generate<W: std::io::Write>(
 
     for message in &module.messages {
         generate_message(&message, w)?;
+    }
+
+    for service in &module.services {
+        generate_service(&service, w)?;
     }
 
     Ok(())
@@ -206,6 +212,68 @@ pub enum {name} {{
     )?;
 
     Ok(())
+}
+
+fn generate_service<W: std::io::Write>(
+    svc: &parser::ServiceDefinition,
+    w: &mut W,
+) -> Result<(), std::io::Error> {
+    write!(
+        w,
+        "pub trait {name}ServiceHandler: Send + Sync {{\n",
+        name = svc.name
+    )?;
+    for rpc in &svc.rpcs {
+        write!(
+            w,
+            "    fn {name}(&self, msg: {argtype}) -> Result<{rettype}, bus::BusRpcError>;\n",
+            name = rpc.name,
+            argtype = rpc.argument_type,
+            rettype = rpc.return_type,
+        )?;
+    }
+    write!(w, "}}\n\n")?;
+
+    write!(
+        w,
+        "#[derive(Clone)]
+pub struct {name}ServiceHandlerWrapped(std::sync::Arc<dyn {name}ServiceHandler>);\n",
+        name = svc.name
+    )?;
+
+    write!(
+        w,
+        "impl bus::BusServer for {name}ServiceHandlerWrapped {{
+    fn serve(&self, method: &str, payload: &[u8]) -> Result<Vec<u8>, bus::BusRpcError> {{
+        let mut buf = Vec::new();
+        match method {{
+",
+        name = svc.name,
+    )?;
+
+    for rpc in &svc.rpcs {
+        write!(
+            w,
+            r#"            "{name}" => {{
+                let response = self.0.{name}({argtype}::decode_owned(payload).map_err(|e| bus::BusRpcError::InvalidData(e))?)?;
+                response.encode(&mut buf).map_err(|e| bus::BusRpcError::InternalError(format!("{{:?}}", e)))?;
+            }},
+"#,
+            name = rpc.name,
+            argtype = rpc.argument_type,
+        )?;
+    }
+
+    write!(
+        w,
+        "            _ => return Err(bus::BusRpcError::NotImplemented),
+        }}
+        Ok(buf)
+    }}
+}}
+
+"
+    )
 }
 
 fn generate_message<W: std::io::Write>(

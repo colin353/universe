@@ -11,3 +11,15 @@ pub use repeated_field::{
     RepeatedBytes, RepeatedBytesIterator, RepeatedField, RepeatedFieldIterator, RepeatedString,
 };
 pub use serializable::{Deserialize, DeserializeOwned, PackedIn, PackedOut, Serialize};
+
+#[derive(Debug)]
+pub enum BusRpcError {
+    InternalError(String),
+    InvalidData(std::io::Error),
+    FailedToBindPort,
+    NotImplemented,
+}
+
+pub trait BusServer: Clone + Send + Sync {
+    fn serve(&self, method: &str, payload: &[u8]) -> Result<Vec<u8>, BusRpcError>;
+}
