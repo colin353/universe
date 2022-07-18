@@ -67,6 +67,7 @@ rust_library(
         "rpc.rs",
     ],
     deps = [
+        ":bus",
         "//third_party:futures",
         "//third_party:hyper",
         "//third_party:tokio",

@@ -1,7 +1,9 @@
-message FortuneRequest {}
+message FortuneRequest {
+    fortune_id: u32 = 0
+}
 
 message FortuneResponse {
-    fortune: string = 1
+    fortune: string = 0
 }
 
 service Fortune {

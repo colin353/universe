@@ -17,9 +17,15 @@ pub enum BusRpcError {
     InternalError(String),
     InvalidData(std::io::Error),
     FailedToBindPort,
+    ServiceNameDidNotMatch,
     NotImplemented,
+    ConnectionError(String),
 }
 
 pub trait BusServer: Clone + Send + Sync {
-    fn serve(&self, method: &str, payload: &[u8]) -> Result<Vec<u8>, BusRpcError>;
+    fn serve(&self, service: &str, method: &str, payload: &[u8]) -> Result<Vec<u8>, BusRpcError>;
+}
+
+pub trait BusClient: Send + Sync {
+    fn request(&self, uri: &'static str, data: Vec<u8>) -> Result<Vec<u8>, BusRpcError>;
 }

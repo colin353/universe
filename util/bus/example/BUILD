@@ -27,5 +27,19 @@ rust_binary(
     deps = [
         ":fortune_bus",
         "//util/bus",
+        "//util/bus:bus_rpc",
+        "//third_party:tokio",
+    ],
+)
+
+rust_binary(
+    name = "fortune_client",
+    srcs = ["fortune_client.rs"],
+    deps = [
+        "//util/flags",
+        ":fortune_bus",
+        "//util/bus",
+        "//util/bus:bus_rpc",
+        "//third_party:tokio",
     ],
 )

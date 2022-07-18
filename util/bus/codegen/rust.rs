@@ -237,14 +237,18 @@ fn generate_service<W: std::io::Write>(
     write!(
         w,
         "#[derive(Clone)]
-pub struct {name}ServiceHandlerWrapped(std::sync::Arc<dyn {name}ServiceHandler>);\n",
+pub struct {name}Service(pub std::sync::Arc<dyn {name}ServiceHandler>);\n",
         name = svc.name
     )?;
 
     write!(
         w,
-        "impl bus::BusServer for {name}ServiceHandlerWrapped {{
-    fn serve(&self, method: &str, payload: &[u8]) -> Result<Vec<u8>, bus::BusRpcError> {{
+        "impl bus::BusServer for {name}Service {{
+    fn serve(&self, service: &str, method: &str, payload: &[u8]) -> Result<Vec<u8>, bus::BusRpcError> {{
+        if service != \"{name}\" {{
+            return Err(bus::BusRpcError::ServiceNameDidNotMatch);
+        }}
+
         let mut buf = Vec::new();
         match method {{
 ",
@@ -273,7 +277,40 @@ pub struct {name}ServiceHandlerWrapped(std::sync::Arc<dyn {name}ServiceHandler>)
 }}
 
 "
-    )
+    )?;
+
+    // Implement client
+    write!(
+        w,
+        r#"#[derive(Clone)]
+pub struct {name}Client(std::sync::Arc<dyn bus::BusClient>);
+
+impl {name}Client {{
+    pub fn new(c: std::sync::Arc<dyn bus::BusClient>) -> Self {{
+        Self(c)
+    }}
+"#,
+        name = svc.name,
+    )?;
+
+    for rpc in &svc.rpcs {
+        write!(
+            w,
+            "    pub fn {name}(&self, req: {argtype}) -> Result<{rettype}, bus::BusRpcError> {{
+        let mut buf = Vec::new();
+        req.encode(&mut buf).map_err(|e| bus::BusRpcError::InvalidData(e))?;
+        let response = self.0.request(\"/{svc_name}/{name}\", buf)?;
+        {rettype}::decode_owned(&response).map_err(|e| bus::BusRpcError::InvalidData(e))
+    }}
+",
+            svc_name = svc.name,
+            name = rpc.name,
+            argtype = rpc.argument_type,
+            rettype = rpc.return_type,
+        )?;
+    }
+
+    write!(w, "}}\n\n")
 }
 
 fn generate_message<W: std::io::Write>(

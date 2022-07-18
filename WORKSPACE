@@ -3,10 +3,10 @@ load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 # Rust rules
 http_archive(
     name = "rules_rust",
-    sha256 = "93955cfc4232aeec69273f3b3c57b7055924f7515ba48f1b77ec37a259cd9943",
-    strip_prefix = "rules_rust-994f8de6889f2e2631cf3ea3aa9fe21a4612fd06",
+    sha256 = "49145371e53da85fd6715088a6be9a188190cd82a7696b1415e64ab2a48f06c7",
+    strip_prefix = "rules_rust-accafb5bba4e3f118267168af75b77aacc8d5996",
     urls = [
-        "https://github.com/colin353/rules_rust/archive/994f8de6889f2e2631cf3ea3aa9fe21a4612fd06.tar.gz",
+        "https://github.com/colin353/rules_rust/archive/accafb5bba4e3f118267168af75b77aacc8d5996.tar.gz",
     ],
 )
 
