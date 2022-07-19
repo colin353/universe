@@ -8,7 +8,7 @@ use std::sync::RwLock;
 
 pub struct LargeTable<'a, W: std::io::Write> {
     mtables: Vec<RwLock<mtable::MTable>>,
-    dtables: Vec<RwLock<dtable::DTable<'a>>>,
+    dtables: Vec<dtable::DTable<'a>>,
     journals: Vec<RwLock<recordio::RecordIOBuilder<internals::JournalEntry, W>>>,
 }
 
@@ -38,10 +38,14 @@ impl<'a, W: std::io::Write> LargeTable<'a, W> {
         self.mtables.insert(0, RwLock::new(mtable::MTable::new()));
     }
 
+    pub fn add_dtable(&mut self, f: std::fs::File) -> std::io::Result<()> {
+        self.dtables.push(dtable::DTable::from_file(f)?);
+        Ok(())
+    }
+
     #[cfg(test)]
     pub fn add_dtable_from_bytes(&mut self, bytes: &[u8]) -> std::io::Result<()> {
-        self.dtables
-            .insert(0, RwLock::new(dtable::DTable::from_bytes(bytes)?));
+        self.dtables.insert(0, dtable::DTable::from_bytes(bytes)?);
         Ok(())
     }
 
@@ -142,8 +146,7 @@ impl<'a, W: std::io::Write> LargeTable<'a, W> {
         }
 
         for table in &self.dtables {
-            let _locked = table.read().expect("failed to readlock dtable");
-            if let Some(r) = _locked.read(row, column, timestamp) {
+            if let Some(r) = table.read(row, column, timestamp) {
                 if r.get_timestamp() > latest_ts {
                     latest_ts = r.get_timestamp();
                     if r.get_deleted() {
@@ -177,12 +180,8 @@ impl<'a, W: std::io::Write> LargeTable<'a, W> {
             max: &max,
         };
 
-        let dtable_locks: Vec<_> = self
+        let mut dtable_iterators: Vec<_> = self
             .dtables
-            .iter()
-            .map(|d| d.read().expect("failed to readlock dtable"))
-            .collect();
-        let mut dtable_iterators: Vec<_> = dtable_locks
             .iter()
             .map(|d| d.iter_at(sstable_filter, timestamp))
             .collect();

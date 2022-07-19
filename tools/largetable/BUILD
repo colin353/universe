@@ -8,6 +8,40 @@ rust_bus_library(
     srcs = ["internals.bus"],
 )
 
+rust_bus_library(
+    name = "service",
+    srcs = ["service.bus"],
+)
+
+rust_binary(
+    name = "server",
+    srcs = [
+        "server.rs",
+        "largetable_service.rs",
+    ],
+    deps = [
+        ":service", 
+        ":largetable",
+        "//util/bus",
+        "//util/bus:bus_rpc",
+        "//util/flags",
+        "//third_party:tokio",
+    ]
+)
+
+rust_binary(
+    name = "ltui",
+    srcs = [
+        "ltui.rs",
+    ],
+    deps = [
+        "//util/bus",
+        "//util/bus:bus_rpc",
+        "//util/flags",
+        ":service",
+    ],
+)
+
 rust_library(
     name = "largetable",
     srcs = [

@@ -1,0 +1,27 @@
+message ReadRequest {
+    row: string = 0
+    column: string = 1
+    timestamp: u64 = 2
+}
+
+message ReadResponse {
+    found: bool = 0
+    data: bytes = 1
+    timestamp: u64 = 2
+}
+
+message WriteRequest {
+    row: string = 0
+    column: string = 1
+    timestamp: u64 = 2
+    data: bytes = 3
+}
+
+message WriteResponse {
+    timestamp: u64 = 0
+}
+
+service LargeTable {
+    rpc read(ReadRequest) -> ReadResponse
+    rpc write(WriteRequest) -> WriteResponse
+}
