@@ -30,7 +30,8 @@ async fn main() {
         if let Some(ext) = path.extension() {
             if ext == dtable_extension {
                 let f = std::fs::File::open(&path).expect("failed to open dtable!");
-                table.add_dtable(f).expect("failed to add dtable");
+                let dt = largetable::DTable::from_file(f).expect("failed to load dtable");
+                table.add_dtable(dt);
                 println!("added dtable: {:?}", path);
             } else if ext == journal_extension {
                 let f = std::fs::File::open(&path).expect("failed to open journal!");
@@ -50,6 +51,12 @@ async fn main() {
     .expect("failed to create journal!");
     table.add_journal(std::io::BufWriter::new(f));
 
-    let h = service::LargeTableService(Arc::new(largetable_service::LargeTableHandler::new(table)));
-    bus_rpc::serve(4321, h).await;
+    let handler = Arc::new(largetable_service::LargeTableHandler::new(table));
+    let _h = handler.clone();
+    std::thread::spawn(move || {
+        largetable_service::monitor_memory(data_path, _h);
+    });
+
+    let s = service::LargeTableService(handler);
+    bus_rpc::serve(4321, s).await;
 }

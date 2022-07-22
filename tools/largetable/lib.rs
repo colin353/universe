@@ -4,10 +4,12 @@ mod mtable;
 use bus::{DeserializeOwned, Serialize};
 use itertools::{MinHeap, KV};
 
+pub use dtable::DTable;
+
 use std::sync::RwLock;
 
 pub struct LargeTable<'a, W: std::io::Write> {
-    mtables: Vec<RwLock<mtable::MTable>>,
+    pub mtables: Vec<RwLock<mtable::MTable>>,
     dtables: Vec<dtable::DTable<'a>>,
     journals: Vec<RwLock<recordio::RecordIOBuilder<internals::JournalEntry, W>>>,
 }
@@ -38,9 +40,19 @@ impl<'a, W: std::io::Write> LargeTable<'a, W> {
         self.mtables.insert(0, RwLock::new(mtable::MTable::new()));
     }
 
-    pub fn add_dtable(&mut self, f: std::fs::File) -> std::io::Result<()> {
-        self.dtables.push(dtable::DTable::from_file(f)?);
-        Ok(())
+    pub fn drop_read_only_mtable(&mut self) {
+        self.mtables.pop();
+    }
+
+    pub fn add_dtable(&mut self, d: dtable::DTable<'a>) {
+        self.dtables.push(d);
+    }
+
+    pub fn memory_usage(&self) -> u64 {
+        self.mtables
+            .iter()
+            .map(|m| m.read().expect("failed to read lock mtable").memory_usage as u64)
+            .sum()
     }
 
     #[cfg(test)]
