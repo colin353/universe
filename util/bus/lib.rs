@@ -20,6 +20,7 @@ pub enum BusRpcError {
     ServiceNameDidNotMatch,
     NotImplemented,
     ConnectionError(String),
+    BackOff,
 }
 
 pub trait BusServer: Clone + Send + Sync {
