@@ -15,10 +15,10 @@ pub struct LargeTable<'a, W: std::io::Write> {
 }
 
 pub struct Filter<'a> {
-    row: &'a str,
-    spec: &'a str,
-    min: &'a str,
-    max: &'a str,
+    pub row: &'a str,
+    pub spec: &'a str,
+    pub min: &'a str,
+    pub max: &'a str,
 }
 
 impl<'a, W: std::io::Write> LargeTable<'a, W> {
@@ -534,7 +534,6 @@ mod tests {
             ]
         );
 
-        //
         let r: Vec<(String, String)> = t.read_range(Filter::all("abc"), 450, 10).unwrap();
         assert_eq!(
             &r,

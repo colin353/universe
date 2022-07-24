@@ -10,6 +10,29 @@ message ReadResponse {
     timestamp: u64 = 2
 }
 
+message Filter {
+    spec: string = 0
+    min: string = 1
+    max: string = 2
+}
+
+message ReadRangeRequest {
+    row: string = 0
+    filter: Filter = 1
+    timestamp: u64 = 2
+    limit: u32 = 3
+}
+
+message Record {
+    key: string = 0
+    data: bytes = 1
+}
+
+message ReadRangeResponse {
+    records: repeated Record = 0
+    timestamp: u64 = 1
+}
+
 message WriteRequest {
     row: string = 0
     column: string = 1
@@ -24,4 +47,5 @@ message WriteResponse {
 service LargeTable {
     rpc read(ReadRequest) -> ReadResponse
     rpc write(WriteRequest) -> WriteResponse
+    rpc read_range(ReadRangeRequest) -> ReadRangeResponse
 }
