@@ -17,6 +17,7 @@ async fn main() {
         std::process::exit(1);
     }
 
+    let mut journals = Vec::new();
     let mut table = largetable::LargeTable::new();
     table.add_mtable();
 
@@ -40,18 +41,18 @@ async fn main() {
                     .load_from_journal(r)
                     .expect("failed to load from journal!");
                 println!("added journal: {:?}", path);
+                journals.push(path);
             }
         }
     }
 
     // Create a fresh journal to use for this startup
-    let f = std::fs::File::create(
-        data_path.join(format!("{}.journal", largetable_service::timestamp_usec())),
-    )
-    .expect("failed to create journal!");
+    let journal_path = data_path.join(format!("{}.journal", largetable_service::timestamp_usec()));
+    let f = std::fs::File::create(&journal_path).expect("failed to create journal!");
     table.add_journal(std::io::BufWriter::new(f));
+    journals.insert(0, journal_path);
 
-    let handler = Arc::new(largetable_service::LargeTableHandler::new(table));
+    let handler = Arc::new(largetable_service::LargeTableHandler::new(table, journals));
     let _h = handler.clone();
     std::thread::spawn(move || {
         largetable_service::monitor_memory(data_path, _h);

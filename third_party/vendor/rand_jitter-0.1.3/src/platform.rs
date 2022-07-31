@@ -6,6 +6,7 @@
 // <LICENSE-MIT or https://opensource.org/licenses/MIT>, at your
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
+#![feature(rustc_private)]
 
 #[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "windows")))]
 pub fn get_nstime() -> u64 {
@@ -22,7 +23,7 @@ pub fn get_nstime() -> u64 {
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 pub fn get_nstime() -> u64 {
     use libc;
-    
+
     // On Mac OS and iOS std::time::SystemTime only has 1000ns resolution.
     // We use `mach_absolute_time` instead. This provides a CPU dependent
     // unit, to get real nanoseconds the result should by multiplied by

@@ -45,7 +45,7 @@ fn main() {
 
     let query_count = Arc::new(AtomicU32::new(0));
 
-    for _ in 0..32 {
+    for _ in 0..8 {
         let _c = client.clone();
         let q = query_count.clone();
         std::thread::spawn(move || {

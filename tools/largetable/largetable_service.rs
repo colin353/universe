@@ -1,7 +1,7 @@
 use service::*;
 
 use std::sync::atomic::{AtomicIsize, AtomicUsize, Ordering};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 
 use std::os::unix::fs::MetadataExt;
 
@@ -15,14 +15,19 @@ pub struct LargeTableHandler {
     table: RwLock<largetable::LargeTable<'static, std::io::BufWriter<std::fs::File>>>,
     memory_limit: u64,
     throttler: Throttler,
+    journals: Mutex<Vec<std::path::PathBuf>>,
 }
 
 impl LargeTableHandler {
-    pub fn new(table: largetable::LargeTable<'static, std::io::BufWriter<std::fs::File>>) -> Self {
+    pub fn new(
+        table: largetable::LargeTable<'static, std::io::BufWriter<std::fs::File>>,
+        journals: Vec<std::path::PathBuf>,
+    ) -> Self {
         Self {
             table: RwLock::new(table),
             memory_limit: 512_000_000,
             throttler: Throttler::new(),
+            journals: Mutex::new(journals),
         }
     }
 }
@@ -113,6 +118,13 @@ impl LargeTableServiceHandler for LargeTableHandler {
                 .collect(),
             timestamp,
         })
+    }
+
+    fn write_bulk(&self, req: WriteBulkRequest) -> Result<WriteBulkResponse, bus::BusRpcError> {
+        for w in req.writes {
+            self.write(w)?;
+        }
+        Ok(WriteBulkResponse::new())
     }
 }
 
@@ -207,14 +219,16 @@ pub fn monitor_memory(data_path: std::path::PathBuf, handler: Arc<LargeTableHand
             0
         };
 
-        println!(
-            "{} bytes/s",
-            bytes as f64 / last_check.elapsed().as_secs_f64()
-        );
-
         let throttling = handler
             .throttler
             .update(bytes as usize, last_check.elapsed());
+
+        if throttling {
+            println!(
+                "{} bytes/s",
+                bytes as f64 / last_check.elapsed().as_secs_f64()
+            );
+        }
 
         if throttling != throttling_enabled {
             println!(
@@ -235,11 +249,15 @@ pub fn monitor_memory(data_path: std::path::PathBuf, handler: Arc<LargeTableHand
         last_memory = 0;
 
         // Insert a new mtable at the zero position, so that all writes are redirected to that
+        let journal_path = data_path.join(format!("{}.journal", timestamp_usec()));
+        let f = std::fs::File::create(&journal_path).expect("failed to create journal!");
         {
             let mut _write = handler
                 .table
                 .write()
                 .expect("failed to write lock largetable");
+
+            _write.add_journal(std::io::BufWriter::new(f));
             _write.add_mtable();
         }
 
@@ -279,5 +297,15 @@ pub fn monitor_memory(data_path: std::path::PathBuf, handler: Arc<LargeTableHand
             // Discard the mtable
             _write.drop_read_only_mtable();
         }
+
+        // Delete the journals that were used to construct the loaded DTable
+        let mut _w = handler.journals.lock().expect("failed to lock journals");
+        for path in _w.iter() {
+            if let Err(e) = std::fs::remove_file(&path) {
+                eprintln!("failed to delete journal: {:?}", e);
+            }
+        }
+        _w.clear();
+        _w.push(journal_path);
     }
 }
