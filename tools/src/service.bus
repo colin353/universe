@@ -1,0 +1,33 @@
+message DiffRequest {
+    dir: string = 0
+}
+
+enum DiffKind {
+    Unknown = 0
+    Added = 1
+    Modified = 2
+    Removed = 3
+}
+
+message FileDiff {
+    path: string = 0
+    kind: DiffKind = 1
+    is_dir: bool = 2
+    differences: repeated ByteDiff = 3
+}
+
+message ByteDiff {
+    start: u32 = 0
+    end: u32 = 1
+    kind: DiffKind = 2
+    data: bytes = 3
+}
+
+message DiffResponse {
+    base: u64 = 0
+    files: repeated FileDiff = 1
+}
+
+service SrcDaemon {
+    rpc diff(DiffRequest) -> DiffResponse
+}
