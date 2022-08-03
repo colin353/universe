@@ -80,25 +80,34 @@
 //! [wiki-lcs]: https://en.wikipedia.org/wiki/Longest_common_subsequence_problem
 //! [bram-blog]: http://bramcohen.livejournal.com/73318.html
 
-extern crate lcs;
+use crate::lcs;
 
-use std::collections::hash_map::{HashMap, Entry};
+use std::collections::hash_map::{Entry, HashMap};
 use std::hash::{Hash, Hasher};
 
 #[derive(Debug, Eq)]
 struct Indexed<T> {
     index: usize,
-    value: T
+    value: T,
 }
 
-impl<T> PartialEq for Indexed<T> where T: PartialEq {
+impl<T> PartialEq for Indexed<T>
+where
+    T: PartialEq,
+{
     fn eq(&self, other: &Indexed<T>) -> bool {
         self.value == other.value
     }
 }
 
-impl<T> Hash for Indexed<T> where T: Hash {
-    fn hash<H>(&self, state: &mut H) where H: Hasher {
+impl<T> Hash for Indexed<T>
+where
+    T: Hash,
+{
+    fn hash<H>(&self, state: &mut H)
+    where
+        H: Hasher,
+    {
         self.value.hash(state);
     }
 }
@@ -107,7 +116,7 @@ impl<T> Hash for Indexed<T> where T: Hash {
 pub enum DiffComponent<T> {
     Insertion(T),
     Unchanged(T, T),
-    Deletion(T)
+    Deletion(T),
 }
 
 /// Computes the patience diff betwen `a` and `b`. The `DiffComponent`s hold references to the
@@ -131,7 +140,9 @@ pub enum DiffComponent<T> {
 /// ]);
 /// ```
 pub fn patience_diff<'a, T>(a: &'a [T], b: &'a [T]) -> Vec<DiffComponent<&'a T>>
-        where T: Eq + Hash {
+where
+    T: Eq + Hash,
+{
     if a.len() == 0 && b.len() == 0 {
         return vec![];
     }
@@ -162,13 +173,21 @@ pub fn patience_diff<'a, T>(a: &'a [T], b: &'a [T]) -> Vec<DiffComponent<&'a T>>
         return prev_diff;
     }
 
-    let indexed_a: Vec<_> = a.iter()
+    let indexed_a: Vec<_> = a
+        .iter()
         .enumerate()
-        .map(|(i, val)| Indexed { index: i, value: val })
+        .map(|(i, val)| Indexed {
+            index: i,
+            value: val,
+        })
         .collect();
-    let indexed_b: Vec<_> = b.iter()
+    let indexed_b: Vec<_> = b
+        .iter()
         .enumerate()
-        .map(|(i, val)| Indexed { index: i, value: val })
+        .map(|(i, val)| Indexed {
+            index: i,
+            value: val,
+        })
         .collect();
 
     let uniq_a = unique_elements(&indexed_a);
@@ -179,19 +198,17 @@ pub fn patience_diff<'a, T>(a: &'a [T], b: &'a [T]) -> Vec<DiffComponent<&'a T>>
 
     if lcs.is_empty() {
         let table = lcs::LcsTable::new(&indexed_a, &indexed_b);
-        return table.diff().into_iter().map(|c| {
-            match c {
-                lcs::DiffComponent::Insertion(elem_b) => {
-                    DiffComponent::Insertion(&b[elem_b.index])
-                },
+        return table
+            .diff()
+            .into_iter()
+            .map(|c| match c {
+                lcs::DiffComponent::Insertion(elem_b) => DiffComponent::Insertion(&b[elem_b.index]),
                 lcs::DiffComponent::Unchanged(elem_a, elem_b) => {
                     DiffComponent::Unchanged(&a[elem_a.index], &b[elem_b.index])
-                },
-                lcs::DiffComponent::Deletion(elem_a) => {
-                    DiffComponent::Deletion(&a[elem_a.index])
                 }
-            }
-        }).collect();
+                lcs::DiffComponent::Deletion(elem_a) => DiffComponent::Deletion(&a[elem_a.index]),
+            })
+            .collect();
     }
 
     let mut ret = Vec::new();
@@ -218,7 +235,10 @@ pub fn patience_diff<'a, T>(a: &'a [T], b: &'a [T]) -> Vec<DiffComponent<&'a T>>
 }
 
 fn common_prefix<'a, T, I>(a: I, b: I) -> Vec<DiffComponent<I::Item>>
-        where I: Iterator<Item = &'a T>, T: Eq {
+where
+    I: Iterator<Item = &'a T>,
+    T: Eq,
+{
     a.zip(b)
         .take_while(|&(elem_a, elem_b)| elem_a == elem_b)
         .map(|(elem_a, elem_b)| DiffComponent::Unchanged(elem_a, elem_b))
@@ -226,7 +246,10 @@ fn common_prefix<'a, T, I>(a: I, b: I) -> Vec<DiffComponent<I::Item>>
 }
 
 fn common_suffix<'a, T, I>(a: I, b: I) -> Vec<DiffComponent<I::Item>>
-        where I: DoubleEndedIterator<Item = &'a T>, T: Eq {
+where
+    I: DoubleEndedIterator<Item = &'a T>,
+    T: Eq,
+{
     common_prefix(a.rev(), b.rev())
 }
 
@@ -237,14 +260,15 @@ fn unique_elements<'a, T: Eq + Hash>(elems: &'a [T]) -> Vec<&'a T> {
         match counts.entry(elem) {
             Entry::Occupied(mut e) => {
                 *e.get_mut() = e.get() + 1;
-            },
+            }
             Entry::Vacant(e) => {
                 e.insert(1);
             }
         }
     }
 
-    elems.iter()
+    elems
+        .iter()
         .filter(|elem| counts.get(elem) == Some(&1))
         .collect()
 }
@@ -255,28 +279,34 @@ fn test_patience_diff() {
     let b: Vec<_> = "xaa".chars().collect();
 
     let diff = patience_diff(&a, &b);
-    assert_eq!(diff, vec![
-        DiffComponent::Deletion(&'a'),
-        DiffComponent::Deletion(&'a'),
-        DiffComponent::Unchanged(&'x', &'x'),
-        DiffComponent::Insertion(&'a'),
-        DiffComponent::Insertion(&'a'),
-    ]);
+    assert_eq!(
+        diff,
+        vec![
+            DiffComponent::Deletion(&'a'),
+            DiffComponent::Deletion(&'a'),
+            DiffComponent::Unchanged(&'x', &'x'),
+            DiffComponent::Insertion(&'a'),
+            DiffComponent::Insertion(&'a'),
+        ]
+    );
 
     let a = vec![1, 10, 11, 4];
     let b = vec![1, 10, 11, 2, 3, 10, 11, 4];
 
     let diff = patience_diff(&a, &b);
-    assert_eq!(diff, vec![
-        DiffComponent::Unchanged(&1, &1),
-        DiffComponent::Unchanged(&10, &10),
-        DiffComponent::Unchanged(&11, &11),
-        DiffComponent::Insertion(&2),
-        DiffComponent::Insertion(&3),
-        DiffComponent::Insertion(&10),
-        DiffComponent::Insertion(&11),
-        DiffComponent::Unchanged(&4, &4)
-    ]);
+    assert_eq!(
+        diff,
+        vec![
+            DiffComponent::Unchanged(&1, &1),
+            DiffComponent::Unchanged(&10, &10),
+            DiffComponent::Unchanged(&11, &11),
+            DiffComponent::Insertion(&2),
+            DiffComponent::Insertion(&3),
+            DiffComponent::Insertion(&10),
+            DiffComponent::Insertion(&11),
+            DiffComponent::Unchanged(&4, &4)
+        ]
+    );
 }
 
 #[test]

@@ -1,5 +1,8 @@
 use crate::varint;
 
+#[derive(Debug, Clone)]
+pub struct Nothing {}
+
 pub trait Serialize: Sized {
     fn encode<W: std::io::Write>(&self, writer: &mut W) -> Result<usize, std::io::Error>;
 }
@@ -21,6 +24,18 @@ impl<'a, T: DeserializeOwned> Deserialize<'a> for T {
 impl<T: Serialize> Serialize for &T {
     fn encode<W: std::io::Write>(&self, writer: &mut W) -> Result<usize, std::io::Error> {
         (*self).encode(writer)
+    }
+}
+
+impl Serialize for Nothing {
+    fn encode<W: std::io::Write>(&self, writer: &mut W) -> Result<usize, std::io::Error> {
+        return Ok(0);
+    }
+}
+
+impl DeserializeOwned for Nothing {
+    fn decode_owned(bytes: &[u8]) -> Result<Self, std::io::Error> {
+        Ok(Nothing {})
     }
 }
 

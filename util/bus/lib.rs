@@ -10,7 +10,7 @@ pub use encoded_struct::{EncodedStruct, EncodedStructBuilder};
 pub use repeated_field::{
     RepeatedBytes, RepeatedBytesIterator, RepeatedField, RepeatedFieldIterator, RepeatedString,
 };
-pub use serializable::{Deserialize, DeserializeOwned, PackedIn, PackedOut, Serialize};
+pub use serializable::{Deserialize, DeserializeOwned, Nothing, PackedIn, PackedOut, Serialize};
 
 #[derive(Debug)]
 pub enum BusRpcError {

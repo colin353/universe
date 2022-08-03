@@ -14,6 +14,33 @@ rust_binary(
     deps = [
       ":service",
       "//tools/largetable:managed_largetable",
+      "//util/bus",
+      ":core",
     ],
 )
 
+rust_library(
+    name = "server_service",
+    srcs = ["server_service.rs"],
+    deps = [
+      ":service",
+      ":core",
+      "//util/bus",
+      "//util/bus:bus_rpc",
+      "//tools/largetable:managed_largetable",
+    ],
+)
+
+rust_test(
+  name = "server_test",
+  crate = ":server_service",
+)
+
+rust_library(
+    name = "core",
+    srcs = [
+      "core.rs",
+      "patience.rs",
+      "lcs.rs"
+    ],
+)

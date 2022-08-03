@@ -39,7 +39,8 @@ message Basis {
     host: string = 0
     owner: string = 1
     name: string = 2
-    index: u64 = 3
+    change: u64 = 3
+    index: u64 = 4
 }
 
 message Branch {
@@ -54,6 +55,77 @@ message File {
     mtime: u64 = 2
 }
 
+message SubmitRequest {
+    token: string = 0
+    basis: Basis = 1
+    files: repeated FileDiff = 2
+}
+
+message SubmitResponse {
+    failed: bool = 0
+    error_message: string = 1
+    index: u64 = 2
+}
+
+message CreateRequest {
+    token: string = 0
+    name: string = 1
+}
+
+message CreateResponse {
+    failed: bool = 0
+    error_message: string = 1
+}
+
+message GetRepositoryRequest {
+    token: string = 0
+    owner: string = 1
+    name: string = 2
+}
+
+message GetRepositoryResponse {
+    failed: bool = 0
+    error_message: string = 1
+
+    // Info about the repository
+    index: u64 = 2
+}
+
+message GetMetadataRequest {
+    token: string = 0
+    basis: Basis = 1
+}
+
+message GetMetadataResponse {
+    failed: bool = 0
+    error_message: string = 1
+    data: bytes = 2
+}
+
+message GetBlobsRequest {
+    token: string = 0
+    shas: repeated bytes = 1
+}
+
+message Blob {
+    sha: bytes = 0
+    data: bytes = 1
+}
+
+message GetBlobsResponse {
+    failed: bool = 0
+    error_message: string = 1
+    blobs: repeated Blob = 2
+}
+
 service SrcDaemon {
     rpc diff(DiffRequest) -> DiffResponse
+}
+
+service SrcServer {
+    rpc create(CreateRequest) -> CreateResponse
+    rpc get_repository(GetRepositoryRequest) -> GetRepositoryResponse
+    rpc submit(SubmitRequest) -> SubmitResponse
+    rpc get_metadata(GetMetadataRequest) -> GetMetadataRequest
+    rpc get_blobs(GetBlobsRequest) -> GetBlobsResponse
 }

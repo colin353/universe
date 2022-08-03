@@ -80,6 +80,25 @@ impl ManagedLargeTable {
             .read(row, column, timestamp)
     }
 
+    pub fn delete(
+        &self,
+        row: String,
+        column: String,
+        timestamp: u64,
+    ) -> std::io::Result<service::DeleteResponse> {
+        let timestamp = match timestamp {
+            0 => timestamp_usec(),
+            x => x,
+        };
+
+        self.table
+            .read()
+            .expect("failed to read lock largetable")
+            .delete(row.to_owned(), column, timestamp)?;
+
+        Ok(service::DeleteResponse { timestamp })
+    }
+
     pub fn write<T: bus::Serialize>(
         &self,
         row: String,
@@ -261,7 +280,7 @@ impl service::LargeTableServiceHandler for ManagedLargeTable {
     ) -> Result<service::WriteResponse, bus::BusRpcError> {
         self.throttler
             .maybe_throttle(req.data.len())
-            .map_err(|e| bus::BusRpcError::BackOff)?;
+            .map_err(|_| bus::BusRpcError::BackOff)?;
         self.write(
             req.row,
             req.column,
@@ -288,6 +307,15 @@ impl service::LargeTableServiceHandler for ManagedLargeTable {
                 .map_err(|e| bus::BusRpcError::InvalidData(e))?;
         }
         Ok(service::WriteBulkResponse::new())
+    }
+
+    fn delete(
+        &self,
+        req: service::DeleteRequest,
+    ) -> Result<service::DeleteResponse, bus::BusRpcError> {
+        Ok(self
+            .delete(req.row, req.column, req.timestamp)
+            .map_err(|e| bus::BusRpcError::InternalError(format!("{:?}", e)))?)
     }
 }
 

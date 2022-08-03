@@ -50,9 +50,20 @@ message WriteBulkRequest {
 
 message WriteBulkResponse {}
 
+message DeleteRequest {
+    row: string = 0
+    column: string = 1
+    timestamp: u64 = 2
+}
+
+message DeleteResponse {
+    timestamp: u64 = 2
+}
+
 service LargeTable {
     rpc read(ReadRequest) -> ReadResponse
     rpc write(WriteRequest) -> WriteResponse
+    rpc delete(DeleteRequest) -> DeleteResponse
     rpc read_range(ReadRangeRequest) -> ReadRangeResponse
     rpc write_bulk(WriteBulkRequest) -> WriteBulkResponse
 }
