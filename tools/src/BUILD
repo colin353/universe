@@ -19,6 +19,19 @@ rust_binary(
     ],
 )
 
+rust_binary(
+    name = "server",
+    srcs = ["server.rs"],
+    deps = [
+      ":server_service",
+      ":service",
+      "//util/bus",
+      "//util/bus:bus_rpc",
+      "//util/flags",
+      "//third_party:tokio",
+    ],
+)
+
 rust_library(
     name = "server_service",
     srcs = ["server_service.rs"],
@@ -26,7 +39,6 @@ rust_library(
       ":service",
       ":core",
       "//util/bus",
-      "//util/bus:bus_rpc",
       "//tools/largetable:managed_largetable",
       "//util/sstable/v3:sstable",
       "//tools/largetable",

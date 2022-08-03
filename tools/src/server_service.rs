@@ -55,6 +55,10 @@ impl SrcServer {
         let f = self.get_file(basis, path)?;
         self.get_blob(basis, &f.sha)
     }
+
+    pub fn monitor_memory(&self) {
+        self.table.monitor_memory();
+    }
 }
 
 impl service::SrcServerServiceHandler for SrcServer {
