@@ -1,6 +1,7 @@
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
+const KIB: usize = 2 << 10;
 const MIB: usize = 2 << 20;
 
 pub struct BloomFilterBuilder {
@@ -15,6 +16,10 @@ pub struct BloomFilter<'a> {
 impl BloomFilterBuilder {
     pub fn empty() -> Self {
         Self::custom(0)
+    }
+
+    pub fn tiny() -> Self {
+        Self::custom(100 * KIB)
     }
 
     pub fn small() -> Self {

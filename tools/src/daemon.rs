@@ -89,46 +89,6 @@ impl SrcDaemon {
         Ok(())
     }
 
-    pub fn get_file(
-        &self,
-        basis: service::BasisView,
-        path: &str,
-    ) -> std::io::Result<service::File> {
-        if !basis.get_host().is_empty() {
-            todo!("I don't know how to read from remotes yet!");
-        }
-
-        self.table
-            .read(
-                &format!("code/submitted/{}/{}", basis.get_owner(), basis.get_name()),
-                &format!("{}/{}", path.split("/").count(), path),
-                basis.get_index(),
-            )
-            .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::NotFound))?
-    }
-
-    pub fn get_blob(&self, basis: service::BasisView, sha: &[u8]) -> std::io::Result<Vec<u8>> {
-        if !basis.get_host().is_empty() {
-            todo!("I don't know how to read from remotes yet!");
-        }
-
-        let result: bus::PackedIn<u8> = self
-            .table
-            .read("code/blobs", &core::fmt_sha(sha), 0)
-            .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::NotFound))??;
-
-        Ok(result.0)
-    }
-
-    pub fn get_blob_from_path(
-        &self,
-        basis: service::BasisView,
-        path: &str,
-    ) -> std::io::Result<Vec<u8>> {
-        let f = self.get_file(basis, path)?;
-        self.get_blob(basis, &f.sha)
-    }
-
     pub fn apply_diff(
         &self,
         repo: String,

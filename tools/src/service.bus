@@ -126,6 +126,6 @@ service SrcServer {
     rpc create(CreateRequest) -> CreateResponse
     rpc get_repository(GetRepositoryRequest) -> GetRepositoryResponse
     rpc submit(SubmitRequest) -> SubmitResponse
-    rpc get_metadata(GetMetadataRequest) -> GetMetadataRequest
+    rpc get_metadata(GetMetadataRequest) -> GetMetadataResponse
     rpc get_blobs(GetBlobsRequest) -> GetBlobsResponse
 }

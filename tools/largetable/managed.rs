@@ -121,25 +121,20 @@ impl ManagedLargeTable {
 
     pub fn read_range(
         &self,
-        req: service::ReadRangeRequest,
+        filter: largetable::Filter,
+        timestamp: u64,
+        limit: usize,
     ) -> std::io::Result<service::ReadRangeResponse> {
-        let timestamp = match req.timestamp {
+        let timestamp = match timestamp {
             0 => timestamp_usec(),
             x => x,
-        };
-
-        let f = largetable::Filter {
-            row: &req.row,
-            spec: &req.filter.spec,
-            min: &req.filter.min,
-            max: &req.filter.max,
         };
 
         let results: Vec<(String, bus::PackedIn<u8>)> = self
             .table
             .read()
             .expect("failed to read lock largetable")
-            .read_range(f, timestamp, std::cmp::min(req.limit as usize, 1024))?;
+            .read_range(filter, timestamp, limit)?;
 
         Ok(service::ReadRangeResponse {
             records: results
@@ -294,7 +289,14 @@ impl service::LargeTableServiceHandler for ManagedLargeTable {
         &self,
         req: service::ReadRangeRequest,
     ) -> Result<service::ReadRangeResponse, bus::BusRpcError> {
-        self.read_range(req)
+        let f = largetable::Filter {
+            row: &req.row,
+            spec: &req.filter.spec,
+            min: &req.filter.min,
+            max: &req.filter.max,
+        };
+
+        self.read_range(f, req.timestamp, std::cmp::min(req.limit as usize, 1024))
             .map_err(|e| bus::BusRpcError::InvalidData(e))
     }
 

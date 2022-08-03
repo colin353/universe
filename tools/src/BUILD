@@ -28,6 +28,8 @@ rust_library(
       "//util/bus",
       "//util/bus:bus_rpc",
       "//tools/largetable:managed_largetable",
+      "//util/sstable/v3:sstable",
+      "//tools/largetable",
     ],
 )
 

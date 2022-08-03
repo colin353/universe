@@ -162,6 +162,13 @@ impl<'a> Serialize for PackedOut<'a, u8> {
     }
 }
 
+impl Serialize for PackedIn<u8> {
+    fn encode<W: std::io::Write>(&self, writer: &mut W) -> Result<usize, std::io::Error> {
+        writer.write_all(&self.0)?;
+        Ok(self.0.len())
+    }
+}
+
 impl DeserializeOwned for PackedIn<u8> {
     fn decode_owned(bytes: &[u8]) -> Result<Self, std::io::Error> {
         Ok(PackedIn(bytes.to_owned()))
