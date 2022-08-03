@@ -13,6 +13,7 @@ rust_binary(
     srcs = ["daemon.rs"],
     deps = [
       ":service",
+      "//tools/largetable:managed_largetable",
     ],
 )
 

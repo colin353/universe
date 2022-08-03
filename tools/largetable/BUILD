@@ -17,17 +17,30 @@ rust_binary(
     name = "server",
     srcs = [
         "server.rs",
-        "largetable_service.rs",
     ],
     deps = [
+        ":managed_largetable",
         ":service", 
-        ":largetable",
         "//util/bus",
         "//util/bus:bus_rpc",
         "//util/flags",
         "//third_party:tokio",
     ]
 )
+
+rust_library(
+    name = "managed_largetable",
+    srcs = [
+        "managed.rs",
+    ],
+    deps = [
+        ":service", 
+        ":largetable",
+        "//util/bus",
+        "//util/flags",
+    ]
+)
+
 
 rust_binary(
     name = "ltui",

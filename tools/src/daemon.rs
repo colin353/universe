@@ -1,274 +1,123 @@
-use std::collections::hash_map::DefaultHasher;
-use std::collections::HashMap;
-use std::hash::Hasher;
-use std::io::Read;
-
-#[derive(Debug)]
-struct FileState {
-    mtime: u64,
-    length: u64,
-    hash: [u8; 32],
+struct SrcDaemon {
+    table: managed_largetable::ManagedLargeTable,
+    root: std::path::PathBuf,
 }
 
-fn diff(
-    path: &std::path::Path,
-    state: &HashMap<std::path::PathBuf, FileState>,
-) -> std::io::Result<service::DiffResponse> {
-    let mut expected: HashMap<&std::path::Path, Vec<&std::path::Path>> = HashMap::new();
-    for (p, _) in state {
-        if p == path {
-            continue;
-        }
+impl SrcDaemon {
+    pub fn new(root: std::path::PathBuf) -> std::io::Result<Self> {
+        Ok(Self {
+            table: managed_largetable::ManagedLargeTable::new(root.join("db"))?,
+            root,
+        })
+    }
 
-        let parent = match p.parent() {
-            Some(p) => p,
-            None => continue,
+    pub fn create(&self, owner: &str, name: &str, alias: &str) -> std::io::Result<()> {
+        self.table.write(
+            "repos".to_string(),
+            format!("{}/{}", owner, name),
+            0,
+            service::Repository {
+                host: String::new(),
+                owner: owner.to_string(),
+                name: name.to_string(),
+                alias: alias.to_string(),
+            },
+        )?;
+        Ok(())
+    }
+
+    pub fn link(&self, host: &str, owner: &str, name: &str, alias: &str) -> std::io::Result<()> {
+        self.table.write(
+            "repos".to_string(),
+            format!("{}/{}", owner, name),
+            0,
+            service::Repository {
+                host: host.to_string(),
+                owner: owner.to_string(),
+                name: name.to_string(),
+                alias: alias.to_string(),
+            },
+        )?;
+        self.table.write(
+            "aliases".to_string(),
+            alias.to_string(),
+            0,
+            format!("{}/{}/{}", host, owner, name),
+        )?;
+
+        Ok(())
+    }
+
+    pub fn new_branch(
+        &self,
+        repo: String,
+        branch_name: String,
+        directory: String,
+    ) -> std::io::Result<()> {
+        let repository: service::Repository =
+            self.table.read("repos", &repo, 0).ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    format!("repository {} doesn't exist", repo),
+                )
+            })??;
+
+        let index = if repository.host.is_empty() {
+            1
+        } else {
+            todo!("I don't know how to look up the latest change from an external repo yet!")
         };
-        expected.entry(parent).or_insert(Vec::new()).push(p);
+
+        self.table.write(
+            "branches".to_string(),
+            repo.clone(),
+            0,
+            service::Branch {
+                repository: repo,
+                basis: service::Basis {
+                    host: repository.host,
+                    owner: repository.owner,
+                    name: repository.name,
+                    index,
+                },
+                directory: directory,
+            },
+        )?;
+
+        Ok(())
     }
 
-    for (_, v) in expected.iter_mut() {
-        v.sort();
-    }
+    pub fn apply_diff(&self, repo: String, diffs: Vec<service::FileDiff>) -> std::io::Result<()> {
+        let mtime = managed_largetable::timestamp_usec() / 1_000_000;
+        for diff in diffs {
+            if diff.kind == service::DiffKind::Removed {
+                // Delete it
+            }
 
-    let mut resp = service::DiffResponse::new();
-    diff_from(path, path, state, &expected, &mut resp.files);
-    Ok(resp)
-}
-
-fn mtime(m: &std::fs::Metadata) -> u64 {
-    let mt = match m.modified() {
-        Ok(m) => m,
-        Err(_) => return 0,
-    };
-    let since_epoch = mt.duration_since(std::time::UNIX_EPOCH).unwrap();
-    (since_epoch.as_secs() as u64) * 1_000_000 + (since_epoch.subsec_nanos() / 1000) as u64
-}
-
-fn metadata_compatible(state: &FileState, m: &std::fs::Metadata) -> bool {
-    if state.length != m.len() {
-        return false;
-    }
-
-    if mtime(m) == state.mtime {
-        return true;
-    }
-    false
-}
-
-fn hash_file(path: &std::path::Path) -> std::io::Result<[u8; 32]> {
-    let mut f = std::fs::File::open(path)?;
-    let mut buf = vec![0_u8; 8192];
-    let mut h = DefaultHasher::new();
-
-    loop {
-        let n = f.read(&mut buf)?;
-        if n == 0 {
-            break;
-        }
-        h.write(&buf);
-    }
-
-    let bytes = h.finish().to_le_bytes();
-    Ok([
-        bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7], 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    ])
-}
-
-fn diff_from(
-    root: &std::path::Path,
-    path: &std::path::Path,
-    state: &HashMap<std::path::PathBuf, FileState>,
-    expected: &HashMap<&std::path::Path, Vec<&std::path::Path>>,
-    differences: &mut Vec<service::FileDiff>,
-) -> std::io::Result<()> {
-    let mut observed_paths = Vec::new();
-    for entry in std::fs::read_dir(path)? {
-        let entry = entry?;
-        let ty = entry.file_type()?;
-
-        if ty.is_symlink() {
-            continue;
-        }
-
-        let path = entry.path();
-        observed_paths.push(path.clone());
-
-        // Entry is a directory. Only recurse if the mtime has changed.
-        if ty.is_dir() {
-            let mut should_recurse = true;
-
-            if let Some(s) = state.get(&path) {
-                let metadata = entry.metadata()?;
-                if metadata_compatible(s, &metadata) {
-                    should_recurse = false;
-                }
+            // Figure out what the byte content of the file is from the diff
+            let content: Vec<u8> = if diff.kind == service::DiffKind::Added {
+                diff.differences[0].data.clone()
             } else {
-                differences.push(service::FileDiff {
-                    path: path
-                        .strip_prefix(root)
-                        .map_err(|_| std::io::Error::from(std::io::ErrorKind::InvalidInput))?
-                        .to_str()
-                        .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::InvalidInput))?
-                        .to_string(),
-                    differences: vec![],
-                    is_dir: true,
-                    kind: service::DiffKind::Added,
-                });
-            }
-            if should_recurse {
-                diff_from(root, &path, state, expected, differences);
-            }
+                Vec::new()
+            };
 
-            continue;
-        }
+            // Write to the blobs table if no blob is present
+            let sha = vec![0];
 
-        // Entry is a file.
-        if let Some(s) = state.get(&path) {
-            let metadata = entry.metadata()?;
-            if metadata_compatible(s, &metadata) {
-                continue;
-            }
-
-            if hash_file(&path)? == s.hash {
-                continue;
-            }
-
-            differences.push(service::FileDiff {
-                path: path
-                    .strip_prefix(root)
-                    .map_err(|_| std::io::Error::from(std::io::ErrorKind::InvalidInput))?
-                    .to_str()
-                    .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::InvalidInput))?
-                    .to_string(),
-                differences: vec![],
-                is_dir: false,
-                kind: service::DiffKind::Modified,
-            });
-        } else {
-            differences.push(service::FileDiff {
-                path: path
-                    .strip_prefix(root)
-                    .map_err(|_| std::io::Error::from(std::io::ErrorKind::InvalidInput))?
-                    .to_str()
-                    .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::InvalidInput))?
-                    .to_string(),
-                differences: vec![],
-                is_dir: false,
-                kind: service::DiffKind::Added,
-            });
-        }
-    }
-
-    observed_paths.sort();
-
-    let nothing = Vec::new();
-    let mut observed_iter = observed_paths.iter().peekable();
-    let mut expected_iter = expected.get(path).unwrap_or(&nothing).iter().peekable();
-
-    loop {
-        match (expected_iter.peek(), observed_iter.peek()) {
-            (Some(exp), Some(obs)) => {
-                if exp == obs {
-                    expected_iter.next();
-                    observed_iter.next();
-                    continue;
-                }
-
-                if obs > exp {
-                    // We missed an expected document. Report it as missing
-                    differences.push(service::FileDiff {
-                        path: exp
-                            .strip_prefix(root)
-                            .map_err(|_| std::io::Error::from(std::io::ErrorKind::InvalidInput))?
-                            .to_str()
-                            .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::InvalidInput))?
-                            .to_string(),
-                        differences: vec![],
-                        is_dir: false,
-                        kind: service::DiffKind::Removed,
-                    });
-
-                    expected_iter.next();
-                } else {
-                    // We got an extra document, this case is already covered
-                    observed_iter.next();
-                }
-            }
-            (Some(exp), None) => {
-                // We missed an expected document. Report it as missing
-                differences.push(service::FileDiff {
-                    path: exp
-                        .strip_prefix(root)
-                        .map_err(|_| std::io::Error::from(std::io::ErrorKind::InvalidInput))?
-                        .to_str()
-                        .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::InvalidInput))?
-                        .to_string(),
-                    differences: vec![],
-                    is_dir: false,
-                    kind: service::DiffKind::Removed,
-                });
-
-                expected_iter.next();
-            }
-            _ => break,
-        }
-    }
-
-    Ok(())
-}
-
-fn snapshot_state(
-    path: &std::path::Path,
-) -> std::io::Result<HashMap<std::path::PathBuf, FileState>> {
-    let mut out = HashMap::new();
-    snapshot_state_from(path, &mut out)?;
-    Ok(out)
-}
-
-fn snapshot_state_from(
-    path: &std::path::Path,
-    out: &mut HashMap<std::path::PathBuf, FileState>,
-) -> std::io::Result<()> {
-    for entry in std::fs::read_dir(path)? {
-        let entry = entry?;
-        let ty = entry.file_type()?;
-        if ty.is_symlink() {
-            continue;
-        }
-
-        let metadata = entry.metadata()?;
-        if ty.is_dir() {
-            out.insert(
-                entry.path().to_owned(),
-                FileState {
-                    mtime: mtime(&metadata),
-                    length: 0,
-                    hash: [0; 32],
+            self.table.write(
+                format!("code/submitted/{}", repo),
+                format!("{}/{}", diff.path.split("/").count(), diff.path),
+                mtime,
+                service::File {
+                    is_dir: diff.is_dir,
+                    mtime,
+                    sha,
                 },
-            );
-
-            snapshot_state_from(&entry.path(), out);
-        } else {
-            out.insert(
-                entry.path().to_owned(),
-                FileState {
-                    mtime: mtime(&metadata),
-                    length: metadata.len(),
-                    hash: hash_file(&entry.path())?,
-                },
-            );
+            )?;
         }
+
+        Ok(())
     }
-
-    Ok(())
 }
 
-fn main() {
-    let dir = std::path::Path::new("/tmp/tree");
-    let state = snapshot_state(dir).unwrap();
-    println!("snapshot: {:#?}", state);
-    std::io::stdin().read_line(&mut String::new()).unwrap();
-    println!("{:#?}", diff(dir, &state).unwrap());
-}
+pub fn main() {}

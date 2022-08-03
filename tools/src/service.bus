@@ -24,8 +24,34 @@ message ByteDiff {
 }
 
 message DiffResponse {
-    base: u64 = 0
+    basis: Basis = 0
     files: repeated FileDiff = 1
+}
+
+message Repository {
+    host: string = 0
+    owner: string = 1
+    name: string = 2
+    alias: string = 3
+}
+
+message Basis {
+    host: string = 0
+    owner: string = 1
+    name: string = 2
+    index: u64 = 3
+}
+
+message Branch {
+    repository: string = 0
+    directory: string = 1
+    basis: Basis = 2
+}
+
+message File {
+    is_dir: bool = 0
+    sha: bytes = 1
+    mtime: u64 = 2
 }
 
 service SrcDaemon {
