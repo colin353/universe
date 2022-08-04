@@ -87,10 +87,8 @@ impl service::SrcServerServiceHandler for SrcServer {
                 format!("{}/{}", user, req.name),
                 0,
                 service::Repository {
-                    host: String::new(),
                     owner: user,
                     name: req.name,
-                    alias: String::new(),
                 },
             )
             .map_err(|e| {

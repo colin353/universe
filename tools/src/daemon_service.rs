@@ -12,6 +12,9 @@ struct SrcDaemon {
 
 impl SrcDaemon {
     pub fn new(root: std::path::PathBuf) -> std::io::Result<Self> {
+        std::fs::create_dir_all(root.join("db"));
+        std::fs::create_dir_all(root.join("metadata"));
+
         Ok(Self {
             table: managed_largetable::ManagedLargeTable::new(root.join("db"))?,
             root,
@@ -46,7 +49,9 @@ impl SrcDaemon {
             None => (&host, 4959),
         };
 
-        let connector = Arc::new(bus_rpc::HyperClient::new(String::from("127.0.0.1"), 4521));
+        println!("connecting on {}:{}", hostname, port);
+
+        let connector = Arc::new(bus_rpc::HyperClient::new(hostname.to_string(), port));
         let client = service::SrcServerClient::new(connector);
 
         self.remotes
@@ -123,7 +128,7 @@ impl SrcDaemon {
             .join(basis.get_host())
             .join(basis.get_owner())
             .join(basis.get_name())
-            .with_extension(".sstable");
+            .with_extension("sstable");
 
         if metadata_path.exists() {
             return Ok(sstable::SSTableReader::from_filename(&metadata_path)?);
@@ -151,9 +156,16 @@ impl SrcDaemon {
             ));
         }
 
+        if let Some(p) = metadata_path.parent() {
+            std::fs::create_dir_all(p)?;
+        }
         std::fs::write(&metadata_path, &resp.data)?;
 
         Ok(sstable::SSTableReader::from_filename(metadata_path)?)
+    }
+
+    fn write_dir(&self, path: &std::path::Path, file: service::FileView) -> std::io::Result<()> {
+        std::fs::create_dir_all(path)
     }
 
     fn write_file(
@@ -162,6 +174,10 @@ impl SrcDaemon {
         file: service::FileView,
         data: &[u8],
     ) -> std::io::Result<()> {
+        println!("write file: {:?}", path);
+        if let Some(p) = path.parent() {
+            std::fs::create_dir_all(p)?;
+        }
         std::fs::write(&path, &data)?;
         let mut f = std::fs::File::create(&path)?;
         f.write_all(&data)?;
@@ -299,7 +315,7 @@ impl service::SrcDaemonServiceHandler for SrcDaemon {
             bus::BusRpcError::InternalError("failed to get remote client".to_string())
         })?;
 
-        let mut to_download: Vec<(Vec<u8>, String, service::FileView)> = Vec::new();
+        let mut to_download: HashMap<Vec<u8>, Vec<(String, service::FileView)>> = HashMap::new();
         for (key, file) in metadata.iter() {
             let path = match key.find('/') {
                 Some(idx) => key[idx + 1..].to_string(),
@@ -312,23 +328,32 @@ impl service::SrcDaemonServiceHandler for SrcDaemon {
                 }
             };
 
+            if file.get_is_dir() {
+                self.write_dir(path.as_ref(), file);
+                continue;
+            }
+
             if let Some(Ok(b)) =
                 self.table
                     .read::<bus::PackedIn<u8>>("blobs", &core::fmt_sha(file.get_sha()), 0)
             {
-                self.write_file(&directory, file, &b.0).map_err(|e| {
-                    eprintln!("{:?}", e);
-                    bus::BusRpcError::InternalError("failed to get write file".to_string())
-                })?;
+                self.write_file(&directory.join(path), file, &b.0)
+                    .map_err(|e| {
+                        eprintln!("{:?}", e);
+                        bus::BusRpcError::InternalError("failed to get write file".to_string())
+                    })?;
             } else {
-                to_download.push((file.get_sha().to_vec(), path, file));
+                to_download
+                    .entry(file.get_sha().to_owned())
+                    .or_insert_with(Vec::new)
+                    .push((path, file));
             }
 
             if to_download.len() >= 250 {
                 let resp = client
                     .get_blobs(service::GetBlobsRequest {
                         token: String::new(),
-                        shas: to_download.iter().map(|(sha, _, _)| sha.to_vec()).collect(),
+                        shas: to_download.iter().map(|(sha, _)| sha.to_vec()).collect(),
                     })
                     .map_err(|e| {
                         eprintln!("{:?}", e);
@@ -351,8 +376,77 @@ impl service::SrcDaemonServiceHandler for SrcDaemon {
                     });
                 }
 
-                for ((sha, path, file), blob) in to_download.iter().zip(resp.blobs.iter()) {
-                    self.write_file(path.as_ref(), *file, &blob.data)
+                for blob in &resp.blobs {
+                    let files = match to_download.get(&blob.sha) {
+                        Some(p) => p,
+                        None => {
+                            return Ok(service::NewChangeResponse {
+                                failed: true,
+                                error_message: "got an unexpected blob".to_string(),
+                                ..Default::default()
+                            });
+                        }
+                    };
+
+                    for (path, file) in files {
+                        self.write_file(&directory.join(path), *file, &blob.data)
+                            .map_err(|e| {
+                                eprintln!("{:?}", e);
+                                bus::BusRpcError::InternalError("failed to write file".to_string())
+                            })?;
+                    }
+                }
+
+                to_download.clear();
+            }
+        }
+
+        if to_download.len() > 0 {
+            let resp = client
+                .get_blobs(service::GetBlobsRequest {
+                    token: String::new(),
+                    shas: to_download.iter().map(|(sha, _)| sha.to_vec()).collect(),
+                })
+                .map_err(|e| {
+                    eprintln!("{:?}", e);
+                    bus::BusRpcError::InternalError("failed to get write file".to_string())
+                })?;
+
+            if resp.failed {
+                return Ok(service::NewChangeResponse {
+                    failed: true,
+                    error_message: "failed to download blobs!".to_string(),
+                    ..Default::default()
+                });
+            }
+
+            println!(
+                "response: {}, to_download: {}",
+                resp.blobs.len(),
+                to_download.len()
+            );
+            if resp.blobs.len() != to_download.len() {
+                return Ok(service::NewChangeResponse {
+                    failed: true,
+                    error_message: "failed to download all blobs!".to_string(),
+                    ..Default::default()
+                });
+            }
+
+            for blob in &resp.blobs {
+                let files = match to_download.get(&blob.sha) {
+                    Some(p) => p,
+                    None => {
+                        return Ok(service::NewChangeResponse {
+                            failed: true,
+                            error_message: "got an unexpected blob".to_string(),
+                            ..Default::default()
+                        });
+                    }
+                };
+
+                for (path, file) in files {
+                    self.write_file(&directory.join(path), *file, &blob.data)
                         .map_err(|e| {
                             eprintln!("{:?}", e);
                             bus::BusRpcError::InternalError("failed to write file".to_string())
@@ -369,4 +463,83 @@ impl service::SrcDaemonServiceHandler for SrcDaemon {
     }
 }
 
-pub fn main() {}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use service::*;
+
+    fn server() -> service::SrcServerClient {
+        let connector = Arc::new(bus_rpc::HyperClient::new(String::from("127.0.0.1"), 4959));
+        service::SrcServerClient::new(connector)
+    }
+
+    fn daemon() -> SrcDaemon {
+        SrcDaemon::new(std::path::PathBuf::from("/tmp/code")).unwrap()
+    }
+
+    #[test]
+    fn test_checkout() {
+        let d = daemon();
+        let resp = d
+            .new_change(NewChangeRequest {
+                dir: "/tmp/code/my-branch".to_string(),
+                alias: "my-branch".to_string(),
+                basis: Basis {
+                    host: "127.0.0.1".to_string(),
+                    owner: "colin".to_string(),
+                    name: "example".to_string(),
+                    change: 0,
+                    index: 0,
+                },
+            })
+            .unwrap();
+
+        println!("{:?}", resp);
+
+        panic!();
+    }
+
+    #[test]
+    fn test_system() {
+        let s = server();
+
+        let resp = s
+            .create(CreateRequest {
+                token: String::new(),
+                name: "example".to_string(),
+            })
+            .unwrap();
+        assert_eq!(resp.failed, false);
+
+        s.submit(SubmitRequest {
+            token: String::new(),
+            basis: Basis {
+                owner: "colin".to_string(),
+                name: "example".to_string(),
+                index: 1,
+                ..Default::default()
+            },
+            files: vec![
+                FileDiff {
+                    path: "a.txt".to_string(),
+                    kind: DiffKind::Added,
+                    is_dir: false,
+                    differences: vec![ByteDiff {
+                        data: vec![0, 1, 2, 3, 4],
+                        ..Default::default()
+                    }],
+                },
+                FileDiff {
+                    path: "dir/b.txt".to_string(),
+                    kind: DiffKind::Added,
+                    is_dir: false,
+                    differences: vec![ByteDiff {
+                        data: vec![4, 3, 2, 1, 0],
+                        ..Default::default()
+                    }],
+                },
+            ],
+        })
+        .unwrap();
+    }
+}

@@ -66,6 +66,11 @@ message GetRepositoryRequest {
     name: string = 2
 }
 
+message Repository {
+    owner: string = 0
+    name: string = 1
+}
+
 message GetRepositoryResponse {
     failed: bool = 0
     error_message: string = 1

@@ -12,6 +12,19 @@ rust_binary(
     name = "daemon",
     srcs = ["daemon.rs"],
     deps = [
+      ":daemon_service",
+      "//util/bus",
+      "//util/bus:bus_rpc",
+      "//util/flags",
+      ":service",
+      "//third_party:tokio",
+    ],
+)
+
+rust_library(
+    name = "daemon_service",
+    srcs = ["daemon_service.rs"],
+    deps = [
       ":service",
       "//tools/largetable:managed_largetable",
       "//util/bus",
@@ -20,6 +33,11 @@ rust_binary(
       "//third_party:libc",
       ":core",
     ],
+)
+
+rust_test(
+    name = "daemon_test",
+    crate = ":daemon_service",
 )
 
 rust_binary(
