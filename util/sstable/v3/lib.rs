@@ -139,7 +139,7 @@ impl<'a, T: Deserialize<'a>> SSTableReader<T> {
         Self::from_mmap(map.make_read_only()?)
     }
 
-    pub fn from_filename(filename: &str) -> std::io::Result<Self> {
+    pub fn from_filename<P: AsRef<std::path::Path>>(filename: P) -> std::io::Result<Self> {
         let f = std::fs::File::open(filename)?;
         Self::from_file(f)
     }

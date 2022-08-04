@@ -44,3 +44,13 @@ pub fn fmt_sha(sha: &[u8]) -> String {
     }
     out
 }
+
+pub fn parse_sha(sha: &str) -> std::io::Result<[u8; 32]> {
+    let mut out = [0_u8; 32];
+    for i in (0..std::cmp::min(32, sha.len())).step_by(2) {
+        out[i] = u8::from_str_radix(&sha[i..i + 2], 16).map_err(|_| {
+            std::io::Error::new(std::io::ErrorKind::InvalidInput, "failed to parse as SHA")
+        })?;
+    }
+    Ok(out)
+}

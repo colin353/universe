@@ -15,6 +15,9 @@ rust_binary(
       ":service",
       "//tools/largetable:managed_largetable",
       "//util/bus",
+      "//util/bus:bus_rpc",
+      "//util/sstable/v3:sstable",
+      "//third_party:libc",
       ":core",
     ],
 )
