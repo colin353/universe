@@ -305,7 +305,7 @@ impl SrcDaemon {
                     });
                 }
                 if should_recurse {
-                    self.diff_from(root, &path, metadata, differences);
+                    self.diff_from(root, &path, metadata, differences)?;
                 }
 
                 continue;
@@ -318,19 +318,36 @@ impl SrcDaemon {
                     continue;
                 }
 
-                if core::hash_file(&path)? == s.get_sha() {
+                let modified = std::fs::read(&path)?;
+                if core::hash_bytes(&modified) == s.get_sha() {
                     continue;
                 }
 
-                println!("hash: {:?}", core::hash_file(&path)?);
-                println!("sha: {:?}", s.get_sha());
+                println!("found a diff in {:?}", path);
 
+                // Need to look up original content to perform diff
+                let original: Vec<u8> = match self.table.read::<bus::PackedIn<u8>>(
+                    "blobs",
+                    &core::fmt_sha(s.get_sha()),
+                    0,
+                ) {
+                    Some(Ok(p)) => p.0,
+                    _ => {
+                        println!("failed to find blob");
+                        return Err(std::io::Error::new(
+                            std::io::ErrorKind::NotFound,
+                            format!("blob {:?} not found!", core::fmt_sha(s.get_sha())),
+                        ));
+                    }
+                };
+
+                println!("differences.push");
                 differences.push(service::FileDiff {
                     path: relative_path
                         .to_str()
                         .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::InvalidInput))?
                         .to_string(),
-                    differences: vec![],
+                    differences: core::diff(&original, &modified),
                     is_dir: false,
                     kind: service::DiffKind::Modified,
                 });
@@ -672,6 +689,18 @@ impl service::SrcDaemonServiceHandler for SrcDaemon {
                                 bus::BusRpcError::InternalError("failed to write file".to_string())
                             })?;
                     }
+
+                    self.table
+                        .write(
+                            "blobs".to_string(),
+                            core::fmt_sha(&blob.sha),
+                            0,
+                            bus::PackedOut(&blob.data),
+                        )
+                        .map_err(|e| {
+                            eprintln!("{:?}", e);
+                            bus::BusRpcError::InternalError("failed to store blob".to_string())
+                        });
                 }
 
                 to_download.clear();
@@ -729,6 +758,18 @@ impl service::SrcDaemonServiceHandler for SrcDaemon {
                             bus::BusRpcError::InternalError("failed to write file".to_string())
                         })?;
                 }
+
+                self.table
+                    .write(
+                        "blobs".to_string(),
+                        core::fmt_sha(&blob.sha),
+                        0,
+                        bus::PackedOut(&blob.data),
+                    )
+                    .map_err(|e| {
+                        eprintln!("{:?}", e);
+                        bus::BusRpcError::InternalError("failed to store blob".to_string())
+                    });
             }
         }
 
@@ -769,7 +810,8 @@ mod tests {
     #[test]
     fn test_checkout() {
         let d = daemon();
-        /*let resp = d
+        /*
+        let resp = d
             .new_change(NewChangeRequest {
                 dir: "/tmp/code/my-branch".to_string(),
                 alias: "my-branch".to_string(),
@@ -794,7 +836,7 @@ mod tests {
             })
             .unwrap();
         assert_eq!(resp.failed, false);
-        println!("{:?}", resp);
+        println!("{:#?}", resp);
 
         panic!();
     }

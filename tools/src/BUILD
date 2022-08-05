@@ -78,4 +78,7 @@ rust_library(
       "patience.rs",
       "lcs.rs"
     ],
+    deps = [
+      ":service"
+    ]
 )

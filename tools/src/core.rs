@@ -37,6 +37,75 @@ pub fn hash_bytes(bytes: &[u8]) -> [u8; 32] {
     ]
 }
 
+pub fn diff(original: &[u8], modified: &[u8]) -> Vec<service::ByteDiff> {
+    let (original_s, modified_s) =
+        match (std::str::from_utf8(original), std::str::from_utf8(modified)) {
+            (Ok(o), Ok(m)) => (o, m),
+            _ => {
+                // If the files are binary, don't compute a diff, just register a deletion and an
+                // addition.
+                return vec![
+                    service::ByteDiff {
+                        start: 0,
+                        end: original.len() as u32,
+                        kind: service::DiffKind::Removed,
+                        data: vec![],
+                    },
+                    service::ByteDiff {
+                        start: 0,
+                        end: modified.len() as u32,
+                        kind: service::DiffKind::Added,
+                        data: modified.to_owned(),
+                    },
+                ];
+            }
+        };
+
+    let mut original_lines = Vec::new();
+    let mut pos = 0;
+    for (idx, _) in original_s.match_indices('\n') {
+        original_lines.push(&original[pos..idx + 1]);
+        pos = idx + 1;
+    }
+    if !&original[pos..].is_empty() {
+        original_lines.push(&original[pos..]);
+    }
+
+    let mut modified_lines = Vec::new();
+    let mut pos = 0;
+    for (idx, _) in modified_s.match_indices('\n') {
+        modified_lines.push(&modified[pos..idx + 1]);
+        pos = idx + 1;
+    }
+    if !&modified[pos..].is_empty() {
+        modified_lines.push(&modified[pos..]);
+    }
+
+    let mut out = Vec::new();
+    let mut pos = 0_u32;
+    for diff in patience::patience_diff(&original_lines, &modified_lines) {
+        match diff {
+            patience::DiffComponent::Unchanged(left, right) => pos += left.len() as u32,
+            patience::DiffComponent::Insertion(right) => out.push(service::ByteDiff {
+                start: pos,
+                end: pos,
+                kind: service::DiffKind::Added,
+                data: right.to_vec(),
+            }),
+            patience::DiffComponent::Deletion(left) => {
+                out.push(service::ByteDiff {
+                    start: pos,
+                    end: pos + left.len() as u32,
+                    kind: service::DiffKind::Removed,
+                    data: vec![],
+                });
+                pos += left.len() as u32
+            }
+        }
+    }
+    out
+}
+
 pub fn fmt_sha(sha: &[u8]) -> String {
     let mut out = String::new();
     for &byte in sha {
