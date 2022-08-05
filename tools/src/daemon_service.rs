@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
 use std::io::Write;
+use std::os::unix::ffi::OsStrExt;
 use std::os::unix::io::AsRawFd;
 
 struct SrcDaemon {
@@ -142,7 +143,6 @@ impl SrcDaemon {
             })
             .map_err(|e| {
                 eprintln!("{:?}", e);
-
                 std::io::Error::new(
                     std::io::ErrorKind::ConnectionRefused,
                     "failed to connect to host",
@@ -165,7 +165,28 @@ impl SrcDaemon {
     }
 
     fn write_dir(&self, path: &std::path::Path, file: service::FileView) -> std::io::Result<()> {
-        std::fs::create_dir_all(path)
+        println!("write dir: {:?}", path);
+        std::fs::create_dir_all(path)?;
+
+        let p =
+            std::ffi::CString::new(path.as_os_str().as_bytes()).expect("failed to create cstring");
+        let times = [
+            libc::timeval {
+                tv_sec: file.get_mtime() as libc::time_t,
+                tv_usec: 0,
+            },
+            libc::timeval {
+                tv_sec: file.get_mtime() as libc::time_t,
+                tv_usec: 0,
+            },
+        ];
+
+        let rc = unsafe { libc::utimes(p.as_ptr(), times.as_ptr()) };
+        if rc == 0 {
+            Ok(())
+        } else {
+            Err(std::io::Error::last_os_error())
+        }
     }
 
     fn write_file(
@@ -316,9 +337,17 @@ impl service::SrcDaemonServiceHandler for SrcDaemon {
         })?;
 
         let mut to_download: HashMap<Vec<u8>, Vec<(String, service::FileView)>> = HashMap::new();
+        let mut directories: HashMap<usize, Vec<(std::path::PathBuf, service::FileView)>> =
+            HashMap::new();
         for (key, file) in metadata.iter() {
-            let path = match key.find('/') {
-                Some(idx) => key[idx + 1..].to_string(),
+            let (depth, path) = match key.find('/') {
+                Some(idx) => {
+                    let depth = key[0..idx].parse::<usize>().map_err(|e| {
+                        eprintln!("{:?}", e);
+                        bus::BusRpcError::InternalError("invalid depth".to_string())
+                    })?;
+                    (depth, key[idx + 1..].to_string())
+                }
                 None => {
                     return Ok(service::NewChangeResponse {
                         failed: true,
@@ -329,7 +358,10 @@ impl service::SrcDaemonServiceHandler for SrcDaemon {
             };
 
             if file.get_is_dir() {
-                self.write_dir(path.as_ref(), file);
+                directories
+                    .entry(depth)
+                    .or_insert_with(Vec::new)
+                    .push((directory.join(path), file));
                 continue;
             }
 
@@ -452,6 +484,20 @@ impl service::SrcDaemonServiceHandler for SrcDaemon {
                             bus::BusRpcError::InternalError("failed to write file".to_string())
                         })?;
                 }
+            }
+        }
+
+        // Finally, update the mtime on all directories. This must be done last, since the mtime is
+        // affected by writing the files inside of the directories!
+        let mut dirs: Vec<(usize, Vec<(std::path::PathBuf, service::FileView)>)> =
+            directories.into_iter().collect();
+        dirs.sort_by_key(|(depth, _)| *depth);
+        for (_, items) in dirs.into_iter().rev() {
+            for (path, file) in items {
+                self.write_dir(&directory.join(path), file).map_err(|e| {
+                    eprintln!("{:?}", e);
+                    bus::BusRpcError::InternalError("failed to write directory".to_string())
+                })?;
             }
         }
 
