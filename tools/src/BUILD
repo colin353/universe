@@ -82,3 +82,9 @@ rust_library(
       ":service"
     ]
 )
+
+rust_test(
+  name = "core_test",
+  crate = ":core",
+)
+

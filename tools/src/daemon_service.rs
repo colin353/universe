@@ -807,10 +807,8 @@ mod tests {
         SrcDaemon::new(std::path::PathBuf::from("/tmp/code")).unwrap()
     }
 
-    #[test]
     fn test_checkout() {
         let d = daemon();
-        /*
         let resp = d
             .new_change(NewChangeRequest {
                 dir: "/tmp/code/my-branch".to_string(),
@@ -827,8 +825,11 @@ mod tests {
 
         println!("{:?}", resp);
         assert_eq!(resp.failed, false);
-        */
+    }
 
+    #[test]
+    fn test_diff() {
+        let d = daemon();
         let resp = d
             .diff(DiffRequest {
                 alias: "my-branch".to_string(),

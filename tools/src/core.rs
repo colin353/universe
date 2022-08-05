@@ -38,6 +38,9 @@ pub fn hash_bytes(bytes: &[u8]) -> [u8; 32] {
 }
 
 pub fn diff(original: &[u8], modified: &[u8]) -> Vec<service::ByteDiff> {
+    println!("original: {:?}", original);
+    println!("modified: {:?}", modified);
+
     let (original_s, modified_s) =
         match (std::str::from_utf8(original), std::str::from_utf8(modified)) {
             (Ok(o), Ok(m)) => (o, m),
@@ -83,7 +86,9 @@ pub fn diff(original: &[u8], modified: &[u8]) -> Vec<service::ByteDiff> {
 
     let mut out = Vec::new();
     let mut pos = 0_u32;
-    for diff in patience::patience_diff(&original_lines, &modified_lines) {
+    let diffs = patience::patience_diff(&original_lines, &modified_lines);
+    println!("from patience: {:?}", diffs);
+    for diff in diffs {
         match diff {
             patience::DiffComponent::Unchanged(left, right) => pos += left.len() as u32,
             patience::DiffComponent::Insertion(right) => out.push(service::ByteDiff {
@@ -103,6 +108,7 @@ pub fn diff(original: &[u8], modified: &[u8]) -> Vec<service::ByteDiff> {
             }
         }
     }
+    println!("diff out = {:?}", out);
     out
 }
 
@@ -122,4 +128,57 @@ pub fn parse_sha(sha: &str) -> std::io::Result<[u8; 32]> {
         })?;
     }
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_diffs() {
+        let left = "first\nsecond\nthird\n";
+        let right = "first\nduo\nthird\n";
+        let out = diff(left.as_bytes(), right.as_bytes());
+        assert_eq!(
+            out,
+            vec![
+                service::ByteDiff {
+                    start: 6,
+                    end: 6,
+                    kind: service::DiffKind::Added,
+                    data: "duo\n".as_bytes().to_vec(),
+                },
+                service::ByteDiff {
+                    start: 6,
+                    end: 13,
+                    kind: service::DiffKind::Removed,
+                    data: vec![],
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn test_diffs_binary() {
+        let left = &[1, 2, 3, 4];
+        let right = &[1, 2, 11, 12];
+        let out = diff(left, right);
+        assert_eq!(
+            out,
+            vec![
+                service::ByteDiff {
+                    start: 0,
+                    end: 0,
+                    kind: service::DiffKind::Added,
+                    data: vec![1, 2, 11, 12],
+                },
+                service::ByteDiff {
+                    start: 0,
+                    end: 4,
+                    kind: service::DiffKind::Removed,
+                    data: vec![],
+                },
+            ]
+        );
+    }
 }

@@ -7,6 +7,8 @@
 //! [wiki]: https://en.wikipedia.org/wiki/Longest_common_subsequence_problem
 
 use std::cmp;
+use std::collections::HashSet;
+use std::hash::Hash;
 
 #[derive(Debug)]
 pub struct LcsTable<'a, T: 'a> {
@@ -87,6 +89,68 @@ where
             } else {
                 self.find_lcs(i - 1, j)
             }
+        }
+    }
+
+    /// Gets all longest common subsequences between `a` and `b`. Returned elements are in the form
+    /// `(elem_a, elem_b)`, where `elem_a` is a reference to an element in `a`, `elem_b` is a
+    /// reference to an element in `b`, and `elem_a == elem_b`.
+    ///
+    /// Example:
+    ///
+    /// ```
+    /// use lcs::LcsTable;
+    ///
+    /// let a: Vec<_> = "gac".chars().collect();
+    /// let b: Vec<_> = "agcat".chars().collect();
+    ///
+    /// let table = LcsTable::new(&a, &b);
+    /// let subsequences = table.longest_common_subsequences();
+    /// assert_eq!(3, subsequences.len());
+    /// assert!(subsequences.contains(&vec![(&'a', &'a'), (&'c', &'c')]));
+    /// assert!(subsequences.contains(&vec![(&'g', &'g'), (&'a', &'a')]));
+    /// assert!(subsequences.contains(&vec![(&'g', &'g'), (&'c', &'c')]));
+    /// ```
+    pub fn longest_common_subsequences(&self) -> HashSet<Vec<(&T, &T)>>
+    where
+        T: Hash,
+    {
+        self.find_all_lcs(self.a.len(), self.b.len())
+    }
+
+    fn find_all_lcs(&self, i: usize, j: usize) -> HashSet<Vec<(&T, &T)>>
+    where
+        T: Hash,
+    {
+        if i == 0 || j == 0 {
+            let mut ret = HashSet::new();
+            ret.insert(vec![]);
+            return ret;
+        }
+
+        if self.a[i - 1] == self.b[j - 1] {
+            let mut sequences = HashSet::new();
+            for mut lcs in self.find_all_lcs(i - 1, j - 1) {
+                lcs.push((&self.a[i - 1], &self.b[j - 1]));
+                sequences.insert(lcs);
+            }
+            sequences
+        } else {
+            let mut sequences = HashSet::new();
+
+            if self.lengths[i][j - 1] >= self.lengths[i - 1][j] {
+                for lsc in self.find_all_lcs(i, j - 1) {
+                    sequences.insert(lsc);
+                }
+            }
+
+            if self.lengths[i - 1][j] >= self.lengths[i][j - 1] {
+                for lsc in self.find_all_lcs(i - 1, j) {
+                    sequences.insert(lsc);
+                }
+            }
+
+            sequences
         }
     }
 
