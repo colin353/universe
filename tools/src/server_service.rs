@@ -182,6 +182,7 @@ impl service::SrcServerServiceHandler for SrcServer {
                             is_dir: true,
                             mtime,
                             sha: vec![],
+                            length: 0,
                         },
                     )
                     .map_err(|e| {
@@ -248,6 +249,7 @@ impl service::SrcServerServiceHandler for SrcServer {
                         is_dir: false,
                         mtime,
                         sha: sha.into(),
+                        length: content.len() as u64,
                     },
                 )
                 .map_err(|e| {
@@ -274,6 +276,7 @@ impl service::SrcServerServiceHandler for SrcServer {
                         is_dir: true,
                         mtime,
                         sha: vec![],
+                        length: 0,
                     },
                 )
                 .map_err(|e| {

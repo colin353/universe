@@ -36,6 +36,7 @@ message File {
     is_dir: bool = 0
     sha: bytes = 1
     mtime: u64 = 2
+    length: u64 = 3
 }
 
 message SubmitRequest {

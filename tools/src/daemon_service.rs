@@ -5,10 +5,39 @@ use std::io::Write;
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::io::AsRawFd;
 
+#[derive(Debug)]
+struct FileState {
+    mtime: u64,
+    length: u64,
+    hash: [u8; 32],
+}
+
 struct SrcDaemon {
     table: managed_largetable::ManagedLargeTable,
     root: std::path::PathBuf,
     remotes: RwLock<HashMap<String, service::SrcServerClient>>,
+}
+
+fn mtime(m: &std::fs::Metadata) -> u64 {
+    let mt = match m.modified() {
+        Ok(m) => m,
+        Err(_) => return 0,
+    };
+    let since_epoch = mt.duration_since(std::time::UNIX_EPOCH).unwrap();
+    since_epoch.as_secs() as u64
+}
+
+fn metadata_compatible(file: service::FileView, m: &std::fs::Metadata) -> bool {
+    if !file.get_is_dir() && file.get_length() != m.len() {
+        println!("length: expected {}, got {}", file.get_length(), m.len());
+        return false;
+    }
+
+    if mtime(m) == file.get_mtime() {
+        return true;
+    }
+    println!("mtime: expected {}, got {}", mtime(m), file.get_mtime());
+    false
 }
 
 impl SrcDaemon {
@@ -221,6 +250,164 @@ impl SrcDaemon {
             Err(std::io::Error::last_os_error())
         }
     }
+
+    fn diff_from(
+        &self,
+        root: &std::path::Path,
+        path: &std::path::Path,
+        metadata: &sstable::SSTableReader<service::FileView>,
+        differences: &mut Vec<service::FileDiff>,
+    ) -> std::io::Result<()> {
+        println!("diff_from: {:?} {:?}", root, path);
+
+        let get_metadata = |p: &std::path::Path| -> Option<service::FileView> {
+            let path_str = p.to_str()?;
+            let key = format!("{}/{}", path_str.split("/").count(), path_str);
+            let result = metadata.get(&key);
+            println!("get_metadata({:?}) = {:?}", key, result);
+            result
+        };
+
+        let mut observed_paths = Vec::new();
+        for entry in std::fs::read_dir(path)? {
+            let entry = entry?;
+            let ty = entry.file_type()?;
+
+            if ty.is_symlink() {
+                continue;
+            }
+
+            let path = entry.path();
+            observed_paths.push(path.clone());
+
+            let relative_path = path
+                .strip_prefix(root)
+                .map_err(|_| std::io::Error::from(std::io::ErrorKind::InvalidInput))?;
+
+            // Entry is a directory. Only recurse if the mtime has changed.
+            if ty.is_dir() {
+                let mut should_recurse = true;
+
+                if let Some(s) = get_metadata(&relative_path) {
+                    let metadata = entry.metadata()?;
+                    if metadata_compatible(s, &metadata) {
+                        should_recurse = false;
+                    }
+                } else {
+                    differences.push(service::FileDiff {
+                        path: relative_path
+                            .to_str()
+                            .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::InvalidInput))?
+                            .to_string(),
+                        differences: vec![],
+                        is_dir: true,
+                        kind: service::DiffKind::Added,
+                    });
+                }
+                if should_recurse {
+                    self.diff_from(root, &path, metadata, differences);
+                }
+
+                continue;
+            }
+
+            // Entry is a file.
+            if let Some(s) = get_metadata(&relative_path) {
+                let metadata = entry.metadata()?;
+                if metadata_compatible(s, &metadata) {
+                    continue;
+                }
+
+                if core::hash_file(&path)? == s.get_sha() {
+                    continue;
+                }
+
+                println!("hash: {:?}", core::hash_file(&path)?);
+                println!("sha: {:?}", s.get_sha());
+
+                differences.push(service::FileDiff {
+                    path: relative_path
+                        .to_str()
+                        .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::InvalidInput))?
+                        .to_string(),
+                    differences: vec![],
+                    is_dir: false,
+                    kind: service::DiffKind::Modified,
+                });
+            } else {
+                differences.push(service::FileDiff {
+                    path: relative_path
+                        .to_str()
+                        .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::InvalidInput))?
+                        .to_string(),
+                    differences: vec![],
+                    is_dir: false,
+                    kind: service::DiffKind::Added,
+                });
+            }
+        }
+
+        observed_paths.sort();
+
+        let nothing: Vec<std::path::PathBuf> = Vec::new();
+        let mut observed_iter = observed_paths.iter().peekable();
+        let mut expected_iter = nothing.iter().peekable();
+
+        loop {
+            match (expected_iter.peek(), observed_iter.peek()) {
+                (Some(exp), Some(obs)) => {
+                    if exp == obs {
+                        expected_iter.next();
+                        observed_iter.next();
+                        continue;
+                    }
+
+                    if obs > exp {
+                        // We missed an expected document. Report it as missing
+                        differences.push(service::FileDiff {
+                            path: exp
+                                .strip_prefix(root)
+                                .map_err(|_| {
+                                    std::io::Error::from(std::io::ErrorKind::InvalidInput)
+                                })?
+                                .to_str()
+                                .ok_or_else(|| {
+                                    std::io::Error::from(std::io::ErrorKind::InvalidInput)
+                                })?
+                                .to_string(),
+                            differences: vec![],
+                            is_dir: false,
+                            kind: service::DiffKind::Removed,
+                        });
+
+                        expected_iter.next();
+                    } else {
+                        // We got an extra document, this case is already covered
+                        observed_iter.next();
+                    }
+                }
+                (Some(exp), None) => {
+                    // We missed an expected document. Report it as missing
+                    differences.push(service::FileDiff {
+                        path: exp
+                            .strip_prefix(root)
+                            .map_err(|_| std::io::Error::from(std::io::ErrorKind::InvalidInput))?
+                            .to_str()
+                            .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::InvalidInput))?
+                            .to_string(),
+                        differences: vec![],
+                        is_dir: false,
+                        kind: service::DiffKind::Removed,
+                    });
+
+                    expected_iter.next();
+                }
+                _ => break,
+            }
+        }
+
+        Ok(())
+    }
 }
 
 impl service::SrcDaemonServiceHandler for SrcDaemon {
@@ -260,7 +447,53 @@ impl service::SrcDaemonServiceHandler for SrcDaemon {
     }
 
     fn diff(&self, req: service::DiffRequest) -> Result<service::DiffResponse, bus::BusRpcError> {
-        todo!()
+        // There should be an index for changes based on directory and alias
+        // Look up the change there, then find the SSTable for the basis
+        let basis = service::Basis::default();
+
+        let alias = if !req.dir.is_empty() {
+            match self.table.read::<String>("changes/by_dir", &req.dir, 0) {
+                Some(Ok(a)) => a,
+                _ => {
+                    return Ok(service::DiffResponse {
+                        failed: true,
+                        error_message: format!("unrecognized directory {}", req.dir),
+                        ..Default::default()
+                    })
+                }
+            }
+        } else {
+            req.alias
+        };
+
+        let (basis, directory) = match self.table.read::<service::Change>("changes", &alias, 0) {
+            Some(Ok(c)) => (c.basis, std::path::PathBuf::from(c.directory)),
+            _ => {
+                return Ok(service::DiffResponse {
+                    failed: true,
+                    error_message: format!("unrecognized change {}", alias),
+                    ..Default::default()
+                })
+            }
+        };
+
+        let metadata = self.get_metadata(basis.as_view()).map_err(|e| {
+            eprintln!("{:?}", e);
+            bus::BusRpcError::InternalError("failed to get metadata".to_string())
+        })?;
+        let mut differences = Vec::new();
+
+        self.diff_from(&directory, &directory, &metadata, &mut differences)
+            .map_err(|e| {
+                eprintln!("{:?}", e);
+                bus::BusRpcError::InternalError("failed to diff".to_string())
+            })?;
+
+        Ok(service::DiffResponse {
+            files: differences,
+            basis,
+            ..Default::default()
+        })
     }
 
     fn snapshot(
@@ -297,7 +530,7 @@ impl service::SrcDaemonServiceHandler for SrcDaemon {
         self.table
             .write(
                 "changes".to_string(),
-                req.alias,
+                req.alias.clone(),
                 0,
                 service::Change {
                     basis: service::Basis {
@@ -309,6 +542,18 @@ impl service::SrcDaemonServiceHandler for SrcDaemon {
                     },
                     directory: directory_str.clone(),
                 },
+            )
+            .map_err(|e| {
+                eprintln!("{:?}", e);
+                bus::BusRpcError::InternalError("failed to create change".to_string())
+            })?;
+
+        self.table
+            .write(
+                "changes/by_dir".to_string(),
+                directory_str.clone(),
+                0,
+                req.alias,
             )
             .map_err(|e| {
                 eprintln!("{:?}", e);
@@ -487,8 +732,6 @@ impl service::SrcDaemonServiceHandler for SrcDaemon {
             }
         }
 
-        // Finally, update the mtime on all directories. This must be done last, since the mtime is
-        // affected by writing the files inside of the directories!
         let mut dirs: Vec<(usize, Vec<(std::path::PathBuf, service::FileView)>)> =
             directories.into_iter().collect();
         dirs.sort_by_key(|(depth, _)| *depth);
@@ -526,7 +769,7 @@ mod tests {
     #[test]
     fn test_checkout() {
         let d = daemon();
-        let resp = d
+        /*let resp = d
             .new_change(NewChangeRequest {
                 dir: "/tmp/code/my-branch".to_string(),
                 alias: "my-branch".to_string(),
@@ -541,11 +784,21 @@ mod tests {
             .unwrap();
 
         println!("{:?}", resp);
+        assert_eq!(resp.failed, false);
+        */
+
+        let resp = d
+            .diff(DiffRequest {
+                alias: "my-branch".to_string(),
+                ..Default::default()
+            })
+            .unwrap();
+        assert_eq!(resp.failed, false);
+        println!("{:?}", resp);
 
         panic!();
     }
 
-    #[test]
     fn test_system() {
         let s = server();
 
