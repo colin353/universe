@@ -61,6 +61,11 @@ alias(
 )
 
 alias(
+    name = "lz4",
+    actual = "//third_party/vendor/lz4-1.18.131:lz4",
+)
+
+alias(
     name = "native_tls",
     actual = "//third_party/vendor/native-tls-0.2.2:native_tls",
 )
@@ -83,6 +88,11 @@ alias(
 alias(
     name = "lazy_static",
     actual = "//third_party/vendor/lazy_static-0.2.11:lazy_static",
+)
+
+alias(
+    name = "sha256",
+    actual = "//third_party/vendor/sha256-0.1.0:sha256",
 )
 
 alias(

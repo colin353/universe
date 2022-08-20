@@ -12,11 +12,17 @@ message FileDiff {
     differences: repeated ByteDiff = 3
 }
 
+enum CompressionKind {
+    None = 0
+    LZ4 = 1
+}
+
 message ByteDiff {
     start: u32 = 0
     end: u32 = 1
     kind: DiffKind = 2
     data: bytes = 3
+    compression: CompressionKind = 4
 }
 
 message Basis {
@@ -144,12 +150,20 @@ message DiffResponse {
 message SnapshotRequest {
     dir: string = 0
     alias: string = 1
+    message: string = 2
 }
 
 message SnapshotResponse {
     failed: bool = 0
     error_message: string = 1
     timestamp: u64 = 2
+}
+
+message Snapshot {
+    timestamp: u64 = 0
+    basis: Basis = 1
+    files: repeated FileDiff = 2
+    message: string = 3
 }
 
 message LinkRequest {

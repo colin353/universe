@@ -194,7 +194,12 @@ impl Src {
                     kind: service::DiffKind::Modified,
                 });
             } else {
-                let content = std::fs::read(&path)?;
+                let mut data = Vec::new();
+                core::compress_rw(
+                    &mut std::io::BufReader::new(std::fs::File::open(&path)?),
+                    &mut data,
+                )?;
+
                 differences.push(service::FileDiff {
                     path: relative_path
                         .to_str()
@@ -204,7 +209,8 @@ impl Src {
                         start: 0,
                         end: 0,
                         kind: service::DiffKind::Added,
-                        data: content,
+                        data,
+                        compression: service::CompressionKind::LZ4,
                     }],
                     is_dir: false,
                     kind: service::DiffKind::Added,
@@ -281,7 +287,8 @@ impl Src {
     ) -> std::io::Result<String> {
         let alias = self.find_unused_alias(&basis.name);
 
-        let f = std::fs::File::create(self.get_change_path(&alias))?;
+        std::fs::create_dir_all(self.get_change_path(&alias)).ok();
+        let f = std::fs::File::create(self.get_change_metadata_path(&alias))?;
         let change = service::Change {
             basis,
             directory: path
@@ -342,9 +349,50 @@ impl Src {
 
     pub fn snapshot(
         &self,
-        _req: service::SnapshotRequest,
+        req: service::SnapshotRequest,
     ) -> std::io::Result<service::SnapshotResponse> {
-        todo!()
+        let alias = if req.alias.is_empty() {
+            match self.get_change_alias_by_dir(&std::path::Path::new(&req.dir)) {
+                Some(a) => a,
+                _ => {
+                    return Ok(service::SnapshotResponse {
+                        failed: true,
+                        error_message: format!("{} is not a src directory!", req.dir),
+                        ..Default::default()
+                    })
+                }
+            }
+        } else {
+            req.alias
+        };
+
+        let diff = self.diff(service::DiffRequest {
+            alias: alias.clone(),
+            ..Default::default()
+        })?;
+
+        if diff.failed {
+            return Ok(service::SnapshotResponse {
+                failed: true,
+                error_message: format!("failed to diff: {}", diff.error_message),
+                ..Default::default()
+            });
+        }
+
+        let ts = core::timestamp_usec();
+        let snapshot = service::Snapshot {
+            timestamp: ts,
+            basis: diff.basis,
+            files: diff.files,
+            message: req.message,
+        };
+
+        let f = std::fs::File::create(self.get_snapshot_path(&alias, ts))?;
+        snapshot.encode(&mut std::io::BufWriter::new(f))?;
+        Ok(service::SnapshotResponse {
+            timestamp: ts,
+            ..Default::default()
+        })
     }
 
     pub fn new_change(
@@ -368,7 +416,8 @@ impl Src {
         }
 
         let index = self.validate_basis(req.basis.as_view())?;
-        let f = std::fs::File::create(self.get_change_path(&req.alias))?;
+        std::fs::create_dir_all(self.get_change_path(&req.alias)).ok();
+        let f = std::fs::File::create(self.get_change_metadata_path(&req.alias))?;
 
         let change = service::Change {
             basis: service::Basis {

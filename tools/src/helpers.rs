@@ -39,12 +39,25 @@ impl crate::Src {
         Ok(())
     }
 
+    pub(crate) fn get_snapshot_path(&self, alias: &str, ts: u64) -> std::path::PathBuf {
+        self.get_change_path(&alias)
+            .join(format!("{}.snapshot", ts))
+    }
+
     pub(crate) fn get_blob_path(&self, sha: &[u8]) -> std::path::PathBuf {
         self.root.join("blobs").join(core::fmt_sha(sha))
     }
 
     pub(crate) fn get_blob(&self, sha: &[u8]) -> Option<Vec<u8>> {
         std::fs::read(self.get_blob_path(sha)).ok()
+    }
+
+    pub(crate) fn get_change_metadata_path(&self, alias: &str) -> std::path::PathBuf {
+        self.root
+            .join("changes")
+            .join("by_alias")
+            .join(alias)
+            .join("metadata")
     }
 
     pub(crate) fn get_change_path(&self, alias: &str) -> std::path::PathBuf {
@@ -57,8 +70,25 @@ impl crate::Src {
     }
 
     pub(crate) fn get_change_by_alias(&self, alias: &str) -> Option<service::Change> {
-        let bytes = std::fs::read(self.get_change_path(alias)).ok()?;
+        let bytes = std::fs::read(self.get_change_metadata_path(alias)).ok()?;
         Some(service::Change::decode(&bytes).ok()?)
+    }
+
+    pub(crate) fn get_change_alias_by_dir(&self, dir: &std::path::Path) -> Option<String> {
+        for ancestor in dir.ancestors() {
+            let path = self.get_change_dir_path(ancestor);
+            let alias = match std::fs::read_to_string(path) {
+                Ok(a) => a,
+                Err(_) => continue,
+            };
+            return Some(alias);
+        }
+        None
+    }
+
+    pub(crate) fn get_change_by_dir(&self, dir: &std::path::Path) -> Option<service::Change> {
+        let alias = self.get_change_alias_by_dir(dir)?;
+        self.get_change_by_alias(&alias)
     }
 
     pub(crate) fn find_unused_alias(&self, original: &str) -> String {
@@ -69,18 +99,6 @@ impl crate::Src {
             idx += 1;
         }
         alias
-    }
-
-    pub(crate) fn get_change_by_dir(&self, dir: &std::path::Path) -> Option<service::Change> {
-        for ancestor in dir.ancestors() {
-            let path = self.get_change_dir_path(ancestor);
-            let alias = match std::fs::read_to_string(path) {
-                Ok(a) => a,
-                Err(_) => continue,
-            };
-            return self.get_change_by_alias(&alias);
-        }
-        None
     }
 
     pub(crate) fn validate_basis(&self, basis: service::BasisView) -> std::io::Result<u64> {

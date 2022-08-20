@@ -152,7 +152,7 @@ impl service::SrcServerServiceHandler for SrcServer {
 
         let index = 2;
 
-        let mtime = managed_largetable::timestamp_usec() / 1_000_000;
+        let mtime = core::timestamp_usec() / 1_000_000;
         let mut modified_paths = HashSet::new();
 
         for diff in &req.files {

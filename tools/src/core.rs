@@ -1,40 +1,67 @@
-use std::collections::hash_map::DefaultHasher;
 use std::fmt::Write;
-use std::hash::Hasher;
-use std::io::Read;
+use std::io::{Read, Write as _};
+
+// The size of a diff when LZ4 compression is enabled
+pub const COMPRESSION_THRESHOLD: usize = 128;
+const COMPRESSION_LEVEL: u32 = 1;
 
 mod lcs;
 pub mod patience;
+pub mod render;
 
-// TODO: get a real hash like SHA256
+pub fn timestamp_usec() -> u64 {
+    let now = std::time::SystemTime::now();
+    let since_epoch = now.duration_since(std::time::UNIX_EPOCH).unwrap();
+    (since_epoch.as_secs() as u64) * 1_000_000 + (since_epoch.subsec_nanos() / 1000) as u64
+}
+
+pub fn compress_rw<R: std::io::Read, W: std::io::Write>(
+    reader: &mut R,
+    writer: W,
+) -> std::io::Result<()> {
+    let mut encoder = lz4::EncoderBuilder::new()
+        .level(COMPRESSION_LEVEL)
+        .build(writer)
+        .expect("constructing encoder should be infallible!");
+
+    std::io::copy(reader, &mut encoder)?;
+    let (_, result) = encoder.finish();
+    result
+}
+
+pub fn compress(data: &[u8]) -> Vec<u8> {
+    let mut encoder = lz4::EncoderBuilder::new()
+        .level(COMPRESSION_LEVEL)
+        .build(Vec::new())
+        .expect("constructing encoder should be infallible!");
+    encoder
+        .write_all(data)
+        .expect("writing to encoder should be infallible!");
+    let (output, result) = encoder.finish();
+    result.expect("writing to encoder should be infallible!");
+    output
+}
+
 pub fn hash_file(path: &std::path::Path) -> std::io::Result<[u8; 32]> {
     let mut f = std::fs::File::open(path)?;
     let mut buf = vec![0_u8; 8192];
-    let mut h = DefaultHasher::new();
+    let mut h = sha256::Sha256::new();
 
     loop {
         let n = f.read(&mut buf)?;
         if n == 0 {
             break;
         }
-        h.write(&buf);
+        h.absorb(&buf);
     }
 
-    let bytes = h.finish().to_le_bytes();
-    Ok([
-        bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7], 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    ])
+    Ok(h.finish())
 }
 
 pub fn hash_bytes(bytes: &[u8]) -> [u8; 32] {
-    let mut h = DefaultHasher::new();
-    h.write(&bytes);
-    let bytes = h.finish().to_le_bytes();
-    [
-        bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7], 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    ]
+    let mut h = sha256::Sha256::new();
+    h.absorb(&bytes);
+    h.finish()
 }
 
 pub fn diff(original: &[u8], modified: &[u8]) -> Vec<service::ByteDiff> {
@@ -42,6 +69,7 @@ pub fn diff(original: &[u8], modified: &[u8]) -> Vec<service::ByteDiff> {
         match (std::str::from_utf8(original), std::str::from_utf8(modified)) {
             (Ok(o), Ok(m)) => (o, m),
             _ => {
+                let data = compress(modified);
                 // If the files are binary, don't compute a diff, just register a deletion and an
                 // addition.
                 return vec![
@@ -50,12 +78,14 @@ pub fn diff(original: &[u8], modified: &[u8]) -> Vec<service::ByteDiff> {
                         end: original.len() as u32,
                         kind: service::DiffKind::Removed,
                         data: vec![],
+                        compression: service::CompressionKind::None,
                     },
                     service::ByteDiff {
                         start: 0,
                         end: modified.len() as u32,
                         kind: service::DiffKind::Added,
-                        data: modified.to_owned(),
+                        data,
+                        compression: service::CompressionKind::LZ4,
                     },
                 ];
             }
@@ -99,11 +129,20 @@ pub fn diff(original: &[u8], modified: &[u8]) -> Vec<service::ByteDiff> {
                     right_pos += right.len() as u32;
                     diff_iter.next();
                 }
+
+                let diff_data = &modified[start..right_pos as usize];
+                let (data, compression) = if diff_data.len() < COMPRESSION_THRESHOLD {
+                    (diff_data.to_owned(), service::CompressionKind::None)
+                } else {
+                    (compress(diff_data), service::CompressionKind::LZ4)
+                };
+
                 out.push(service::ByteDiff {
                     start: left_pos,
                     end: left_pos,
                     kind: service::DiffKind::Added,
-                    data: modified[start..right_pos as usize].to_owned(),
+                    data,
+                    compression,
                 });
             }
             patience::DiffComponent::Deletion(left) => {
@@ -118,6 +157,7 @@ pub fn diff(original: &[u8], modified: &[u8]) -> Vec<service::ByteDiff> {
                     end: left_pos,
                     kind: service::DiffKind::Removed,
                     data: vec![],
+                    compression: service::CompressionKind::None,
                 });
             }
         }
@@ -128,7 +168,7 @@ pub fn diff(original: &[u8], modified: &[u8]) -> Vec<service::ByteDiff> {
 pub fn fmt_sha(sha: &[u8]) -> String {
     let mut out = String::new();
     for &byte in sha {
-        write!(&mut out, "{:x}", byte).unwrap();
+        write!(&mut out, "{:02x}", byte).unwrap();
     }
     out
 }
@@ -299,12 +339,14 @@ mod tests {
                     end: 6,
                     kind: service::DiffKind::Added,
                     data: "duo\n".as_bytes().to_vec(),
+                    compression: service::CompressionKind::None,
                 },
                 service::ByteDiff {
                     start: 6,
                     end: 13,
                     kind: service::DiffKind::Removed,
                     data: vec![],
+                    compression: service::CompressionKind::None,
                 },
             ]
         );
@@ -323,12 +365,14 @@ mod tests {
                     end: 0,
                     kind: service::DiffKind::Added,
                     data: vec![1, 2, 11, 12],
+                    compression: service::CompressionKind::None,
                 },
                 service::ByteDiff {
                     start: 0,
                     end: 4,
                     kind: service::DiffKind::Removed,
                     data: vec![],
+                    compression: service::CompressionKind::None,
                 },
             ]
         );
@@ -371,5 +415,19 @@ mod tests {
                 ..Default::default()
             }
         );
+    }
+
+    #[test]
+    fn test_hash() {
+        let data = "asdf".as_bytes();
+        assert_eq!(
+            &fmt_sha(&hash_bytes(data)),
+            "f0e4c2f76c58916ec258f246851bea091d14d4247a2fc3e18694461b1816e13b"
+        );
+    }
+
+    #[test]
+    fn test_fmt_sha() {
+        assert_eq!(&fmt_sha(&[0, 0, 0, 0]), "00000000");
     }
 }

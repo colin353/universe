@@ -91,7 +91,36 @@ fn diff(data_dir: std::path::PathBuf) {
         std::process::exit(1);
     }
 
-    println!("{:#?}", resp);
+    core::render::print_diff(&resp.files);
+}
+
+fn snapshot(data_dir: std::path::PathBuf, msg: String) {
+    let cwd = match std::env::current_dir() {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("unable to determine current working directory! {:?}", e);
+            std::process::exit(1);
+        }
+    };
+
+    let d = src_lib::Src::new(data_dir).expect("failed to initialize src!");
+    let resp = d
+        .snapshot(service::SnapshotRequest {
+            dir: cwd
+                .to_str()
+                .expect("current working directory must be valid unicode!")
+                .to_owned(),
+            message: msg,
+            ..Default::default()
+        })
+        .unwrap();
+
+    if resp.failed {
+        eprintln!("{}", resp.error_message);
+        std::process::exit(1);
+    }
+
+    println!("saved snapshot @ {}", resp.timestamp);
 }
 
 fn main() {
@@ -101,6 +130,11 @@ fn main() {
         String::new(),
         "the basis of the change (e.g. src.colinmerkel.xyz/owner/name"
     );
+    let msg = flags::define_flag!(
+        "msg",
+        String::new(),
+        "a message to include with the snapshot (optional)"
+    );
     let home = std::env::var("HOME").expect("unable to detect $HOME directory!");
     let data_directory = flags::define_flag!(
         "data_directory",
@@ -108,7 +142,7 @@ fn main() {
         "the data directory for src on this computer"
     );
 
-    let args = flags::parse_flags!(name, basis);
+    let args = flags::parse_flags!(name, basis, msg, data_directory);
 
     if args.len() == 0 {
         usage();
@@ -137,6 +171,13 @@ fn main() {
                 std::process::exit(1);
             }
             diff(data_dir)
+        }
+        "snapshot" => {
+            if args.len() != 1 {
+                eprintln!("usage: src snapshot [--msg=<message>]");
+                std::process::exit(1);
+            }
+            snapshot(data_dir, msg.value())
         }
         _ => usage(),
     }

@@ -101,7 +101,7 @@ fn convert_field(f: &ast::FieldDefinition, data: &str) -> Result<FieldDefinition
 
 fn allowed_default_name(value: &str) -> bool {
     match value {
-        "Unknown" | "Disabled" | "Default" => true,
+        "None" | "Unknown" | "Disabled" | "Default" => true,
         _ => false,
     }
 }
@@ -125,7 +125,7 @@ fn convert_enum(e: ast::EnumDefinition, data: &str) -> Result<EnumDefinition, Bu
             let (start, end) = f.field_name.range();
             return Err(BusError::ParseError(ggen::ParseError::from_string(
                 String::from(
-                    "the zero enum value must be called `Unknown`, `Disabled` or `Default`",
+                    "the zero enum value must be called `Unknown`, `None`, `Disabled` or `Default`",
                 ),
                 "",
                 start,

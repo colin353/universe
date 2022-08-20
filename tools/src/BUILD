@@ -63,10 +63,13 @@ rust_library(
     srcs = [
       "core.rs",
       "patience.rs",
-      "lcs.rs"
+      "lcs.rs",
+      "render.rs"
     ],
     deps = [
-      ":service"
+      ":service",
+      "//third_party:sha256",
+      "//third_party:lz4",
     ]
 )
 
