@@ -38,9 +38,6 @@ pub fn hash_bytes(bytes: &[u8]) -> [u8; 32] {
 }
 
 pub fn diff(original: &[u8], modified: &[u8]) -> Vec<service::ByteDiff> {
-    println!("original: {:?}", original);
-    println!("modified: {:?}", modified);
-
     let (original_s, modified_s) =
         match (std::str::from_utf8(original), std::str::from_utf8(modified)) {
             (Ok(o), Ok(m)) => (o, m),
@@ -85,37 +82,53 @@ pub fn diff(original: &[u8], modified: &[u8]) -> Vec<service::ByteDiff> {
     }
 
     let mut out = Vec::new();
-    let mut pos = 0_u32;
+    let mut left_pos = 0_u32;
+    let mut right_pos = 0_u32;
     let diffs = patience::patience_diff(&original_lines, &modified_lines);
-    println!("from patience: {:?}", diffs);
-    for diff in diffs {
+    let mut diff_iter = diffs.iter().peekable();
+    while let Some(diff) = diff_iter.next() {
         match diff {
-            patience::DiffComponent::Unchanged(left, right) => pos += left.len() as u32,
-            patience::DiffComponent::Insertion(right) => out.push(service::ByteDiff {
-                start: pos,
-                end: pos,
-                kind: service::DiffKind::Added,
-                data: right.to_vec(),
-            }),
-            patience::DiffComponent::Deletion(left) => {
+            patience::DiffComponent::Unchanged(left, right) => {
+                left_pos += left.len() as u32;
+                right_pos += right.len() as u32;
+            }
+            patience::DiffComponent::Insertion(right) => {
+                let start = right_pos as usize;
+                right_pos += right.len() as u32;
+                while let Some(patience::DiffComponent::Insertion(right)) = diff_iter.peek() {
+                    right_pos += right.len() as u32;
+                    diff_iter.next();
+                }
                 out.push(service::ByteDiff {
-                    start: pos,
-                    end: pos + left.len() as u32,
+                    start: left_pos,
+                    end: left_pos,
+                    kind: service::DiffKind::Added,
+                    data: modified[start..right_pos as usize].to_owned(),
+                });
+            }
+            patience::DiffComponent::Deletion(left) => {
+                let start = left_pos;
+                left_pos += left.len() as u32;
+                while let Some(patience::DiffComponent::Insertion(left)) = diff_iter.peek() {
+                    left_pos += left.len() as u32;
+                    diff_iter.next();
+                }
+                out.push(service::ByteDiff {
+                    start: start,
+                    end: left_pos,
                     kind: service::DiffKind::Removed,
                     data: vec![],
                 });
-                pos += left.len() as u32
             }
         }
     }
-    println!("diff out = {:?}", out);
     out
 }
 
 pub fn fmt_sha(sha: &[u8]) -> String {
     let mut out = String::new();
     for &byte in sha {
-        write!(&mut out, "{:x} ", byte).unwrap();
+        write!(&mut out, "{:x}", byte).unwrap();
     }
     out
 }
@@ -128,6 +141,145 @@ pub fn parse_sha(sha: &str) -> std::io::Result<[u8; 32]> {
         })?;
     }
     Ok(out)
+}
+
+pub fn fmt_basis(basis: service::BasisView) -> String {
+    if basis.get_index() == 0 && basis.get_change() == 0 {
+        return format!(
+            "{}/{}/{}",
+            basis.get_host(),
+            basis.get_owner(),
+            basis.get_name()
+        );
+    }
+
+    if basis.get_change() == 0 {
+        return format!(
+            "{}/{}/{}/{}",
+            basis.get_host(),
+            basis.get_owner(),
+            basis.get_name(),
+            basis.get_index()
+        );
+    }
+
+    return format!(
+        "{}/{}/{}/change/{}/{}",
+        basis.get_host(),
+        basis.get_owner(),
+        basis.get_name(),
+        basis.get_change(),
+        basis.get_index()
+    );
+}
+
+pub fn parse_basis(basis: &str) -> std::io::Result<service::Basis> {
+    let mut components = basis.split("/");
+    let host = components.next().expect("split must have one component");
+    if host.is_empty() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "host cannot be empty",
+        ));
+    }
+
+    let owner = match components.next() {
+        Some(c) => c,
+        None => {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "invalid basis (must be of the form <host>[:port]/<owner>/<name>[/<index>])",
+            ));
+        }
+    };
+
+    let name = match components.next() {
+        Some(c) => c,
+        None => {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "invalid basis (must be of the form <host>[:port]/<owner>/<name>[/<index>])",
+            ));
+        }
+    };
+
+    let c = match components.next() {
+        Some(c) => c,
+        None => {
+            return Ok(service::Basis {
+                host: host.to_owned(),
+                owner: owner.to_owned(),
+                name: name.to_owned(),
+                ..Default::default()
+            })
+        }
+    };
+
+    if c == "change" {
+        let change = match components.next().map(|i| i.parse::<u64>()) {
+            Some(Ok(id)) => id,
+            Some(Err(_)) => return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "failed to parse change id as number",
+            )),
+            None => return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "invalid basis (must be of the form <host>[:port]/<owner>/<name>/change/<change_id>[/<index>])",
+            )),
+        };
+
+        let index = match components.next().map(|i| i.parse::<u64>()) {
+            Some(Ok(index)) => index,
+            Some(Err(_)) => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "failed to parse change index as number",
+                ))
+            }
+            None => {
+                return Ok(service::Basis {
+                    host: host.to_owned(),
+                    owner: owner.to_owned(),
+                    name: name.to_owned(),
+                    change,
+                    ..Default::default()
+                })
+            }
+        };
+
+        return Ok(service::Basis {
+            host: host.to_owned(),
+            owner: owner.to_owned(),
+            name: name.to_owned(),
+            change,
+            index,
+        });
+    }
+
+    match c.parse::<u64>() {
+        Ok(index) => {
+            if components.next().is_some() {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "unexpected trailing components after valid basis",
+                ));
+            }
+
+            return Ok(service::Basis {
+                host: host.to_owned(),
+                owner: owner.to_owned(),
+                name: name.to_owned(),
+                index,
+                ..Default::default()
+            });
+        }
+        Err(_) => {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "failed to parse change index",
+            ));
+        }
+    }
 }
 
 #[cfg(test)]
@@ -179,6 +331,45 @@ mod tests {
                     data: vec![],
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn test_basis_parsing() {
+        let b = parse_basis("src.colinmerkel.xyz:2020/colin/zork").unwrap();
+        assert_eq!(
+            b,
+            service::Basis {
+                host: "src.colinmerkel.xyz:2020".to_string(),
+                owner: "colin".to_string(),
+                name: "zork".to_string(),
+                ..Default::default()
+            }
+        );
+
+        let b = parse_basis("src.colinmerkel.xyz/colin/zork/5029").unwrap();
+        assert_eq!(
+            b,
+            service::Basis {
+                host: "src.colinmerkel.xyz".to_string(),
+                owner: "colin".to_string(),
+                name: "zork".to_string(),
+                index: 5029,
+                ..Default::default()
+            }
+        );
+
+        let b = parse_basis("src.colinmerkel.xyz/colin/zork/change/5029/555").unwrap();
+        assert_eq!(
+            b,
+            service::Basis {
+                host: "src.colinmerkel.xyz".to_string(),
+                owner: "colin".to_string(),
+                name: "zork".to_string(),
+                change: 5029,
+                index: 555,
+                ..Default::default()
+            }
         );
     }
 }

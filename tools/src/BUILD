@@ -88,3 +88,13 @@ rust_test(
   crate = ":core",
 )
 
+rust_binary(
+    name = "src",
+    srcs = [ "src.rs" ],
+    deps = [
+        ":core",
+        ":service",
+        ":daemon_service",
+        "//util/flags",
+    ]
+)

@@ -359,6 +359,10 @@ impl service::SrcServerServiceHandler for SrcServer {
                 })?;
 
             let count = resp.records.len();
+            if count == 0 {
+                break;
+            }
+
             min = resp.records[resp.records.len() - 1].key.clone();
 
             for record in resp.records {

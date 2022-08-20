@@ -5,6 +5,8 @@ use std::io::Write;
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::io::AsRawFd;
 
+use bus::{Deserialize, Serialize};
+
 #[derive(Debug)]
 struct FileState {
     mtime: u64,
@@ -12,8 +14,8 @@ struct FileState {
     hash: [u8; 32],
 }
 
-struct SrcDaemon {
-    table: managed_largetable::ManagedLargeTable,
+pub struct SrcDaemon {
+    // table: managed_largetable::ManagedLargeTable,
     root: std::path::PathBuf,
     remotes: RwLock<HashMap<String, service::SrcServerClient>>,
 }
@@ -29,27 +31,85 @@ fn mtime(m: &std::fs::Metadata) -> u64 {
 
 fn metadata_compatible(file: service::FileView, m: &std::fs::Metadata) -> bool {
     if !file.get_is_dir() && file.get_length() != m.len() {
-        println!("length: expected {}, got {}", file.get_length(), m.len());
         return false;
     }
 
     if mtime(m) == file.get_mtime() {
         return true;
     }
-    println!("mtime: expected {}, got {}", mtime(m), file.get_mtime());
     false
 }
 
 impl SrcDaemon {
     pub fn new(root: std::path::PathBuf) -> std::io::Result<Self> {
-        std::fs::create_dir_all(root.join("db"));
-        std::fs::create_dir_all(root.join("metadata"));
+        Self::init(&root)?;
 
         Ok(Self {
-            table: managed_largetable::ManagedLargeTable::new(root.join("db"))?,
             root,
             remotes: RwLock::new(HashMap::new()),
         })
+    }
+
+    pub fn init(root: &std::path::Path) -> std::io::Result<()> {
+        // If we already have the root dir set up, skip initialization
+        if root.join("changes").join("by_alias").exists() {
+            return Ok(());
+        }
+
+        std::fs::create_dir_all(root.join("blobs"));
+        std::fs::create_dir_all(root.join("links"));
+        std::fs::create_dir_all(root.join("changes").join("by_alias"));
+        std::fs::create_dir_all(root.join("changes").join("by_dir"));
+        std::fs::create_dir_all(root.join("metadata"));
+        Ok(())
+    }
+
+    pub fn get_blob_path(&self, sha: &[u8]) -> std::path::PathBuf {
+        self.root.join("blobs").join(core::fmt_sha(sha))
+    }
+
+    pub fn get_blob(&self, sha: &[u8]) -> Option<Vec<u8>> {
+        std::fs::read(self.get_blob_path(sha)).ok()
+    }
+
+    pub fn get_link_path(&self, alias: &str) -> std::path::PathBuf {
+        self.root.join("links").join(alias)
+    }
+
+    pub fn get_change_path(&self, alias: &str) -> std::path::PathBuf {
+        self.root.join("changes").join("by_alias").join(alias)
+    }
+
+    pub fn get_change_dir_path(&self, dir: &std::path::Path) -> std::path::PathBuf {
+        let hash = core::fmt_sha(&core::hash_bytes(dir.as_os_str().as_bytes()));
+        self.root.join("changes").join("by_dir").join(hash)
+    }
+
+    pub fn get_change_by_alias(&self, alias: &str) -> Option<service::Change> {
+        let bytes = std::fs::read(self.get_change_path(alias)).ok()?;
+        Some(service::Change::decode(&bytes).ok()?)
+    }
+
+    pub fn find_unused_alias(&self, original: &str) -> String {
+        let mut idx = 1;
+        let mut alias = original.to_string();
+        while self.get_change_path(&alias).exists() {
+            alias = format!("{}-{}", original, idx);
+            idx += 1;
+        }
+        alias
+    }
+
+    pub fn get_change_by_dir(&self, dir: &std::path::Path) -> Option<service::Change> {
+        for ancestor in dir.ancestors() {
+            let path = self.get_change_dir_path(ancestor);
+            let alias = match std::fs::read_to_string(path) {
+                Ok(a) => a,
+                Err(_) => continue,
+            };
+            return self.get_change_by_alias(&alias);
+        }
+        None
     }
 
     pub fn get_client(&self, host: &str) -> std::io::Result<service::SrcServerClient> {
@@ -78,8 +138,6 @@ impl SrcDaemon {
             }
             None => (&host, 4959),
         };
-
-        println!("connecting on {}:{}", hostname, port);
 
         let connector = Arc::new(bus_rpc::HyperClient::new(hostname.to_string(), port));
         let client = service::SrcServerClient::new(connector);
@@ -130,7 +188,6 @@ impl SrcDaemon {
             })
             .map_err(|e| {
                 eprintln!("{:?}", e);
-
                 std::io::Error::new(
                     std::io::ErrorKind::ConnectionRefused,
                     "failed to connect to host",
@@ -194,7 +251,6 @@ impl SrcDaemon {
     }
 
     fn write_dir(&self, path: &std::path::Path, file: service::FileView) -> std::io::Result<()> {
-        println!("write dir: {:?}", path);
         std::fs::create_dir_all(path)?;
 
         let p =
@@ -224,7 +280,6 @@ impl SrcDaemon {
         file: service::FileView,
         data: &[u8],
     ) -> std::io::Result<()> {
-        println!("write file: {:?}", path);
         if let Some(p) = path.parent() {
             std::fs::create_dir_all(p)?;
         }
@@ -258,13 +313,10 @@ impl SrcDaemon {
         metadata: &sstable::SSTableReader<service::FileView>,
         differences: &mut Vec<service::FileDiff>,
     ) -> std::io::Result<()> {
-        println!("diff_from: {:?} {:?}", root, path);
-
         let get_metadata = |p: &std::path::Path| -> Option<service::FileView> {
             let path_str = p.to_str()?;
             let key = format!("{}/{}", path_str.split("/").count(), path_str);
             let result = metadata.get(&key);
-            println!("get_metadata({:?}) = {:?}", key, result);
             result
         };
 
@@ -323,17 +375,9 @@ impl SrcDaemon {
                     continue;
                 }
 
-                println!("found a diff in {:?}", path);
-
-                // Need to look up original content to perform diff
-                let original: Vec<u8> = match self.table.read::<bus::PackedIn<u8>>(
-                    "blobs",
-                    &core::fmt_sha(s.get_sha()),
-                    0,
-                ) {
-                    Some(Ok(p)) => p.0,
+                let original = match self.get_blob(s.get_sha()) {
+                    Some(o) => o,
                     _ => {
-                        println!("failed to find blob");
                         return Err(std::io::Error::new(
                             std::io::ErrorKind::NotFound,
                             format!("blob {:?} not found!", core::fmt_sha(s.get_sha())),
@@ -341,7 +385,6 @@ impl SrcDaemon {
                     }
                 };
 
-                println!("differences.push");
                 differences.push(service::FileDiff {
                     path: relative_path
                         .to_str()
@@ -352,12 +395,18 @@ impl SrcDaemon {
                     kind: service::DiffKind::Modified,
                 });
             } else {
+                let content = std::fs::read(&path)?;
                 differences.push(service::FileDiff {
                     path: relative_path
                         .to_str()
                         .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::InvalidInput))?
                         .to_string(),
-                    differences: vec![],
+                    differences: vec![service::ByteDiff {
+                        start: 0,
+                        end: 0,
+                        kind: service::DiffKind::Added,
+                        data: content,
+                    }],
                     is_dir: false,
                     kind: service::DiffKind::Added,
                 });
@@ -425,15 +474,38 @@ impl SrcDaemon {
 
         Ok(())
     }
+
+    pub fn initialize_repo(
+        &self,
+        basis: service::Basis,
+        path: &std::path::Path,
+    ) -> std::io::Result<String> {
+        let alias = self.find_unused_alias(&basis.name);
+
+        let f = std::fs::File::create(self.get_change_path(&alias))?;
+        let change = service::Change {
+            basis,
+            directory: path
+                .to_str()
+                .ok_or_else(|| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        "path is not valid utf-8!",
+                    )
+                })?
+                .to_string(),
+        };
+        change.encode(&mut std::io::BufWriter::new(f))?;
+        std::fs::write(self.get_change_dir_path(path), alias.as_bytes())?;
+
+        Ok(alias)
+    }
 }
 
 impl service::SrcDaemonServiceHandler for SrcDaemon {
     fn link(&self, req: service::LinkRequest) -> Result<service::LinkResponse, bus::BusRpcError> {
-        if self
-            .table
-            .read::<bus::Nothing>("links", &req.alias, 0)
-            .is_some()
-        {
+        let link_path = self.get_link_path(&req.alias);
+        if link_path.exists() {
             return Ok(service::LinkResponse {
                 failed: true,
                 error_message: "a link already exists with that alias!".to_string(),
@@ -453,12 +525,15 @@ impl service::SrcDaemonServiceHandler for SrcDaemon {
         )
         .map_err(|e| bus::BusRpcError::InternalError(format!("failed to validate link: {}", e)))?;
 
-        self.table
-            .write("links".to_string(), req.alias.clone(), 0, req)
-            .map_err(|e| {
-                eprintln!("{:?}", e);
-                bus::BusRpcError::InternalError("failed to create change".to_string())
-            })?;
+        let f = std::fs::File::create(link_path).map_err(|e| {
+            eprintln!("{:?}", e);
+            bus::BusRpcError::InternalError("failed to create link".to_string())
+        })?;
+
+        req.encode(&mut std::io::BufWriter::new(f)).map_err(|e| {
+            eprintln!("{:?}", e);
+            bus::BusRpcError::InternalError("failed to create link".to_string())
+        })?;
 
         Ok(service::LinkResponse::default())
     }
@@ -468,31 +543,32 @@ impl service::SrcDaemonServiceHandler for SrcDaemon {
         // Look up the change there, then find the SSTable for the basis
         let basis = service::Basis::default();
 
-        let alias = if !req.dir.is_empty() {
-            match self.table.read::<String>("changes/by_dir", &req.dir, 0) {
-                Some(Ok(a)) => a,
+        let change = if !req.dir.is_empty() {
+            match self.get_change_by_dir(std::path::Path::new(&req.dir)) {
+                Some(c) => c,
                 _ => {
                     return Ok(service::DiffResponse {
                         failed: true,
-                        error_message: format!("unrecognized directory {}", req.dir),
+                        error_message: format!("{} is not a src directory!", req.dir),
                         ..Default::default()
                     })
                 }
             }
         } else {
-            req.alias
-        };
-
-        let (basis, directory) = match self.table.read::<service::Change>("changes", &alias, 0) {
-            Some(Ok(c)) => (c.basis, std::path::PathBuf::from(c.directory)),
-            _ => {
-                return Ok(service::DiffResponse {
-                    failed: true,
-                    error_message: format!("unrecognized change {}", alias),
-                    ..Default::default()
-                })
+            match self.get_change_by_alias(&req.alias) {
+                Some(c) => c,
+                _ => {
+                    return Ok(service::DiffResponse {
+                        failed: true,
+                        error_message: format!("unrecognized change {}", req.alias),
+                        ..Default::default()
+                    })
+                }
             }
         };
+
+        let basis = change.basis;
+        let directory = std::path::PathBuf::from(change.directory);
 
         let metadata = self.get_metadata(basis.as_view()).map_err(|e| {
             eprintln!("{:?}", e);
@@ -544,38 +620,36 @@ impl service::SrcDaemonServiceHandler for SrcDaemon {
             bus::BusRpcError::InternalError(format!("failed to validate link: {}", e))
         })?;
 
-        self.table
-            .write(
-                "changes".to_string(),
-                req.alias.clone(),
-                0,
-                service::Change {
-                    basis: service::Basis {
-                        host: req.basis.host.clone(),
-                        owner: req.basis.owner.clone(),
-                        name: req.basis.name.clone(),
-                        change: 0,
-                        index,
-                    },
-                    directory: directory_str.clone(),
-                },
-            )
+        let f = std::fs::File::create(self.get_change_path(&req.alias)).map_err(|e| {
+            eprintln!("{:?}", e);
+            bus::BusRpcError::InternalError("failed to create change".to_string())
+        })?;
+
+        let change = service::Change {
+            basis: service::Basis {
+                host: req.basis.host.clone(),
+                owner: req.basis.owner.clone(),
+                name: req.basis.name.clone(),
+                change: 0,
+                index,
+            },
+            directory: directory_str.clone(),
+        };
+        change
+            .encode(&mut std::io::BufWriter::new(f))
             .map_err(|e| {
                 eprintln!("{:?}", e);
-                bus::BusRpcError::InternalError("failed to create change".to_string())
+                bus::BusRpcError::InternalError("failed to write change".to_string())
             })?;
 
-        self.table
-            .write(
-                "changes/by_dir".to_string(),
-                directory_str.clone(),
-                0,
-                req.alias,
-            )
-            .map_err(|e| {
-                eprintln!("{:?}", e);
-                bus::BusRpcError::InternalError("failed to create change".to_string())
-            })?;
+        std::fs::write(
+            self.get_change_dir_path(&std::path::Path::new(&directory_str)),
+            req.alias.as_bytes(),
+        )
+        .map_err(|e| {
+            eprintln!("{:?}", e);
+            bus::BusRpcError::InternalError("failed to create change dir mapping".to_string())
+        })?;
 
         let metadata = self
             .get_metadata(
@@ -627,20 +701,19 @@ impl service::SrcDaemonServiceHandler for SrcDaemon {
                 continue;
             }
 
-            if let Some(Ok(b)) =
-                self.table
-                    .read::<bus::PackedIn<u8>>("blobs", &core::fmt_sha(file.get_sha()), 0)
-            {
-                self.write_file(&directory.join(path), file, &b.0)
+            match self.get_blob(file.get_sha()) {
+                Some(b) => self
+                    .write_file(&directory.join(path), file, &b)
                     .map_err(|e| {
                         eprintln!("{:?}", e);
                         bus::BusRpcError::InternalError("failed to get write file".to_string())
-                    })?;
-            } else {
-                to_download
-                    .entry(file.get_sha().to_owned())
-                    .or_insert_with(Vec::new)
-                    .push((path, file));
+                    })?,
+                None => {
+                    to_download
+                        .entry(file.get_sha().to_owned())
+                        .or_insert_with(Vec::new)
+                        .push((path, file));
+                }
             }
 
             if to_download.len() >= 250 {
@@ -690,17 +763,10 @@ impl service::SrcDaemonServiceHandler for SrcDaemon {
                             })?;
                     }
 
-                    self.table
-                        .write(
-                            "blobs".to_string(),
-                            core::fmt_sha(&blob.sha),
-                            0,
-                            bus::PackedOut(&blob.data),
-                        )
-                        .map_err(|e| {
-                            eprintln!("{:?}", e);
-                            bus::BusRpcError::InternalError("failed to store blob".to_string())
-                        });
+                    std::fs::write(self.get_blob_path(&blob.sha), &blob.data).map_err(|e| {
+                        eprintln!("{:?}", e);
+                        bus::BusRpcError::InternalError("failed to store blob".to_string())
+                    });
                 }
 
                 to_download.clear();
@@ -759,17 +825,10 @@ impl service::SrcDaemonServiceHandler for SrcDaemon {
                         })?;
                 }
 
-                self.table
-                    .write(
-                        "blobs".to_string(),
-                        core::fmt_sha(&blob.sha),
-                        0,
-                        bus::PackedOut(&blob.data),
-                    )
-                    .map_err(|e| {
-                        eprintln!("{:?}", e);
-                        bus::BusRpcError::InternalError("failed to store blob".to_string())
-                    });
+                std::fs::write(self.get_blob_path(&blob.sha), &blob.data).map_err(|e| {
+                    eprintln!("{:?}", e);
+                    bus::BusRpcError::InternalError("failed to store blob".to_string())
+                });
             }
         }
 
@@ -867,7 +926,7 @@ mod tests {
                     kind: DiffKind::Added,
                     is_dir: false,
                     differences: vec![ByteDiff {
-                        data: vec![0, 1, 2, 3, 4],
+                        data: "hello world\n".to_string().into_bytes(),
                         ..Default::default()
                     }],
                 },
@@ -876,7 +935,7 @@ mod tests {
                     kind: DiffKind::Added,
                     is_dir: false,
                     differences: vec![ByteDiff {
-                        data: vec![4, 3, 2, 1, 0],
+                        data: "change da world\n".to_string().into_bytes(),
                         ..Default::default()
                     }],
                 },
