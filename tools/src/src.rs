@@ -1,5 +1,3 @@
-use service::SrcDaemonServiceHandler;
-
 fn usage() {
     eprintln!("usage: src <command>");
     std::process::exit(1);
@@ -22,7 +20,7 @@ fn init(data_dir: std::path::PathBuf, basis: String) {
         }
     };
 
-    let d = daemon_service::SrcDaemon::new(data_dir).expect("failed to initialize src!");
+    let d = src_lib::Src::new(data_dir).expect("failed to initialize src!");
     let client = d
         .get_client(&basis.host)
         .expect("failed to construct client");
@@ -77,7 +75,7 @@ fn diff(data_dir: std::path::PathBuf) {
         }
     };
 
-    let d = daemon_service::SrcDaemon::new(data_dir).expect("failed to initialize src!");
+    let d = src_lib::Src::new(data_dir).expect("failed to initialize src!");
     let resp = d
         .diff(service::DiffRequest {
             dir: cwd

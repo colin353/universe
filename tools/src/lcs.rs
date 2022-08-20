@@ -7,7 +7,10 @@
 //! [wiki]: https://en.wikipedia.org/wiki/Longest_common_subsequence_problem
 
 use std::cmp;
+
+#[cfg(test)]
 use std::collections::HashSet;
+#[cfg(test)]
 use std::hash::Hash;
 
 #[derive(Debug)]
@@ -111,6 +114,7 @@ where
     /// assert!(subsequences.contains(&vec![(&'g', &'g'), (&'a', &'a')]));
     /// assert!(subsequences.contains(&vec![(&'g', &'g'), (&'c', &'c')]));
     /// ```
+    #[cfg(test)]
     pub fn longest_common_subsequences(&self) -> HashSet<Vec<(&T, &T)>>
     where
         T: Hash,
@@ -118,6 +122,7 @@ where
         self.find_all_lcs(self.a.len(), self.b.len())
     }
 
+    #[cfg(test)]
     fn find_all_lcs(&self, i: usize, j: usize) -> HashSet<Vec<(&T, &T)>>
     where
         T: Hash,

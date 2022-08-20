@@ -8,22 +8,9 @@ rust_bus_library(
     srcs = ["service.bus"],
 )
 
-rust_binary(
-    name = "daemon",
-    srcs = ["daemon.rs"],
-    deps = [
-      ":daemon_service",
-      "//util/bus",
-      "//util/bus:bus_rpc",
-      "//util/flags",
-      ":service",
-      "//third_party:tokio",
-    ],
-)
-
 rust_library(
-    name = "daemon_service",
-    srcs = ["daemon_service.rs"],
+    name = "src_lib",
+    srcs = ["lib.rs", "helpers.rs"],
     deps = [
       ":service",
       "//tools/largetable:managed_largetable",
@@ -36,8 +23,8 @@ rust_library(
 )
 
 rust_test(
-    name = "daemon_test",
-    crate = ":daemon_service",
+    name = "src_lib_test",
+    crate = ":src_lib",
 )
 
 rust_binary(
@@ -94,7 +81,7 @@ rust_binary(
     deps = [
         ":core",
         ":service",
-        ":daemon_service",
+        ":src_lib",
         "//util/flags",
     ]
 )

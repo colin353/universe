@@ -28,13 +28,13 @@ impl<T: Serialize> Serialize for &T {
 }
 
 impl Serialize for Nothing {
-    fn encode<W: std::io::Write>(&self, writer: &mut W) -> Result<usize, std::io::Error> {
+    fn encode<W: std::io::Write>(&self, _w: &mut W) -> Result<usize, std::io::Error> {
         return Ok(0);
     }
 }
 
 impl DeserializeOwned for Nothing {
-    fn decode_owned(bytes: &[u8]) -> Result<Self, std::io::Error> {
+    fn decode_owned(_b: &[u8]) -> Result<Self, std::io::Error> {
         Ok(Nothing {})
     }
 }

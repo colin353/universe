@@ -163,10 +163,3 @@ message LinkResponse {
     failed: bool = 0
     error_message: string = 1
 }
-
-service SrcDaemon {
-    rpc link(LinkRequest) -> LinkResponse
-    rpc new_change(NewChangeRequest) -> NewChangeResponse
-    rpc diff(DiffRequest) -> DiffResponse
-    rpc snapshot(SnapshotRequest) -> SnapshotResponse
-}
