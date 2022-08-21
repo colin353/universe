@@ -56,7 +56,7 @@ impl Terminal {
     }
 
     pub fn set_focus(&self, x: usize, y: usize) {
-        *self.focus.lock().unwrap() = Some((x, y));
+        *self.focus.lock().unwrap() = Some((x + self.offset_x, y + self.offset_y));
     }
 
     pub fn unset_focus(&self) {
@@ -134,13 +134,11 @@ impl Terminal {
     }
 
     pub fn set_grey(&self) {
-        eprint!("\x1b[{}m", 36);
+        eprint!("\x1b[38;5;245m");
     }
 
     pub fn set_normal(&self) {
-        eprint!("\x1b[{}m", 1);
-        eprint!("\x1b[{}m", 49);
-        eprint!("\x1b[{}m", 30);
+        eprint!("\x1b[{}m", 0);
     }
 
     pub fn set_inverted(&self) {
@@ -494,6 +492,10 @@ pub enum KeyboardEvent {
     CtrlW,
     AltF,
     AltB,
+    UpArrow,
+    DownArrow,
+    LeftArrow,
+    RightArrow,
     UnknownControl(char),
 }
 
@@ -533,6 +535,16 @@ impl KeyboardEvent {
                 match ch.into() {
                     'f' => Self::AltF,
                     'b' => Self::AltB,
+                    '[' => {
+                        let ch = b.next()?.unwrap();
+                        match ch.into() {
+                            'C' => Self::RightArrow,
+                            'D' => Self::LeftArrow,
+                            'A' => Self::UpArrow,
+                            'B' => Self::DownArrow,
+                            _ => Self::UnknownControl('['),
+                        }
+                    }
                     _ => Self::UnknownControl('\x1b'),
                 }
             }

@@ -40,12 +40,22 @@ rust_library(
     ],
 )
 
+rust_library(
+    name = "filter",
+    srcs = ["filter.rs"],
+    deps = [
+      ":tui",
+      ":input",
+    ],
+)
+
 rust_binary(
     name = "input_example",
     srcs = ["input_example.rs"],
     deps = [ 
       ":tui",
       ":input",
+      ":filter",
       "//third_party/raw_tty",
     ],
 )

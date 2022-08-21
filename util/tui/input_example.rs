@@ -5,10 +5,17 @@ use tui::{Component, Transition};
 
 fn main() {
     let mut term = tui::Terminal::new();
-    let (x, y) = term.get_cursor_pos();
-    term.offset_y = y - 2;
+    let ctrl = filter::Filter::new(
+        "branch name".to_string(),
+        vec![
+            "apples".to_string(),
+            "avocado".to_string(),
+            "bananas".to_string(),
+            "grapefruit".to_string(),
+            "grapes".to_string(),
+        ],
+    );
 
-    let ctrl = input::Input::new(">".to_string(), String::new(), String::new());
     let mut app = tui::App::start_with_terminal(Box::new(ctrl), term);
     let mut tty = std::fs::OpenOptions::new()
         .read(true)

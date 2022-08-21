@@ -46,8 +46,13 @@ impl tui::AppController<InputState, KeyboardEvent> for Input {
 
             // Clear out any excess characters if value is shorter
             if prev.value.len() > state.value.len() {
-                t.move_cursor_to(self.prompt.len() + 2 + state.value.len(), 0);
+                t.move_cursor_to(self.prompt.len() + 1 + state.value.len(), 0);
                 for _ in state.value.len()..prev.value.len() {
+                    t.print(" ");
+                }
+            } else if prev.value.is_empty() && self.placeholder.len() > state.value.len() {
+                t.move_cursor_to(self.prompt.len() + 1 + state.value.len(), 0);
+                for _ in 0..self.placeholder.len() {
                     t.print(" ");
                 }
             }
@@ -57,16 +62,27 @@ impl tui::AppController<InputState, KeyboardEvent> for Input {
         if prev_state.is_none() {
             t.move_cursor_to(0, 0);
             t.clear_line();
+            t.set_bold();
             t.print(&self.prompt);
-            t.print(">");
             t.move_cursor_to(0, 1);
             t.clear_line();
-            t.print("────────────");
+            for _ in 0..t.width {
+                t.print("─");
+            }
+            t.set_normal();
         }
 
-        t.move_cursor_to(self.prompt.len() + 2, 0);
-        t.print(&state.value);
-        t.set_focus(self.prompt.len() + 2 + state.cursor, 0);
+        t.move_cursor_to(self.prompt.len() + 1, 0);
+
+        if state.value.is_empty() {
+            t.set_grey();
+            t.print(&self.placeholder);
+            t.set_normal();
+        } else {
+            t.print(&state.value);
+        }
+
+        t.set_focus(self.prompt.len() + 1 + state.cursor, 0);
     }
 
     fn transition(&mut self, state: &InputState, event: KeyboardEvent) -> Transition<InputState> {
@@ -111,6 +127,16 @@ impl tui::AppController<InputState, KeyboardEvent> for Input {
                     &state.value[0..new_cursor],
                     &state.value[state.cursor..]
                 );
+                Transition::Updated(new_state)
+            }
+            KeyboardEvent::LeftArrow => {
+                let mut new_state = (*state).clone();
+                new_state.cursor = std::cmp::max(1, state.cursor) - 1;
+                Transition::Updated(new_state)
+            }
+            KeyboardEvent::RightArrow => {
+                let mut new_state = (*state).clone();
+                new_state.cursor = std::cmp::min(state.value.len(), state.cursor + 1);
                 Transition::Updated(new_state)
             }
             KeyboardEvent::Character(x) => {
