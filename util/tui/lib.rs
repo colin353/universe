@@ -476,3 +476,68 @@ where
         t
     }
 }
+
+impl<S, E> Drop for App<S, E> {
+    fn drop(&mut self) {
+        self.controller.clean_up(&mut self.terminal)
+    }
+}
+
+pub enum KeyboardEvent {
+    Character(char),
+    Enter,
+    CtrlC,
+    CtrlD,
+    Backspace,
+    CtrlA,
+    CtrlE,
+    CtrlW,
+    AltF,
+    AltB,
+    UnknownControl(char),
+}
+
+pub struct KeyboardEventStream<R: std::io::Read> {
+    reader: R,
+}
+
+impl<R: std::io::Read> KeyboardEventStream<R> {
+    pub fn new(reader: R) -> Self {
+        Self { reader }
+    }
+}
+
+impl<R: std::io::Read> Iterator for KeyboardEventStream<R> {
+    type Item = KeyboardEvent;
+    fn next(&mut self) -> Option<Self::Item> {
+        KeyboardEvent::from_reader(&mut self.reader)
+    }
+}
+
+impl KeyboardEvent {
+    fn from_reader<R: std::io::Read>(reader: &mut R) -> Option<Self> {
+        let mut b = reader.bytes();
+        let ch: u8 = b.next()?.unwrap();
+        Some(match ch.into() {
+            '\n' | '\x0d' => Self::Enter,
+            '\x03' => Self::CtrlC,
+            '\x04' => Self::CtrlD,
+            '\x7f' => Self::Backspace,
+            '\x01' => Self::CtrlA,
+            '\x05' => Self::CtrlE,
+            '\x17' => Self::CtrlW,
+            '\x17' => Self::CtrlW,
+            '\x1b' => {
+                // Control sequence
+                let ch = b.next()?.unwrap();
+                match ch.into() {
+                    'f' => Self::AltF,
+                    'b' => Self::AltB,
+                    _ => Self::UnknownControl('\x1b'),
+                }
+            }
+            x if x.is_ascii_control() => Self::UnknownControl(x),
+            x => Self::Character(x),
+        })
+    }
+}

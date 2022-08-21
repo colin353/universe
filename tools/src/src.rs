@@ -179,6 +179,7 @@ fn main() {
             }
             snapshot(data_dir, msg.value())
         }
+        "jump" => jump(data_dir),
         _ => usage(),
     }
 }

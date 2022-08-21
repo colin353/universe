@@ -4,6 +4,7 @@ use tui::{Component, Transition};
 
 #[derive(Clone, PartialEq)]
 pub struct SelectionState {
+    pub focused: bool,
     pub selected: usize,
 }
 
@@ -97,7 +98,9 @@ impl tui::AppController<SelectionState, char> for App {
             }
             '\x03' | '\x04' => Transition::Terminate((*state).clone()),
             '\n' | '\x0d' => Transition::Finished((*state).clone()),
-            _ => Transition::Nothing,
+            _ => {
+                Transition::Nothing,
+            }
         }
     }
 

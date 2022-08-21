@@ -25,17 +25,38 @@ rust_binary(
 
 rust_library(
     name = "sel",
-    srcs = [ "sel.rs" ],
-    edition = "2018",
-    deps = [ ":tui",
-  "//third_party/raw_tty",
-              ],
+    srcs = ["sel.rs"],
+    deps = [ 
+      ":tui",
+      "//third_party/raw_tty",
+    ],
+)
+
+rust_library(
+    name = "input",
+    srcs = ["input.rs"],
+    deps = [ 
+      ":tui",
+    ],
+)
+
+rust_binary(
+    name = "input_example",
+    srcs = ["input_example.rs"],
+    deps = [ 
+      ":tui",
+      ":input",
+      "//third_party/raw_tty",
+    ],
 )
 
 rust_binary(
     name = "sel_example",
-    srcs = [ "sel_example.rs"],
+    srcs = ["sel_example.rs"],
     edition = "2018",
-    deps = [ ":tui", ":sel",
-            ]
+    deps = [ 
+      ":tui", 
+      ":sel",
+      "//third_party/raw_tty",
+    ]
  )
