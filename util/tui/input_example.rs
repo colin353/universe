@@ -5,15 +5,13 @@ use tui::{Component, Transition};
 
 fn main() {
     let mut term = tui::Terminal::new();
+    term.height = 25;
+
+    let fruits = std::fs::read_to_string("/tmp/data").unwrap();
+
     let ctrl = filter::Filter::new(
         "branch name".to_string(),
-        vec![
-            "apples".to_string(),
-            "avocado".to_string(),
-            "bananas".to_string(),
-            "grapefruit".to_string(),
-            "grapes".to_string(),
-        ],
+        fruits.lines().map(|l| l.to_string()).collect(),
     );
 
     let mut app = tui::App::start_with_terminal(Box::new(ctrl), term);

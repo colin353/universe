@@ -92,7 +92,7 @@ impl tui::AppController<InputState, KeyboardEvent> for Input {
             KeyboardEvent::Backspace => {
                 let mut new_state = state.clone();
                 new_state.value.pop();
-                new_state.cursor -= 1;
+                new_state.cursor = std::cmp::max(1, new_state.cursor) - 1;
                 Transition::Updated(new_state)
             }
             // Jump to start of line

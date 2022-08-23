@@ -20,6 +20,8 @@ impl Filter {
 pub struct FilterState {
     items: ItemsState,
     input_state: input::InputState,
+    selected: usize,
+    scroll: usize,
 }
 
 #[derive(Clone, PartialEq)]
@@ -72,6 +74,8 @@ impl tui::AppController<FilterState, KeyboardEvent> for Filter {
         FilterState {
             items: ItemsState::All,
             input_state: self.input.initial_state(),
+            selected: 0,
+            scroll: 0,
         }
     }
 
@@ -92,19 +96,27 @@ impl tui::AppController<FilterState, KeyboardEvent> for Filter {
 
         // If the items list didn't change, don't re-render
         if let Some(p) = prev_state {
-            if p.items == state.items {
+            if p.selected == state.selected && p.items == state.items {
                 return;
             }
         }
 
         let mut iter = ItemsIterator::new(&state.items, &self.items);
-        let count = iter.len();
+        let mut count = 0;
 
-        for (idx, item) in iter.take(t.height - 3).enumerate() {
+        for (idx, item) in iter.skip(state.scroll).take(t.height - 3).enumerate() {
+            count += 1;
             t.move_cursor_to(0, t.height - 3 - idx);
             t.clear_line();
-            t.print(" ");
-            t.print(item);
+            if idx == state.selected {
+                t.set_inverted();
+                t.print(" ");
+                t.print(item);
+                t.set_normal();
+            } else {
+                t.print(" ");
+                t.print(item);
+            }
         }
 
         if self.last_length > count {
@@ -118,6 +130,20 @@ impl tui::AppController<FilterState, KeyboardEvent> for Filter {
 
     fn transition(&mut self, state: &FilterState, event: KeyboardEvent) -> Transition<FilterState> {
         if state.input_state.focused {
+            match event {
+                KeyboardEvent::UpArrow => {
+                    let mut new_state = state.clone();
+                    new_state.selected += 1;
+                    return Transition::Updated(new_state);
+                }
+                KeyboardEvent::DownArrow => {
+                    let mut new_state = state.clone();
+                    new_state.selected = std::cmp::max(1, new_state.selected) - 1;
+                    return Transition::Updated(new_state);
+                }
+                _ => (),
+            }
+
             return match self.input.transition(&state.input_state, event) {
                 Transition::Updated(new_input_state) => {
                     // Redo filtering
@@ -127,14 +153,15 @@ impl tui::AppController<FilterState, KeyboardEvent> for Filter {
                         if new_state.input_state.value.is_empty() {
                             new_state.items = ItemsState::All;
                         } else {
-                            new_state.items = ItemsState::Subset(
-                                self.items
-                                    .iter()
-                                    .enumerate()
-                                    .filter(|(_, i)| i.starts_with(&new_state.input_state.value))
-                                    .map(|(idx, _)| idx)
-                                    .collect(),
-                            );
+                            let subset: Vec<_> = self
+                                .items
+                                .iter()
+                                .enumerate()
+                                .filter(|(_, i)| i.starts_with(&new_state.input_state.value))
+                                .map(|(idx, _)| idx)
+                                .collect();
+                            new_state.selected = std::cmp::min(new_state.selected, subset.len());
+                            new_state.items = ItemsState::Subset(subset);
                         }
                     }
 
