@@ -4,6 +4,7 @@ pub struct Filter {
     input: input::Input,
     items: Vec<String>,
     last_length: usize,
+    last_height: usize,
 }
 
 impl Filter {
@@ -12,6 +13,7 @@ impl Filter {
             input: input::Input::new(">".to_string(), prompt, String::new()),
             items,
             last_length: 0,
+            last_height: 0,
         }
     }
 }
@@ -69,6 +71,31 @@ impl<'a> Iterator for ItemsIterator<'a> {
     }
 }
 
+struct Query {
+    terms: Vec<String>,
+}
+
+impl Query {
+    fn new(s: &str) -> Self {
+        Self {
+            terms: s
+                .split(" ")
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_lowercase())
+                .collect(),
+        }
+    }
+
+    fn compatible(&self, data: &str) -> bool {
+        for term in &self.terms {
+            if !data.contains(term) {
+                return false;
+            }
+        }
+        return true;
+    }
+}
+
 impl tui::AppController<FilterState, KeyboardEvent> for Filter {
     fn initial_state(&self) -> FilterState {
         FilterState {
@@ -96,7 +123,7 @@ impl tui::AppController<FilterState, KeyboardEvent> for Filter {
 
         // If the items list didn't change, don't re-render
         if let Some(p) = prev_state {
-            if p.selected == state.selected && p.items == state.items {
+            if p.scroll == state.scroll && p.selected == state.selected && p.items == state.items {
                 return;
             }
         }
@@ -108,16 +135,20 @@ impl tui::AppController<FilterState, KeyboardEvent> for Filter {
             count += 1;
             t.move_cursor_to(0, t.height - 3 - idx);
             t.clear_line();
+            t.set_inverted();
+            t.print(" ");
             if idx == state.selected {
-                t.set_inverted();
                 t.print(" ");
                 t.print(item);
                 t.set_normal();
             } else {
+                t.set_normal();
                 t.print(" ");
                 t.print(item);
             }
         }
+
+        self.last_height = t.height - 3;
 
         if self.last_length > count {
             for idx in count..self.last_length {
@@ -134,11 +165,25 @@ impl tui::AppController<FilterState, KeyboardEvent> for Filter {
                 KeyboardEvent::UpArrow => {
                     let mut new_state = state.clone();
                     new_state.selected += 1;
+                    if new_state.selected == self.last_length {
+                        new_state.selected -= 1;
+                    }
+
+                    if new_state.selected == self.last_height - 1 {
+                        new_state.scroll += 1;
+                    }
+
                     return Transition::Updated(new_state);
                 }
                 KeyboardEvent::DownArrow => {
                     let mut new_state = state.clone();
-                    new_state.selected = std::cmp::max(1, new_state.selected) - 1;
+                    if new_state.selected == 0 {
+                        if new_state.scroll > 0 {
+                            new_state.scroll -= 1;
+                        }
+                    } else {
+                        new_state.selected -= 1;
+                    }
                     return Transition::Updated(new_state);
                 }
                 _ => (),
@@ -153,14 +198,17 @@ impl tui::AppController<FilterState, KeyboardEvent> for Filter {
                         if new_state.input_state.value.is_empty() {
                             new_state.items = ItemsState::All;
                         } else {
+                            let query = Query::new(&new_state.input_state.value);
                             let subset: Vec<_> = self
                                 .items
                                 .iter()
                                 .enumerate()
-                                .filter(|(_, i)| i.starts_with(&new_state.input_state.value))
+                                .filter(|(_, i)| query.compatible(&i.to_lowercase()))
                                 .map(|(idx, _)| idx)
                                 .collect();
-                            new_state.selected = std::cmp::min(new_state.selected, subset.len());
+                            new_state.scroll = 0;
+                            new_state.selected =
+                                std::cmp::min(new_state.selected, subset.len() - 1);
                             new_state.items = ItemsState::Subset(subset);
                         }
                     }

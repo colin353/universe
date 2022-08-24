@@ -5,7 +5,7 @@ use tui::{Component, Transition};
 
 fn main() {
     let mut term = tui::Terminal::new();
-    term.height = 25;
+    term.height = 15;
 
     let fruits = std::fs::read_to_string("/tmp/data").unwrap();
 
