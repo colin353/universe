@@ -57,6 +57,7 @@ rust_binary(
       ":input",
       ":filter",
       "//third_party/raw_tty",
+      "//util/flags",
     ],
 )
 

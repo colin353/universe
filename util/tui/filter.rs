@@ -20,14 +20,14 @@ impl Filter {
 
 #[derive(Clone, PartialEq)]
 pub struct FilterState {
-    items: ItemsState,
-    input_state: input::InputState,
-    selected: usize,
-    scroll: usize,
+    pub items: ItemsState,
+    pub input_state: input::InputState,
+    pub selected: usize,
+    pub scroll: usize,
 }
 
 #[derive(Clone, PartialEq)]
-enum ItemsState {
+pub enum ItemsState {
     All,
     Subset(Vec<usize>),
 }
@@ -208,14 +208,14 @@ impl tui::AppController<FilterState, KeyboardEvent> for Filter {
                                 .collect();
                             new_state.scroll = 0;
                             new_state.selected =
-                                std::cmp::min(new_state.selected, subset.len() - 1);
+                                std::cmp::min(new_state.selected, 1.max(subset.len()) - 1);
                             new_state.items = ItemsState::Subset(subset);
                         }
                     }
 
                     Transition::Updated(new_state)
                 }
-                Transition::Terminate(_) => Transition::Terminate(state.clone()),
+                Transition::Terminate(s) => Transition::Terminate(state.clone()),
                 Transition::Nothing => Transition::Nothing,
                 Transition::Finished(_) => Transition::Finished(state.clone()),
             };
