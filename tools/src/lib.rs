@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
-use bus::Serialize;
+use bus::{Deserialize, Serialize};
 
 mod helpers;
 
@@ -339,6 +339,7 @@ impl Src {
         let mut differences = Vec::new();
 
         self.diff_from(&directory, &directory, &metadata, &mut differences)?;
+        differences.sort_by_cached_key(|d| d.path.clone());
 
         Ok(service::DiffResponse {
             files: differences,
@@ -609,6 +610,53 @@ impl Src {
             index,
             ..Default::default()
         })
+    }
+
+    pub fn list_changes(&self) -> std::io::Result<Vec<(String, service::Change)>> {
+        let mut out = Vec::new();
+        for entry in std::fs::read_dir(&self.root.join("changes").join("by_alias"))? {
+            let entry = entry?;
+            if entry.file_type()?.is_dir() {
+                if let Some(f) = entry.file_name().to_str() {
+                    if let Some(c) = self.get_change_by_alias(f) {
+                        out.push((f.to_string(), c));
+                    }
+                }
+            }
+        }
+        Ok(out)
+    }
+
+    pub fn list_snapshots(&self, alias: &str) -> std::io::Result<Vec<service::Snapshot>> {
+        let mut snapshots = Vec::new();
+        for entry in std::fs::read_dir(self.get_change_path(alias))? {
+            let path = entry?.path();
+            if let Some("snapshot") = path.extension().map(|s| s.to_str()).flatten() {
+                let bytes = std::fs::read(path)?;
+                snapshots.push(service::Snapshot::decode(&bytes)?);
+            }
+        }
+        snapshots.sort_by_key(|c| std::cmp::Reverse(c.timestamp));
+        Ok(snapshots)
+    }
+
+    pub fn get_latest_snapshot(&self, alias: &str) -> std::io::Result<Option<service::Snapshot>> {
+        let mut candidate: Option<service::Snapshot> = None;
+        for entry in std::fs::read_dir(self.get_change_path(alias))? {
+            let path = entry?.path();
+            if let Some("snapshot") = path.extension().map(|s| s.to_str()).flatten() {
+                let bytes = std::fs::read(path)?;
+                let s = service::Snapshot::decode(&bytes)?;
+                if let Some(c) = candidate.as_ref() {
+                    if c.timestamp < s.timestamp {
+                        candidate = Some(s);
+                    }
+                } else {
+                    candidate = Some(s);
+                }
+            }
+        }
+        Ok(candidate)
     }
 }
 

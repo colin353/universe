@@ -69,12 +69,12 @@ impl crate::Src {
         self.root.join("changes").join("by_dir").join(hash)
     }
 
-    pub(crate) fn get_change_by_alias(&self, alias: &str) -> Option<service::Change> {
+    pub fn get_change_by_alias(&self, alias: &str) -> Option<service::Change> {
         let bytes = std::fs::read(self.get_change_metadata_path(alias)).ok()?;
         Some(service::Change::decode(&bytes).ok()?)
     }
 
-    pub(crate) fn get_change_alias_by_dir(&self, dir: &std::path::Path) -> Option<String> {
+    pub fn get_change_alias_by_dir(&self, dir: &std::path::Path) -> Option<String> {
         for ancestor in dir.ancestors() {
             let path = self.get_change_dir_path(ancestor);
             let alias = match std::fs::read_to_string(path) {
@@ -86,7 +86,7 @@ impl crate::Src {
         None
     }
 
-    pub(crate) fn get_change_by_dir(&self, dir: &std::path::Path) -> Option<service::Change> {
+    pub fn get_change_by_dir(&self, dir: &std::path::Path) -> Option<service::Change> {
         let alias = self.get_change_alias_by_dir(dir)?;
         self.get_change_by_alias(&alias)
     }

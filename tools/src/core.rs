@@ -165,6 +165,118 @@ pub fn diff(original: &[u8], modified: &[u8]) -> Vec<service::ByteDiff> {
     out
 }
 
+// Compute the difference between two patches
+pub fn patch_diff(
+    prev: &[service::FileDiff],
+    curr: &[service::FileDiff],
+) -> Vec<service::FileDiff> {
+    let mut prev_iter = prev.iter().enumerate().map(|(idx, _)| idx).peekable();
+    let mut curr_iter = curr.iter().enumerate().map(|(idx, _)| idx).peekable();
+
+    let joined_iter = std::iter::from_fn(move || {
+        match (prev_iter.peek(), curr_iter.peek()) {
+            (Some(&p), Some(&c)) => {
+                // Both changes affect the same files. Must diff the diffs!
+                if prev[p].path == curr[c].path && prev[p].is_dir == curr[c].is_dir {
+                    curr_iter.next();
+                    prev_iter.next();
+                    return Some((Some(p), Some(c)));
+                }
+
+                if prev[p].path < curr[c].path {
+                    curr_iter.next();
+                    Some((Some(p), None))
+                } else {
+                    prev_iter.next();
+                    Some((None, Some(c)))
+                }
+            }
+            (None, Some(&c)) => {
+                curr_iter.next();
+                Some((None, Some(c)))
+            }
+            (Some(&p), None) => {
+                prev_iter.next();
+                Some((Some(p), None))
+            }
+            (None, None) => None,
+        }
+    });
+
+    let mut out = Vec::new();
+    for r in joined_iter {
+        match r {
+            (Some(p), Some(c)) => {
+                let c = &curr[c];
+                let p = &prev[p];
+                // Both changes affect the same files. Must diff the diffs!
+                match (p.kind, c.kind) {
+                    (service::DiffKind::Added, service::DiffKind::Added)
+                    | (service::DiffKind::Modified, service::DiffKind::Modified) => {
+                        if p.differences != c.differences {
+                            // Both were added/modified. So we need to combine their byte diffs
+                            let mut change = c.clone();
+                            change.kind = service::DiffKind::Modified;
+                            change.differences = patch_diff_file(&p.differences, &c.differences);
+                            out.push(change);
+                        }
+                    }
+                    (service::DiffKind::Removed, service::DiffKind::Modified) => {
+                        // Was deleted, now modified. That is equivalent to an add.
+                        let mut change = c.clone();
+                        change.kind = service::DiffKind::Added;
+                        // Indicate that the file was reverted, before any further
+                        // modifications.
+                        change.differences.insert(
+                            0,
+                            service::ByteDiff {
+                                start: 0,
+                                kind: service::DiffKind::Reverted,
+                                ..Default::default()
+                            },
+                        );
+                        out.push(change);
+                    }
+                    (service::DiffKind::Modified, service::DiffKind::Removed) => {
+                        // Was modified, now deleted. Deleted overrides modified
+                        out.push(c.clone());
+                    }
+                    // Any other combination is nonsensical (e.g. Modified --> Add) because it
+                    // implies that the basis changed.
+                    _ => (),
+                }
+            }
+            (None, Some(c)) => {
+                let c = &curr[c];
+                // Diff exists in current, but not previously. Therefore it should just directly be
+                // appended to the output diff.
+                out.push(c.clone());
+            }
+            (Some(p), None) => {
+                let p = &prev[p];
+                // Diff existed before, but not anymore. That means it was reverted. We record this
+                // with a special "reverted" diff record
+                out.push(service::FileDiff {
+                    path: p.path.clone(),
+                    kind: service::DiffKind::Reverted,
+                    is_dir: p.is_dir,
+                    differences: vec![],
+                });
+            }
+            (None, None) => break,
+        }
+    }
+    out
+}
+
+pub fn patch_diff_file(
+    prev: &[service::ByteDiff],
+    curr: &[service::ByteDiff],
+) -> Vec<service::ByteDiff> {
+    // TODO: diff the files via their byte differences?
+    vec![]
+}
+
 pub fn fmt_sha(sha: &[u8]) -> String {
     let mut out = String::new();
     for &byte in sha {
@@ -320,6 +432,47 @@ pub fn parse_basis(basis: &str) -> std::io::Result<service::Basis> {
             ));
         }
     }
+}
+
+pub fn fmt_time(ts: u64) -> String {
+    let now = timestamp_usec();
+    let suffix = if now > ts { "ago" } else { "from now" };
+
+    let seconds = if now > ts {
+        (now - ts) / 1_000_000
+    } else {
+        (ts - now) / 1_000_000
+    };
+    if seconds < 10 {
+        return String::from("just now");
+    } else if seconds < 60 {
+        return format!("{} seconds {}", seconds, suffix);
+    } else if seconds < 120 {
+        return format!("1 minute {}", suffix);
+    }
+
+    let minutes = seconds / 60;
+    if minutes < 60 {
+        return format!("{} minutes {}", minutes, suffix);
+    } else if minutes < 120 {
+        return format!("1 hour {}", suffix);
+    }
+
+    let hours = minutes / 60;
+    if hours < 24 {
+        return format!("{} hours {}", hours, suffix);
+    } else if hours < 48 {
+        return format!("1 day {}", suffix);
+    }
+
+    let days = hours / 24;
+    if days < 7 {
+        return format!("{} days {}", days, suffix);
+    } else if days < 8 {
+        return format!("1 week {}", suffix);
+    }
+
+    return format!("{} days {}", days, suffix);
 }
 
 #[cfg(test)]

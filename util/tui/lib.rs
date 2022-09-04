@@ -133,6 +133,10 @@ impl Terminal {
         eprint!("\x1b[{}m", 1);
     }
 
+    pub fn set_underline(&self) {
+        eprint!("\x1b[{}m", 4);
+    }
+
     pub fn set_grey(&self) {
         eprint!("\x1b[38;5;245m");
     }

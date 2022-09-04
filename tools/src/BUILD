@@ -80,11 +80,17 @@ rust_test(
 
 rust_binary(
     name = "src",
-    srcs = [ "src.rs" ],
+    srcs = [
+        "src.rs",
+        "cli.rs",
+    ],
     deps = [
         ":core",
         ":service",
         ":src_lib",
         "//util/flags",
+        "//util/tui",
+        "//util/tui:filter",
+        "//third_party/raw_tty",
     ]
 )

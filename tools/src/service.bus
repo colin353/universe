@@ -3,6 +3,7 @@ enum DiffKind {
     Added = 1
     Modified = 2
     Removed = 3
+    Reverted = 4
 }
 
 message FileDiff {
