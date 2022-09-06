@@ -3,12 +3,14 @@ use std::collections::HashSet;
 
 pub struct SrcServer {
     table: managed_largetable::ManagedLargeTable,
+    hostname: String,
 }
 
 impl SrcServer {
-    pub fn new(root: std::path::PathBuf) -> std::io::Result<Self> {
+    pub fn new(root: std::path::PathBuf, hostname: String) -> std::io::Result<Self> {
         Ok(Self {
             table: managed_largetable::ManagedLargeTable::new(root)?,
+            hostname,
         })
     }
 
@@ -58,6 +60,55 @@ impl SrcServer {
 
     pub fn monitor_memory(&self) {
         self.table.monitor_memory();
+    }
+
+    fn add_snapshot(
+        &self,
+        change: &Change,
+        snapshot: Snapshot,
+    ) -> Result<(), Result<UpdateChangeResponse, bus::BusRpcError>> {
+        if snapshot.timestamp == 0 {
+            return Err(Ok(UpdateChangeResponse {
+                failed: true,
+                error_message: format!("Invalid snapshot, timestamp must not be zero",),
+                ..Default::default()
+            }));
+        }
+
+        if snapshot.basis.host != self.hostname {
+            return Err(Ok(UpdateChangeResponse {
+                failed: true,
+                error_message: format!("Invalid basis for change, host must be {}", self.hostname),
+                ..Default::default()
+            }));
+        }
+
+        if snapshot.basis.owner != change.repo_owner || snapshot.basis.name != change.repo_name {
+            return Err(Ok(UpdateChangeResponse {
+                failed: true,
+                error_message: format!("Invalid basis for change, repo didn't match change!",),
+                ..Default::default()
+            }));
+        }
+
+        self.table
+            .write(
+                format!(
+                    "{}/{}/{}/snapshots",
+                    change.repo_owner, change.repo_name, change.id
+                ),
+                core::encode_id(snapshot.timestamp),
+                0,
+                snapshot,
+            )
+            .map_err(|e| {
+                Err(bus::BusRpcError::InternalError(format!(
+                    "failed to write snapshot: {:?}",
+                    e
+                )))
+            })?;
+
+        Ok(())
     }
 }
 
@@ -391,6 +442,149 @@ impl service::SrcServerServiceHandler for SrcServer {
             ..Default::default()
         })
     }
+
+    fn update_change(
+        &self,
+        req: UpdateChangeRequest,
+    ) -> Result<UpdateChangeResponse, bus::BusRpcError> {
+        let username = match self.auth(&req.token) {
+            Ok(u) => u,
+            Err(e) => {
+                return Ok(UpdateChangeResponse {
+                    failed: true,
+                    error_message: e,
+                    ..Default::default()
+                })
+            }
+        };
+
+        // Check that the repository exists
+        match self.table.read::<bus::Nothing>(
+            "repos",
+            &format!("{}/{}", req.change.repo_owner, req.change.repo_name),
+            0,
+        ) {
+            Some(r) => r.map_err(|e| {
+                bus::BusRpcError::InternalError(format!("failed to read from table: {:?}", e))
+            })?,
+            None => {
+                return Ok(UpdateChangeResponse {
+                    failed: true,
+                    error_message: "No such repository".to_string(),
+                    ..Default::default()
+                })
+            }
+        };
+
+        // Check if the change already exists
+        if req.change.id != 0 {
+            let mut existing_change = match self.table.read::<service::Change>(
+                &format!(
+                    "{}/{}/changes",
+                    req.change.repo_owner, req.change.repo_owner
+                ),
+                &core::encode_id(req.change.id),
+                0,
+            ) {
+                Some(c) => c.map_err(|e| {
+                    bus::BusRpcError::InternalError(format!("failed to read from table: {:?}", e))
+                })?,
+                None => {
+                    return Ok(UpdateChangeResponse {
+                        failed: true,
+                        error_message: "No such change".to_string(),
+                        ..Default::default()
+                    });
+                }
+            };
+
+            if existing_change.owner != username {
+                return Ok(UpdateChangeResponse {
+                    failed: true,
+                    error_message: format!("No permission to modify change",),
+                    ..Default::default()
+                });
+            }
+
+            // Update any fields that can be updated
+            if !req.change.description.is_empty() {
+                existing_change.description = req.change.description;
+            }
+
+            // Add snapshot, if there's one to add
+            if req.snapshot.timestamp != 0 {
+                if let Err(e) = self.add_snapshot(&existing_change, req.snapshot) {
+                    return e;
+                }
+            }
+
+            return Ok(UpdateChangeResponse::default());
+        }
+
+        // We're creating the change from scratch. Validate it, reserve an id, and write
+        if req.snapshot.basis.host != self.hostname {
+            return Ok(UpdateChangeResponse {
+                failed: true,
+                error_message: format!("Invalid basis for change, host must be {}", self.hostname),
+                ..Default::default()
+            });
+        }
+
+        if req.snapshot.basis.owner != req.change.repo_owner
+            || req.snapshot.basis.name != req.change.repo_name
+        {
+            return Ok(UpdateChangeResponse {
+                failed: true,
+                error_message: format!("Invalid basis for change, repo didn't match change!",),
+                ..Default::default()
+            });
+        }
+
+        if req.snapshot.timestamp == 0 {
+            return Ok(UpdateChangeResponse {
+                failed: true,
+                error_message: format!("Invalid snapshot, timestamp must not be zero",),
+                ..Default::default()
+            });
+        }
+
+        let id = self
+            .table
+            .reserve_id(
+                format!(
+                    "{}/{}/change_ids",
+                    req.change.repo_owner, req.change.repo_name
+                ),
+                String::new(),
+            )
+            .map_err(|e| {
+                bus::BusRpcError::InternalError(format!("failed to reserve id: {:?}", e))
+            })?;
+
+        let mut change = req.change;
+        change.id = id;
+        change.owner = username;
+
+        if let Err(e) = self.add_snapshot(&change, req.snapshot) {
+            return e;
+        };
+
+        self.table
+            .write(
+                format!("{}/{}/changes", change.repo_owner, change.repo_name),
+                core::encode_id(id),
+                0,
+                change.clone(),
+            )
+            .map_err(|e| {
+                bus::BusRpcError::InternalError(format!("failed to read from table: {:?}", e))
+            })?;
+
+        Ok(UpdateChangeResponse {
+            id,
+            ..Default::default()
+        })
+    }
 }
 
 #[cfg(test)]
@@ -401,7 +595,7 @@ mod tests {
         let path = std::path::PathBuf::from("/tmp/asdf");
         std::fs::remove_dir_all(&path);
         std::fs::create_dir_all(&path);
-        SrcServer::new(path).unwrap()
+        SrcServer::new(path, "localhost:4959".to_string()).unwrap()
     }
 
     fn full_setup() -> SrcServer {
@@ -414,7 +608,7 @@ mod tests {
         s
     }
 
-    #[test]
+    //#[test]
     fn test_create_repo() {
         let s = setup();
         let resp = s
@@ -446,6 +640,42 @@ mod tests {
     }
 
     #[test]
+    fn test_create_change() {
+        let s = setup();
+        s.create(CreateRequest {
+            token: String::new(),
+            name: "example".to_string(),
+        })
+        .unwrap();
+
+        let r = s
+            .update_change(UpdateChangeRequest {
+                token: String::new(),
+                change: Change {
+                    description: "do something".to_string(),
+                    repo_owner: "colin".to_string(),
+                    repo_name: "example".to_string(),
+                    ..Default::default()
+                },
+                snapshot: Snapshot {
+                    timestamp: 123,
+                    basis: Basis {
+                        host: "localhost:4959".to_string(),
+                        owner: "colin".to_string(),
+                        name: "example".to_string(),
+                        ..Default::default()
+                    },
+                    files: vec![],
+                    message: String::new(),
+                },
+            })
+            .unwrap();
+        println!("{:?}", r.error_message);
+        assert!(!r.failed);
+        assert_eq!(r.id, 1);
+    }
+
+    //#[test]
     fn test_submit_change() {
         let s = full_setup();
         s.submit(SubmitRequest {

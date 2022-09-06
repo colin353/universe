@@ -475,9 +475,27 @@ pub fn fmt_time(ts: u64) -> String {
     return format!("{} days {}", days, suffix);
 }
 
+pub fn decode_id(id: &str) -> std::io::Result<u64> {
+    match u64::from_str_radix(id, 16) {
+        Ok(x) => Ok(u64::MAX - x),
+        Err(_) => Err(std::io::Error::from(std::io::ErrorKind::InvalidData)),
+    }
+}
+
+pub fn encode_id(id: u64) -> String {
+    format!("{:016x}", u64::MAX - id)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_encode_id() {
+        assert_eq!(encode_id(12345678), "ffffffffff439eb1");
+        assert!(encode_id(123) < encode_id(122));
+        assert_eq!(decode_id(&encode_id(5938)).unwrap(), 5938);
+    }
 
     #[test]
     fn test_diffs() {

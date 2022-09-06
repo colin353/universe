@@ -8,7 +8,13 @@ async fn main() {
         "The directory where data is stored and loaded from"
     );
 
-    flags::parse_flags!(data_dir);
+    let hostname = flags::define_flag!(
+        "hostname",
+        String::from("localhost:4959"),
+        "The hostname of the src server"
+    );
+
+    flags::parse_flags!(data_dir, hostname);
 
     if data_dir.value().is_empty() {
         eprintln!("ERROR: A data directory must be specified! (--data_directory)");
@@ -18,7 +24,8 @@ async fn main() {
     std::fs::create_dir_all(data_dir.value()).ok();
 
     let data_path = std::path::PathBuf::from(data_dir.value());
-    let table = server_service::SrcServer::new(data_path).expect("failed to create src server");
+    let table = server_service::SrcServer::new(data_path, hostname.value())
+        .expect("failed to create src server");
 
     let handler = Arc::new(table);
     let _h = handler.clone();

@@ -173,6 +173,89 @@ impl<'a, W: std::io::Write> LargeTable<'a, W> {
         record
     }
 
+    pub fn reserve_id(&self, row: String, column: String, timestamp: u64) -> std::io::Result<u64> {
+        let mut latest_ts = 0;
+        let mut id = 0;
+
+        if self.mtables.is_empty() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "there are no mtables to write to!",
+            ));
+        }
+
+        if row.contains("\x00") {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "row names cannot contain the null byte!",
+            ));
+        }
+
+        let journal = self
+            .journals
+            .get(0)
+            .map(|j| j.write().expect("failed to acquire write lock"));
+
+        let mut mtables: Vec<_> = self
+            .mtables
+            .iter()
+            .map(|m| m.write().expect("failed to writelock mtable"))
+            .collect();
+
+        for table in &mtables {
+            if let Some(r) = table.read(&row, &column, timestamp) {
+                if r.timestamp > latest_ts {
+                    latest_ts = r.timestamp;
+                    if r.deleted {
+                        id = 0
+                    } else {
+                        id = match u64::decode_owned(&r.data) {
+                            Ok(i) => i,
+                            Err(_) => continue,
+                        };
+                    }
+                }
+            }
+        }
+
+        for table in &self.dtables {
+            if let Some(r) = table.read(&row, &column, timestamp) {
+                if r.get_timestamp() > latest_ts {
+                    latest_ts = r.get_timestamp();
+                    if r.get_deleted() {
+                        id = 0
+                    } else {
+                        id = match u64::decode_owned(r.get_data()) {
+                            Ok(i) => i,
+                            Err(_) => continue,
+                        };
+                    }
+                }
+            }
+        }
+
+        // Increment the ID we retrieved and store that
+        let reserved_id = id + 1;
+        let mut data = Vec::new();
+        reserved_id.encode(&mut data);
+        let record = internals::Record {
+            deleted: false,
+            data,
+            timestamp,
+        };
+        let entry = internals::JournalEntry {
+            record,
+            row,
+            column,
+        };
+        if let Some(mut j) = journal {
+            j.write(&entry)?;
+        }
+
+        mtables[0].write(entry.row, entry.column, entry.record);
+        Ok(reserved_id)
+    }
+
     pub fn read_range<'b, T: DeserializeOwned>(
         &self,
         filter: Filter<'b>,

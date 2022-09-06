@@ -34,11 +34,6 @@ message Basis {
     index: u64 = 4
 }
 
-message Change {
-    directory: string = 0
-    basis: Basis = 1
-}
-
 message File {
     is_dir: bool = 0
     sha: bytes = 1
@@ -114,21 +109,46 @@ message GetBlobsResponse {
     blobs: repeated Blob = 2
 }
 
+enum ChangeStatus {
+    Unknown = 0
+    Pending = 1
+    Submitted = 2
+    Archived = 3
+}
+
+message Change {
+    id: u64 = 0
+    submitted_id: u64 = 1
+    description: string = 2
+    status: ChangeStatus = 3
+    repo_name: string = 4
+    repo_owner: string = 5
+    owner: string = 6
+}
+
+message UpdateChangeRequest {
+    token: string = 0
+    change: Change = 1
+    snapshot: Snapshot = 2
+}
+
+message UpdateChangeResponse {
+    failed: bool = 0
+    error_message: string = 1
+    id: u64 = 2
+    url: string = 3
+}
+
 service SrcServer {
     rpc create(CreateRequest) -> CreateResponse
     rpc get_repository(GetRepositoryRequest) -> GetRepositoryResponse
     rpc submit(SubmitRequest) -> SubmitResponse
     rpc get_metadata(GetMetadataRequest) -> GetMetadataResponse
     rpc get_blobs(GetBlobsRequest) -> GetBlobsResponse
+    rpc update_change(UpdateChangeRequest) -> UpdateChangeResponse
 }
 
-message NewChangeRequest {
-    dir: string = 0
-    alias: string = 1
-    basis: Basis = 2
-}
-
-message NewChangeResponse {
+message NewSpaceResponse {
     failed: bool = 0
     error_message: string = 1
 
@@ -177,4 +197,15 @@ message LinkRequest {
 message LinkResponse {
     failed: bool = 0
     error_message: string = 1
+}
+
+message Space {
+    directory: string = 0
+    basis: Basis = 1
+}
+
+message NewSpaceRequest {
+    dir: string = 0
+    alias: string = 1
+    basis: Basis = 2
 }

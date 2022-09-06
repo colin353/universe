@@ -1,14 +1,12 @@
 use raw_tty::{GuardMode, IntoRawMode};
 use tui::{Component, Transition};
 
-pub fn choose_change(
-    mut changes: Vec<(String, service::Change)>,
-) -> Option<(String, service::Change)> {
-    let choices: Vec<_> = changes
+pub fn choose_space(mut spaces: Vec<(String, service::Space)>) -> Option<(String, service::Space)> {
+    let choices: Vec<_> = spaces
         .iter()
         .map(|(name, c)| format!("{}\t\t\t{}", name, core::fmt_basis(c.basis.as_view())))
         .collect();
-    let ctrl = filter::Filter::new("pick a change".to_string(), choices.clone());
+    let ctrl = filter::Filter::new("pick a space".to_string(), choices.clone());
 
     let term = tui::Terminal::new();
     let mut app = tui::App::start_with_terminal(Box::new(ctrl), term);
@@ -40,7 +38,7 @@ pub fn choose_change(
                         }
                     }
                 };
-                return Some(changes.remove(idx));
+                return Some(spaces.remove(idx));
             }
             _ => continue,
         }

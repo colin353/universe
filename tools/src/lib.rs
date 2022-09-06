@@ -289,7 +289,7 @@ impl Src {
 
         std::fs::create_dir_all(self.get_change_path(&alias)).ok();
         let f = std::fs::File::create(self.get_change_metadata_path(&alias))?;
-        let change = service::Change {
+        let change = service::Space {
             basis,
             directory: path
                 .to_str()
@@ -396,10 +396,10 @@ impl Src {
         })
     }
 
-    pub fn new_change(
+    pub fn new_space(
         &self,
-        req: service::NewChangeRequest,
-    ) -> std::io::Result<service::NewChangeResponse> {
+        req: service::NewSpaceRequest,
+    ) -> std::io::Result<service::NewSpaceResponse> {
         let directory = std::path::PathBuf::from(&req.dir);
         let directory_str = req.dir;
 
@@ -409,7 +409,7 @@ impl Src {
             .map(|mut i| i.next().is_none())
             .unwrap_or(false)
         {
-            return Ok(service::NewChangeResponse {
+            return Ok(service::NewSpaceResponse {
                 failed: true,
                 error_message: String::from("change directory must be empty!"),
                 ..Default::default()
@@ -420,7 +420,7 @@ impl Src {
         std::fs::create_dir_all(self.get_change_path(&req.alias)).ok();
         let f = std::fs::File::create(self.get_change_metadata_path(&req.alias))?;
 
-        let change = service::Change {
+        let space = service::Space {
             basis: service::Basis {
                 host: req.basis.host.clone(),
                 owner: req.basis.owner.clone(),
@@ -430,7 +430,7 @@ impl Src {
             },
             directory: directory_str.clone(),
         };
-        change.encode(&mut std::io::BufWriter::new(f))?;
+        space.encode(&mut std::io::BufWriter::new(f))?;
 
         std::fs::write(
             self.get_change_dir_path(&std::path::Path::new(&directory_str)),
@@ -465,7 +465,7 @@ impl Src {
                     (depth, key[idx + 1..].to_string())
                 }
                 None => {
-                    return Ok(service::NewChangeResponse {
+                    return Ok(service::NewSpaceResponse {
                         failed: true,
                         error_message: "invalid metadata path!".to_string(),
                         ..Default::default()
@@ -497,7 +497,7 @@ impl Src {
                     shas: to_download.iter().map(|(sha, _)| sha.to_vec()).collect(),
                 }) {
                     Err(_) => {
-                        return Ok(service::NewChangeResponse {
+                        return Ok(service::NewSpaceResponse {
                             failed: true,
                             error_message: "failed to download blobs!".to_string(),
                             ..Default::default()
@@ -507,7 +507,7 @@ impl Src {
                 };
 
                 if resp.failed {
-                    return Ok(service::NewChangeResponse {
+                    return Ok(service::NewSpaceResponse {
                         failed: true,
                         error_message: "failed to download blobs!".to_string(),
                         ..Default::default()
@@ -515,7 +515,7 @@ impl Src {
                 }
 
                 if resp.blobs.len() != to_download.len() {
-                    return Ok(service::NewChangeResponse {
+                    return Ok(service::NewSpaceResponse {
                         failed: true,
                         error_message: "failed to download all blobs!".to_string(),
                         ..Default::default()
@@ -526,7 +526,7 @@ impl Src {
                     let files = match to_download.get(&blob.sha) {
                         Some(p) => p,
                         None => {
-                            return Ok(service::NewChangeResponse {
+                            return Ok(service::NewSpaceResponse {
                                 failed: true,
                                 error_message: "got an unexpected blob".to_string(),
                                 ..Default::default()
@@ -552,7 +552,7 @@ impl Src {
             }) {
                 Ok(r) => r,
                 Err(_) => {
-                    return Ok(service::NewChangeResponse {
+                    return Ok(service::NewSpaceResponse {
                         failed: true,
                         error_message: "failed to download blobs!".to_string(),
                         ..Default::default()
@@ -561,7 +561,7 @@ impl Src {
             };
 
             if resp.failed {
-                return Ok(service::NewChangeResponse {
+                return Ok(service::NewSpaceResponse {
                     failed: true,
                     error_message: "failed to download blobs!".to_string(),
                     ..Default::default()
@@ -569,7 +569,7 @@ impl Src {
             }
 
             if resp.blobs.len() != to_download.len() {
-                return Ok(service::NewChangeResponse {
+                return Ok(service::NewSpaceResponse {
                     failed: true,
                     error_message: "failed to download all blobs!".to_string(),
                     ..Default::default()
@@ -580,7 +580,7 @@ impl Src {
                 let files = match to_download.get(&blob.sha) {
                     Some(p) => p,
                     None => {
-                        return Ok(service::NewChangeResponse {
+                        return Ok(service::NewSpaceResponse {
                             failed: true,
                             error_message: "got an unexpected blob".to_string(),
                             ..Default::default()
@@ -605,14 +605,14 @@ impl Src {
             }
         }
 
-        Ok(service::NewChangeResponse {
+        Ok(service::NewSpaceResponse {
             dir: directory_str,
             index,
             ..Default::default()
         })
     }
 
-    pub fn list_changes(&self) -> std::io::Result<Vec<(String, service::Change)>> {
+    pub fn list_changes(&self) -> std::io::Result<Vec<(String, service::Space)>> {
         let mut out = Vec::new();
         for entry in std::fs::read_dir(&self.root.join("changes").join("by_alias"))? {
             let entry = entry?;
@@ -677,7 +677,7 @@ mod tests {
     fn test_checkout() {
         let d = src();
         let resp = d
-            .new_change(NewChangeRequest {
+            .new_space(NewSpaceRequest {
                 dir: "/tmp/code/my-branch".to_string(),
                 alias: "my-branch".to_string(),
                 basis: Basis {
@@ -703,10 +703,8 @@ mod tests {
                 ..Default::default()
             })
             .unwrap();
-        assert_eq!(resp.failed, false);
         println!("{:#?}", resp);
-
-        panic!();
+        assert_eq!(resp.failed, false);
     }
 
     fn test_system() {

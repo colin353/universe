@@ -60,10 +60,20 @@ message DeleteResponse {
     timestamp: u64 = 2
 }
 
+message ReserveIDRequest {
+    row: string = 0
+    column: string = 1
+}
+
+message ReserveIDResponse {
+    id: u64 = 0
+}
+
 service LargeTable {
     rpc read(ReadRequest) -> ReadResponse
     rpc write(WriteRequest) -> WriteResponse
     rpc delete(DeleteRequest) -> DeleteResponse
     rpc read_range(ReadRangeRequest) -> ReadRangeResponse
     rpc write_bulk(WriteBulkRequest) -> WriteBulkResponse
+    rpc reserve_id(ReserveIDRequest) -> ReserveIDResponse
 }

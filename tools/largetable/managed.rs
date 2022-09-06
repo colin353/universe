@@ -145,6 +145,14 @@ impl ManagedLargeTable {
         })
     }
 
+    pub fn reserve_id(&self, row: String, column: String) -> std::io::Result<u64> {
+        let timestamp = timestamp_usec();
+        self.table
+            .read()
+            .expect("failed to read lock largetable")
+            .reserve_id(row, column, timestamp)
+    }
+
     pub fn monitor_memory(&self) {
         let mut last_check = std::time::Instant::now();
         let mut last_memory = {
@@ -318,6 +326,17 @@ impl service::LargeTableServiceHandler for ManagedLargeTable {
         Ok(self
             .delete(req.row, req.column, req.timestamp)
             .map_err(|e| bus::BusRpcError::InternalError(format!("{:?}", e)))?)
+    }
+
+    fn reserve_id(
+        &self,
+        req: service::ReserveIDRequest,
+    ) -> Result<service::ReserveIDResponse, bus::BusRpcError> {
+        Ok(service::ReserveIDResponse {
+            id: self
+                .reserve_id(req.row, req.column)
+                .map_err(|e| bus::BusRpcError::InternalError(format!("{:?}", e)))?,
+        })
     }
 }
 

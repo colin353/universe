@@ -128,7 +128,7 @@ fn snapshot(data_dir: std::path::PathBuf, msg: String) {
 fn jump(data_dir: std::path::PathBuf, name: String) {
     let d = src_lib::Src::new(data_dir).expect("failed to initialize src!");
 
-    let change: service::Change = if !name.is_empty() {
+    let change: service::Space = if !name.is_empty() {
         match d.get_change_by_alias(&name) {
             Some(c) => c,
             None => std::process::exit(1),
@@ -138,7 +138,7 @@ fn jump(data_dir: std::path::PathBuf, name: String) {
             Ok(o) => o,
             Err(_) => std::process::exit(1),
         };
-        let (name, ch) = match cli::choose_change(out) {
+        let (name, ch) = match cli::choose_space(out) {
             Some(o) => o,
             None => std::process::exit(1),
         };
