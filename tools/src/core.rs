@@ -124,10 +124,21 @@ pub fn diff(original: &[u8], modified: &[u8]) -> Vec<service::ByteDiff> {
             }
             patience::DiffComponent::Insertion(right) => {
                 let start = right_pos as usize;
+                let left_start = left_pos;
+                let mut kind = service::DiffKind::Added;
                 right_pos += right.len() as u32;
-                while let Some(patience::DiffComponent::Insertion(right)) = diff_iter.peek() {
-                    right_pos += right.len() as u32;
-                    diff_iter.next();
+                loop {
+                    if let Some(patience::DiffComponent::Insertion(right)) = diff_iter.peek() {
+                        right_pos += right.len() as u32;
+                        diff_iter.next();
+                    } else if let Some(patience::DiffComponent::Deletion(right)) = diff_iter.peek()
+                    {
+                        kind = service::DiffKind::Modified;
+                        left_pos += right.len() as u32;
+                        diff_iter.next();
+                    } else {
+                        break;
+                    }
                 }
 
                 let diff_data = &modified[start..right_pos as usize];
@@ -138,9 +149,9 @@ pub fn diff(original: &[u8], modified: &[u8]) -> Vec<service::ByteDiff> {
                 };
 
                 out.push(service::ByteDiff {
-                    start: left_pos,
+                    start: left_start,
                     end: left_pos,
-                    kind: service::DiffKind::Added,
+                    kind,
                     data,
                     compression,
                 });
@@ -504,22 +515,13 @@ mod tests {
         let out = diff(left.as_bytes(), right.as_bytes());
         assert_eq!(
             out,
-            vec![
-                service::ByteDiff {
-                    start: 6,
-                    end: 6,
-                    kind: service::DiffKind::Added,
-                    data: "duo\n".as_bytes().to_vec(),
-                    compression: service::CompressionKind::None,
-                },
-                service::ByteDiff {
-                    start: 6,
-                    end: 13,
-                    kind: service::DiffKind::Removed,
-                    data: vec![],
-                    compression: service::CompressionKind::None,
-                },
-            ]
+            vec![service::ByteDiff {
+                start: 6,
+                end: 13,
+                kind: service::DiffKind::Modified,
+                data: "duo\n".as_bytes().to_vec(),
+                compression: service::CompressionKind::None,
+            }]
         );
     }
 
@@ -530,22 +532,13 @@ mod tests {
         let out = diff(left, right);
         assert_eq!(
             out,
-            vec![
-                service::ByteDiff {
-                    start: 0,
-                    end: 0,
-                    kind: service::DiffKind::Added,
-                    data: vec![1, 2, 11, 12],
-                    compression: service::CompressionKind::None,
-                },
-                service::ByteDiff {
-                    start: 0,
-                    end: 4,
-                    kind: service::DiffKind::Removed,
-                    data: vec![],
-                    compression: service::CompressionKind::None,
-                },
-            ]
+            vec![service::ByteDiff {
+                start: 0,
+                end: 4,
+                kind: service::DiffKind::Modified,
+                data: vec![1, 2, 11, 12],
+                compression: service::CompressionKind::None,
+            },]
         );
     }
 
