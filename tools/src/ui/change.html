@@ -1,0 +1,73 @@
+<div class="page">
+    <div class="change-overview">
+        <div onclick="window.location.href='/{{id}}'" class="form-field">
+            <div class="title">Change Index</div>
+            <div class="contents">{{id}}</div>
+        </div>
+        <div class="form-field description">
+            <div class="title">Description</div>
+            <div class="contents">{{description}}</div>
+        </div>
+        <div class="form-field">
+            <div class="title">Author</div>
+            <div class="contents">{{author}}</div>
+        </div>
+        <div class="form-field">
+            <div class="title">Reviewers</div>
+            <div class="contents">{{reviewers}}</div>
+        </div>
+        <div class="form-field">
+            <div class="title">Status</div>
+            <div class="contents">{{status}}</div>
+        </div>
+        <div class="form-field">
+            <div class="title">Space</div>
+            <div class="contents">{{friendly_name}}</div>
+        </div>
+        <div class="form-field">
+            <div class="title">Based on</div>
+            <div class="contents">{{based_index}}</div>
+        </div>
+        <div class="form-field">
+            <div class="title">Date</div>
+            <div class="contents"><span class="timestamp" data-timestamp={{last_modified_timestamp}}></span></div>
+        </div>
+    </div>
+
+    <div class="actions">
+        <script>
+            async function submit() {
+              response = await fetch('/api/tasks/submit/{{id}}', { method: 'POST' })
+              window.location.reload()
+            }
+            async function test() {
+              response = await fetch('/api/tasks/build/{{id}}', { method: 'POST' })
+              window.location.reload()
+            }
+            async function archive() {
+              if (confirm("Really archive this change?")) {
+                response = await fetch('/api/tasks/archive/{{id}}', { method: 'POST' })
+                window.location.reload()
+              }
+            }
+      </script>
+        <button onclick="submit()" type="button">Submit</button>
+        <button onclick="test()" type="button">Run presubmit</button>
+        {{status != "ARCHIVED" }}
+        <button onclick="archive()" type="button">Archive</button>
+        {{/status}}
+
+        {{tasks != 0}}
+        {{tasks[]}}
+        <a class='invisible-link' href='{{info_url}}'>
+            <div class='pill {{status}}'>{{name}}</div>
+        </a>
+        {{/tasks}}
+        {{/tasks}}
+    </div>
+
+    {{body}}
+</div>
+</div>
+
+</div>

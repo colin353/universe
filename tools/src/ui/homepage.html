@@ -1,0 +1,36 @@
+<div class="content">
+    <b>in progress</b>
+    {{progress == 0}}
+    <p>No recent changes</p>
+    {{/progress}}
+
+    {{progress != 0}}
+    <table class='change-list'>
+        {{progress[]}}
+        <tr onclick="window.location.href='/{{id}}'">
+            <td class='id'><a class='invisible-link' href="/{{id}}">#{{id}}</a></td>
+            <td class='author'>{{author}}</td>
+            <td class='summary'>{{summary}}</td>
+        </tr>
+        {{/progress}}
+    </table>
+    {{/progress}}
+
+    <b>recently submitted</b>
+
+    {{submitted == 0}}
+    <p>No submitted changes</p>
+    {{/submitted}}
+
+    {{submitted != 0}}
+    <table class='change-list'>
+        {{submitted[]}}
+        <tr onclick="window.location.href='/{{id}}'">
+            <td class='id'><a class='invisible-link' href="/{{id}}">#{{id}}</a></td>
+            <td class='author'>{{author}}</td>
+            <td class='summary'>{{summary}}</td>
+        </tr>
+        {{/submitted}}
+    </table>
+    {{/submitted}}
+</div>

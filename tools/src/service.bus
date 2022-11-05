@@ -139,6 +139,22 @@ message UpdateChangeResponse {
     url: string = 3
 }
 
+message ListChangesRequest {
+    token: string = 0
+    owner: string = 1
+    repo_name: string = 2
+    repo_owner: string = 3
+    status: ChangeStatus = 4
+    starting_from: string = 5
+    limit: u64 = 6
+}
+
+message ListChangesResponse {
+    failed: bool = 0
+    error_message: string = 1
+    changes: repeated Change = 2
+}
+
 service SrcServer {
     rpc create(CreateRequest) -> CreateResponse
     rpc get_repository(GetRepositoryRequest) -> GetRepositoryResponse
@@ -146,6 +162,7 @@ service SrcServer {
     rpc get_metadata(GetMetadataRequest) -> GetMetadataResponse
     rpc get_blobs(GetBlobsRequest) -> GetBlobsResponse
     rpc update_change(UpdateChangeRequest) -> UpdateChangeResponse
+    rpc list_changes(ListChangesRequest) -> ListChangesResponse
 }
 
 message NewSpaceResponse {

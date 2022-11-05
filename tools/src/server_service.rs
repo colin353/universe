@@ -577,11 +577,171 @@ impl service::SrcServerServiceHandler for SrcServer {
                 change.clone(),
             )
             .map_err(|e| {
-                bus::BusRpcError::InternalError(format!("failed to read from table: {:?}", e))
+                bus::BusRpcError::InternalError(format!("failed to write to table: {:?}", e))
+            })?;
+
+        // Update the user index
+        self.table
+            .write(
+                format!("{}/changes", change.owner),
+                format!(
+                    "{}/{}/{}",
+                    change.repo_owner,
+                    change.repo_name,
+                    core::encode_id(change.id)
+                ),
+                0,
+                bus::Nothing {},
+            )
+            .map_err(|e| {
+                bus::BusRpcError::InternalError(format!("failed to write to table: {:?}", e))
             })?;
 
         Ok(UpdateChangeResponse {
             id,
+            ..Default::default()
+        })
+    }
+
+    fn list_changes(
+        &self,
+        req: ListChangesRequest,
+    ) -> Result<ListChangesResponse, bus::BusRpcError> {
+        let username = match self.auth(&req.token) {
+            Ok(u) => u,
+            Err(e) => {
+                return Ok(ListChangesResponse {
+                    failed: true,
+                    error_message: e,
+                    ..Default::default()
+                })
+            }
+        };
+
+        let req_filter = |c: &service::Change| {
+            if req.status != c.status {
+                return false;
+            }
+            true
+        };
+
+        let changes = if !req.owner.is_empty() {
+            let row = format!("{}/changes", username);
+            let filter = largetable::Filter {
+                row: &row,
+                spec: "",
+                min: &req.starting_from,
+                max: "",
+            };
+            let resp = self.table.read_range(filter, 0, 1000).map_err(|e| {
+                eprintln!("{:?}", e);
+                bus::BusRpcError::InternalError("failed to touch parent folders".to_string())
+            })?;
+
+            let expected_prefix = if !req.repo_name.is_empty() && !req.repo_owner.is_empty() {
+                format!("{}/{}", req.repo_owner, req.repo_name)
+            } else {
+                String::new()
+            };
+            let mut changes = Vec::new();
+            for record in resp.records {
+                if !record.key.starts_with(&expected_prefix) {
+                    continue;
+                }
+
+                let components: Vec<_> = record.key.split("/").collect();
+                if components.len() != 3 {
+                    return Err(bus::BusRpcError::InternalError(
+                        "read incorrect record format in user change index!".to_string(),
+                    ));
+                }
+
+                let row = format!("{}/{}", components[0], components[1]);
+
+                let col = core::encode_id(match components[2].parse::<u64>() {
+                    Ok(id) => id,
+                    Err(_) => {
+                        return Err(bus::BusRpcError::InternalError(
+                            "read incorrect id format in user change index!".to_string(),
+                        ));
+                    }
+                });
+
+                if let Some(c) = self.table.read(&row, &col, 0) {
+                    let c = c.map_err(|e| {
+                        bus::BusRpcError::InternalError(format!(
+                            "failed to read from table: {:?}",
+                            e
+                        ))
+                    })?;
+                    if req_filter(&c) {
+                        changes.push(c);
+                    }
+                }
+
+                if changes.len() == req.limit as usize {
+                    break;
+                }
+            }
+            changes
+        } else if !req.repo_name.is_empty() && !req.repo_owner.is_empty() {
+            let row = format!("{}/{}/changes", req.repo_owner, req.repo_name);
+            let start_id =
+                if !req.starting_from.is_empty() {
+                    let components: Vec<_> = req.starting_from.split("/").collect();
+                    if components.len() != 3 {
+                        return Err(bus::BusRpcError::InternalError(
+                            "starting_from field must be in the format <owner>/<repo>/<change id>"
+                                .to_string(),
+                        ));
+                    }
+                    match components[2].parse::<u64>() {
+                        Ok(id) => core::encode_id(id),
+                        Err(_) => return Err(bus::BusRpcError::InternalError(
+                            "starting_from field must be in the format <owner>/<repo>/<change id>"
+                                .to_string(),
+                        )),
+                    }
+                } else {
+                    String::new()
+                };
+
+            let filter = largetable::Filter {
+                row: &row,
+                spec: "",
+                min: &req.starting_from,
+                max: "",
+            };
+            let resp = self.table.read_range(filter, 0, 1000).map_err(|e| {
+                eprintln!("{:?}", e);
+                bus::BusRpcError::InternalError("failed to read from table".to_string())
+            })?;
+
+            let mut changes = Vec::new();
+            for record in resp.records {
+                let change = match service::Change::from_bytes(&record.data) {
+                    Ok(c) => c,
+                    Err(_) => {
+                        return Err(bus::BusRpcError::InternalError(
+                            "unable to decode change!".to_string(),
+                        ))
+                    }
+                };
+                if req_filter(&change) {
+                    changes.push(change);
+                }
+            }
+            changes
+        } else {
+            return Ok(ListChangesResponse {
+                failed: true,
+                error_message: "a repo name or user must be specified".to_string(),
+                ..Default::default()
+            });
+        };
+
+        Ok(ListChangesResponse {
+            changes,
             ..Default::default()
         })
     }

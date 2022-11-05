@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" type="text/css" href="/static/style.css">
+    <title>{{title}}</title>
+
+    <style type="text/css">
+        @import url(https://fonts.googleapis.com/css?family=Roboto+Mono);
+
+        body {
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            color: rgba(0, 0, 0, 0.87);
+            font-family: 'Roboto Mono', sans-serif;
+        }
+
+        .page {
+            display: block;
+        }
+
+        .form-field .title {
+            text-transform: uppercase;
+            font-size: 0.6em;
+        }
+
+        .form-field .contents {
+            height: 1.25em;
+        }
+
+        .form-field {
+            padding: 4px;
+            border: 0.5px solid rgba(0, 0, 0, 0.2);
+        }
+
+        .change-overview {
+            margin-left: auto;
+            margin-right: auto;
+            display: grid;
+            grid-template-columns: 240px 256px 256px 272px;
+            width: 1024px;
+            border: 0.5px solid rgba(0, 0, 0, 0.2);
+        }
+
+        .description {
+            overflow-y: scroll;
+            overflow-x: hidden;
+            grid-row-start: 1;
+            grid-row-end: 4;
+            grid-column-start: 2;
+            grid-column-end: 5;
+        }
+
+        .tests {
+            grid-row-start: 5;
+            grid-column-start: 2;
+            grid-column-end: 5;
+        }
+
+        .small-heading {
+            text-transform: uppercase;
+            font-size: 0.6em;
+        }
+
+        .modified-files {
+            margin-top: 20px;
+        }
+
+        .actions {
+            width: 1024px;
+            margin-left: auto;
+            margin-right: auto;
+            margin-top: 20px;
+        }
+
+        .status-deleted {
+            color: red
+        }
+
+        .status-modified {
+            color: yellow
+        }
+
+        .status-added {
+            color: green
+        }
+
+        .header {
+            width: 1024px;
+            display: flex;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .search-input {
+            height: 20px;
+            margin-top: 20px;
+        }
+
+        .content {
+            width: 1024px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        a.invisible-link {
+            color: black;
+            text-decoration: none;
+        }
+
+        table.change-list {
+            margin-top: 10px;
+            margin-bottom: 10px;
+        }
+
+        table.change-list td.id {
+            width: 50px;
+        }
+
+        table.change-list td.author {
+            width: 100px;
+            color: grey;
+        }
+
+        button {
+            font-size: 12pt;
+        }
+
+        .pill {
+            display: inline-block;
+            font-size: 12pt;
+            display: inline-block;
+            font-size: 12pt;
+            padding: 2px 10px;
+            position: relative;
+            top: 1px;
+            border-radius: 5px;
+            background-color: #fd9644;
+            color: white;
+            font-weight: normal;
+        }
+
+        .pill.SUCCESS {
+            background-color: #20bf6b;
+        }
+
+        .pill.FAILURE {
+            background-color: #eb3b5a;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="header">
+        <h2 style="margin-right: 20px; flex: 1"><a class="invisible-link" href="/">review</a></h2>
+        <input class="search-input" type=text placeholder="search" />
+    </div>
+    {{content}}
+</body>
+
+<script>
+    const elements = document.getElementsByClassName("timestamp");
+    for (var i = 0; i < elements.length; i++) {
+        const el = elements[i];
+        const t = el.getAttribute("data-timestamp");
+        const options = {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+        }
+        el.innerHTML = (new Date(parseInt(t) / 1000)).toLocaleDateString("en-US", options);
+    };
+</script>
+
+
+</html>

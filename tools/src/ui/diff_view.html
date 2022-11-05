@@ -1,0 +1,66 @@
+<div style="display: flex">
+    <p style="flex: 1"><a target="_blank" href="https://search.colinmerkel.xyz{{filename}}">{{filename}}</a> ({{status}})</p>
+    {{next_file != ""}}
+    <p><a href="/{{id}}{{next_file}}">{{next_file}}</a></p>
+    {{/next_file}}
+    {{next_file == ""}}
+    <p><a href="/{{id}}">back to overview</a></p>
+    {{/next_file}}
+</div>
+
+<style>
+.sticky-header {
+  flex-direction: row;
+  position: fixed;
+  display: none;
+  top: 0;
+  background-color: white;
+  width: 100%;
+}
+.sticky-next {
+  margin-right: 20px;
+}
+.sticky-description {
+  margin-right: 20px;
+  color: grey;
+}
+.sticky-header.sticky-visible {
+  display: flex;
+}
+</style>
+
+<div id='sticky-header' class='sticky-header'>
+  <div class='sticky-description'><p><a href="/{{id}}">c/1078</a> {{summary}}</p></div>
+
+  <div class='sticky-reviewing'>
+    <p><a target="_blank" href="https://search.colinmerkel.xyz{{filename}}">{{filename}}</a> ({{status}})</p>
+  </div>
+  <div style="flex: 1"></div>
+  <div class='sticky-next'>
+    {{next_file != ""}}
+    <p><a href="/{{id}}{{next_file}}">{{next_file}}</a></p>
+    {{/next_file}}
+    {{next_file == ""}}
+    <p><a href="/{{id}}">back to overview</a></p>
+    {{/next_file}}
+  </div>
+</div>
+
+
+<script>
+
+const stickyHeader = document.getElementById('sticky-header');
+
+window.onscroll = function() {
+  if (window.pageYOffset > 300) {
+    stickyHeader.classList.add("sticky-visible");
+  } else {
+    stickyHeader.classList.remove("sticky-visible");
+  }
+}
+</script>
+
+<diff-view language="{{language}}" left="{{original.contents}}" right="{{modified.contents}}">
+</diff-view>
+
+<script type=module src="https://js.colinmerkel.xyz/homepage/js/diff_view.mjs"></script>

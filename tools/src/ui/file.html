@@ -1,0 +1,22 @@
+<div class="page">
+    <div class="change-overview">
+        <div class="form-field">
+            <div class="title">Change Index</div>
+            <div class="contents">{{change.id}}</div>
+        </div>
+        <div class="form-field">
+            <div class="title">Author</div>
+            <div class="contents">{{change.author}}</div>
+        </div>
+        <div class="form-field" style="grid-column-start: 3; grid-column-end: 5;">
+            <div class="title">Filename</div>
+            <div class="contents">
+                {{file.filename}}
+                <span class="status-{{file.status}}">{{file.status}}</span>
+            </div>
+        </div>
+    </div>
+
+    <div style="height: 600px; width: 1024px;" id="editor" data-left="{{file.original}}" data-right="{{file.new}}" data-type="{{file.status}}"></div>
+    <script src="/static/changed_file.js"></script>
+</div>
