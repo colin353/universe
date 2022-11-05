@@ -4,6 +4,7 @@ use std::sync::{Arc, RwLock};
 use bus::{Deserialize, Serialize};
 
 mod helpers;
+mod metadata;
 
 pub struct Src {
     // table: managed_largetable::ManagedLargeTable,
@@ -59,10 +60,7 @@ impl Src {
         Ok(client)
     }
 
-    fn get_metadata(
-        &self,
-        basis: service::BasisView,
-    ) -> std::io::Result<sstable::SSTableReader<service::FileView>> {
+    pub fn get_metadata(&self, basis: service::BasisView) -> std::io::Result<metadata::Metadata> {
         // Check whether we already downloaded the metadata
         let metadata_path = self
             .root
@@ -73,7 +71,7 @@ impl Src {
             .with_extension("sstable");
 
         if metadata_path.exists() {
-            return Ok(sstable::SSTableReader::from_filename(&metadata_path)?);
+            return metadata::Metadata::from_path(&metadata_path);
         }
 
         let client = self.get_client(basis.get_host())?;
@@ -102,21 +100,20 @@ impl Src {
         }
         std::fs::write(&metadata_path, &resp.data)?;
 
-        Ok(sstable::SSTableReader::from_filename(metadata_path)?)
+        metadata::Metadata::from_path(&metadata_path)
     }
 
     fn diff_from(
         &self,
         root: &std::path::Path,
         path: &std::path::Path,
-        metadata: &sstable::SSTableReader<service::FileView>,
+        metadata: &metadata::Metadata,
         differences: &mut Vec<service::FileDiff>,
     ) -> std::io::Result<()> {
         let get_metadata = |p: &std::path::Path| -> Option<service::FileView> {
             let path_str = p.to_str()?;
             let key = format!("{}/{}", path_str.split("/").count(), path_str);
-            let result = metadata.get(&key);
-            result
+            metadata.get(&key)
         };
 
         let mut observed_paths = Vec::new();

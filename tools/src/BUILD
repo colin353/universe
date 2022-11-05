@@ -10,7 +10,7 @@ rust_bus_library(
 
 rust_library(
     name = "src_lib",
-    srcs = ["lib.rs", "helpers.rs"],
+    srcs = ["lib.rs", "helpers.rs", "metadata.rs"],
     deps = [
       ":service",
       "//tools/largetable:managed_largetable",

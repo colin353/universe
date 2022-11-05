@@ -48,7 +48,7 @@ impl crate::Src {
         self.root.join("blobs").join(core::fmt_sha(sha))
     }
 
-    pub(crate) fn get_blob(&self, sha: &[u8]) -> Option<Vec<u8>> {
+    pub fn get_blob(&self, sha: &[u8]) -> Option<Vec<u8>> {
         std::fs::read(self.get_blob_path(sha)).ok()
     }
 

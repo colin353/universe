@@ -42,6 +42,18 @@ pub fn compress(data: &[u8]) -> Vec<u8> {
     output
 }
 
+pub fn decompress(method: service::CompressionKind, data: &[u8]) -> std::io::Result<Vec<u8>> {
+    match method {
+        service::CompressionKind::None => Ok(data.to_owned()),
+        service::CompressionKind::LZ4 => {
+            let mut out = Vec::new();
+            let mut decoder = lz4::Decoder::new(data)?;
+            decoder.read_to_end(&mut out)?;
+            Ok(out)
+        }
+    }
+}
+
 pub fn hash_file(path: &std::path::Path) -> std::io::Result<[u8; 32]> {
     let mut f = std::fs::File::open(path)?;
     let mut buf = vec![0_u8; 8192];

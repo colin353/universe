@@ -93,7 +93,76 @@ fn diff(data_dir: std::path::PathBuf) {
         std::process::exit(1);
     }
 
-    core::render::print_diff(&resp.files);
+    // Collect up the original versions of the files to print the patch
+    let metadata = match d.get_metadata(resp.basis.as_view()) {
+        Ok(m) => m,
+        Err(e) => {
+            eprintln!("{}", e);
+            std::process::exit(1);
+        }
+    };
+
+    let _files_and_originals: Vec<_> = resp
+        .files
+        .iter()
+        .map(|f| {
+            let original = metadata.get(&f.path).map(|fv| {
+                let data = match d.get_blob(fv.get_sha()) {
+                    Some(o) => o,
+                    None => {
+                        eprintln!("failed to get blob {:?}", core::fmt_sha(fv.get_sha()));
+                        std::process::exit(1);
+                    }
+                };
+
+                service::Blob {
+                    sha: fv.get_sha().to_owned(),
+                    data,
+                }
+            });
+            (f, original)
+        })
+        .collect();
+
+    let diff_ingredients: Vec<_> = _files_and_originals
+        .iter()
+        .map(|(f, o)| (*f, o.as_ref()))
+        .collect();
+
+    println!(
+        "{}",
+        core::render::print_patch("", "", diff_ingredients.as_slice())
+    );
+}
+
+fn files(data_dir: std::path::PathBuf) {
+    let cwd = match std::env::current_dir() {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("unable to determine current working directory! {:?}", e);
+            std::process::exit(1);
+        }
+    };
+
+    let d = src_lib::Src::new(data_dir).expect("failed to initialize src!");
+    let resp = d
+        .diff(service::DiffRequest {
+            dir: cwd
+                .to_str()
+                .expect("current working directory must be valid unicode!")
+                .to_owned(),
+            ..Default::default()
+        })
+        .unwrap();
+
+    if resp.failed {
+        eprintln!("{}", resp.error_message);
+        std::process::exit(1);
+    }
+
+    for file in &resp.files {
+        println!("{}", file.path);
+    }
 }
 
 fn snapshot(data_dir: std::path::PathBuf, msg: String) {
@@ -298,6 +367,13 @@ fn main() {
                 std::process::exit(1);
             }
             diff(data_dir)
+        }
+        "files" => {
+            if args.len() != 1 {
+                eprintln!("usage: src diff");
+                std::process::exit(1);
+            }
+            files(data_dir)
         }
         "snapshot" => {
             if args.len() != 1 {

@@ -1,8 +1,6 @@
 use crate::patience;
 use std::fmt::Write;
 
-const NUM_LINES_CONTEXT: usize = 3;
-
 pub fn print_diff(files: &[service::FileDiff]) {
     // Print added files
     let mut first = true;
@@ -77,12 +75,6 @@ impl Snippet {
             old_end_pos += 1;
         }
 
-        let old_length = prev_data[diff.start as usize..diff.end as usize]
-            .iter()
-            .filter(|b| **b == 0x0a)
-            .count()
-            + 1;
-
         let mut new_data = prev_data[old_start_pos..diff.start as usize].to_owned();
         let modified_start_pos = new_data.len();
         new_data.extend_from_slice(diff.data.as_slice());
@@ -96,23 +88,6 @@ impl Snippet {
             modified_end_pos,
             new_data,
         };
-    }
-
-    #[cfg(test)]
-    pub fn print(&self, prev_data: &[u8]) {
-        println!(
-            "snippet: old[{}..{}] modified[{}..{}] new_len: {}",
-            self.old_start_pos,
-            self.old_end_pos,
-            self.modified_start_pos,
-            self.modified_end_pos,
-            self.new_data.len(),
-        );
-        println!("new : {:#?}", std::str::from_utf8(&self.new_data).unwrap());
-        println!(
-            "prev: {:#?}",
-            std::str::from_utf8(&prev_data[self.old_start_pos..self.old_end_pos]).unwrap(),
-        );
     }
 
     pub fn merge(&mut self, next_snippet: &Snippet, prev_data: &[u8]) -> bool {
@@ -187,7 +162,7 @@ pub fn print_patch(
                     snippets.push(s);
                 }
 
-                let mut offset = 0;
+                let offset = 0;
                 for snippet in snippets {
                     let old_start_line_number = prev.data[0..snippet.old_start_pos]
                         .iter()
@@ -234,20 +209,57 @@ pub fn print_patch(
 
                     for diff in patience::patience_diff(&old_lines, &new_lines) {
                         match diff {
-                            patience::DiffComponent::Unchanged(left, right) => {
-                                write!(&mut out, " {}", std::str::from_utf8(left).unwrap());
+                            patience::DiffComponent::Unchanged(left, _) => {
+                                write!(&mut out, " {}", std::str::from_utf8(left).unwrap())
+                                    .unwrap();
                             }
                             patience::DiffComponent::Insertion(right) => {
-                                write!(&mut out, "+{}", std::str::from_utf8(right).unwrap());
+                                write!(&mut out, "+{}", std::str::from_utf8(right).unwrap())
+                                    .unwrap();
                             }
                             patience::DiffComponent::Deletion(left) => {
-                                write!(&mut out, "-{}", std::str::from_utf8(left).unwrap());
+                                write!(&mut out, "-{}", std::str::from_utf8(left).unwrap())
+                                    .unwrap();
                             }
                         }
                     }
                 }
             }
-            _ => continue,
+            service::DiffKind::Added => {
+                writeln!(&mut out, "--- /dev/null").unwrap();
+                writeln!(&mut out, "+++ b/{}", fd.path).unwrap();
+
+                let mut buf = Vec::new();
+                let mut content: &[u8] = &[];
+                for bd in &fd.differences {
+                    if bd.kind != service::DiffKind::Added {
+                        continue;
+                    }
+
+                    if bd.compression == service::CompressionKind::None {
+                        content = bd.data.as_slice();
+                    } else {
+                        buf = match crate::decompress(bd.compression, &bd.data) {
+                            Ok(b) => b,
+                            Err(_) => continue,
+                        };
+                        content = buf.as_slice();
+                    }
+                    break;
+                }
+
+                let content_str = match std::str::from_utf8(&content) {
+                    Ok(c) => c,
+                    // TODO: handle binary content
+                    Err(_) => continue,
+                };
+                let line_count = content_str.lines().count();
+                writeln!(&mut out, "@@ -0,0 +1,{} @@", line_count).unwrap();
+                for line in content_str.lines() {
+                    writeln!(&mut out, "+{}", line).unwrap();
+                }
+            }
+            _ => {}
         }
     }
 
@@ -298,6 +310,77 @@ Subject: [PATCH 1/1] asdf
 +    println!(\"hello world\");
 -    println!(\"hello, world\");
  }
+";
+
+        println!(
+            "expected patch:\n{}\n\nactual patch:\n{}\n",
+            expected, patch
+        );
+        assert_eq!(patch, expected);
+    }
+
+    #[test]
+    fn test_complex_patch() {
+        let original = "
+first line
+second line
+third line
+fourth line
+fifth line
+sixth line
+seventh line
+eighth line
+ninth line
+many more lines
+will come after
+this one
+eventually
+";
+
+        let new = "
+first line
+second line
+third line
+fourth line
+fifth line
+sixth line
+seventh line
+eighth line
+ninth line
+many more lines
+will come after
+this one
+eventually...
+but now I did add an extra line
+";
+
+        let bytediffs = diff(original.as_bytes(), new.as_bytes());
+        let filediff = service::FileDiff {
+            path: "code.rs".to_string(),
+            kind: service::DiffKind::Modified,
+            is_dir: false,
+            differences: bytediffs,
+        };
+
+        let blob = service::Blob {
+            sha: vec![1, 2, 3, 4, 5],
+            data: original.as_bytes().to_owned(),
+        };
+
+        let patch_ingredients = vec![(&filediff, Some(&blob))];
+        let patch = print_patch("Colin", "asdf", patch_ingredients.as_slice());
+
+        let expected = "From: Colin
+Subject: [PATCH 1/1] asdf
+
+--- a/code.rs
++++ b/code.rs
+@@ -12,3 +12,4 @@
+ will come after
+ this one
++eventually...
++but now I did add an extra line
+-eventually
 ";
 
         println!(
