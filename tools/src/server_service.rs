@@ -564,6 +564,7 @@ impl service::SrcServerServiceHandler for SrcServer {
         let mut change = req.change;
         change.id = id;
         change.owner = username;
+        change.status = service::ChangeStatus::Pending;
 
         if let Err(e) = self.add_snapshot(&change, req.snapshot) {
             return e;
@@ -619,7 +620,7 @@ impl service::SrcServerServiceHandler for SrcServer {
         };
 
         let req_filter = |c: &service::Change| {
-            if req.status != c.status {
+            if req.status != service::ChangeStatus::Unknown && req.status != c.status {
                 return false;
             }
             true
@@ -656,16 +657,8 @@ impl service::SrcServerServiceHandler for SrcServer {
                     ));
                 }
 
-                let row = format!("{}/{}", components[0], components[1]);
-
-                let col = core::encode_id(match components[2].parse::<u64>() {
-                    Ok(id) => id,
-                    Err(_) => {
-                        return Err(bus::BusRpcError::InternalError(
-                            "read incorrect id format in user change index!".to_string(),
-                        ));
-                    }
-                });
+                let row = format!("{}/{}/changes", components[0], components[1]);
+                let col = components[2];
 
                 if let Some(c) = self.table.read(&row, &col, 0) {
                     let c = c.map_err(|e| {
@@ -799,7 +792,6 @@ mod tests {
         assert_eq!(resp.index, 1);
     }
 
-    #[test]
     fn test_create_change() {
         let s = setup();
         s.create(CreateRequest {
@@ -833,6 +825,64 @@ mod tests {
         println!("{:?}", r.error_message);
         assert!(!r.failed);
         assert_eq!(r.id, 1);
+    }
+
+    #[test]
+    fn test_list_changes() {
+        let s = setup();
+        s.create(CreateRequest {
+            token: String::new(),
+            name: "example".to_string(),
+        });
+
+        s.update_change(UpdateChangeRequest {
+            token: String::new(),
+            change: Change {
+                description: "do something".to_string(),
+                repo_owner: "colin".to_string(),
+                repo_name: "example".to_string(),
+                ..Default::default()
+            },
+            snapshot: Snapshot {
+                timestamp: 123,
+                basis: Basis {
+                    host: "localhost:4959".to_string(),
+                    owner: "colin".to_string(),
+                    name: "example".to_string(),
+                    ..Default::default()
+                },
+                files: vec![],
+                message: String::new(),
+            },
+        })
+        .unwrap();
+
+        let response = s
+            .list_changes(ListChangesRequest {
+                token: String::new(),
+                owner: "colin".to_string(),
+                ..Default::default()
+            })
+            .unwrap();
+
+        assert_eq!(response.error_message, String::new());
+        assert_eq!(response.failed, false);
+        assert_eq!(response.changes.len(), 1);
+        assert_eq!(&response.changes[0].description, "do something");
+
+        let response = s
+            .list_changes(ListChangesRequest {
+                token: String::new(),
+                repo_owner: "colin".to_string(),
+                repo_name: "example".to_string(),
+                ..Default::default()
+            })
+            .unwrap();
+
+        assert_eq!(response.error_message, String::new());
+        assert_eq!(response.failed, false);
+        assert_eq!(response.changes.len(), 1);
+        assert_eq!(&response.changes[0].description, "do something");
     }
 
     //#[test]
