@@ -481,7 +481,7 @@ impl service::SrcServerServiceHandler for SrcServer {
             let mut existing_change = match self.table.read::<service::Change>(
                 &format!(
                     "{}/{}/changes",
-                    req.change.repo_owner, req.change.repo_owner
+                    req.change.repo_owner, req.change.repo_name
                 ),
                 &core::encode_id(req.change.id),
                 0,
@@ -738,6 +738,42 @@ impl service::SrcServerServiceHandler for SrcServer {
             ..Default::default()
         })
     }
+
+    fn get_change(&self, req: GetChangeRequest) -> Result<GetChangeResponse, bus::BusRpcError> {
+        let username = match self.auth(&req.token) {
+            Ok(u) => u,
+            Err(e) => {
+                return Ok(GetChangeResponse {
+                    failed: true,
+                    error_message: e,
+                    ..Default::default()
+                })
+            }
+        };
+
+        let change = match self.table.read(
+            &format!("{}/{}/changes", req.repo_owner, req.repo_name),
+            &core::encode_id(req.id),
+            0,
+        ) { 
+            Some(c) => c.map_err(|e| {
+                bus::BusRpcError::InternalError(format!("failed to read from table: {:?}", e))
+            })?,
+            None => {
+                return Ok(GetChangeResponse {
+                    failed: true,
+                    error_message: "No such change".to_string(),
+                    ..Default::default()
+                });
+            }
+        };
+
+
+        Ok(GetChangeResponse {
+            change,
+            ..Default::default()
+        })
+    }
 }
 
 #[cfg(test)]
@@ -822,9 +858,55 @@ mod tests {
                 },
             })
             .unwrap();
-        println!("{:?}", r.error_message);
         assert!(!r.failed);
         assert_eq!(r.id, 1);
+    }
+
+    #[test]
+    fn test_get_change() {
+        let s = setup();
+        s.create(CreateRequest {
+            token: String::new(),
+            name: "example".to_string(),
+        });
+
+        let response = s.update_change(UpdateChangeRequest {
+            token: String::new(),
+            change: Change {
+                description: "do something".to_string(),
+                repo_owner: "colin".to_string(),
+                repo_name: "example".to_string(),
+                ..Default::default()
+            },
+            snapshot: Snapshot {
+                timestamp: 123,
+                basis: Basis {
+                    host: "localhost:4959".to_string(),
+                    owner: "colin".to_string(),
+                    name: "example".to_string(),
+                    ..Default::default()
+                },
+                files: vec![],
+                message: String::new(),
+            },
+        })
+        .unwrap();
+        let id = response.id;
+
+        let response = s
+            .get_change(GetChangeRequest {
+                token: String::new(),
+                repo_owner: "colin".to_string(),
+                repo_name: "example".to_string(),
+                id: id,
+                ..Default::default()
+            })
+            .unwrap();
+
+        assert_eq!(response.error_message, String::new());
+        assert_eq!(response.failed, false);
+        assert_eq!(response.change.id, id);
+        assert_eq!(&response.change.description, "do something");
     }
 
     #[test]

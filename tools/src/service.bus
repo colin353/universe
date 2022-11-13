@@ -155,6 +155,19 @@ message ListChangesResponse {
     changes: repeated Change = 2
 }
 
+message GetChangeRequest {
+    token: string = 0
+    repo_owner: string = 1
+    repo_name: string = 2
+    id: u64 = 3
+}
+
+message GetChangeResponse {
+    failed: bool = 0
+    error_message: string = 1
+    change: Change = 2
+}
+
 service SrcServer {
     rpc create(CreateRequest) -> CreateResponse
     rpc get_repository(GetRepositoryRequest) -> GetRepositoryResponse
@@ -163,6 +176,7 @@ service SrcServer {
     rpc get_blobs(GetBlobsRequest) -> GetBlobsResponse
     rpc update_change(UpdateChangeRequest) -> UpdateChangeResponse
     rpc list_changes(ListChangesRequest) -> ListChangesResponse
+    rpc get_change(GetChangeRequest) -> GetChangeResponse
 }
 
 message NewSpaceResponse {

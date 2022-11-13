@@ -2,10 +2,23 @@ package(default_visibility = ["//visibility:public"])
 
 load("@rules_rust//rust:defs.bzl", "rust_library", "rust_binary", "rust_test")
 
+rust_binary(
+        name = "server",
+        srcs = [
+                "server.rs"
+        ],
+        deps = [
+                ":server_lib",
+                "//util/ws",
+                "//third_party:tokio",
+        ]
+)
+
 rust_library(
-    name = "server",
+    name = "server_lib",
     srcs = [
-        "webserver.rs",
+        "lib.rs",
+        "render.rs",
     ],
     data = [
         "change.html",
@@ -18,6 +31,8 @@ rust_library(
         "//third_party:base64",
         "//util/tmpl",
         "//util/ws",
+        "//tools/src:service",
+        "//util/bus:bus_rpc",
     ],
     edition="2018",
 )

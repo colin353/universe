@@ -100,6 +100,12 @@ pub trait Server: Sync + Send + Clone + 'static {
         self.not_found(path)
     }
 
+    fn failed_500(&self, path: String) -> Response {
+        let mut response = Response::new(Body::from(format!("500 internal error")));
+        *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+        response
+    }
+
     fn not_found(&self, path: String) -> Response {
         let mut response = Response::new(Body::from(format!("404 not found: path {}", path)));
         *response.status_mut() = StatusCode::NOT_FOUND;
