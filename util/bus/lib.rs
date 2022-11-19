@@ -30,3 +30,11 @@ pub trait BusServer: Clone + Send + Sync {
 pub trait BusClient: Send + Sync {
     fn request(&self, uri: &'static str, data: Vec<u8>) -> Result<Vec<u8>, BusRpcError>;
 }
+
+pub trait BusAsyncClient: Send + Sync {
+    fn request(
+        &self,
+        uri: &'static str,
+        data: Vec<u8>,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Vec<u8>, BusRpcError>>>>;
+}

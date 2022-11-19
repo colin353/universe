@@ -310,6 +310,49 @@ impl {name}Client {{
         )?;
     }
 
+    write!(w, "}}\n\n");
+
+    // Implement async client
+    write!(
+        w,
+        r#"#[derive(Clone)]
+pub struct {name}AsyncClient(std::sync::Arc<dyn bus::BusAsyncClient>);
+
+impl {name}AsyncClient {{
+    pub fn new(c: std::sync::Arc<dyn bus::BusAsyncClient>) -> Self {{
+        Self(c)
+    }}
+"#,
+        name = svc.name,
+    )?;
+
+    for rpc in &svc.rpcs {
+        write!(
+            w,
+            "    pub fn {name}(&self, req: {argtype}) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<{rettype}, bus::BusRpcError>>>> {{
+        let mut buf = Vec::new();
+        if let Err(e) = req.encode(&mut buf) {{
+            return Box::pin(
+                std::future::ready(Err(bus::BusRpcError::InvalidData(e)))
+            );
+        }}
+
+        let _self = self.clone();
+        Box::pin(async move {{
+            match _self.0.request(\"/{svc_name}/{name}\", buf).await {{
+                Ok(response) => {rettype}::decode_owned(&response).map_err(|e| bus::BusRpcError::InvalidData(e)),
+                Err(e) => Err(e),
+            }}
+        }})
+    }}
+",
+            svc_name = svc.name,
+            name = rpc.name,
+            argtype = rpc.argument_type,
+            rettype = rpc.return_type,
+        )?;
+    }
+
     write!(w, "}}\n\n")
 }
 

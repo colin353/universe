@@ -4,6 +4,7 @@ use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Client, Request, Response, Server};
 
 use std::convert::Infallible;
+use std::sync::Arc;
 
 type HttpClient = Client<hyper::client::HttpConnector>;
 
@@ -70,14 +71,23 @@ pub async fn serve<H: bus::BusServer + 'static>(port: u16, handler: H) -> bus::B
     bus::BusRpcError::FailedToBindPort
 }
 
-pub struct HyperClient {
-    host: String,
-    port: u16,
-    client: HttpClient,
+pub struct HyperSyncClient {
+    inner: HyperClient,
     executor: tokio::runtime::Runtime,
 }
 
-impl HyperClient {
+pub struct HyperClientInner {
+    host: String,
+    port: u16,
+    client: HttpClient,
+}
+
+#[derive(Clone)]
+pub struct HyperClient {
+    inner: Arc<HyperClientInner>,
+}
+
+impl HyperSyncClient {
     pub fn new(host: String, port: u16) -> Self {
         let executor = tokio::runtime::Builder::new()
             .threaded_scheduler()
@@ -85,18 +95,28 @@ impl HyperClient {
             .build()
             .unwrap();
 
-        HyperClient {
-            host,
-            port,
+        HyperSyncClient {
+            inner: HyperClient::new(host, port),
             executor,
-            client: hyper::Client::builder().http2_only(true).build_http(),
+        }
+    }
+}
+
+impl HyperClient {
+    pub fn new(host: String, port: u16) -> Self {
+        HyperClient {
+            inner: Arc::new(HyperClientInner {
+                host,
+                port,
+                client: hyper::Client::builder().http2_only(true).build_http(),
+            }),
         }
     }
 
     async fn request_async(&self, uri: &str, data: Vec<u8>) -> Result<Vec<u8>, bus::BusRpcError> {
         let uri = match hyper::Uri::builder()
             .scheme("http")
-            .authority(format!("{}:{}", self.host, self.port))
+            .authority(format!("{}:{}", self.inner.host, self.inner.port))
             .path_and_query(uri)
             .build()
         {
@@ -111,6 +131,7 @@ impl HyperClient {
             .map_err(|e| bus::BusRpcError::InternalError(format!("{:?}", e)))?;
 
         let resp = self
+            .inner
             .client
             .request(req)
             .await
@@ -124,11 +145,23 @@ impl HyperClient {
     }
 }
 
-impl bus::BusClient for HyperClient {
+impl bus::BusClient for HyperSyncClient {
     fn request(&self, uri: &str, data: Vec<u8>) -> Result<Vec<u8>, bus::BusRpcError> {
         self.executor.enter(|| {
             let handle = self.executor.handle();
-            handle.block_on(async { self.request_async(uri, data).await })
+            handle.block_on(async { self.inner.request_async(uri, data).await })
         })
+    }
+}
+
+impl bus::BusAsyncClient for HyperClient {
+    fn request(
+        &self,
+        uri: &'static str,
+        data: Vec<u8>,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Vec<u8>, bus::BusRpcError>>>>
+    {
+        let _self = self.clone();
+        Box::pin(async move { _self.request_async(uri, data).await })
     }
 }
