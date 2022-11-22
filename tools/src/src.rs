@@ -319,6 +319,26 @@ fn status(data_dir: std::path::PathBuf) {
     };
 }
 
+fn update(data_dir: std::path::PathBuf) {
+    // update??
+    let cwd = match std::env::current_dir() {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("unable to determine current working directory! {:?}", e);
+            std::process::exit(1);
+        }
+    };
+
+    let d = src_lib::Src::new(data_dir).expect("failed to initialize src!");
+    let alias = match d.get_change_alias_by_dir(&cwd) {
+        Some(a) => a,
+        None => {
+            eprintln!("current directory is not a src directory!");
+            std::process::exit(1);
+        }
+    };
+}
+
 fn main() {
     let name = flags::define_flag!("name", String::new(), "the name of the change to create");
     let basis = flags::define_flag!(
@@ -340,11 +360,11 @@ fn main() {
 
     let args = flags::parse_flags!(name, basis, msg, data_directory);
 
-    if args.len() == 0 {
-        usage();
-    }
-
     let data_dir = std::path::PathBuf::from(data_directory.value());
+
+    if args.len() == 0 {
+        history(data_dir)
+    }
 
     match args[0].as_str() {
         "init" => {
@@ -385,6 +405,7 @@ fn main() {
         "history" => history(data_dir),
         "jump" => jump(data_dir, name.value()),
         "status" => status(data_dir),
+        "update" => update(data_dir),
         _ => usage(),
     }
 }

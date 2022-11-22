@@ -36,5 +36,5 @@ pub trait BusAsyncClient: Send + Sync {
         &self,
         uri: &'static str,
         data: Vec<u8>,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Vec<u8>, BusRpcError>>>>;
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Vec<u8>, BusRpcError>> + Send>>;
 }

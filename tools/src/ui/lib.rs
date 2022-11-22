@@ -10,9 +10,8 @@ static TEMPLATE: &str = include_str!("template.html");
 static CHANGE: &str = include_str!("change.html");
 static INDEX: &str = include_str!("homepage.html");
 
-
 fn fake_change() -> service::Change {
-    service::Change{
+    service::Change {
         id: 123,
         submitted_id: 234,
         description: "Add fake data to the changes list".to_string(),
@@ -25,16 +24,14 @@ fn fake_change() -> service::Change {
 
 #[derive(Clone)]
 pub struct SrcUIServer {
-    client: service::SrcServerClient
+    client: service::SrcServerAsyncClient,
 }
 
 impl SrcUIServer {
     pub fn new(address: String, port: u16) -> Self {
-        let connector = Arc::new(
-            bus_rpc::HyperClient::new(address, port)
-            );
+        let connector = Arc::new(bus_rpc::HyperClient::new(address, port));
         Self {
-            client: service::SrcServerClient::new(connector)
+            client: service::SrcServerAsyncClient::new(connector),
         }
     }
 
@@ -48,40 +45,41 @@ impl SrcUIServer {
         )
     }
 
-    fn index_result(&self) -> std::io::Result<ws::Response> {
-        let req = service::ListChangesRequest::new();
-        let changes = match true {
-            true => vec![
-                fake_change()
-            ],
-            false => self
-            .client
-            .list_changes(req).map_err(|e| {
-                // TODO: choose a better error kind
-                std::io::Error::new(std::io::ErrorKind::ConnectionRefused, format!(
-                    "failed to list changes: {:?}",
-                    e
-                ))
-            })?
-            .changes
-        };
+    async fn index_result(&self) -> std::io::Result<ws::Response> {
+        let mut req = service::ListChangesRequest::new();
+        req.owner = "colin".to_string();
+
+        let response = self.client.list_changes(req).await.map_err(|e| {
+            // TODO: choose a better error kind
+            std::io::Error::new(
+                std::io::ErrorKind::ConnectionRefused,
+                format!("failed to list changes: {:?}", e),
+            )
+        })?;
+
+        if response.failed {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("server failed: {:?}", response.error_message),
+            ));
+        }
+
+        let changes = response.changes;
 
         let mut req = service::ListChangesRequest::new();
         req.limit = 15;
-        let submitted_changes = match true { 
-            true => vec![], 
-            false => self
+        let submitted_changes = self
             .client
             .list_changes(req)
+            .await
             .map_err(|e| {
                 // TODO: choose a better error kind
-                std::io::Error::new(std::io::ErrorKind::ConnectionRefused, format!(
-                    "failed to list changes: {:?}",
-                    e
-                ))
+                std::io::Error::new(
+                    std::io::ErrorKind::ConnectionRefused,
+                    format!("failed to list changes: {:?}", e),
+                )
             })?
-            .changes
-        };
+            .changes;
 
         let page = tmpl::apply(
             INDEX,
@@ -94,7 +92,7 @@ impl SrcUIServer {
         Ok(ws::Response::new(ws::Body::from(self.wrap_template(page))))
     }
 
-    fn show_change(&self, path: String, req: ws::Request) -> ws::Response {
+    async fn show_change(&self, path: String, req: ws::Request) -> ws::Response {
         let mut path_components = path[1..].split("/");
         let first_component = match path_components.next() {
             Some(c) => c,
@@ -122,12 +120,17 @@ impl SrcUIServer {
         ws::Response::new(ws::Body::from(self.wrap_template(page)))
     }
 
-    fn change_detail(&self, filename: &str, change: service::Change, req: ws::Request) -> ws::Response {
+    fn change_detail(
+        &self,
+        filename: &str,
+        change: service::Change,
+        req: ws::Request,
+    ) -> ws::Response {
         panic!("oh no!");
     }
 
-    fn index(&self, _path: String, _req: ws::Request) -> ws::Response {
-        match self.index_result() {
+    async fn index(&self, _path: String, _req: ws::Request) -> ws::Response {
+        match self.index_result().await {
             Ok(r) => r,
             Err(e) => {
                 eprintln!("{:?}", e);
@@ -138,20 +141,24 @@ impl SrcUIServer {
 }
 
 impl ws::Server for SrcUIServer {
-    fn respond(&self, path: String, req: ws::Request, _: &str) -> ws::Response {
+    fn respond_future(&self, path: String, req: ws::Request, _: &str) -> ws::ResponseFuture {
+        let _self = self.clone();
+
         if path.starts_with("/static/") {
-            return self.serve_static_files(path, "/static/", "/tmp");
+            return Box::pin(std::future::ready(
+                _self.serve_static_files(path, "/static/", "/tmp"),
+            ));
         }
 
         if path.starts_with("/redirect") {
             let mut response = ws::Response::new(ws::Body::from(""));
-            self.redirect("http://google.com", &mut response);
-            return response;
+            _self.redirect("http://google.com", &mut response);
+            return Box::pin(std::future::ready(response));
         }
 
         match path.as_str() {
-            "/" => self.index(path, req),
-            _ => self.show_change(path, req),
+            "/" => Box::pin(async move { _self.index(path, req).await }),
+            _ => Box::pin(async move { _self.show_change(path, req).await }),
         }
     }
 }

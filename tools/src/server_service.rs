@@ -479,10 +479,7 @@ impl service::SrcServerServiceHandler for SrcServer {
         // Check if the change already exists
         if req.change.id != 0 {
             let mut existing_change = match self.table.read::<service::Change>(
-                &format!(
-                    "{}/{}/changes",
-                    req.change.repo_owner, req.change.repo_name
-                ),
+                &format!("{}/{}/changes", req.change.repo_owner, req.change.repo_name),
                 &core::encode_id(req.change.id),
                 0,
             ) {
@@ -615,7 +612,7 @@ impl service::SrcServerServiceHandler for SrcServer {
                     failed: true,
                     error_message: e,
                     ..Default::default()
-                })
+                });
             }
         };
 
@@ -636,7 +633,7 @@ impl service::SrcServerServiceHandler for SrcServer {
             };
             let resp = self.table.read_range(filter, 0, 1000).map_err(|e| {
                 eprintln!("{:?}", e);
-                bus::BusRpcError::InternalError("failed to touch parent folders".to_string())
+                bus::BusRpcError::InternalError("read range error".to_string())
             })?;
 
             let expected_prefix = if !req.repo_name.is_empty() && !req.repo_owner.is_empty() {
@@ -755,7 +752,7 @@ impl service::SrcServerServiceHandler for SrcServer {
             &format!("{}/{}/changes", req.repo_owner, req.repo_name),
             &core::encode_id(req.id),
             0,
-        ) { 
+        ) {
             Some(c) => c.map_err(|e| {
                 bus::BusRpcError::InternalError(format!("failed to read from table: {:?}", e))
             })?,
@@ -767,7 +764,6 @@ impl service::SrcServerServiceHandler for SrcServer {
                 });
             }
         };
-
 
         Ok(GetChangeResponse {
             change,
@@ -870,27 +866,28 @@ mod tests {
             name: "example".to_string(),
         });
 
-        let response = s.update_change(UpdateChangeRequest {
-            token: String::new(),
-            change: Change {
-                description: "do something".to_string(),
-                repo_owner: "colin".to_string(),
-                repo_name: "example".to_string(),
-                ..Default::default()
-            },
-            snapshot: Snapshot {
-                timestamp: 123,
-                basis: Basis {
-                    host: "localhost:4959".to_string(),
-                    owner: "colin".to_string(),
-                    name: "example".to_string(),
+        let response = s
+            .update_change(UpdateChangeRequest {
+                token: String::new(),
+                change: Change {
+                    description: "do something".to_string(),
+                    repo_owner: "colin".to_string(),
+                    repo_name: "example".to_string(),
                     ..Default::default()
                 },
-                files: vec![],
-                message: String::new(),
-            },
-        })
-        .unwrap();
+                snapshot: Snapshot {
+                    timestamp: 123,
+                    basis: Basis {
+                        host: "localhost:4959".to_string(),
+                        owner: "colin".to_string(),
+                        name: "example".to_string(),
+                        ..Default::default()
+                    },
+                    files: vec![],
+                    message: String::new(),
+                },
+            })
+            .unwrap();
         let id = response.id;
 
         let response = s

@@ -3,6 +3,16 @@ mod tests {
     use bus::Serialize;
 
     #[test]
+    fn test_encode_decode_complex() {
+        let r = battery::ListOfItems::new();
+        let mut bytes = Vec::new();
+        r.encode(&mut bytes).unwrap();
+
+        let d = battery::ListOfItems::from_bytes(&bytes).unwrap();
+        assert_eq!(d.items.len(), 0);
+    }
+
+    #[test]
     fn test_encode() {
         let mut data = battery::Data::new();
         data.id = 1234;

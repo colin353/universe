@@ -159,8 +159,9 @@ impl bus::BusAsyncClient for HyperClient {
         &self,
         uri: &'static str,
         data: Vec<u8>,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Vec<u8>, bus::BusRpcError>>>>
-    {
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<Vec<u8>, bus::BusRpcError>> + Send>,
+    > {
         let _self = self.clone();
         Box::pin(async move { _self.request_async(uri, data).await })
     }

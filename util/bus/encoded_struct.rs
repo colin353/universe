@@ -189,7 +189,7 @@ impl<'a> EncodedStruct<'a> {
             data: &self.data,
             last_offset: 0,
             pack_iter: self.fields_index.iter(),
-            done: false,
+            done: self.data.len() == 0,
             data_size: self.data.len() as usize,
         }
     }
@@ -332,6 +332,13 @@ mod tests {
         assert_eq!(iter.next(), Some((0, 18)));
         assert_eq!(iter.next(), Some((18, 32)));
         assert_eq!(iter.next(), Some((32, 48)));
+        assert_eq!(iter.next(), None);
+    }
+
+    #[test]
+    fn test_empty_iterator() {
+        let rf = EncodedStruct::new(&[]).unwrap();
+        let mut iter = rf.iter();
         assert_eq!(iter.next(), None);
     }
 }
