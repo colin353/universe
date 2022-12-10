@@ -233,6 +233,7 @@ message LinkResponse {
 message Space {
     directory: string = 0
     basis: Basis = 1
+    change_id: u64 = 2
 }
 
 message NewSpaceRequest {

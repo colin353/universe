@@ -470,7 +470,7 @@ impl service::SrcServerServiceHandler for SrcServer {
             None => {
                 return Ok(UpdateChangeResponse {
                     failed: true,
-                    error_message: "No such repository".to_string(),
+                    error_message: format!("No such repository: {}/{}", req.change.repo_owner, req.change.repo_name),
                     ..Default::default()
                 })
             }

@@ -82,7 +82,7 @@ rust_binary(
     name = "src",
     srcs = [
         "src.rs",
-        "cli.rs",
+        "termui.rs",
     ],
     deps = [
         ":core",
@@ -92,5 +92,6 @@ rust_binary(
         "//util/tui",
         "//util/tui:filter",
         "//third_party/raw_tty",
+        "//third_party:rand",
     ]
 )

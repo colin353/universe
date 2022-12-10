@@ -49,7 +49,7 @@ impl Src {
             None => (&host, 4959),
         };
 
-        let connector = Arc::new(bus_rpc::HyperClient::new(hostname.to_string(), port));
+        let connector = Arc::new(bus_rpc::HyperSyncClient::new(hostname.to_string(), port));
         let client = service::SrcServerClient::new(connector);
 
         self.remotes
@@ -288,6 +288,7 @@ impl Src {
         let f = std::fs::File::create(self.get_change_metadata_path(&alias))?;
         let change = service::Space {
             basis,
+            change_id: 0,
             directory: path
                 .to_str()
                 .ok_or_else(|| {
@@ -418,6 +419,7 @@ impl Src {
         let f = std::fs::File::create(self.get_change_metadata_path(&req.alias))?;
 
         let space = service::Space {
+            change_id: 0,
             basis: service::Basis {
                 host: req.basis.host.clone(),
                 owner: req.basis.owner.clone(),

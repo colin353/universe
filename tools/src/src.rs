@@ -1,8 +1,47 @@
-mod cli;
+use rand::Rng;
+
+mod termui;
+
+const CHANGE_DEFAULT: &str = r#"
+# Write a description for this change
+"#;
 
 fn usage() {
     eprintln!("usage: src <command>");
     std::process::exit(1);
+}
+
+fn create(data_dir: std::path::PathBuf, basis: String) {
+    let basis = match core::parse_basis(&basis) {
+        Ok(b) => b,
+        Err(e) => {
+            eprintln!("{}", e.to_string());
+            std::process::exit(1);
+        }
+    };
+
+    let d = src_lib::Src::new(data_dir).expect("failed to initialize src!");
+    let client = d
+        .get_client(&basis.host)
+        .expect("failed to construct client");
+
+    let resp = match client.create(service::CreateRequest {
+        token: String::new(),
+        name: basis.name.clone(),
+    }) {
+        Ok(r) => r,
+        Err(_) => {
+            eprintln!("couldn't reach src server!");
+            std::process::exit(1);
+        }
+    };
+
+    if resp.failed {
+        eprintln!("failed to create repository: {:?}", resp.error_message);
+        std::process::exit(1);
+    }
+
+    println!("OK, created {}", core::fmt_basis(basis.as_view()));
 }
 
 fn init(data_dir: std::path::PathBuf, basis: String) {
@@ -207,7 +246,7 @@ fn jump(data_dir: std::path::PathBuf, name: String) {
             Ok(o) => o,
             Err(_) => std::process::exit(1),
         };
-        let (name, ch) = match cli::choose_space(out) {
+        let (name, ch) = match termui::choose_space(out) {
             Some(o) => o,
             None => std::process::exit(1),
         };
@@ -319,8 +358,35 @@ fn status(data_dir: std::path::PathBuf) {
     };
 }
 
+pub fn edit_string(input: &str) -> Result<String, ()> {
+    let editor = match std::env::var("EDITOR") {
+        Ok(x) => x,
+        Err(_) => String::from("nano"),
+    };
+    let filename = format!("/tmp/{}", rand::thread_rng().gen::<u64>());
+    std::fs::write(&filename, input).unwrap();
+
+    let output = match std::process::Command::new(&editor)
+        .arg(&filename)
+        .stdout(std::process::Stdio::inherit())
+        .stdin(std::process::Stdio::inherit())
+        .output()
+    {
+        Ok(out) => out,
+        Err(_) => {
+            println!("unable to start editor: {}", editor);
+            return Err(());
+        }
+    };
+
+    if !output.status.success() {
+        return Err(());
+    }
+
+    std::fs::read_to_string(&filename).map_err(|_| ())
+}
+
 fn update(data_dir: std::path::PathBuf) {
-    // update??
     let cwd = match std::env::current_dir() {
         Ok(d) => d,
         Err(e) => {
@@ -330,6 +396,7 @@ fn update(data_dir: std::path::PathBuf) {
     };
 
     let d = src_lib::Src::new(data_dir).expect("failed to initialize src!");
+
     let alias = match d.get_change_alias_by_dir(&cwd) {
         Some(a) => a,
         None => {
@@ -337,6 +404,60 @@ fn update(data_dir: std::path::PathBuf) {
             std::process::exit(1);
         }
     };
+
+    // First, check whether the current directory is associated with a remote change already. If
+    // not, we have to set the description and push it.
+    let space = match d.get_change_by_alias(&alias) {
+        Some(s) => s,
+        None => {
+            eprintln!("current directory is not a src directory!");
+            std::process::exit(1);
+        }
+    };
+
+    let mut change = service::Change::new();
+    change.repo_name = space.basis.name.clone();
+    change.repo_owner = space.basis.owner.clone();
+    if space.change_id == 0 {
+        // Get the description
+        match edit_string(CHANGE_DEFAULT) {
+            Ok(s) => change.description = s,
+            Err(_) => {
+                eprintln!("update cancelled");
+                std::process::exit(1);
+            }
+        };
+    }
+
+    let snapshot = match d.get_latest_snapshot(&alias) {
+        Ok(Some(s)) => s,
+        _ => {
+            eprintln!("no snapshot to transmit!");
+            std::process::exit(1);
+        }
+    };
+
+    let client = d
+        .get_client(&space.basis.host)
+        .expect("failed to construct client");
+
+    let resp = match client.update_change(service::UpdateChangeRequest {
+        token: String::new(),
+        change: change,
+        snapshot,
+    }) {
+        Ok(r) => r,
+        Err(_) => {
+            eprintln!("couldn't reach src server!");
+            std::process::exit(1);
+        }
+    };
+
+    if resp.failed {
+        eprintln!("update failed! {:?}", resp.error_message);
+    } else {
+        println!("OK, pushed snapshot to {}", core::fmt_basis(space.basis.as_view()));
+    }
 }
 
 fn main() {
@@ -363,10 +484,18 @@ fn main() {
     let data_dir = std::path::PathBuf::from(data_directory.value());
 
     if args.len() == 0 {
-        history(data_dir)
+        history(data_dir);
+        return;
     }
 
     match args[0].as_str() {
+        "create" => {
+            if args.len() != 2 {
+                eprintln!("usage: src create <hostname>/<owner_name>/<repo_name>");
+                std::process::exit(1);
+            }
+            create(data_dir, args[1].clone())
+        }
         "init" => {
             if args.len() != 2 {
                 eprintln!("usage: src init <repo>");
