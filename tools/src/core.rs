@@ -509,6 +509,38 @@ pub fn encode_id(id: u64) -> String {
     format!("{:016x}", u64::MAX - id)
 }
 
+pub fn normalize_change_description(input: &str) -> String {
+    let mut description = Vec::new();
+    for line in input.split("\n") {
+        let trimmed = line.trim();
+
+        // Ignore comment lines
+        if trimmed.starts_with("#") {
+            continue;
+        }
+
+        // If the line is too full of spaces, strip them.
+        if line.starts_with("   ") {
+            description.push(trimmed);
+            continue;
+        }
+
+        description.push(line);
+    }
+
+    // Remove starting and trailing newlines.
+    let mut sliced_desc = description.as_slice();
+    while let Some(&"") = sliced_desc.first() {
+        sliced_desc = &sliced_desc[1..];
+    }
+
+    while let Some(&"") = sliced_desc.last() {
+        sliced_desc = &sliced_desc[..sliced_desc.len() - 1];
+    }
+
+    sliced_desc.join("\n")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

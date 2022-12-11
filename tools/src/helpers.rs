@@ -1,7 +1,7 @@
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::io::AsRawFd;
 
-use bus::Deserialize;
+use bus::{Serialize, Deserialize};
 use std::io::Write;
 
 fn mtime(m: &std::fs::Metadata) -> u64 {
@@ -91,7 +91,15 @@ impl crate::Src {
         self.get_change_by_alias(&alias)
     }
 
-    pub(crate) fn find_unused_alias(&self, original: &str) -> String {
+    pub fn set_change_by_alias(&self, alias: &str, space: &service::Space) -> std::io::Result<()> {
+        std::fs::create_dir_all(self.get_change_path(alias)).ok();
+        let mut f = std::fs::File::create(self.get_change_metadata_path(alias))?;
+        let mut buf = std::io::BufWriter::new(f);
+        space.encode(&mut buf)?;
+        Ok(())
+    }
+
+    pub fn find_unused_alias(&self, original: &str) -> String {
         let mut idx = 1;
         let mut alias = original.to_string();
         while self.get_change_path(&alias).exists() {

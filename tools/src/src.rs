@@ -2,9 +2,14 @@ use rand::Rng;
 
 mod termui;
 
-const CHANGE_DEFAULT: &str = r#"
-# Write a description for this change
-"#;
+const DEFAULT_CHANGE_DESCRIPTION: &str = "
+
+# Write description above. Lines starting with # will be ignored.
+# Add annotations, e.g.
+#
+# R=xyz
+#
+# to set special fields.";
 
 fn usage() {
     eprintln!("usage: src <command>");
@@ -78,16 +83,22 @@ fn init(data_dir: std::path::PathBuf, basis: String) {
         }
     };
 
-    if resp.failed {
+    let alias: String = if resp.failed {
         // That's OK, just means the repo doesn't exist
-    } else if resp.index != 0 {
-        eprintln!("that repository already exists, and isn't empty!");
-        std::process::exit(1);
-    }
+        d.initialize_repo(basis.clone(), &cwd).expect("failed to initialize")
+    } else {
+        let alias = d.find_unused_alias(&basis.name);
+        if let Err(e) = d.new_space(service::NewSpaceRequest{
+            dir: cwd.to_str().unwrap().to_owned(),
+            basis: basis.clone(),
+            alias: alias.clone(),
+        }) {
+            eprintln!("failed to initialize repo!: {:?}", e);
+            std::process::exit(1);
+        }
+        alias
+    };
 
-    let alias = d
-        .initialize_repo(basis.clone(), &cwd)
-        .expect("failed to initialize");
     println!(
         "initialized change {} @ {}",
         alias,
@@ -407,7 +418,7 @@ fn update(data_dir: std::path::PathBuf) {
 
     // First, check whether the current directory is associated with a remote change already. If
     // not, we have to set the description and push it.
-    let space = match d.get_change_by_alias(&alias) {
+    let mut space = match d.get_change_by_alias(&alias) {
         Some(s) => s,
         None => {
             eprintln!("current directory is not a src directory!");
@@ -420,8 +431,8 @@ fn update(data_dir: std::path::PathBuf) {
     change.repo_owner = space.basis.owner.clone();
     if space.change_id == 0 {
         // Get the description
-        match edit_string(CHANGE_DEFAULT) {
-            Ok(s) => change.description = s,
+        match edit_string(DEFAULT_CHANGE_DESCRIPTION) {
+            Ok(s) => change.description = core::normalize_change_description(&s),
             Err(_) => {
                 eprintln!("update cancelled");
                 std::process::exit(1);
@@ -455,8 +466,14 @@ fn update(data_dir: std::path::PathBuf) {
 
     if resp.failed {
         eprintln!("update failed! {:?}", resp.error_message);
-    } else {
-        println!("OK, pushed snapshot to {}", core::fmt_basis(space.basis.as_view()));
+        std::process::exit(1);
+    } 
+
+    // Update the local space data with the associated change ID
+    space.change_id = resp.id;
+    if let Err(e) = d.set_change_by_alias(&alias, &space) {
+        eprintln!("failed to update local space: {:?}", e);
+        std::process::exit(1);
     }
 }
 

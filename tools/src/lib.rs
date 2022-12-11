@@ -284,8 +284,6 @@ impl Src {
     ) -> std::io::Result<String> {
         let alias = self.find_unused_alias(&basis.name);
 
-        std::fs::create_dir_all(self.get_change_path(&alias)).ok();
-        let f = std::fs::File::create(self.get_change_metadata_path(&alias))?;
         let change = service::Space {
             basis,
             change_id: 0,
@@ -299,7 +297,7 @@ impl Src {
                 })?
                 .to_string(),
         };
-        change.encode(&mut std::io::BufWriter::new(f))?;
+        self.set_change_by_alias(&alias, &change)?;
         std::fs::write(self.get_change_dir_path(path), alias.as_bytes())?;
 
         Ok(alias)
