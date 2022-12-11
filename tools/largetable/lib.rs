@@ -14,6 +14,7 @@ pub struct LargeTable<'a, W: std::io::Write> {
     journals: Vec<RwLock<recordio::RecordIOBuilder<internals::JournalEntry, W>>>,
 }
 
+#[derive(Default)]
 pub struct Filter<'a> {
     pub row: &'a str,
     pub spec: &'a str,

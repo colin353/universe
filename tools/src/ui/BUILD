@@ -32,6 +32,7 @@ rust_library(
         "//util/tmpl",
         "//util/ws",
         "//tools/src:service",
+        "//tools/src:core",
         "//util/bus:bus_rpc",
     ],
     edition="2018",

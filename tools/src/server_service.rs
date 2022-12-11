@@ -62,6 +62,24 @@ impl SrcServer {
         self.table.monitor_memory();
     }
 
+    fn get_snapshot(&self, change: &Change, timestamp: u64) -> Result<Option<service::Snapshot>, bus::BusRpcError> {
+        let filter = largetable::Filter {
+            row: &format!("{}/{}/{}/snapshots", change.repo_owner, change.repo_name, change.id),
+            min: "",
+            ..Default::default()
+        };
+        println!("looking here: {:?}", filter.row);
+        Ok(match self.table.read_range(filter, 0, 10) {
+            Ok(m) => m.records.into_iter().map(|r| Snapshot::from_bytes(&r.data).unwrap()).next(),
+            Err(e) => {
+                return Err(bus::BusRpcError::InternalError(format!(
+                    "failed to read from table: {:?}",
+                    e
+                )));
+            },
+        })
+    }
+
     fn add_snapshot(
         &self,
         change: &Change,
@@ -91,6 +109,7 @@ impl SrcServer {
             }));
         }
 
+        println!("writing snapshot to {}/{}/{}/snapshots", change.repo_owner, change.repo_name, change.id);
         self.table
             .write(
                 format!(
@@ -765,8 +784,12 @@ impl service::SrcServerServiceHandler for SrcServer {
             }
         };
 
+        let snapshot = self.get_snapshot(&change, 0)?;
+        println!("lookup latest snapshot: {:?}", snapshot);
+
         Ok(GetChangeResponse {
             change,
+            latest_snapshot: snapshot.unwrap_or_else(Snapshot::default),
             ..Default::default()
         })
     }

@@ -94,11 +94,19 @@ impl SrcUIServer {
 
     async fn show_change(&self, path: String, req: ws::Request) -> ws::Response {
         let mut path_components = path[1..].split("/");
-        let first_component = match path_components.next() {
+        let repo_owner = match path_components.next() {
             Some(c) => c,
             None => return self.not_found(path.clone()),
         };
-        let id = match first_component.parse::<u64>() {
+        let repo_name = match path_components.next() {
+            Some(c) => c,
+            None => return self.not_found(path.clone()),
+        };
+        let third_component = match path_components.next() {
+            Some(c) => c,
+            None => return self.not_found(path.clone()),
+        };
+        let id = match third_component.parse::<u64>() {
             Ok(id) => id,
             Err(_) => return self.not_found(path.clone()),
         };
@@ -106,12 +114,42 @@ impl SrcUIServer {
         // TODO: read via client
         let change = fake_change();
 
+        let mut r = service::GetChangeRequest::new();
+        r.repo_owner = repo_owner.to_owned();
+        r.repo_name = repo_name.to_owned();
+        r.id = id;
+        let response = match self
+            .client
+            .get_change(r)
+            .await
+            .map_err(|e| {
+                // TODO: choose a better error kind
+                std::io::Error::new(
+                    std::io::ErrorKind::ConnectionRefused,
+                    format!("failed to get change: {:?}", e),
+                )
+            }) {
+                Ok(m) => m,
+                Err(e) => {
+                    eprintln!("failed to connect to src service: {:?}", e);
+                    return self.failed_500(path.clone());
+                }
+            };
+
+        if response.failed {
+            eprintln!("failed to get change: {}", response.error_message);
+            return self.not_found(path.clone());
+        }
+        let change = response.change;
+        let snapshot = response.latest_snapshot;
+
         let filename = path_components.collect::<Vec<_>>().join("/");
         if !filename.is_empty() {
             return self.change_detail(&filename, change, req);
         }
 
         let mut content = render::change(&change);
+        content.insert("snapshot", render::snapshot(&snapshot));
 
         let body = tmpl::apply(MODIFIED_FILES, &content);
         content.insert("body", body);

@@ -166,6 +166,7 @@ message GetChangeResponse {
     failed: bool = 0
     error_message: string = 1
     change: Change = 2
+    latest_snapshot: Snapshot = 3
 }
 
 service SrcServer {

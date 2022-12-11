@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::convert::From;
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct ContentsMap(HashMap<&'static str, Contents>);
 
 impl ContentsMap {
@@ -39,14 +39,14 @@ impl ContentsMap {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub enum Contents {
     Value(String),
     MultiValue(ContentsMultiMap),
     Object(ContentsMap),
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct ContentsMultiMap {
     data: Vec<ContentsMap>,
 }
@@ -605,6 +605,24 @@ mod tests {
                 content!("name" => "Colin"),
                 content!("name" => "Tim"),
             ]
+        );
+
+        let expected = "id=4, Colin:4 Tim:4 ";
+        assert_eq!(apply(template, &contents), expected);
+    }
+
+    #[test]
+    fn test_use_parent_data_complex() {
+        let template = "id={{id}}, {{x.people[]}}{{name}}:{{id}} {{/x.people}}";
+
+        let contents = content!(
+            "id" => "4",
+            "x" => content!(;
+                "people" => vec![
+                    content!("name" => "Colin"),
+                    content!("name" => "Tim"),
+                ]
+            )
         );
 
         let expected = "id=4, Colin:4 Tim:4 ";

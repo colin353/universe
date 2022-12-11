@@ -7,8 +7,8 @@
     {{progress != 0}}
     <table class='change-list'>
         {{progress[]}}
-        <tr onclick="window.location.href='/{{id}}'">
-            <td class='id'><a class='invisible-link' href="/{{id}}">#{{id}}</a></td>
+        <tr onclick="window.location.href='/{{repo_owner}}/{{repo_name}}/{{id}}'">
+            <td class='id'><a class='invisible-link' href="/{{repo_owner}}/{{repo_name}}/{{id}}">#{{id}}</a></td>
             <td class='author'>{{author}}</td>
             <td class='summary'>{{summary}}</td>
         </tr>
@@ -25,8 +25,8 @@
     {{submitted != 0}}
     <table class='change-list'>
         {{submitted[]}}
-        <tr onclick="window.location.href='/{{id}}'">
-            <td class='id'><a class='invisible-link' href="/{{id}}">#{{id}}</a></td>
+        <tr onclick="window.location.href='/{{repo_owner}}/{{repo_name}}/{{id}}'">
+            <td class='id'><a class='invisible-link' href="/{{repo_owner}}/{{repo_name}}/{{id}}">#{{id}}</a></td>
             <td class='author'>{{author}}</td>
             <td class='summary'>{{summary}}</td>
         </tr>
