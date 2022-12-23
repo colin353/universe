@@ -1,6 +1,6 @@
 <div class="page">
     <div class="change-overview">
-        <div onclick="window.location.href='/{{id}}'" class="form-field">
+      <div onclick="window.location.href='/{{repo_owner}}/{{repo_name}}/{{id}}'" class="form-field">
             <div class="title">Change Index</div>
             <div class="contents">{{id}}</div>
         </div>
@@ -26,11 +26,11 @@
         </div>
         <div class="form-field">
             <div class="title">Based on</div>
-            <div class="contents">{{basis}}</div>
+            <div class="contents">{{snapshot.short_basis}}</div>
         </div>
         <div class="form-field">
             <div class="title">Date</div>
-            <div class="contents"><span class="timestamp" data-timestamp={{last_modified_timestamp}}></span></div>
+            <div class="contents"><span class="timestamp" data-timestamp={{snapshot.timestamp}}></span></div>
         </div>
     </div>
 

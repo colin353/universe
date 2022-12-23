@@ -292,6 +292,38 @@ pub fn patch_diff(
     out
 }
 
+// Apply a file diff to the original data
+pub fn apply(fd: service::FileDiffView, original: &[u8]) -> std::io::Result<Vec<u8>> {
+    let mut pos = 0;
+    let mut output = Vec::new();
+    for diff in fd.get_differences().iter() {
+        if pos > original.len() || diff.get_start() as usize > original.len() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "invalid diff, offsets out of range",
+            ));
+        }
+        output.extend_from_slice(&original[pos..diff.get_start() as usize]);
+
+        match diff.get_kind() {
+            service::DiffKind::Added | service::DiffKind::Modified => {
+                pos = diff.get_end() as usize;
+                let content = decompress(diff.get_compression(), diff.get_data())?;
+                output.extend_from_slice(&content);
+            }
+            service::DiffKind::Removed => {
+                pos = diff.get_end() as usize;
+            }
+            _ => {
+                // Do nothing
+            }
+        }
+    }
+    output.extend_from_slice(&original[pos..]);
+
+    Ok(output)
+}
+
 pub fn patch_diff_file(
     prev: &[service::ByteDiff],
     curr: &[service::ByteDiff],
@@ -637,5 +669,44 @@ mod tests {
     #[test]
     fn test_fmt_sha() {
         assert_eq!(&fmt_sha(&[0, 0, 0, 0]), "00000000");
+    }
+
+    #[test]
+    fn test_diff_reconstruction() {
+        let original = "a\nb\nc\nd\n";
+        let modified = "a\nd\n";
+        let bd = diff(original.as_bytes(), modified.as_bytes());
+        let fd = service::FileDiff {
+            differences: bd,
+            ..Default::default()
+        };
+        let result = apply(fd.as_view(), original.as_bytes()).unwrap();
+        assert_eq!(std::str::from_utf8(&result).unwrap(), modified);
+    }
+
+    #[test]
+    fn test_diff_reconstruction_2() {
+        let original = "a\nb\nc\nd\n";
+        let modified = "z\na\nd\ne\nf\n";
+        let bd = diff(original.as_bytes(), modified.as_bytes());
+        let fd = service::FileDiff {
+            differences: bd,
+            ..Default::default()
+        };
+        let result = apply(fd.as_view(), original.as_bytes()).unwrap();
+        assert_eq!(std::str::from_utf8(&result).unwrap(), modified);
+    }
+
+    #[test]
+    fn test_diff_reconstruction_3() {
+        let original = "";
+        let modified = "z\na\nd\ne\nf\n";
+        let bd = diff(original.as_bytes(), modified.as_bytes());
+        let fd = service::FileDiff {
+            differences: bd,
+            ..Default::default()
+        };
+        let result = apply(fd.as_view(), original.as_bytes()).unwrap();
+        assert_eq!(std::str::from_utf8(&result).unwrap(), modified);
     }
 }

@@ -62,21 +62,31 @@ impl SrcServer {
         self.table.monitor_memory();
     }
 
-    fn get_snapshot(&self, change: &Change, timestamp: u64) -> Result<Option<service::Snapshot>, bus::BusRpcError> {
+    fn get_snapshot(
+        &self,
+        change: &Change,
+        timestamp: u64,
+    ) -> Result<Option<service::Snapshot>, bus::BusRpcError> {
         let filter = largetable::Filter {
-            row: &format!("{}/{}/{}/snapshots", change.repo_owner, change.repo_name, change.id),
+            row: &format!(
+                "{}/{}/{}/snapshots",
+                change.repo_owner, change.repo_name, change.id
+            ),
             min: "",
             ..Default::default()
         };
-        println!("looking here: {:?}", filter.row);
         Ok(match self.table.read_range(filter, 0, 10) {
-            Ok(m) => m.records.into_iter().map(|r| Snapshot::from_bytes(&r.data).unwrap()).next(),
+            Ok(m) => m
+                .records
+                .into_iter()
+                .map(|r| Snapshot::from_bytes(&r.data).unwrap())
+                .next(),
             Err(e) => {
                 return Err(bus::BusRpcError::InternalError(format!(
                     "failed to read from table: {:?}",
                     e
                 )));
-            },
+            }
         })
     }
 
@@ -109,7 +119,6 @@ impl SrcServer {
             }));
         }
 
-        println!("writing snapshot to {}/{}/{}/snapshots", change.repo_owner, change.repo_name, change.id);
         self.table
             .write(
                 format!(
@@ -361,6 +370,66 @@ impl service::SrcServerServiceHandler for SrcServer {
         })
     }
 
+    fn get_blobs_by_path(
+        &self,
+        req: GetBlobsByPathRequest,
+    ) -> Result<GetBlobsByPathResponse, bus::BusRpcError> {
+        match self.auth(&req.token) {
+            Ok(_) => (),
+            Err(e) => {
+                return Ok(GetBlobsByPathResponse {
+                    failed: true,
+                    error_message: e,
+                    ..Default::default()
+                })
+            }
+        };
+
+        let mut shas: Vec<Vec<u8>> = Vec::new();
+        let row = format!("code/submitted/{}/{}", req.basis.owner, req.basis.name);
+        for path in req.paths {
+            let col = format!("{}/{}", path.split("/").count(), path);
+            let file = match self
+                .table
+                .read::<service::File>(&row, &col, req.basis.index)
+            {
+                Some(Ok(f)) => f,
+                Some(Err(e)) => {
+                    eprintln!("{:?}", e);
+                    return Err(bus::BusRpcError::InternalError(
+                        "failed to read from table".to_string(),
+                    ));
+                }
+                None => {
+                    return Ok(GetBlobsByPathResponse {
+                        failed: true,
+                        error_message: format!("could not find blob for {}", path),
+                        ..Default::default()
+                    })
+                }
+            };
+            shas.push(file.sha);
+        }
+
+        let mut blobs = Vec::new();
+        for sha in shas {
+            let data: bus::PackedIn<u8> =
+                match self.table.read("code/blobs", &core::fmt_sha(&sha), 0) {
+                    Some(s) => s.map_err(|e| {
+                        eprintln!("{:?}", e);
+                        bus::BusRpcError::InternalError("failed to get blob".to_string())
+                    })?,
+                    None => continue,
+                };
+            blobs.push(service::Blob { sha, data: data.0 })
+        }
+
+        Ok(GetBlobsByPathResponse {
+            blobs,
+            ..Default::default()
+        })
+    }
+
     fn get_blobs(&self, req: GetBlobsRequest) -> Result<GetBlobsResponse, bus::BusRpcError> {
         match self.auth(&req.token) {
             Ok(_) => (),
@@ -489,7 +558,11 @@ impl service::SrcServerServiceHandler for SrcServer {
             None => {
                 return Ok(UpdateChangeResponse {
                     failed: true,
-                    error_message: format!("No such repository: {}/{}", req.change.repo_owner, req.change.repo_name).to_string(),
+                    error_message: format!(
+                        "No such repository: {}/{}",
+                        req.change.repo_owner, req.change.repo_name
+                    )
+                    .to_string(),
                     ..Default::default()
                 })
             }

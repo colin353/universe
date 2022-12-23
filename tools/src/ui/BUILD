@@ -34,6 +34,7 @@ rust_library(
         "//tools/src:service",
         "//tools/src:core",
         "//util/bus:bus_rpc",
+        "//tools/search/language_specific",
     ],
     edition="2018",
 )

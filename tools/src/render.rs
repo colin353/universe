@@ -383,10 +383,6 @@ Subject: [PATCH 1/1] asdf
 -eventually
 ";
 
-        println!(
-            "expected patch:\n{}\n\nactual patch:\n{}\n",
-            expected, patch
-        );
         assert_eq!(patch, expected);
     }
 }

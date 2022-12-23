@@ -118,23 +118,19 @@ impl SrcUIServer {
         r.repo_owner = repo_owner.to_owned();
         r.repo_name = repo_name.to_owned();
         r.id = id;
-        let response = match self
-            .client
-            .get_change(r)
-            .await
-            .map_err(|e| {
-                // TODO: choose a better error kind
-                std::io::Error::new(
-                    std::io::ErrorKind::ConnectionRefused,
-                    format!("failed to get change: {:?}", e),
-                )
-            }) {
-                Ok(m) => m,
-                Err(e) => {
-                    eprintln!("failed to connect to src service: {:?}", e);
-                    return self.failed_500(path.clone());
-                }
-            };
+        let response = match self.client.get_change(r).await.map_err(|e| {
+            // TODO: choose a better error kind
+            std::io::Error::new(
+                std::io::ErrorKind::ConnectionRefused,
+                format!("failed to get change: {:?}", e),
+            )
+        }) {
+            Ok(m) => m,
+            Err(e) => {
+                eprintln!("failed to connect to src service: {:?}", e);
+                return self.failed_500(path.clone());
+            }
+        };
 
         if response.failed {
             eprintln!("failed to get change: {}", response.error_message);
@@ -145,7 +141,7 @@ impl SrcUIServer {
 
         let filename = path_components.collect::<Vec<_>>().join("/");
         if !filename.is_empty() {
-            return self.change_detail(&filename, change, req);
+            return self.change_detail(&filename, change, snapshot, req).await;
         }
 
         let mut content = render::change(&change);
@@ -158,13 +154,84 @@ impl SrcUIServer {
         ws::Response::new(ws::Body::from(self.wrap_template(page)))
     }
 
-    fn change_detail(
+    async fn change_detail(
         &self,
-        filename: &str,
+        path: &str,
         change: service::Change,
+        snapshot: service::Snapshot,
         req: ws::Request,
     ) -> ws::Response {
-        panic!("oh no!");
+        let (fd, next_file) = {
+            let mut files_iter = snapshot.files.iter();
+            let mut fd = None;
+            let mut next_file = "";
+            while let Some(f) = files_iter.next() {
+                if f.path == path {
+                    fd = Some(f);
+                    next_file = match files_iter.next() {
+                        Some(f) => &f.path,
+                        None => "",
+                    };
+                }
+            }
+
+            if fd.is_none() {
+                self.not_found(path.to_string());
+            }
+
+            (fd.unwrap(), next_file)
+        };
+
+        let original = if fd.kind == service::DiffKind::Added {
+            Vec::new()
+        } else {
+            let r = service::GetBlobsByPathRequest {
+                basis: snapshot.basis.clone(),
+                paths: vec![path.to_string()],
+                ..Default::default()
+            };
+            let mut response = match self.client.get_blobs_by_path(r).await.map_err(|e| {
+                // TODO: choose a better error kind
+                std::io::Error::new(
+                    std::io::ErrorKind::ConnectionRefused,
+                    format!("failed to get original file: {:?}", e),
+                )
+            }) {
+                Ok(m) => m,
+                Err(e) => {
+                    eprintln!("failed to connect to src service: {:?}", e);
+                    return self.failed_500(path.to_string());
+                }
+            };
+            if response.failed || response.blobs.len() != 1 {
+                eprintln!("failed to get blob for path: {}", response.error_message);
+                return self.failed_500(path.to_string());
+            }
+
+            std::mem::replace(&mut response.blobs[0].data, Vec::new())
+        };
+
+        let modified = match core::apply(fd.as_view(), &original) {
+            Ok(m) => m,
+            Err(e) => {
+                eprintln!("failed to apply patch: {:?}", e);
+                return self.failed_500(path.to_string());
+            }
+        };
+
+        let mut content = render::change(&change);
+        content.insert("snapshot", render::snapshot(&snapshot));
+        content.insert(
+            "file_history",
+            render::file_history(&fd, original, modified),
+        );
+        content.insert("next_file", next_file);
+
+        let body = tmpl::apply(DIFF_VIEW, &content);
+        content.insert("body", body);
+
+        let page = tmpl::apply(CHANGE, &content);
+        ws::Response::new(ws::Body::from(self.wrap_template(page)))
     }
 
     async fn index(&self, _path: String, _req: ws::Request) -> ws::Response {

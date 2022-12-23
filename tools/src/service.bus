@@ -93,6 +93,18 @@ message GetMetadataResponse {
     data: bytes = 2
 }
 
+message GetBlobsByPathRequest {
+    token: string = 0
+    basis: Basis = 1
+    paths: repeated string = 1
+}
+
+message GetBlobsByPathResponse {
+    failed: bool = 0
+    error_message: string = 1
+    blobs: repeated Blob = 2
+}
+
 message GetBlobsRequest {
     token: string = 0
     shas: repeated bytes = 1
@@ -178,6 +190,7 @@ service SrcServer {
     rpc update_change(UpdateChangeRequest) -> UpdateChangeResponse
     rpc list_changes(ListChangesRequest) -> ListChangesResponse
     rpc get_change(GetChangeRequest) -> GetChangeResponse
+    rpc get_blobs_by_path(GetBlobsByPathRequest) -> GetBlobsByPathResponse
 }
 
 message NewSpaceResponse {

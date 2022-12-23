@@ -1,5 +1,5 @@
 <div style="display: flex">
-    <p style="flex: 1"><a target="_blank" href="https://search.colinmerkel.xyz{{filename}}">{{filename}}</a> ({{status}})</p>
+    <p style="flex: 1"><a target="_blank" href="https://search.colinmerkel.xyz{{filename}}">{{filename}}</a> ({{file_history.kind}})</p>
     {{next_file != ""}}
     <p><a href="/{{id}}{{next_file}}">{{next_file}}</a></p>
     {{/next_file}}
@@ -30,7 +30,7 @@
 </style>
 
 <div id='sticky-header' class='sticky-header'>
-  <div class='sticky-description'><p><a href="/{{id}}">c/1078</a> {{summary}}</p></div>
+  <div class='sticky-description'><p><a href="/{{id}}">c/{{id}}</a> {{summary}}</p></div>
 
   <div class='sticky-reviewing'>
     <p><a target="_blank" href="https://search.colinmerkel.xyz{{filename}}">{{filename}}</a> ({{status}})</p>
@@ -60,7 +60,7 @@ window.onscroll = function() {
 }
 </script>
 
-<diff-view language="{{language}}" left="{{original.contents}}" right="{{modified.contents}}">
+<diff-view language="{{language}}" left="{{file_history.original}}" right="{{file_history.modified}}">
 </diff-view>
 
 <script type=module src="https://js.colinmerkel.xyz/homepage/js/diff_view.mjs"></script>
