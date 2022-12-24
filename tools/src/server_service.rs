@@ -226,23 +226,71 @@ impl service::SrcServerServiceHandler for SrcServer {
             }
         };
 
-        // TODO: check that the basis is valid
-        // TODO: check that the index is latest
+        let mut change = match self.table.read(
+            &format!("{}/{}/changes", req.repo_owner, req.repo_name),
+            &core::encode_id(req.change_id),
+            0,
+        ) {
+            Some(c) => c.map_err(|e| {
+                bus::BusRpcError::InternalError(format!("failed to read from table: {:?}", e))
+            })?,
+            None => {
+                return Ok(SubmitResponse {
+                    failed: true,
+                    error_message: "No such change".to_string(),
+                    ..Default::default()
+                });
+            }
+        };
+        let snapshot = match self.get_snapshot(&change, 0)? {
+            Some(s) => s,
+            None => {
+                return Ok(SubmitResponse {
+                    failed: true,
+                    error_message: "Snapshot didn't exist".to_string(),
+                    ..Default::default()
+                });
+            }
+        };
 
-        let index = 2;
+        println!("request: {:?}", req);
+        println!("got snapshot: {:?}", snapshot);
+
+        // Check that the snapshot matches the snapshot timestamp
+        if snapshot.timestamp != req.snapshot_timestamp {
+            return Ok(SubmitResponse {
+                failed: true,
+                error_message: format!(
+                    "Snapshot timestamp didn't match (provided {}, expected {})",
+                    req.snapshot_timestamp, snapshot.timestamp
+                ),
+                ..Default::default()
+            });
+        }
+
+        // TODO: check that the basis is latest
+        let submitted_id = self
+            .table
+            .reserve_id(
+                format!("{}/{}/change_ids", change.repo_owner, change.repo_name),
+                String::new(),
+            )
+            .map_err(|e| {
+                bus::BusRpcError::InternalError(format!("failed to reserve id: {:?}", e))
+            })?;
 
         let mtime = core::timestamp_usec() / 1_000_000;
         let mut modified_paths = HashSet::new();
 
-        for diff in &req.files {
+        for diff in &snapshot.files {
             modified_paths.insert(&diff.path);
             if diff.kind == service::DiffKind::Removed {
                 // Delete it
                 self.table
                     .delete(
-                        format!("code/submitted/{}/{}", req.basis.owner, req.basis.name),
+                        format!("code/submitted/{}/{}", req.repo_owner, req.repo_name),
                         format!("{}/{}", diff.path.split("/").count(), diff.path),
-                        index,
+                        submitted_id,
                     )
                     .map_err(|e| {
                         eprintln!("{:?}", e);
@@ -254,9 +302,9 @@ impl service::SrcServerServiceHandler for SrcServer {
             if diff.is_dir {
                 self.table
                     .write(
-                        format!("code/submitted/{}/{}", req.basis.owner, req.basis.name),
+                        format!("code/submitted/{}/{}", req.repo_owner, req.repo_name),
                         format!("{}/{}", diff.path.split("/").count(), diff.path),
-                        index,
+                        submitted_id,
                         service::File {
                             is_dir: true,
                             mtime,
@@ -272,29 +320,21 @@ impl service::SrcServerServiceHandler for SrcServer {
             }
 
             // Figure out what the byte content of the file is from the diff
-            let content: Vec<u8> = if diff.kind == service::DiffKind::Added {
-                diff.differences[0].data.clone()
-            } else {
-                let original = self
-                    .get_blob_from_path(req.basis.as_view(), &diff.path)
-                    .map_err(|e| {
-                        eprintln!("{:?}", e);
-                        bus::BusRpcError::InternalError("failed to get blob".to_string())
-                    })?;
-
-                // Reconstruct the new document from the diff representation
-                let mut content = Vec::new();
-                let mut idx: usize = 0;
-                for bd in &diff.differences {
-                    content.extend_from_slice(&original[idx..bd.start as usize]);
-                    if bd.kind == service::DiffKind::Added {
-                        content.extend_from_slice(&bd.data);
-                    } else {
-                        idx = bd.end as usize;
-                    }
+            let original = self
+                .get_blob_from_path(snapshot.basis.as_view(), &diff.path)
+                .map_err(|e| {
+                    eprintln!("{:?}", e);
+                    bus::BusRpcError::InternalError("failed to get blob".to_string())
+                })?;
+            let content: Vec<u8> = match core::apply(diff.as_view(), &original) {
+                Ok(c) => c,
+                Err(e) => {
+                    return Ok(SubmitResponse {
+                        failed: true,
+                        error_message: format!("Failed to apply change to {}: {:?}!", diff.path, e),
+                        ..Default::default()
+                    });
                 }
-                content.extend_from_slice(&original[idx..]);
-                content
             };
 
             let sha = core::hash_bytes(&content);
@@ -321,9 +361,9 @@ impl service::SrcServerServiceHandler for SrcServer {
 
             self.table
                 .write(
-                    format!("code/submitted/{}/{}", req.basis.owner, req.basis.name),
+                    format!("code/submitted/{}/{}", change.repo_owner, change.repo_name),
                     format!("{}/{}", diff.path.split("/").count(), diff.path),
-                    index,
+                    submitted_id,
                     service::File {
                         is_dir: false,
                         mtime,
@@ -348,9 +388,9 @@ impl service::SrcServerServiceHandler for SrcServer {
         for path in modified_parents {
             self.table
                 .write(
-                    format!("code/submitted/{}/{}", req.basis.owner, req.basis.name),
+                    format!("code/submitted/{}/{}", req.repo_owner, req.repo_name),
                     format!("{}/{}", path.split("/").count(), path),
-                    index,
+                    submitted_id,
                     service::File {
                         is_dir: true,
                         mtime,
@@ -364,8 +404,36 @@ impl service::SrcServerServiceHandler for SrcServer {
                 })?;
         }
 
+        // Mark the change as submitted
+        change.status = service::ChangeStatus::Submitted;
+        change.submitted_id = submitted_id;
+        change.original_id = change.id;
+        change.id = submitted_id;
+
+        // Write change back under the original ID and the submitted ID
+        self.table
+            .write(
+                format!("{}/{}/changes", req.repo_owner, req.repo_name),
+                core::encode_id(change.id),
+                0,
+                change.clone(),
+            )
+            .map_err(|e| {
+                bus::BusRpcError::InternalError(format!("failed to read from table: {:?}", e))
+            })?;
+        self.table
+            .write(
+                format!("{}/{}/changes", &req.repo_owner, &req.repo_name),
+                core::encode_id(change.submitted_id),
+                0,
+                change.clone(),
+            )
+            .map_err(|e| {
+                bus::BusRpcError::InternalError(format!("failed to read from table: {:?}", e))
+            })?;
+
         Ok(SubmitResponse {
-            index,
+            index: submitted_id,
             ..Default::default()
         })
     }
@@ -871,6 +939,7 @@ impl service::SrcServerServiceHandler for SrcServer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bus::{Deserialize, Serialize};
 
     fn setup() -> SrcServer {
         let path = std::path::PathBuf::from("/tmp/asdf");
@@ -1060,78 +1129,20 @@ mod tests {
         assert_eq!(&response.changes[0].description, "do something");
     }
 
-    //#[test]
-    fn test_submit_change() {
-        let s = full_setup();
-        s.submit(SubmitRequest {
+    #[test]
+    fn test_encode_decode_snapshot() {
+        let req = service::SubmitRequest {
             token: String::new(),
-            basis: Basis {
-                owner: "colin".to_string(),
-                name: "example".to_string(),
-                index: 1,
-                ..Default::default()
-            },
-            files: vec![
-                FileDiff {
-                    path: "a.txt".to_string(),
-                    kind: DiffKind::Added,
-                    is_dir: false,
-                    differences: vec![ByteDiff {
-                        data: vec![0, 1, 2, 3, 4],
-                        ..Default::default()
-                    }],
-                },
-                FileDiff {
-                    path: "dir/b.txt".to_string(),
-                    kind: DiffKind::Added,
-                    is_dir: false,
-                    differences: vec![ByteDiff {
-                        data: vec![4, 3, 2, 1, 0],
-                        ..Default::default()
-                    }],
-                },
-            ],
-        })
-        .unwrap();
+            repo_owner: "colin".to_string(),
+            repo_name: "example".to_string(),
+            change_id: 1,
+            snapshot_timestamp: 1671910873667006,
+        };
+        let mut buf = Vec::new();
+        req.encode(&mut buf).unwrap();
 
-        // Check on blobs
-        let desired_sha = core::hash_bytes(&[0, 1, 2, 3, 4]);
-        let blobs = s
-            .get_blobs(GetBlobsRequest {
-                token: String::new(),
-                shas: vec![desired_sha.into()],
-            })
-            .unwrap();
-
-        assert_eq!(blobs.blobs.len(), 1);
-        assert_eq!(&blobs.blobs[0].sha, &desired_sha);
-        assert_eq!(&blobs.blobs[0].data, &[0, 1, 2, 3, 4]);
-
-        // Read metadata
-        let metadata_sstable = s
-            .get_metadata(GetMetadataRequest {
-                token: String::new(),
-                basis: Basis {
-                    owner: "colin".to_string(),
-                    name: "example".to_string(),
-                    ..Default::default()
-                },
-            })
-            .unwrap();
-
-        let sst = sstable::SSTableReader::<File>::from_bytes(&metadata_sstable.data).unwrap();
-        let file = sst.get("1/a.txt").unwrap();
-        assert_eq!(&file.sha, &desired_sha);
-        assert!(file.mtime > 1659000000);
-        assert_eq!(file.is_dir, false);
-
-        let file = sst.get("1/dir").unwrap();
-        assert_eq!(&file.sha, &[]);
-        assert!(file.mtime > 1659000000);
-        assert_eq!(file.is_dir, true);
-
-        let file = sst.get("2/dir/b.txt").unwrap();
-        assert!(file.mtime > 1659000000);
-        assert_eq!(file.is_dir, false);
+        let r2 = service::SubmitRequest::from_bytes(&buf).unwrap();
+        assert_eq!(r2, req);
+        assert_eq!(r2.snapshot_timestamp, 16719);
     }
 }

@@ -10,18 +10,6 @@ static TEMPLATE: &str = include_str!("template.html");
 static CHANGE: &str = include_str!("change.html");
 static INDEX: &str = include_str!("homepage.html");
 
-fn fake_change() -> service::Change {
-    service::Change {
-        id: 123,
-        submitted_id: 234,
-        description: "Add fake data to the changes list".to_string(),
-        status: service::ChangeStatus::Pending,
-        repo_name: "example".to_string(),
-        repo_owner: "colin".to_string(),
-        owner: "colin".to_string(),
-    }
-}
-
 #[derive(Clone)]
 pub struct SrcUIServer {
     client: service::SrcServerAsyncClient,
@@ -110,9 +98,6 @@ impl SrcUIServer {
             Ok(id) => id,
             Err(_) => return self.not_found(path.clone()),
         };
-
-        // TODO: read via client
-        let change = fake_change();
 
         let mut r = service::GetChangeRequest::new();
         r.repo_owner = repo_owner.to_owned();

@@ -85,10 +85,11 @@ fn init(data_dir: std::path::PathBuf, basis: String) {
 
     let alias: String = if resp.failed {
         // That's OK, just means the repo doesn't exist
-        d.initialize_repo(basis.clone(), &cwd).expect("failed to initialize")
+        d.initialize_repo(basis.clone(), &cwd)
+            .expect("failed to initialize")
     } else {
         let alias = d.find_unused_alias(&basis.name);
-        if let Err(e) = d.new_space(service::NewSpaceRequest{
+        if let Err(e) = d.new_space(service::NewSpaceRequest {
             dir: cwd.to_str().unwrap().to_owned(),
             basis: basis.clone(),
             alias: alias.clone(),
@@ -467,7 +468,7 @@ fn update(data_dir: std::path::PathBuf) {
     if resp.failed {
         eprintln!("update failed! {:?}", resp.error_message);
         std::process::exit(1);
-    } 
+    }
 
     // Update the local space data with the associated change ID
     space.change_id = resp.id;
@@ -475,6 +476,74 @@ fn update(data_dir: std::path::PathBuf) {
         eprintln!("failed to update local space: {:?}", e);
         std::process::exit(1);
     }
+}
+
+fn submit(data_dir: std::path::PathBuf) {
+    let cwd = match std::env::current_dir() {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("unable to determine current working directory! {:?}", e);
+            std::process::exit(1);
+        }
+    };
+
+    let d = src_lib::Src::new(data_dir).expect("failed to initialize src!");
+
+    let alias = match d.get_change_alias_by_dir(&cwd) {
+        Some(a) => a,
+        None => {
+            eprintln!("current directory is not a src directory!");
+            std::process::exit(1);
+        }
+    };
+
+    // First, check whether the current directory is associated with a remote change already. If
+    // not, we have to set the description and push it.
+    let mut space = match d.get_change_by_alias(&alias) {
+        Some(s) => s,
+        None => {
+            eprintln!("current directory is not a src directory!");
+            std::process::exit(1);
+        }
+    };
+
+    if space.change_id == 0 {
+        eprintln!("no remote change exists!");
+        std::process::exit(1);
+    }
+
+    let snapshot = match d.get_latest_snapshot(&alias) {
+        Ok(Some(s)) => s,
+        _ => {
+            eprintln!("no snapshot to submit!");
+            std::process::exit(1);
+        }
+    };
+
+    println!("snapshot: {:?}", snapshot);
+
+    let client = d
+        .get_client(&space.basis.host)
+        .expect("failed to construct client");
+    let resp = match client.submit(service::SubmitRequest {
+        token: String::new(),
+        repo_owner: space.basis.owner.clone(),
+        repo_name: space.basis.name.clone(),
+        change_id: space.change_id,
+        snapshot_timestamp: snapshot.timestamp,
+    }) {
+        Ok(r) => r,
+        Err(_) => {
+            eprintln!("couldn't reach src server!");
+            std::process::exit(1);
+        }
+    };
+
+    if resp.failed {
+        eprintln!("submit failed! {:?}", resp.error_message);
+        std::process::exit(1);
+    }
+    println!("submitted as {}", resp.index);
 }
 
 fn main() {
@@ -547,6 +616,13 @@ fn main() {
                 std::process::exit(1);
             }
             snapshot(data_dir, msg.value())
+        }
+        "submit" => {
+            if args.len() != 1 {
+                eprintln!("usage: src submit");
+                std::process::exit(1);
+            }
+            submit(data_dir)
         }
         "history" => history(data_dir),
         "jump" => jump(data_dir, name.value()),

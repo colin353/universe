@@ -40,10 +40,6 @@
               response = await fetch('/api/tasks/submit/{{id}}', { method: 'POST' })
               window.location.reload()
             }
-            async function test() {
-              response = await fetch('/api/tasks/build/{{id}}', { method: 'POST' })
-              window.location.reload()
-            }
             async function archive() {
               if (confirm("Really archive this change?")) {
                 response = await fetch('/api/tasks/archive/{{id}}', { method: 'POST' })
@@ -52,7 +48,6 @@
             }
       </script>
         <button onclick="submit()" type="button">Submit</button>
-        <button onclick="test()" type="button">Run presubmit</button>
         {{status != "ARCHIVED" }}
         <button onclick="archive()" type="button">Archive</button>
         {{/status}}

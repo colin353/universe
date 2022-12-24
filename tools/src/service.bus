@@ -43,8 +43,10 @@ message File {
 
 message SubmitRequest {
     token: string = 0
-    basis: Basis = 1
-    files: repeated FileDiff = 2
+    repo_owner: string = 1
+    repo_name: string = 2
+    change_id: u64 = 3
+    snapshot_timestamp: u64 = 2
 }
 
 message SubmitResponse {
@@ -136,6 +138,9 @@ message Change {
     repo_name: string = 4
     repo_owner: string = 5
     owner: string = 6
+
+    // the ID of the change before being submitted
+    original_id: u64 = 2
 }
 
 message UpdateChangeRequest {
