@@ -23,7 +23,7 @@ impl SrcServer {
         basis: service::BasisView,
         path: &str,
     ) -> std::io::Result<service::File> {
-        if !basis.get_host().is_empty() {
+        if !basis.get_host().is_empty() && basis.get_host() != self.hostname {
             todo!("I don't know how to read from remotes yet!");
         }
 
@@ -67,10 +67,16 @@ impl SrcServer {
         change: &Change,
         timestamp: u64,
     ) -> Result<Option<service::Snapshot>, bus::BusRpcError> {
+        let id = if change.original_id != 0 {
+            change.original_id
+        } else {
+            change.id
+        };
+
         let filter = largetable::Filter {
             row: &format!(
                 "{}/{}/{}/snapshots",
-                change.repo_owner, change.repo_name, change.id
+                change.repo_owner, change.repo_name, id
             ),
             min: "",
             ..Default::default()
@@ -207,9 +213,26 @@ impl service::SrcServerServiceHandler for SrcServer {
             });
         }
 
+        // Get the latest submitted change
+        let filter = largetable::Filter {
+            row: &format!("code/submitted_changes/{}/{}", req.owner, req.name),
+            spec: "",
+            min: "",
+            max: "",
+        };
+        let resp = self.table.read_range(filter, 0, 1).map_err(|e| {
+            eprintln!("failed to read range: {:?}", e);
+            bus::BusRpcError::InternalError("failed to touch parent folders".to_string())
+        })?;
+
+        let index = resp
+            .records
+            .get(0)
+            .map(|r| core::decode_id(&r.key).unwrap_or(0))
+            .unwrap_or(0);
+
         Ok(GetRepositoryResponse {
-            failed: false,
-            index: 1,
+            index,
             ..Default::default()
         })
     }
@@ -253,9 +276,6 @@ impl service::SrcServerServiceHandler for SrcServer {
             }
         };
 
-        println!("request: {:?}", req);
-        println!("got snapshot: {:?}", snapshot);
-
         // Check that the snapshot matches the snapshot timestamp
         if snapshot.timestamp != req.snapshot_timestamp {
             return Ok(SubmitResponse {
@@ -293,7 +313,7 @@ impl service::SrcServerServiceHandler for SrcServer {
                         submitted_id,
                     )
                     .map_err(|e| {
-                        eprintln!("{:?}", e);
+                        eprintln!("failed to delete file: {:?}", e);
                         bus::BusRpcError::InternalError("failed to delete file".to_string())
                     })?;
                 continue;
@@ -313,19 +333,22 @@ impl service::SrcServerServiceHandler for SrcServer {
                         },
                     )
                     .map_err(|e| {
-                        eprintln!("{:?}", e);
+                        eprintln!("failed to write dir: {:?}", e);
                         bus::BusRpcError::InternalError("failed to write dir".to_string())
                     })?;
                 continue;
             }
 
             // Figure out what the byte content of the file is from the diff
-            let original = self
-                .get_blob_from_path(snapshot.basis.as_view(), &diff.path)
-                .map_err(|e| {
-                    eprintln!("{:?}", e);
-                    bus::BusRpcError::InternalError("failed to get blob".to_string())
-                })?;
+            let original = match diff.kind {
+                service::DiffKind::Modified => self
+                    .get_blob_from_path(snapshot.basis.as_view(), &diff.path)
+                    .map_err(|e| {
+                        eprintln!("failed to get blob: {:?}", e);
+                        bus::BusRpcError::InternalError("failed to get blob".to_string())
+                    })?,
+                _ => Vec::new(),
+            };
             let content: Vec<u8> = match core::apply(diff.as_view(), &original) {
                 Ok(c) => c,
                 Err(e) => {
@@ -404,6 +427,20 @@ impl service::SrcServerServiceHandler for SrcServer {
                 })?;
         }
 
+        self.table
+            .write(
+                format!(
+                    "code/submitted_changes/{}/{}",
+                    req.repo_owner, req.repo_name
+                ),
+                core::encode_id(submitted_id),
+                0,
+                bus::Nothing {},
+            )
+            .map_err(|e| {
+                bus::BusRpcError::InternalError(format!("failed to write to table: {:?}", e))
+            })?;
+
         // Mark the change as submitted
         change.status = service::ChangeStatus::Submitted;
         change.submitted_id = submitted_id;
@@ -414,7 +451,7 @@ impl service::SrcServerServiceHandler for SrcServer {
         self.table
             .write(
                 format!("{}/{}/changes", req.repo_owner, req.repo_name),
-                core::encode_id(change.id),
+                core::encode_id(change.original_id),
                 0,
                 change.clone(),
             )
@@ -926,7 +963,6 @@ impl service::SrcServerServiceHandler for SrcServer {
         };
 
         let snapshot = self.get_snapshot(&change, 0)?;
-        println!("lookup latest snapshot: {:?}", snapshot);
 
         Ok(GetChangeResponse {
             change,

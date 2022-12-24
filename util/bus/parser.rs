@@ -165,11 +165,10 @@ fn convert_enum(e: ast::EnumDefinition, data: &str) -> Result<EnumDefinition, Bu
 fn convert_message(msg: ast::MessageDefinition, data: &str) -> Result<MessageDefinition, BusError> {
     let mut fields = Vec::new();
     let mut names = HashSet::new();
+    let mut field_indices = HashSet::new();
     for f in msg.fields.iter() {
         let cf = convert_field(f, data)?;
-        if names.insert(cf.field_name.clone()) {
-            fields.push(cf);
-        } else {
+        if !names.insert(cf.field_name.clone()) {
             let (start, end) = f.range();
             return Err(BusError::ParseError(ggen::ParseError::from_string(
                 format!(
@@ -181,6 +180,21 @@ fn convert_message(msg: ast::MessageDefinition, data: &str) -> Result<MessageDef
                 end,
             )));
         }
+
+        if !field_indices.insert(cf.tag) {
+            let (start, end) = f.range();
+            return Err(BusError::ParseError(ggen::ParseError::from_string(
+                format!(
+                    "a field with tag `{}` already exists in this message",
+                    cf.tag
+                ),
+                "",
+                start,
+                end,
+            )));
+        }
+
+        fields.push(cf);
     }
     Ok(MessageDefinition {
         name: msg.name.as_str(data).to_owned(),

@@ -310,7 +310,7 @@ impl {name}Client {{
         )?;
     }
 
-    write!(w, "}}\n\n");
+    write!(w, "}}\n\n")?;
 
     // Implement async client
     write!(

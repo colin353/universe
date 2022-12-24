@@ -58,7 +58,7 @@ fn init(data_dir: std::path::PathBuf, basis: String) {
         }
     };
 
-    let basis = match core::parse_basis(&basis) {
+    let mut basis = match core::parse_basis(&basis) {
         Ok(b) => b,
         Err(e) => {
             eprintln!("{}", e.to_string());
@@ -82,6 +82,10 @@ fn init(data_dir: std::path::PathBuf, basis: String) {
             std::process::exit(1);
         }
     };
+
+    if basis.change == 0 && basis.index == 0 {
+        basis.index = resp.index;
+    }
 
     let alias: String = if resp.failed {
         // That's OK, just means the repo doesn't exist
@@ -519,8 +523,6 @@ fn submit(data_dir: std::path::PathBuf) {
             std::process::exit(1);
         }
     };
-
-    println!("snapshot: {:?}", snapshot);
 
     let client = d
         .get_client(&space.basis.host)
