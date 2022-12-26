@@ -712,7 +712,10 @@ impl service::SrcServerServiceHandler for SrcServer {
                 }
             }
 
-            return Ok(UpdateChangeResponse::default());
+            return Ok(UpdateChangeResponse {
+                id: req.change.id,
+                ..Default::default()
+            });
         }
 
         // We're creating the change from scratch. Validate it, reserve an id, and write

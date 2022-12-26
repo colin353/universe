@@ -1,7 +1,7 @@
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::io::AsRawFd;
 
-use bus::{Serialize, Deserialize};
+use bus::{Deserialize, Serialize};
 use std::io::Write;
 
 fn mtime(m: &std::fs::Metadata) -> u64 {
@@ -160,7 +160,11 @@ impl crate::Src {
             ));
         }
 
-        Ok(std::cmp::min(resp.index, basis.get_index()))
+        Ok(if basis.get_index() == 0 {
+            resp.index
+        } else {
+            std::cmp::min(resp.index, basis.get_index())
+        })
     }
 
     pub(crate) fn write_dir(

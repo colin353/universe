@@ -111,16 +111,51 @@ fn init(data_dir: std::path::PathBuf, basis: String) {
     );
 }
 
-fn change(_data_dir: std::path::PathBuf, name: String, basis: String) {
-    let _basis = match core::parse_basis(&basis) {
-        Ok(b) => b,
+fn new(data_dir: std::path::PathBuf, name: String, basis: String) {
+    let cwd = match std::env::current_dir() {
+        Ok(d) => d,
         Err(e) => {
-            eprintln!("{}", e.to_string());
+            eprintln!("unable to determine current working directory! {:?}", e);
             std::process::exit(1);
         }
     };
 
-    todo!()
+    let mut basis = match core::parse_basis(&basis) {
+        Ok(b) => b,
+        Err(e) => {
+            eprintln!("unable to parse basis: {:?}", e);
+            std::process::exit(1);
+        }
+    };
+
+    let d = src_lib::Src::new(data_dir).expect("failed to initialize src!");
+    let resp = match d.new_space(service::NewSpaceRequest {
+        dir: cwd
+            .to_str()
+            .expect("current working directory must be valid unicode")
+            .to_owned(),
+        basis: basis.clone(),
+        alias: name.clone(),
+    }) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("failed to create new space: {:?}", e);
+            std::process::exit(1);
+        }
+    };
+
+    if resp.failed {
+        eprintln!("{}", resp.error_message);
+        std::process::exit(1);
+    }
+
+    basis.index = resp.index;
+
+    println!(
+        "created space {} @ {}",
+        name,
+        core::fmt_basis(basis.as_view())
+    );
 }
 
 fn diff(data_dir: std::path::PathBuf) {
@@ -434,6 +469,7 @@ fn update(data_dir: std::path::PathBuf) {
     let mut change = service::Change::new();
     change.repo_name = space.basis.name.clone();
     change.repo_owner = space.basis.owner.clone();
+    change.id = space.change_id;
     if space.change_id == 0 {
         // Get the description
         match edit_string(DEFAULT_CHANGE_DESCRIPTION) {
@@ -457,6 +493,7 @@ fn update(data_dir: std::path::PathBuf) {
         .get_client(&space.basis.host)
         .expect("failed to construct client");
 
+    println!("update change: {:?}", change);
     let resp = match client.update_change(service::UpdateChangeRequest {
         token: String::new(),
         change: change,
@@ -591,12 +628,12 @@ fn main() {
             }
             init(data_dir, args[1].clone())
         }
-        "change" => {
+        "new" => {
             if args.len() != 1 {
-                eprintln!("usage: src change [--name=<change name>] [--basis=<basis>]");
+                eprintln!("usage: src new [--name=<change name>] [--basis=<basis>]");
                 std::process::exit(1);
             }
-            change(data_dir, name.value(), basis.value())
+            new(data_dir, name.value(), basis.value())
         }
         "diff" => {
             if args.len() != 1 {

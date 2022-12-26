@@ -129,6 +129,10 @@ pub fn print_patch(
     subject: &str,
     files: &[(&service::FileDiff, Option<&service::Blob>)],
 ) -> String {
+    if files.len() == 0 {
+        return String::new();
+    }
+
     let mut out = String::new();
     writeln!(&mut out, "From: {}", from).unwrap();
     writeln!(&mut out, "Subject: [PATCH 1/1] {}\n", subject).unwrap();

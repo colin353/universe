@@ -68,6 +68,7 @@ impl Src {
             .join(basis.get_host())
             .join(basis.get_owner())
             .join(basis.get_name())
+            .join(format!("{}", basis.get_index()))
             .with_extension("sstable");
 
         if metadata_path.exists() {
@@ -110,11 +111,8 @@ impl Src {
         metadata: &metadata::Metadata,
         differences: &mut Vec<service::FileDiff>,
     ) -> std::io::Result<()> {
-        let get_metadata = |p: &std::path::Path| -> Option<service::FileView> {
-            let path_str = p.to_str()?;
-            let key = format!("{}/{}", path_str.split("/").count(), path_str);
-            metadata.get(&key)
-        };
+        let get_metadata =
+            |p: &std::path::Path| -> Option<service::FileView> { metadata.get(p.to_str()?) };
 
         let mut observed_paths = Vec::new();
         for entry in std::fs::read_dir(path)? {
@@ -402,7 +400,7 @@ impl Src {
         // Check that the directory is empty.
         if directory
             .read_dir()
-            .map(|mut i| i.next().is_none())
+            .map(|mut i| i.next().is_some())
             .unwrap_or(false)
         {
             return Ok(service::NewSpaceResponse {
