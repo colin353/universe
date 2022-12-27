@@ -238,10 +238,7 @@ pub fn patch_diff(
                     | (service::DiffKind::Modified, service::DiffKind::Modified) => {
                         if p.differences != c.differences {
                             // Both were added/modified. So we need to combine their byte diffs
-                            let mut change = c.clone();
-                            change.kind = service::DiffKind::Modified;
-                            change.differences = patch_diff_file(&p.differences, &c.differences);
-                            out.push(change);
+                            unimplemented!("can't diff diffs yet");
                         }
                     }
                     (service::DiffKind::Removed, service::DiffKind::Modified) => {
@@ -322,14 +319,6 @@ pub fn apply(fd: service::FileDiffView, original: &[u8]) -> std::io::Result<Vec<
     output.extend_from_slice(&original[pos..]);
 
     Ok(output)
-}
-
-pub fn patch_diff_file(
-    prev: &[service::ByteDiff],
-    curr: &[service::ByteDiff],
-) -> Vec<service::ByteDiff> {
-    // TODO: diff the files via their byte differences?
-    vec![]
 }
 
 pub fn fmt_sha(sha: &[u8]) -> String {

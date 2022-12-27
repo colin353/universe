@@ -219,10 +219,7 @@ fn diff(data_dir: std::path::PathBuf) {
         .map(|(f, o)| (*f, o.as_ref()))
         .collect();
 
-    print!(
-        "{}",
-        core::render::print_patch("", "", diff_ingredients.as_slice())
-    );
+    print!("{}", core::render::print_patch(diff_ingredients.as_slice()));
 }
 
 fn files(data_dir: std::path::PathBuf) {

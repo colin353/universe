@@ -69,6 +69,7 @@ impl Snippet {
                 line_idx += 1;
 
                 if line_idx == 3 {
+                    old_end_pos += 1;
                     break;
                 }
             }
@@ -124,11 +125,7 @@ impl Snippet {
     }
 }
 
-pub fn print_patch(
-    from: &str,
-    subject: &str,
-    files: &[(&service::FileDiff, Option<&service::Blob>)],
-) -> String {
+pub fn print_patch(files: &[(&service::FileDiff, Option<&service::Blob>)]) -> String {
     if files.len() == 0 {
         return String::new();
     }
@@ -235,25 +232,7 @@ pub fn print_patch(
                 writeln!(&mut out, "--- /dev/null").unwrap();
                 writeln!(&mut out, "+++ b/{}", fd.path).unwrap();
 
-                let mut buf = Vec::new();
-                let mut content: &[u8] = &[];
-                for bd in &fd.differences {
-                    if bd.kind != service::DiffKind::Added {
-                        continue;
-                    }
-
-                    if bd.compression == service::CompressionKind::None {
-                        content = bd.data.as_slice();
-                    } else {
-                        buf = match crate::decompress(bd.compression, &bd.data) {
-                            Ok(b) => b,
-                            Err(_) => continue,
-                        };
-                        content = buf.as_slice();
-                    }
-                    break;
-                }
-
+                let content = crate::apply(fd.as_view(), &[]).unwrap();
                 let content_str = match std::str::from_utf8(&content) {
                     Ok(c) => c,
                     // TODO: handle binary content
@@ -303,7 +282,7 @@ fn main() {
         };
 
         let patch_ingredients = vec![(&filediff, Some(&blob))];
-        let patch = print_patch("Colin", "asdf", patch_ingredients.as_slice());
+        let patch = print_patch(patch_ingredients.as_slice());
 
         let expected = "--- a/code.rs
 +++ b/code.rs
@@ -371,7 +350,7 @@ but now I did add an extra line
         };
 
         let patch_ingredients = vec![(&filediff, Some(&blob))];
-        let patch = print_patch("Colin", "asdf", patch_ingredients.as_slice());
+        let patch = print_patch(patch_ingredients.as_slice());
 
         let expected = "--- a/code.rs
 +++ b/code.rs
@@ -393,21 +372,18 @@ but now I did add an extra line
 }
 ";
 
-        let difference = service::FileDiff {
+        let new = "int main(int argc, char *argv) {
+        // TODO: return 1 if failed...
+        return 0
+}
+";
+
+        let bytediffs = diff(original.as_bytes(), new.as_bytes());
+        let filediff = service::FileDiff {
             path: "folder/test.cc".to_string(),
             kind: service::DiffKind::Modified,
             is_dir: false,
-            differences: vec![service::ByteDiff {
-                start: 33,
-                end: 33,
-                kind: service::DiffKind::Added,
-                data: vec![
-                    32, 32, 32, 32, 32, 32, 32, 32, 47, 47, 32, 84, 79, 68, 79, 58, 32, 114, 101,
-                    116, 117, 114, 110, 32, 49, 32, 105, 102, 32, 102, 97, 105, 108, 101, 100, 46,
-                    46, 46, 10,
-                ],
-                compression: service::CompressionKind::None,
-            }],
+            differences: bytediffs,
         };
 
         let blob = service::Blob {
@@ -417,16 +393,16 @@ but now I did add an extra line
 
         let expected = "--- a/folder/test.cc
 +++ b/folder/test.cc
-@@ -1,2 +1,3 @@
+@@ -1,3 +1,4 @@
  int main(int argc, char *argv) {
 +        // TODO: return 1 if failed...
          return 0
  }
 ";
 
-        assert_eq!(
-            &print_patch("", "", &[(&difference, Some(&blob))]),
-            expected
-        );
+        let actual = print_patch(&[(&filediff, Some(&blob))]);
+
+        println!("diff: \n{}", actual);
+        assert_eq!(&actual, expected);
     }
 }

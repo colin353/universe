@@ -168,7 +168,9 @@ where
         let prev_a = &a[..a.len() - common_suffix.len()];
         let prev_b = &b[..b.len() - common_suffix.len()];
         let mut prev_diff = patience_diff(prev_a, prev_b);
-        prev_diff.extend(common_suffix);
+        for item in common_suffix.into_iter().rev() {
+            prev_diff.push(item);
+        }
 
         return prev_diff;
     }
@@ -312,4 +314,17 @@ fn test_patience_diff() {
 #[test]
 fn test_unique_elements() {
     assert_eq!(vec![&2, &4, &5], unique_elements(&[1, 2, 3, 3, 4, 5, 1]));
+}
+
+#[test]
+fn test_my_patience() {
+    assert_eq!(
+        patience_diff(&[1, 3, 4], &[1, 2, 3, 4]),
+        vec![
+            DiffComponent::Unchanged(&1, &1),
+            DiffComponent::Insertion(&2),
+            DiffComponent::Unchanged(&3, &3),
+            DiffComponent::Unchanged(&4, &4),
+        ]
+    );
 }
