@@ -24,7 +24,11 @@ impl SrcServer {
         path: &str,
     ) -> std::io::Result<service::File> {
         if !basis.get_host().is_empty() && basis.get_host() != self.hostname {
-            todo!("I don't know how to read from remotes yet!");
+            todo!(
+                "I don't know how to read from remotes yet (got basis {}, but I'm {})",
+                basis.get_host(),
+                self.hostname
+            );
         }
 
         self.table

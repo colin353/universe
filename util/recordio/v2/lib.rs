@@ -26,6 +26,10 @@ impl<T: Serialize, W: std::io::Write> RecordIOBuilder<T, W> {
         self.writer.write_all(&size.to_le_bytes())?;
         self.writer.write_all(&buf)
     }
+
+    pub fn flush(&mut self) -> std::io::Result<()> {
+        self.writer.flush()
+    }
 }
 
 impl<'a, T: DeserializeOwned, R: std::io::Read> RecordIOReader<T, R> {

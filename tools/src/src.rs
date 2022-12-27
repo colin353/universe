@@ -93,13 +93,21 @@ fn init(data_dir: std::path::PathBuf, basis: String) {
             .expect("failed to initialize")
     } else {
         let alias = d.find_unused_alias(&basis.name);
-        if let Err(e) = d.new_space(service::NewSpaceRequest {
+        match d.new_space(service::NewSpaceRequest {
             dir: cwd.to_str().unwrap().to_owned(),
             basis: basis.clone(),
             alias: alias.clone(),
         }) {
-            eprintln!("failed to initialize repo!: {:?}", e);
-            std::process::exit(1);
+            Ok(r) => {
+                if r.failed {
+                    eprintln!("failed to create space: {}", r.error_message);
+                    std::process::exit(1);
+                }
+            }
+            Err(e) => {
+                eprintln!("failed to initialize repo!: {:?}", e);
+                std::process::exit(1);
+            }
         }
         alias
     };

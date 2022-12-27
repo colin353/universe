@@ -107,10 +107,12 @@ impl<'a, W: std::io::Write> LargeTable<'a, W> {
         };
 
         if self.journals.len() > 0 {
-            self.journals[0]
+            let mut j = self.journals[0]
                 .write()
-                .expect("failed to acquire write lock")
-                .write(&entry)?;
+                .expect("failed to acquire write lock");
+
+            j.write(&entry)?;
+            j.flush()?;
         }
 
         self.mtables[0]
