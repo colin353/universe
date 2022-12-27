@@ -134,10 +134,12 @@ pub fn print_patch(
     }
 
     let mut out = String::new();
-    writeln!(&mut out, "From: {}", from).unwrap();
-    writeln!(&mut out, "Subject: [PATCH 1/1] {}\n", subject).unwrap();
-
     for (fd, prev) in files {
+        if fd.is_dir {
+            // Folders aren't represented in patches
+            continue;
+        }
+
         match fd.kind {
             service::DiffKind::Modified => {
                 let prev = match prev {
@@ -208,7 +210,7 @@ pub fn print_patch(
                         pos = idx + 1;
                     }
                     if !&new[pos..].is_empty() {
-                        new_lines.push(&old[pos..]);
+                        new_lines.push(&new[pos..]);
                     }
 
                     for diff in patience::patience_diff(&old_lines, &new_lines) {
@@ -303,10 +305,7 @@ fn main() {
         let patch_ingredients = vec![(&filediff, Some(&blob))];
         let patch = print_patch("Colin", "asdf", patch_ingredients.as_slice());
 
-        let expected = "From: Colin
-Subject: [PATCH 1/1] asdf
-
---- a/code.rs
+        let expected = "--- a/code.rs
 +++ b/code.rs
 @@ -1,3 +1,4 @@
 +// comment
@@ -374,10 +373,7 @@ but now I did add an extra line
         let patch_ingredients = vec![(&filediff, Some(&blob))];
         let patch = print_patch("Colin", "asdf", patch_ingredients.as_slice());
 
-        let expected = "From: Colin
-Subject: [PATCH 1/1] asdf
-
---- a/code.rs
+        let expected = "--- a/code.rs
 +++ b/code.rs
 @@ -12,3 +12,4 @@
  will come after
@@ -388,5 +384,49 @@ Subject: [PATCH 1/1] asdf
 ";
 
         assert_eq!(patch, expected);
+    }
+
+    #[test]
+    fn test_render_diff() {
+        let original = "int main(int argc, char *argv) {
+        return 0
+}
+";
+
+        let difference = service::FileDiff {
+            path: "folder/test.cc".to_string(),
+            kind: service::DiffKind::Modified,
+            is_dir: false,
+            differences: vec![service::ByteDiff {
+                start: 33,
+                end: 33,
+                kind: service::DiffKind::Added,
+                data: vec![
+                    32, 32, 32, 32, 32, 32, 32, 32, 47, 47, 32, 84, 79, 68, 79, 58, 32, 114, 101,
+                    116, 117, 114, 110, 32, 49, 32, 105, 102, 32, 102, 97, 105, 108, 101, 100, 46,
+                    46, 46, 10,
+                ],
+                compression: service::CompressionKind::None,
+            }],
+        };
+
+        let blob = service::Blob {
+            sha: vec![1, 2, 3, 4, 5],
+            data: original.as_bytes().to_owned(),
+        };
+
+        let expected = "--- a/folder/test.cc
++++ b/folder/test.cc
+@@ -1,2 +1,3 @@
+ int main(int argc, char *argv) {
++        // TODO: return 1 if failed...
+         return 0
+ }
+";
+
+        assert_eq!(
+            &print_patch("", "", &[(&difference, Some(&blob))]),
+            expected
+        );
     }
 }

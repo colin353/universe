@@ -219,7 +219,7 @@ fn diff(data_dir: std::path::PathBuf) {
         .map(|(f, o)| (*f, o.as_ref()))
         .collect();
 
-    println!(
+    print!(
         "{}",
         core::render::print_patch("", "", diff_ingredients.as_slice())
     );
@@ -297,7 +297,7 @@ fn jump(data_dir: std::path::PathBuf, name: String) {
             Ok(o) => o,
             Err(_) => std::process::exit(1),
         };
-        let (name, ch) = match termui::choose_space(out) {
+        let (_, ch) = match termui::choose_space(out) {
             Some(o) => o,
             None => std::process::exit(1),
         };
@@ -481,6 +481,31 @@ fn update(data_dir: std::path::PathBuf) {
         };
     }
 
+    // Always run a snapshot before update
+    let resp = match d.snapshot(service::SnapshotRequest {
+        dir: cwd
+            .to_str()
+            .expect("current working directory must be valid unicode!")
+            .to_owned(),
+        message: format!(
+            "push to {}/{}/{}",
+            space.basis.host, space.basis.owner, space.basis.name
+        ),
+        skip_if_no_changes: true,
+        ..Default::default()
+    }) {
+        Ok(r) => r,
+        Err(_) => {
+            eprintln!("couldn't reach src server!");
+            std::process::exit(1);
+        }
+    };
+
+    if resp.failed {
+        eprintln!("failed to snapshot, {}!", resp.error_message);
+        std::process::exit(1);
+    }
+
     let snapshot = match d.get_latest_snapshot(&alias) {
         Ok(Some(s)) => s,
         _ => {
@@ -493,7 +518,6 @@ fn update(data_dir: std::path::PathBuf) {
         .get_client(&space.basis.host)
         .expect("failed to construct client");
 
-    println!("update change: {:?}", change);
     let resp = match client.update_change(service::UpdateChangeRequest {
         token: String::new(),
         change: change,
@@ -540,7 +564,7 @@ fn submit(data_dir: std::path::PathBuf) {
 
     // First, check whether the current directory is associated with a remote change already. If
     // not, we have to set the description and push it.
-    let mut space = match d.get_change_by_alias(&alias) {
+    let space = match d.get_change_by_alias(&alias) {
         Some(s) => s,
         None => {
             eprintln!("current directory is not a src directory!");

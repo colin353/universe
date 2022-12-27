@@ -14,14 +14,15 @@ fn mtime(m: &std::fs::Metadata) -> u64 {
 }
 
 pub fn metadata_compatible(file: service::FileView, m: &std::fs::Metadata) -> bool {
-    if !file.get_is_dir() && file.get_length() != m.len() {
+    if file.get_is_dir() {
         return false;
     }
 
-    if mtime(m) == file.get_mtime() {
-        return true;
+    if file.get_length() != m.len() {
+        return false;
     }
-    false
+
+    mtime(m) == file.get_mtime()
 }
 
 impl crate::Src {
@@ -93,7 +94,7 @@ impl crate::Src {
 
     pub fn set_change_by_alias(&self, alias: &str, space: &service::Space) -> std::io::Result<()> {
         std::fs::create_dir_all(self.get_change_path(alias)).ok();
-        let mut f = std::fs::File::create(self.get_change_metadata_path(alias))?;
+        let f = std::fs::File::create(self.get_change_metadata_path(alias))?;
         let mut buf = std::io::BufWriter::new(f);
         space.encode(&mut buf)?;
         Ok(())

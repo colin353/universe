@@ -222,12 +222,14 @@ message SnapshotRequest {
     dir: string = 0
     alias: string = 1
     message: string = 2
+    skip_if_no_changes: bool = 3
 }
 
 message SnapshotResponse {
     failed: bool = 0
     error_message: string = 1
     timestamp: u64 = 2
+    skipped: bool = 3
 }
 
 message Snapshot {

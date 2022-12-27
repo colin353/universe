@@ -374,6 +374,18 @@ impl Src {
             });
         }
 
+        if req.skip_if_no_changes {
+            if let Ok(Some(s)) = self.get_latest_snapshot(&alias) {
+                if s.files == diff.files {
+                    return Ok(service::SnapshotResponse{
+                        timestamp: s.timestamp,
+                        skipped: true,
+                        ..Default::default()
+                    })
+                }
+            }
+        }
+
         let ts = core::timestamp_usec();
         let snapshot = service::Snapshot {
             timestamp: ts,

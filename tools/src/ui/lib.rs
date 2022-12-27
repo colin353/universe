@@ -36,7 +36,7 @@ impl SrcUIServer {
     async fn index_result(&self) -> std::io::Result<ws::Response> {
         let mut req = service::ListChangesRequest::new();
         req.owner = "colin".to_string();
-
+        req.status = service::ChangeStatus::Pending;
         let response = self.client.list_changes(req).await.map_err(|e| {
             // TODO: choose a better error kind
             std::io::Error::new(
@@ -56,6 +56,8 @@ impl SrcUIServer {
 
         let mut req = service::ListChangesRequest::new();
         req.limit = 15;
+        req.owner = "colin".to_string();
+        req.status = service::ChangeStatus::Submitted;
         let submitted_changes = self
             .client
             .list_changes(req)

@@ -1,5 +1,5 @@
-use raw_tty::{GuardMode, IntoRawMode};
-use tui::{Component, Transition};
+use raw_tty::GuardMode;
+use tui::Transition;
 
 pub fn choose_space(mut spaces: Vec<(String, service::Space)>) -> Option<(String, service::Space)> {
     let choices: Vec<_> = spaces
