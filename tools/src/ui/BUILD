@@ -30,6 +30,7 @@ rust_library(
     deps = [
         "//third_party:base64",
         "//util/tmpl",
+        "//util/tmpl:escape",
         "//util/ws",
         "//tools/src:service",
         "//tools/src:core",
@@ -37,5 +38,18 @@ rust_library(
         "//tools/search/language_specific",
     ],
     edition="2018",
+)
+
+
+rust_test(
+    name = "server_lib_test",
+    data = [
+        "change.html",
+        "diff_view.html",
+        "homepage.html",
+        "modified_files.html",
+        "template.html",
+    ],
+    crate = "server_lib",
 )
 

@@ -530,6 +530,14 @@ pub fn encode_id(id: u64) -> String {
     format!("{:016x}", u64::MAX - id)
 }
 
+pub fn summarize_description(description: &str) -> &str {
+    let mut summary = match description.lines().next() {
+        Some(t) => t,
+        None => return "",
+    };
+    &summary[0..std::cmp::min(80, summary.len())]
+}
+
 pub fn normalize_change_description(input: &str) -> String {
     let mut description = Vec::new();
     for line in input.split("\n") {
