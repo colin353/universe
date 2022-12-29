@@ -42,7 +42,7 @@
             }
             async function archive() {
               if (confirm("Really archive this change?")) {
-                response = await fetch('/api/tasks/archive/{{id}}', { method: 'POST' })
+                response = await fetch('/api/archive/{{repo_owner}}/{{repo_name}}/{{id}}', { method: 'POST' })
                 window.location.reload()
               }
             }

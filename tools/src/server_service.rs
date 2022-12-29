@@ -709,6 +709,27 @@ impl service::SrcServerServiceHandler for SrcServer {
                 existing_change.description = req.change.description;
             }
 
+            // You can set a change as archived, but only from pending state
+            if req.change.status == service::ChangeStatus::Archived
+                && existing_change.status == service::ChangeStatus::Pending
+            {
+                existing_change.status = req.change.status;
+            }
+
+            self.table
+                .write(
+                    format!(
+                        "{}/{}/changes",
+                        existing_change.repo_owner, existing_change.repo_name
+                    ),
+                    core::encode_id(existing_change.id),
+                    0,
+                    existing_change.clone(),
+                )
+                .map_err(|e| {
+                    bus::BusRpcError::InternalError(format!("failed to write to table: {:?}", e))
+                })?;
+
             // Add snapshot, if there's one to add
             if req.snapshot.timestamp != 0 {
                 if let Err(e) = self.add_snapshot(&existing_change, req.snapshot) {

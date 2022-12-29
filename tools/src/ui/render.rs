@@ -63,7 +63,7 @@ pub fn change(c: &service::Change) -> tmpl::ContentsMap {
         "summary" => core::summarize_description(&c.description).to_owned(),
         "description" => render_change_description(&c.description),
         "author" => c.owner.clone(),
-        "status" => format!("{:?}", c.status);
+        "status" => format!("{:?}", c.status).to_uppercase();
         "tasks" => vec![]
     )
 }

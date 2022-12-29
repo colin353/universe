@@ -33,6 +33,53 @@ impl SrcUIServer {
         )
     }
 
+    async fn api(&self, path: &str, req: ws::Request) -> ws::Response {
+        let mut path_iter = path.rsplit("/");
+        let change_id: u64 = match path_iter.next() {
+            Some(c) => c.parse().unwrap_or(0),
+            None => return ws::Response::new(ws::Body::from("no such change")),
+        };
+        let repo_name = match path_iter.next() {
+            Some(s) => s,
+            None => return ws::Response::new(ws::Body::from("no such change")),
+        };
+        let repo_owner = match path_iter.next() {
+            Some(s) => s,
+            None => return ws::Response::new(ws::Body::from("no such change")),
+        };
+        let verb = match path_iter.next() {
+            Some(s) => s,
+            None => return ws::Response::new(ws::Body::from("no such change")),
+        };
+
+        if verb == "archive" {
+            let resp = self
+                .client
+                .update_change(service::UpdateChangeRequest {
+                    token: String::new(),
+                    change: service::Change {
+                        id: change_id,
+                        status: service::ChangeStatus::Archived,
+                        repo_name: repo_name.to_string(),
+                        repo_owner: repo_owner.to_string(),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                })
+                .await
+                .unwrap();
+
+            if resp.failed {
+                eprintln!("request failed: {:?}", resp.error_message);
+                return ws::Response::new(ws::Body::from("failed"));
+            }
+
+            return ws::Response::new(ws::Body::from("ok"));
+        } else {
+            return ws::Response::new(ws::Body::from("unknown api method"));
+        }
+    }
+
     async fn index_result(&self) -> std::io::Result<ws::Response> {
         let mut req = service::ListChangesRequest::new();
         req.owner = "colin".to_string();
@@ -250,6 +297,7 @@ impl ws::Server for SrcUIServer {
 
         match path.as_str() {
             "/" => Box::pin(async move { _self.index(path, req).await }),
+            x if x.starts_with("/api/") => Box::pin(async move { _self.api(&path, req).await }),
             _ => Box::pin(async move { _self.show_change(path, req).await }),
         }
     }
