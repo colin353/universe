@@ -1,8 +1,9 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 
 use bus::{Deserialize, Serialize};
 
+mod checkout;
 mod helpers;
 mod metadata;
 
@@ -402,30 +403,66 @@ impl Src {
         })
     }
 
-    pub fn new_space(
+    pub fn checkout(
         &self,
-        req: service::NewSpaceRequest,
-    ) -> std::io::Result<service::NewSpaceResponse> {
-        let directory = std::path::PathBuf::from(&req.dir);
-        let directory_str = req.dir;
+        req: service::CheckoutRequest,
+    ) -> std::io::Result<service::CheckoutResponse> {
+        let mut directory = std::path::PathBuf::from(&req.dir);
+        let mut existing_space = None;
+        let mut existing_alias = String::new();
+        let index = self.validate_basis(req.basis.as_view())?;
 
-        // Check that the directory is empty.
-        if directory
-            .read_dir()
-            .map(|mut i| i.next().is_some())
-            .unwrap_or(false)
-        {
-            return Ok(service::NewSpaceResponse {
-                failed: true,
-                error_message: String::from("change directory must be empty!"),
+        // If the current directory already corresponds to an attached space,
+        // snapshot that space before checkout.
+        if let Some(alias) = self.get_change_alias_by_dir(&directory) {
+            let mut space = match self.get_change_by_alias(&alias) {
+                Some(c) => c,
+                None => {
+                    return Ok(service::CheckoutResponse {
+                        failed: true,
+                        error_message: String::from("existing space is in an invalid state"),
+                        ..Default::default()
+                    });
+                }
+            };
+            directory = std::path::PathBuf::from(&space.directory);
+            let resp = self.snapshot(service::SnapshotRequest {
+                dir: directory.to_str().unwrap().to_owned(),
+                message: "detached space".to_string(),
+                skip_if_no_changes: true,
                 ..Default::default()
-            });
+            })?;
+            if resp.failed {
+                return Ok(service::CheckoutResponse {
+                    failed: true,
+                    error_message: resp.error_message,
+                    ..Default::default()
+                });
+            }
+
+            // Detach the space
+            space.directory = String::new();
+            self.set_change_by_alias(&alias, &space);
+
+            existing_space = Some(space);
+            existing_alias = alias;
+        } else {
+            // Check that the directory is empty.
+            if directory
+                .read_dir()
+                .map(|mut i| i.next().is_some())
+                .unwrap_or(false)
+            {
+                return Ok(service::CheckoutResponse {
+                    failed: true,
+                    error_message: String::from("can't checkout, directory isn't emtpy"),
+                    ..Default::default()
+                });
+            }
         }
 
-        let index = self.validate_basis(req.basis.as_view())?;
         std::fs::create_dir_all(self.get_change_path(&req.alias)).ok();
         let f = std::fs::File::create(self.get_change_metadata_path(&req.alias))?;
-
         let space = service::Space {
             change_id: 0,
             basis: service::Basis {
@@ -435,14 +472,28 @@ impl Src {
                 change: 0,
                 index,
             },
-            directory: directory_str.clone(),
+            directory: directory.to_str().unwrap().to_owned(),
         };
         space.encode(&mut std::io::BufWriter::new(f))?;
+        std::fs::write(self.get_change_dir_path(&directory), req.alias.as_bytes())?;
 
-        std::fs::write(
-            self.get_change_dir_path(&std::path::Path::new(&directory_str)),
-            req.alias.as_bytes(),
-        )?;
+        let mut snapshot_changes = match &existing_space {
+            None => HashMap::new(),
+            Some(space) => {
+                let mut output = HashMap::new();
+                if let Some(s) = self.get_latest_snapshot(&existing_alias)? {
+                    for file in s.files {
+                        output.insert(file.path.clone(), file);
+                    }
+                }
+                output
+            }
+        };
+
+        let previous_metadata = match existing_space {
+            Some(space) => self.get_metadata(space.basis.as_view())?,
+            None => metadata::Metadata::empty(),
+        };
 
         let metadata = self.get_metadata(
             service::Basis {
@@ -460,7 +511,8 @@ impl Src {
         let mut to_download: HashMap<Vec<u8>, Vec<(String, service::FileView)>> = HashMap::new();
         let mut directories: HashMap<usize, Vec<(std::path::PathBuf, service::FileView)>> =
             HashMap::new();
-        for (key, file) in metadata.iter() {
+        let mut dirs_to_delete = HashSet::new();
+        for (key, maybe_prev_file, maybe_new_file) in previous_metadata.diff(&metadata) {
             let (depth, path) = match key.find('/') {
                 Some(idx) => {
                     let depth = key[0..idx].parse::<usize>().map_err(|_| {
@@ -472,7 +524,7 @@ impl Src {
                     (depth, key[idx + 1..].to_string())
                 }
                 None => {
-                    return Ok(service::NewSpaceResponse {
+                    return Ok(service::CheckoutResponse {
                         failed: true,
                         error_message: "invalid metadata path!".to_string(),
                         ..Default::default()
@@ -480,12 +532,29 @@ impl Src {
                 }
             };
 
+            // If the file (or folder) currently exists but shouldn't, delete it.
+            if let (Some(prev), None) = (maybe_prev_file, maybe_new_file) {
+                if prev.get_is_dir() {
+                    dirs_to_delete.insert(path);
+                } else {
+                    std::fs::remove_file(&directory.join(path));
+                }
+
+                continue;
+            }
+
+            let file = maybe_new_file.unwrap();
             if file.get_is_dir() {
                 directories
                     .entry(depth)
                     .or_insert_with(Vec::new)
                     .push((directory.join(path), file));
                 continue;
+            }
+
+            // Drop any snapshot changes which we are overwriting
+            if snapshot_changes.get(&path).is_some() {
+                snapshot_changes.remove(&path);
             }
 
             match self.get_blob(file.get_sha()) {
@@ -504,7 +573,7 @@ impl Src {
                     shas: to_download.iter().map(|(sha, _)| sha.to_vec()).collect(),
                 }) {
                     Err(_) => {
-                        return Ok(service::NewSpaceResponse {
+                        return Ok(service::CheckoutResponse {
                             failed: true,
                             error_message: "failed to download blobs!".to_string(),
                             ..Default::default()
@@ -514,7 +583,7 @@ impl Src {
                 };
 
                 if resp.failed {
-                    return Ok(service::NewSpaceResponse {
+                    return Ok(service::CheckoutResponse {
                         failed: true,
                         error_message: "failed to download blobs!".to_string(),
                         ..Default::default()
@@ -522,7 +591,7 @@ impl Src {
                 }
 
                 if resp.blobs.len() != to_download.len() {
-                    return Ok(service::NewSpaceResponse {
+                    return Ok(service::CheckoutResponse {
                         failed: true,
                         error_message: "failed to download all blobs!".to_string(),
                         ..Default::default()
@@ -533,7 +602,7 @@ impl Src {
                     let files = match to_download.get(&blob.sha) {
                         Some(p) => p,
                         None => {
-                            return Ok(service::NewSpaceResponse {
+                            return Ok(service::CheckoutResponse {
                                 failed: true,
                                 error_message: "got an unexpected blob".to_string(),
                                 ..Default::default()
@@ -559,7 +628,7 @@ impl Src {
             }) {
                 Ok(r) => r,
                 Err(_) => {
-                    return Ok(service::NewSpaceResponse {
+                    return Ok(service::CheckoutResponse {
                         failed: true,
                         error_message: "failed to download blobs!".to_string(),
                         ..Default::default()
@@ -568,7 +637,7 @@ impl Src {
             };
 
             if resp.failed {
-                return Ok(service::NewSpaceResponse {
+                return Ok(service::CheckoutResponse {
                     failed: true,
                     error_message: "failed to download blobs!".to_string(),
                     ..Default::default()
@@ -576,7 +645,7 @@ impl Src {
             }
 
             if resp.blobs.len() != to_download.len() {
-                return Ok(service::NewSpaceResponse {
+                return Ok(service::CheckoutResponse {
                     failed: true,
                     error_message: "failed to download all blobs!".to_string(),
                     ..Default::default()
@@ -587,7 +656,7 @@ impl Src {
                 let files = match to_download.get(&blob.sha) {
                     Some(p) => p,
                     None => {
-                        return Ok(service::NewSpaceResponse {
+                        return Ok(service::CheckoutResponse {
                             failed: true,
                             error_message: "got an unexpected blob".to_string(),
                             ..Default::default()
@@ -612,8 +681,8 @@ impl Src {
             }
         }
 
-        Ok(service::NewSpaceResponse {
-            dir: directory_str,
+        Ok(service::CheckoutResponse {
+            dir: directory.to_str().unwrap().to_owned(),
             index,
             ..Default::default()
         })
@@ -684,7 +753,7 @@ mod tests {
     fn test_checkout() {
         let d = src();
         let resp = d
-            .new_space(NewSpaceRequest {
+            .new_space(CheckoutRequest {
                 dir: "/tmp/code/my-branch".to_string(),
                 alias: "my-branch".to_string(),
                 basis: Basis {

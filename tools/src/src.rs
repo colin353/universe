@@ -49,78 +49,8 @@ fn create(data_dir: std::path::PathBuf, basis: String) {
     println!("OK, created {}", core::fmt_basis(basis.as_view()));
 }
 
-fn init(data_dir: std::path::PathBuf, basis: String) {
-    let cwd = match std::env::current_dir() {
-        Ok(d) => d,
-        Err(e) => {
-            eprintln!("unable to determine current working directory! {:?}", e);
-            std::process::exit(1);
-        }
-    };
-
-    let mut basis = match core::parse_basis(&basis) {
-        Ok(b) => b,
-        Err(e) => {
-            eprintln!("{}", e.to_string());
-            std::process::exit(1);
-        }
-    };
-
-    let d = src_lib::Src::new(data_dir).expect("failed to initialize src!");
-    let client = d
-        .get_client(&basis.host)
-        .expect("failed to construct client");
-
-    let resp = match client.get_repository(service::GetRepositoryRequest {
-        token: String::new(),
-        owner: basis.owner.clone(),
-        name: basis.name.clone(),
-    }) {
-        Ok(r) => r,
-        Err(_) => {
-            eprintln!("couldn't reach src server!");
-            std::process::exit(1);
-        }
-    };
-
-    if basis.change == 0 && basis.index == 0 {
-        basis.index = resp.index;
-    }
-
-    let alias: String = if resp.failed {
-        // That's OK, just means the repo doesn't exist
-        d.initialize_repo(basis.clone(), &cwd)
-            .expect("failed to initialize")
-    } else {
-        let alias = d.find_unused_alias(&basis.name);
-        match d.new_space(service::NewSpaceRequest {
-            dir: cwd.to_str().unwrap().to_owned(),
-            basis: basis.clone(),
-            alias: alias.clone(),
-        }) {
-            Ok(r) => {
-                if r.failed {
-                    eprintln!("failed to create space: {}", r.error_message);
-                    std::process::exit(1);
-                }
-            }
-            Err(e) => {
-                eprintln!("failed to initialize repo!: {:?}", e);
-                std::process::exit(1);
-            }
-        }
-        alias
-    };
-
-    println!(
-        "initialized change {} @ {}",
-        alias,
-        core::fmt_basis(basis.as_view())
-    );
-}
-
-fn new(data_dir: std::path::PathBuf, name: String, basis: String) {
-    let cwd = match std::env::current_dir() {
+fn checkout(data_dir: std::path::PathBuf, name: String, basis: String) {
+    let mut cwd = match std::env::current_dir() {
         Ok(d) => d,
         Err(e) => {
             eprintln!("unable to determine current working directory! {:?}", e);
@@ -137,7 +67,7 @@ fn new(data_dir: std::path::PathBuf, name: String, basis: String) {
     };
 
     let d = src_lib::Src::new(data_dir).expect("failed to initialize src!");
-    let resp = match d.new_space(service::NewSpaceRequest {
+    let resp = match d.checkout(service::CheckoutRequest {
         dir: cwd
             .to_str()
             .expect("current working directory must be valid unicode")
@@ -442,7 +372,7 @@ pub fn edit_string(input: &str) -> Result<String, ()> {
     std::fs::read_to_string(&filename).map_err(|_| ())
 }
 
-fn update(data_dir: std::path::PathBuf) {
+fn push(data_dir: std::path::PathBuf) {
     let cwd = match std::env::current_dir() {
         Ok(d) => d,
         Err(e) => {
@@ -614,6 +544,188 @@ fn submit(data_dir: std::path::PathBuf) {
     println!("submitted as {}", resp.index);
 }
 
+fn revert(data_dir: std::path::PathBuf) {
+    unimplemented!()
+}
+
+fn sync(data_dir: std::path::PathBuf) {
+    unimplemented!()
+}
+
+fn spaces(data_dir: std::path::PathBuf) {
+    let cwd = match std::env::current_dir() {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("unable to determine current working directory! {:?}", e);
+            std::process::exit(1);
+        }
+    };
+
+    let d = src_lib::Src::new(data_dir).expect("failed to initialize src!");
+    let mut attached_spaces = Vec::new();
+    let mut detached_spaces = Vec::new();
+    for (alias, space) in d.get_spaces() {
+        let snapshot = match d.get_latest_snapshot(&alias) {
+            Ok(s) => s,
+            _ => None,
+        };
+        if space.directory.is_empty() {
+            detached_spaces.push((alias, space, snapshot));
+        } else {
+            attached_spaces.push((alias, space, snapshot));
+        }
+    }
+
+    attached_spaces.sort_by_key(|(_, _, snapshot)| {
+        std::cmp::Reverse(match snapshot {
+            Some(s) => s.timestamp,
+            None => 0,
+        })
+    });
+    detached_spaces.sort_by_key(|(_, _, snapshot)| {
+        std::cmp::Reverse(match snapshot {
+            Some(s) => s.timestamp,
+            None => 0,
+        })
+    });
+
+    let term = tui::Terminal::new();
+
+    term.set_underline();
+    eprint!("{}", "space");
+    term.set_normal();
+    eprint!("\t\t     ");
+    term.set_underline();
+    eprint!("{}", "basis");
+    term.set_normal();
+    eprint!("\t\t\t\t      ");
+    term.set_underline();
+    eprint!("{}", "last modified");
+    term.set_normal();
+    eprint!("      ");
+    term.set_underline();
+    eprint!("{}\n", "directory");
+    term.set_normal();
+    for (alias, space, snapshot) in attached_spaces {
+        eprint!(
+            "{:<20.24} {:<40.40} ",
+            alias,
+            core::fmt_basis(space.basis.as_view()),
+        );
+        let time = match snapshot {
+            Some(s) => core::fmt_time(s.timestamp),
+            None => {
+                term.set_grey();
+                "no changes".to_string()
+            }
+        };
+        eprint!("{:<15.15} ", time,);
+        term.set_normal();
+        eprintln!("   {}", space.directory);
+    }
+}
+
+fn clean(data_dir: std::path::PathBuf) {
+    let cwd = match std::env::current_dir() {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("unable to determine current working directory! {:?}", e);
+            std::process::exit(1);
+        }
+    };
+    let d = src_lib::Src::new(data_dir).expect("failed to initialize src!");
+
+    let mut empty_no_changes = 0;
+    let mut already_submitted = 0;
+    let mut alias_desync = 0;
+
+    for (alias, mut space) in d.get_spaces() {
+        let snapshot = match d.get_latest_snapshot(&alias) {
+            Ok(s) => s,
+            _ => None,
+        };
+
+        // If not linked to a directoy and contains no changes, delete it
+        if snapshot.is_none() && space.directory.is_empty() {
+            empty_no_changes += 1;
+            std::fs::remove_file(d.get_change_metadata_path(&alias)).unwrap();
+        }
+
+        // Not yet linked to a remote change, skip
+        if space.change_id == 0 {
+            continue;
+        }
+
+        let client = d
+            .get_client(&space.basis.host)
+            .expect("failed to construct client");
+        let resp = match client.get_change(service::GetChangeRequest {
+            token: String::new(),
+            repo_owner: space.basis.owner.clone(),
+            repo_name: space.basis.name.clone(),
+            id: space.change_id,
+        }) {
+            Ok(r) => r,
+            Err(_) => continue,
+        };
+
+        if resp.failed {
+            continue;
+        }
+
+        // Check that the by_dir link matches the by_alias link. If not, unattach the space.
+        if !space.directory.is_empty() {
+            let path = d.get_change_dir_path(&std::path::Path::new(&space.directory));
+            let matching = match std::fs::read_to_string(path) {
+                Ok(a) => a == alias,
+                Err(_) => false,
+            };
+            if !matching {
+                alias_desync += 1;
+                space.directory = String::new();
+                d.set_change_by_alias(&alias, &space).unwrap();
+            }
+        }
+
+        // The change was submitted, delete it
+        if resp.change.status == service::ChangeStatus::Submitted
+            || resp.change.status == service::ChangeStatus::Archived
+        {
+            already_submitted += 1;
+            std::fs::remove_file(d.get_change_metadata_path(&alias)).unwrap();
+            if !space.directory.is_empty() {
+                std::fs::remove_file(
+                    d.get_change_dir_path(&std::path::Path::new(&space.directory)),
+                )
+                .unwrap();
+
+                // TODO: Delete the linked directory as well?
+                // std::fs::remove_dir_all(space.directory).unwrap();
+            }
+        }
+    }
+
+    if already_submitted > 0 {
+        println!("removed {} spaces that were submitted", already_submitted);
+    }
+    if alias_desync > 0 {
+        println!(
+            "fixed {} spaces that were in an invalid state",
+            alias_desync
+        );
+    }
+    if empty_no_changes > 0 {
+        println!(
+            "removed {} spaces that were had no changes and were detached",
+            empty_no_changes
+        );
+    }
+
+    if already_submitted == 0 && empty_no_changes == 0 && alias_desync == 0 {
+        println!("nothing to do");
+    }
+}
+
 fn main() {
     let name = flags::define_flag!("name", String::new(), "the name of the change to create");
     let basis = flags::define_flag!(
@@ -650,19 +762,12 @@ fn main() {
             }
             create(data_dir, args[1].clone())
         }
-        "init" => {
+        "checkout" => {
             if args.len() != 2 {
                 eprintln!("usage: src init <repo>");
                 std::process::exit(1);
             }
-            init(data_dir, args[1].clone())
-        }
-        "new" => {
-            if args.len() != 1 {
-                eprintln!("usage: src new [--name=<change name>] [--basis=<basis>]");
-                std::process::exit(1);
-            }
-            new(data_dir, name.value(), basis.value())
+            checkout(data_dir, name.value(), args[1].clone())
         }
         "diff" => {
             if args.len() != 1 {
@@ -695,7 +800,11 @@ fn main() {
         "history" => history(data_dir),
         "jump" => jump(data_dir, name.value()),
         "status" => status(data_dir),
-        "update" => update(data_dir),
+        "push" => push(data_dir),
+        "sync" => sync(data_dir),
+        "revert" => revert(data_dir),
+        "spaces" => spaces(data_dir),
+        "clean" => clean(data_dir),
         _ => usage(),
     }
 }

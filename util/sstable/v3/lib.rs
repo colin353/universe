@@ -139,6 +139,15 @@ impl<'a, T: Deserialize<'a>> SSTableReader<T> {
         Self::from_mmap(map.make_read_only()?)
     }
 
+    pub fn empty() -> Self {
+        let mut bytes = Vec::new();
+        let mut builder = SSTableBuilder::<bus::Nothing, _>::new(&mut bytes);
+        builder.finish().unwrap();
+        let mut map = mmap::MmapMut::map_anon(bytes.len()).unwrap();
+        map.copy_from_slice(&bytes);
+        Self::from_mmap(map.make_read_only().unwrap()).unwrap()
+    }
+
     pub fn from_filename<P: AsRef<std::path::Path>>(filename: P) -> std::io::Result<Self> {
         let f = std::fs::File::open(filename)?;
         Self::from_file(f)

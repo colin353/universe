@@ -53,7 +53,7 @@ impl crate::Src {
         std::fs::read(self.get_blob_path(sha)).ok()
     }
 
-    pub(crate) fn get_change_metadata_path(&self, alias: &str) -> std::path::PathBuf {
+    pub fn get_change_metadata_path(&self, alias: &str) -> std::path::PathBuf {
         self.root
             .join("changes")
             .join("by_alias")
@@ -65,7 +65,7 @@ impl crate::Src {
         self.root.join("changes").join("by_alias").join(alias)
     }
 
-    pub(crate) fn get_change_dir_path(&self, dir: &std::path::Path) -> std::path::PathBuf {
+    pub fn get_change_dir_path(&self, dir: &std::path::Path) -> std::path::PathBuf {
         let hash = core::fmt_sha(&core::hash_bytes(dir.as_os_str().as_bytes()));
         self.root.join("changes").join("by_dir").join(hash)
     }
@@ -85,6 +85,23 @@ impl crate::Src {
             return Some(alias);
         }
         None
+    }
+
+    pub fn get_spaces(&self) -> impl Iterator<Item = (String, service::Space)> {
+        std::fs::read_dir(self.root.join("changes").join("by_alias"))
+            .unwrap()
+            .map(|entry| entry.unwrap())
+            .filter(|entry| {
+                let ft = entry.metadata().unwrap().file_type();
+                ft.is_dir()
+            })
+            .map(|entry| {
+                let bytes = std::fs::read(entry.path().join("metadata")).unwrap();
+                (
+                    entry.file_name().into_string().unwrap(),
+                    service::Space::decode(&bytes).unwrap(),
+                )
+            })
     }
 
     pub fn get_change_by_dir(&self, dir: &std::path::Path) -> Option<service::Space> {

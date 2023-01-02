@@ -198,7 +198,7 @@ service SrcServer {
     rpc get_blobs_by_path(GetBlobsByPathRequest) -> GetBlobsByPathResponse
 }
 
-message NewSpaceResponse {
+message CheckoutResponse {
     failed: bool = 0
     error_message: string = 1
 
@@ -257,7 +257,7 @@ message Space {
     change_id: u64 = 2
 }
 
-message NewSpaceRequest {
+message CheckoutRequest {
     dir: string = 0
     alias: string = 1
     basis: Basis = 2
