@@ -213,6 +213,28 @@ impl crate::Src {
         }
     }
 
+    pub(crate) fn set_mtime(&self, path: &std::path::Path, mtime: u64) -> std::io::Result<()> {
+        let p =
+            std::ffi::CString::new(path.as_os_str().as_bytes()).expect("failed to create cstring");
+        let times = [
+            libc::timeval {
+                tv_sec: mtime as libc::time_t,
+                tv_usec: 0,
+            },
+            libc::timeval {
+                tv_sec: mtime as libc::time_t,
+                tv_usec: 0,
+            },
+        ];
+
+        let rc = unsafe { libc::utimes(p.as_ptr(), times.as_ptr()) };
+        if rc == 0 {
+            Ok(())
+        } else {
+            Err(std::io::Error::last_os_error())
+        }
+    }
+
     pub(crate) fn write_file(
         &self,
         path: &std::path::Path,

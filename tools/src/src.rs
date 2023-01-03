@@ -67,27 +67,32 @@ fn checkout(data_dir: std::path::PathBuf, name: String, basis: String) {
     };
 
     let d = src_lib::Src::new(data_dir).expect("failed to initialize src!");
-    let resp = match d.checkout(service::CheckoutRequest {
-        dir: cwd
-            .to_str()
-            .expect("current working directory must be valid unicode")
-            .to_owned(),
-        basis: basis.clone(),
-        alias: name.clone(),
-    }) {
+
+    // If the basis index is zero, we should checkout the latest change.
+    if basis.index == 0 {
+        let client = d.get_client(basis.get_host())?;
+        let repo = match client.get_repository(service::GetRepositoryRequest {
+            token: String::new(),
+            owner: basis.host.clone(),
+            name: basis.name.clone(),
+            ..Default::default()
+        }) {
+            Ok(r) => r,
+            Err(e) => {
+                eprintln!("failed to checkout: {:?}", e);
+                std::process::exit(1);
+            }
+        };
+        basis.index = repo.index;
+    }
+
+    let directory = match d.checkout(cwd, basis.as_view()) {
         Ok(r) => r,
         Err(e) => {
-            eprintln!("failed to create new space: {:?}", e);
+            eprintln!("failed to checkout: {:?}", e);
             std::process::exit(1);
         }
     };
-
-    if resp.failed {
-        eprintln!("{}", resp.error_message);
-        std::process::exit(1);
-    }
-
-    basis.index = resp.index;
 
     println!(
         "created space {} @ {}",
