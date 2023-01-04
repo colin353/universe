@@ -29,7 +29,6 @@ impl crate::Src {
         let mut directory = dir;
         let mut existing_space = None;
         let mut existing_alias = String::new();
-        let index = self.validate_basis(basis)?;
 
         // Phase 0: Preflight checks
         //      If the current directory already corresponds to an attached space, snapshot that
@@ -60,7 +59,7 @@ impl crate::Src {
 
             // Detach the space
             space.directory = String::new();
-            self.set_change_by_alias(&alias, &space);
+            self.set_change_by_alias(&alias, &space)?;
 
             existing_space = Some(space);
             existing_alias = alias;
@@ -188,7 +187,7 @@ impl crate::Src {
                     if !new.get_is_dir() {
                         let dest = directory.join(path);
                         std::fs::copy(self.get_blob_path(new.get_sha()), &dest)?;
-                        self.set_mtime(&dest, new.get_mtime());
+                        self.set_mtime(&dest, new.get_mtime())?;
                     }
                 }
                 // If there's an old file to remove...
@@ -205,16 +204,29 @@ impl crate::Src {
         }
 
         // Phase 5: Revert all remaining snapshot changes
-        //      TODO: handle deletions in snapshots!
         for (path, file) in snapshot_changes {
-            if file.is_dir {
-                std::fs::remove_dir(directory.join(path));
-            } else {
-                std::fs::remove_file(directory.join(path));
+            match file.kind {
+                service::DiffKind::Removed => {
+                    // It was removed. If it exists in the new metadata, restore it.
+                    if let Some(file) = metadata.get(&path) {
+                        std::fs::copy(self.get_blob_path(file.get_sha()), &path)?;
+                        self.set_mtime(std::path::Path::new(&path), file.get_mtime());
+                    }
+                }
+                service::DiffKind::Added => {
+                    // It was added but shouldn't exist, remove it
+                    if file.is_dir {
+                        std::fs::remove_dir(directory.join(path));
+                    } else {
+                        std::fs::remove_file(directory.join(path));
+                    }
+                }
+                // Should not be possible
+                _ => (),
             }
         }
 
-        // Phase 5: Set mtime for directories
+        // Phase 6: Set mtime for directories
         //      The mtime for directories may be modified in phase 4, so we need to go back through
         //      a final pass and set the mtime for all directories.
         for (_, path, mtime) in &dirs_to_create {

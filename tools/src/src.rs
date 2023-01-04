@@ -50,7 +50,7 @@ fn create(data_dir: std::path::PathBuf, basis: String) {
 }
 
 fn checkout(data_dir: std::path::PathBuf, name: String, basis: String) {
-    let mut cwd = match std::env::current_dir() {
+    let cwd = match std::env::current_dir() {
         Ok(d) => d,
         Err(e) => {
             eprintln!("unable to determine current working directory! {:?}", e);
@@ -70,7 +70,7 @@ fn checkout(data_dir: std::path::PathBuf, name: String, basis: String) {
 
     // If the basis index is zero, we should checkout the latest change.
     if basis.index == 0 {
-        let client = d.get_client(basis.get_host())?;
+        let client = d.get_client(&basis.host).unwrap();
         let repo = match client.get_repository(service::GetRepositoryRequest {
             token: String::new(),
             owner: basis.host.clone(),
@@ -549,23 +549,15 @@ fn submit(data_dir: std::path::PathBuf) {
     println!("submitted as {}", resp.index);
 }
 
-fn revert(data_dir: std::path::PathBuf) {
+fn revert(_data_dir: std::path::PathBuf) {
     unimplemented!()
 }
 
-fn sync(data_dir: std::path::PathBuf) {
+fn sync(_data_dir: std::path::PathBuf) {
     unimplemented!()
 }
 
 fn spaces(data_dir: std::path::PathBuf) {
-    let cwd = match std::env::current_dir() {
-        Ok(d) => d,
-        Err(e) => {
-            eprintln!("unable to determine current working directory! {:?}", e);
-            std::process::exit(1);
-        }
-    };
-
     let d = src_lib::Src::new(data_dir).expect("failed to initialize src!");
     let mut attached_spaces = Vec::new();
     let mut detached_spaces = Vec::new();
@@ -631,13 +623,6 @@ fn spaces(data_dir: std::path::PathBuf) {
 }
 
 fn clean(data_dir: std::path::PathBuf) {
-    let cwd = match std::env::current_dir() {
-        Ok(d) => d,
-        Err(e) => {
-            eprintln!("unable to determine current working directory! {:?}", e);
-            std::process::exit(1);
-        }
-    };
     let d = src_lib::Src::new(data_dir).expect("failed to initialize src!");
 
     let mut empty_no_changes = 0;
