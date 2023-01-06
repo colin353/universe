@@ -58,32 +58,47 @@ fn checkout(data_dir: std::path::PathBuf, name: String, basis: String) {
         }
     };
 
-    let mut basis = match core::parse_basis(&basis) {
-        Ok(b) => b,
-        Err(e) => {
-            eprintln!("unable to parse basis: {:?}", e);
-            std::process::exit(1);
+    let d = src_lib::Src::new(data_dir).expect("failed to initialize src!");
+
+    let existing_space = d.get_change_by_alias(&name);
+    let basis = match &existing_space {
+        Some(space) => space.basis.clone(),
+        None => {
+            let mut basis = match core::parse_basis(&basis) {
+                Ok(b) => b,
+                Err(e) => {
+                    eprintln!("unable to parse basis: {:?}", e);
+                    std::process::exit(1);
+                }
+            };
+
+            // If the basis index is zero, we should checkout the latest change.
+            if basis.index == 0 {
+                println!("try to get latest index");
+                let client = d.get_client(&basis.host).unwrap();
+                let repo = match client.get_repository(service::GetRepositoryRequest {
+                    token: String::new(),
+                    owner: basis.host.clone(),
+                    name: basis.name.clone(),
+                    ..Default::default()
+                }) {
+                    Ok(r) => r,
+                    Err(e) => {
+                        eprintln!("failed to checkout: {:?}", e);
+                        std::process::exit(1);
+                    }
+                };
+                println!("try to get repo index = {}", repo.index);
+                basis.index = repo.index;
+            }
+
+            basis
         }
     };
 
-    let d = src_lib::Src::new(data_dir).expect("failed to initialize src!");
-
-    // If the basis index is zero, we should checkout the latest change.
-    if basis.index == 0 {
-        let client = d.get_client(&basis.host).unwrap();
-        let repo = match client.get_repository(service::GetRepositoryRequest {
-            token: String::new(),
-            owner: basis.host.clone(),
-            name: basis.name.clone(),
-            ..Default::default()
-        }) {
-            Ok(r) => r,
-            Err(e) => {
-                eprintln!("failed to checkout: {:?}", e);
-                std::process::exit(1);
-            }
-        };
-        basis.index = repo.index;
+    let mut alias = name;
+    if alias.is_empty() {
+        alias = basis.name.clone();
     }
 
     let directory = match d.checkout(cwd, basis.as_view()) {
@@ -94,9 +109,27 @@ fn checkout(data_dir: std::path::PathBuf, name: String, basis: String) {
         }
     };
 
+    match existing_space {
+        // Need to mark the space as attached
+        Some(mut space) => {
+            space.directory = directory.to_str().unwrap().to_owned();
+            d.set_change_by_alias(&alias, &space).unwrap();
+        }
+        // Need to create a new space
+        None => {
+            let space = service::Space {
+                directory: directory.to_str().unwrap().to_owned(),
+                basis: basis.clone(),
+                ..Default::default()
+            };
+            alias = d.find_unused_alias(&space.basis.name);
+            d.set_change_by_alias(&alias, &space).unwrap();
+        }
+    }
+
     println!(
         "created space {} @ {}",
-        name,
+        alias,
         core::fmt_basis(basis.as_view())
     );
 }

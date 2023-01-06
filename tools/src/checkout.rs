@@ -57,10 +57,6 @@ impl crate::Src {
                 ));
             }
 
-            // Detach the space
-            space.directory = String::new();
-            self.set_change_by_alias(&alias, &space)?;
-
             existing_space = Some(space);
             existing_alias = alias;
         } else {
@@ -84,7 +80,7 @@ impl crate::Src {
         let mut dirs_to_create = Vec::new();
         let mut snapshot_changes = match &existing_space {
             None => HashMap::new(),
-            Some(space) => {
+            Some(_) => {
                 let mut output = HashMap::new();
                 if let Some(s) = self.get_latest_snapshot(&existing_alias)? {
                     for file in s.files {
@@ -95,7 +91,7 @@ impl crate::Src {
             }
         };
         let metadata = self.get_metadata(basis)?;
-        let previous_metadata = match existing_space {
+        let previous_metadata = match &existing_space {
             Some(space) => self.get_metadata(space.basis.as_view())?,
             None => crate::metadata::Metadata::empty(),
         };
@@ -158,7 +154,15 @@ impl crate::Src {
             }
         }
 
-        // Phase 3a: Remove all file <--> directory transitions
+        // Phase 3a: Detach the space if one existed
+        if let Some(mut space) = existing_space {
+            std::fs::remove_file(self.get_change_dir_path(std::path::Path::new(&space.directory)))
+                .ok();
+            space.directory = String::new();
+            self.set_change_by_alias(&existing_alias, &space)?;
+        }
+
+        // Phase 3b: Remove all file <--> directory transitions
         for (path, is_dir) in file_to_folder_transitions {
             if is_dir {
                 std::fs::remove_dir(directory.join(path))?;
@@ -167,7 +171,7 @@ impl crate::Src {
             }
         }
 
-        // Phase 3b: Create all required directories
+        // Phase 3c: Create all required directories
         dirs_to_create.sort_by_key(|(depth, _, _)| *depth);
         for (_, path, _) in &dirs_to_create {
             std::fs::create_dir(path)?;
@@ -210,15 +214,15 @@ impl crate::Src {
                     // It was removed. If it exists in the new metadata, restore it.
                     if let Some(file) = metadata.get(&path) {
                         std::fs::copy(self.get_blob_path(file.get_sha()), &path)?;
-                        self.set_mtime(std::path::Path::new(&path), file.get_mtime());
+                        self.set_mtime(std::path::Path::new(&path), file.get_mtime())?;
                     }
                 }
                 service::DiffKind::Added => {
                     // It was added but shouldn't exist, remove it
                     if file.is_dir {
-                        std::fs::remove_dir(directory.join(path));
+                        std::fs::remove_dir(directory.join(path))?;
                     } else {
-                        std::fs::remove_file(directory.join(path));
+                        std::fs::remove_file(directory.join(path))?;
                     }
                 }
                 // Should not be possible
@@ -234,5 +238,36 @@ impl crate::Src {
         }
 
         Ok(directory)
+    }
+
+    pub fn apply_snapshot(
+        &self,
+        dir: &std::path::Path,
+        basis: service::BasisView,
+        differences: &[service::FileDiff],
+    ) -> std::io::Result<()> {
+        let metadata = self.get_metadata(basis)?;
+        for diff in differences {
+            match diff.kind {
+                service::DiffKind::Added => {
+                    let data = core::apply(diff.as_view(), &[])?;
+                    std::fs::write(&diff.path, data)?;
+                }
+                service::DiffKind::Modified => {
+                    let original = match metadata.get(&diff.path) {
+                        Some(f) => std::fs::read(self.get_blob_path(f.get_sha()))?,
+                        None => Vec::new(),
+                    };
+                    let data = core::apply(diff.as_view(), &original)?;
+                    std::fs::write(&diff.path, data)?;
+                }
+                service::DiffKind::Removed => {
+                    std::fs::remove_file(dir.join(&diff.path))?;
+                }
+                // Should be impossible
+                _ => (),
+            }
+        }
+        Ok(())
     }
 }

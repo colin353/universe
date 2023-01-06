@@ -1,8 +1,6 @@
 use std::os::unix::ffi::OsStrExt;
-use std::os::unix::io::AsRawFd;
 
 use bus::{Deserialize, Serialize};
-use std::io::Write;
 
 fn mtime(m: &std::fs::Metadata) -> u64 {
     let mt = match m.modified() {
@@ -110,6 +108,18 @@ impl crate::Src {
     }
 
     pub fn set_change_by_alias(&self, alias: &str, space: &service::Space) -> std::io::Result<()> {
+        if alias.is_empty() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "must provide non-empty alias",
+            ));
+        }
+        if !space.directory.is_empty() {
+            std::fs::write(
+                self.get_change_dir_path(std::path::Path::new(&space.directory)),
+                alias.as_bytes(),
+            )?;
+        }
         std::fs::create_dir_all(self.get_change_path(alias)).ok();
         let f = std::fs::File::create(self.get_change_metadata_path(alias))?;
         let mut buf = std::io::BufWriter::new(f);
@@ -185,34 +195,6 @@ impl crate::Src {
         })
     }
 
-    pub(crate) fn write_dir(
-        &self,
-        path: &std::path::Path,
-        file: service::FileView,
-    ) -> std::io::Result<()> {
-        std::fs::create_dir_all(path)?;
-
-        let p =
-            std::ffi::CString::new(path.as_os_str().as_bytes()).expect("failed to create cstring");
-        let times = [
-            libc::timeval {
-                tv_sec: file.get_mtime() as libc::time_t,
-                tv_usec: 0,
-            },
-            libc::timeval {
-                tv_sec: file.get_mtime() as libc::time_t,
-                tv_usec: 0,
-            },
-        ];
-
-        let rc = unsafe { libc::utimes(p.as_ptr(), times.as_ptr()) };
-        if rc == 0 {
-            Ok(())
-        } else {
-            Err(std::io::Error::last_os_error())
-        }
-    }
-
     pub(crate) fn set_mtime(&self, path: &std::path::Path, mtime: u64) -> std::io::Result<()> {
         let p =
             std::ffi::CString::new(path.as_os_str().as_bytes()).expect("failed to create cstring");
@@ -228,38 +210,6 @@ impl crate::Src {
         ];
 
         let rc = unsafe { libc::utimes(p.as_ptr(), times.as_ptr()) };
-        if rc == 0 {
-            Ok(())
-        } else {
-            Err(std::io::Error::last_os_error())
-        }
-    }
-
-    pub(crate) fn write_file(
-        &self,
-        path: &std::path::Path,
-        file: service::FileView,
-        data: &[u8],
-    ) -> std::io::Result<()> {
-        if let Some(p) = path.parent() {
-            std::fs::create_dir_all(p)?;
-        }
-        std::fs::write(&path, &data)?;
-        let mut f = std::fs::File::create(&path)?;
-        f.write_all(&data)?;
-
-        // Set the metadata
-        let times = [
-            libc::timeval {
-                tv_sec: file.get_mtime() as libc::time_t,
-                tv_usec: 0,
-            },
-            libc::timeval {
-                tv_sec: file.get_mtime() as libc::time_t,
-                tv_usec: 0,
-            },
-        ];
-        let rc = unsafe { libc::futimes(f.as_raw_fd(), times.as_ptr()) };
         if rc == 0 {
             Ok(())
         } else {
