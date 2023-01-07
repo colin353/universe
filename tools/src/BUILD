@@ -82,16 +82,41 @@ rust_binary(
     name = "src",
     srcs = [
         "src.rs",
+    ],
+    deps = [
+        ":cli",
+        "//util/flags",
+    ]
+)
+
+rust_library(
+    name = "cli",
+    srcs = [
+        "cli.rs",
         "termui.rs",
     ],
     deps = [
         ":core",
         ":service",
         ":src_lib",
-        "//util/flags",
         "//util/tui",
         "//util/tui:filter",
         "//third_party/raw_tty",
         "//third_party:rand",
+    ]
+)
+
+rust_binary(
+    name = "integration_tests",
+    srcs = [
+        "integration_tests.rs",
+    ],
+    deps = [
+      ":cli",
+      ":server_service",
+      ":service",
+      "//third_party:tokio",
+      "//util/bus",
+      "//util/bus:bus_rpc",
     ]
 )

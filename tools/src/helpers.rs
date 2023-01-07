@@ -69,6 +69,9 @@ impl crate::Src {
     }
 
     pub fn get_change_by_alias(&self, alias: &str) -> Option<service::Space> {
+        if alias.is_empty() {
+            return None;
+        }
         let bytes = std::fs::read(self.get_change_metadata_path(alias)).ok()?;
         Some(service::Space::decode(&bytes).ok()?)
     }
