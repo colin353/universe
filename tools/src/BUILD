@@ -114,7 +114,9 @@ rust_binary(
     deps = [
       ":cli",
       ":server_service",
+      ":src_lib",
       ":service",
+      "//util/tui",
       "//third_party:tokio",
       "//util/bus",
       "//util/bus:bus_rpc",

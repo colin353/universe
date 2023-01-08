@@ -77,7 +77,7 @@ pub fn checkout(data_dir: std::path::PathBuf, name: String, arg0: String) {
                 let client = d.get_client(&basis.host).unwrap();
                 let repo = match client.get_repository(service::GetRepositoryRequest {
                     token: String::new(),
-                    owner: basis.host.clone(),
+                    owner: basis.owner.clone(),
                     name: basis.name.clone(),
                     ..Default::default()
                 }) {

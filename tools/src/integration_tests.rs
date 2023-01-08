@@ -1,6 +1,6 @@
 const DATA_DIR: &'static str = "/tmp/src_integration/src";
 
-async fn in_cleanroom(f: impl FnOnce() + Sync + Send + 'static) {
+async fn in_cleanroom(f: impl FnOnce() + Sync + Send + 'static) -> bool {
     std::fs::remove_dir_all("/tmp/src_integration").ok();
     std::fs::create_dir_all("/tmp/src_integration/server").unwrap();
     std::fs::create_dir_all(DATA_DIR).unwrap();
@@ -22,10 +22,19 @@ async fn in_cleanroom(f: impl FnOnce() + Sync + Send + 'static) {
     tokio::select! {
         _ = bus_rpc::serve(44959, service::SrcServerService(handler)) => {
             assert!(false, "Service failed to start");
+            return false;
         }
-        _ = rx => {
-            println!("tests finished");
-            return
+        val = rx => {
+            match val {
+                Ok(_) => {
+                    println!("tests finished");
+                    return true;
+                }
+                Err(_) => {
+                    println!("tests failed");
+                    return false;
+                }
+            }
         }
     }
 }
@@ -99,7 +108,60 @@ fn setup_repository() {
     cli::submit(data_dir.to_owned());
 }
 
+async fn run_test(name: &'static str, f: impl FnOnce() + Sync + Send + 'static) {
+    let term = tui::Terminal::new();
+    term.set_underline();
+    print!("RUN\t");
+    term.set_normal();
+    println!("{}", name);
+
+    if in_cleanroom(f).await {
+        term.set_underline();
+        print!("PASSED\t");
+        term.set_normal();
+        println!("{}", name);
+    } else {
+        term.set_underline();
+        print!("FAILED\t");
+        term.set_normal();
+        println!("{}", name);
+    }
+}
+
 #[tokio::main]
 async fn main() {
-    in_cleanroom(|| setup_repository()).await
+    run_test("submit and checkout", || {
+        let data_dir = std::path::Path::new(DATA_DIR);
+        setup_repository();
+
+        // We've submitted a change in the previous step, so the repo should be at 2
+        let d = src_lib::Src::new(data_dir.to_owned()).expect("failed to initialize src!");
+        let client = d.get_client("localhost:44959").unwrap();
+        let repo = match client.get_repository(service::GetRepositoryRequest {
+            token: String::new(),
+            owner: "colin".to_string(),
+            name: "test".to_string(),
+            ..Default::default()
+        }) {
+            Ok(r) => r,
+            Err(e) => {
+                eprintln!("failed to checkout: {:?}", e);
+                std::process::exit(1);
+            }
+        };
+        assert_eq!(repo.index, 2);
+
+        std::fs::create_dir_all("/tmp/src_integration/spaces/z02").unwrap();
+        std::env::set_current_dir("/tmp/src_integration/spaces/z02").unwrap();
+        cli::checkout(
+            data_dir.to_owned(),
+            String::new(),
+            "localhost:44959/colin/test".to_string(),
+        );
+        assert_eq!(
+            &std::fs::read_to_string("/tmp/src_integration/spaces/z02/another_file").unwrap(),
+            "content"
+        );
+    })
+    .await;
 }
