@@ -60,9 +60,13 @@ pub fn checkout(data_dir: std::path::PathBuf, name: String, arg0: String) {
 
     let d = src_lib::Src::new(data_dir).expect("failed to initialize src!");
 
+    let mut alias = name;
     let existing_space = d.get_change_by_alias(&arg0);
     let basis = match &existing_space {
-        Some(space) => space.basis.clone(),
+        Some(space) => {
+            alias = arg0;
+            space.basis.clone()
+        }
         None => {
             let mut basis = match core::parse_basis(&arg0) {
                 Ok(b) => b,
@@ -71,6 +75,10 @@ pub fn checkout(data_dir: std::path::PathBuf, name: String, arg0: String) {
                     std::process::exit(1);
                 }
             };
+
+            if alias.is_empty() {
+                alias = basis.name.clone();
+            }
 
             // If the basis index is zero, we should checkout the latest change.
             if basis.index == 0 {
@@ -94,7 +102,7 @@ pub fn checkout(data_dir: std::path::PathBuf, name: String, arg0: String) {
         }
     };
 
-    let directory = match d.checkout(cwd, basis.as_view()) {
+    let directory = match d.checkout(cwd.clone(), basis.as_view()) {
         Ok(r) => r,
         Err(e) => {
             eprintln!("failed to checkout: {:?}", e);
@@ -102,12 +110,13 @@ pub fn checkout(data_dir: std::path::PathBuf, name: String, arg0: String) {
         }
     };
 
-    let mut alias = arg0;
-    if alias.is_empty() {
-        if !name.is_empty() {
-            alias = name;
-        } else {
-            alias = basis.name.clone();
+    // Apply the latest snapshot (if one exists)
+    if existing_space.is_some() {
+        if let Ok(Some(snapshot)) = d.get_latest_snapshot(&alias) {
+            if let Err(e) = d.apply_snapshot(&cwd, basis.as_view(), &snapshot.files) {
+                eprintln!("failed to apply snapshot: {:?}", e);
+                std::process::exit(1);
+            }
         }
     }
 
@@ -125,7 +134,7 @@ pub fn checkout(data_dir: std::path::PathBuf, name: String, arg0: String) {
                 basis: basis.clone(),
                 ..Default::default()
             };
-            alias = d.find_unused_alias(&space.basis.name);
+            alias = d.find_unused_alias(&alias);
             d.set_change_by_alias(&alias, &space).unwrap();
         }
     }
@@ -634,19 +643,19 @@ pub fn spaces(data_dir: std::path::PathBuf) {
     let term = tui::Terminal::new();
 
     term.set_underline();
-    eprint!("{}", "space");
+    eprint!("space");
     term.set_normal();
     eprint!("\t\t     ");
     term.set_underline();
-    eprint!("{}", "basis");
+    eprint!("basis");
     term.set_normal();
     eprint!("\t\t\t\t      ");
     term.set_underline();
-    eprint!("{}", "last modified");
+    eprint!("last modified");
     term.set_normal();
     eprint!("      ");
     term.set_underline();
-    eprint!("{}\n", "directory");
+    eprint!("directory\n");
     term.set_normal();
     for (alias, space, snapshot) in attached_spaces {
         eprint!(

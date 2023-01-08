@@ -376,6 +376,13 @@ impl Src {
         }
 
         if req.skip_if_no_changes {
+            if diff.files.len() == 0 {
+                return Ok(service::SnapshotResponse {
+                    skipped: true,
+                    ..Default::default()
+                });
+            }
+
             if let Ok(Some(s)) = self.get_latest_snapshot(&alias) {
                 if s.files == diff.files {
                     return Ok(service::SnapshotResponse {

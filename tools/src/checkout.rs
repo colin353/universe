@@ -230,6 +230,11 @@ impl crate::Src {
             }
         }
 
+        // Clean up all directories to delete
+        for dir in dirs_to_remove {
+            std::fs::remove_dir(dir)?;
+        }
+
         // Phase 6: Set mtime for directories
         //      The mtime for directories may be modified in phase 4, so we need to go back through
         //      a final pass and set the mtime for all directories.

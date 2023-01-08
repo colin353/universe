@@ -104,7 +104,34 @@ fn setup_repository() {
     .unwrap();
     cli::push(data_dir.to_owned(), "initial code".to_string());
 
-    // Should be submitted as localhost:44959/colin/test
+    // Should be submitted as localhost:44959/colin/test/2
+    cli::submit(data_dir.to_owned());
+}
+
+fn setup_repository_2() {
+    let data_dir = std::path::Path::new(DATA_DIR);
+    std::fs::create_dir_all("/tmp/src_integration/spaces/y01").unwrap();
+    std::env::set_current_dir("/tmp/src_integration/spaces/y01").unwrap();
+    cli::create(
+        data_dir.to_owned(),
+        "localhost:44959/colin/example".to_string(),
+    );
+    cli::checkout(
+        data_dir.to_owned(),
+        String::new(),
+        "localhost:44959/colin/example".to_string(),
+    );
+    write_files(
+        std::path::Path::new("/tmp/src_integration/spaces/y01"),
+        "
+        main.cc int_main(;;)
+        Makefile zzzz101010
+    ",
+    )
+    .unwrap();
+    cli::push(data_dir.to_owned(), "initial code".to_string());
+
+    // Should be submitted as localhost:44959/colin/example/2
     cli::submit(data_dir.to_owned());
 }
 
@@ -155,13 +182,85 @@ async fn main() {
         std::env::set_current_dir("/tmp/src_integration/spaces/z02").unwrap();
         cli::checkout(
             data_dir.to_owned(),
-            String::new(),
+            "my-alias".to_string(),
             "localhost:44959/colin/test".to_string(),
         );
         assert_eq!(
             &std::fs::read_to_string("/tmp/src_integration/spaces/z02/another_file").unwrap(),
             "content"
         );
+
+        // Now create some further changes on top of that...
+        write_files(
+            std::path::Path::new("/tmp/src_integration/spaces/z02"),
+            "
+        another_file content2
+        dir
+         - newfile 1001001
+    ",
+        )
+        .unwrap();
+        cli::snapshot(data_dir.to_owned(), "some updates".to_string());
+
+        let s = d.get_latest_snapshot("my-alias").unwrap().unwrap();
+        assert_eq!(s.files.len(), 2);
+        assert_eq!(s.files[0].path, "another_file");
+        assert_eq!(s.files[0].kind, service::DiffKind::Modified);
+        assert_eq!(s.files[1].path, "dir/newfile");
+        assert_eq!(s.files[1].kind, service::DiffKind::Added);
+        assert_eq!(&s.message, "some updates");
+    })
+    .await;
+
+    run_test("attach and detach spaces", || {
+        let data_dir = std::path::Path::new(DATA_DIR);
+        setup_repository();
+        setup_repository_2();
+
+        std::fs::create_dir_all("/tmp/src_integration/spaces/z02").unwrap();
+        std::env::set_current_dir("/tmp/src_integration/spaces/z02").unwrap();
+        cli::checkout(
+            data_dir.to_owned(),
+            "my-alias".to_string(),
+            "localhost:44959/colin/test".to_string(),
+        );
+        assert_eq!(
+            &std::fs::read_to_string("/tmp/src_integration/spaces/z02/another_file").unwrap(),
+            "content"
+        );
+
+        // Write some more changes to the space before checking out something else
+        write_files(
+            std::path::Path::new("/tmp/src_integration/spaces/z02"),
+            "
+        another_file content2
+        dir
+         - newfile 1001001
+    ",
+        )
+        .unwrap();
+
+        // Checkout another repository. This should snapshot the unsaved changes to my-alias
+        cli::checkout(
+            data_dir.to_owned(),
+            "other-project".to_string(),
+            "localhost:44959/colin/example".to_string(),
+        );
+        assert!(std::path::Path::new("/tmp/src_integration/spaces/z02/main.cc").exists());
+        assert!(!std::path::Path::new("/tmp/src_integration/spaces/z02/another_file").exists());
+        assert!(!std::path::Path::new("/tmp/src_integration/spaces/z02/dir/newfile").exists());
+        assert!(!std::path::Path::new("/tmp/src_integration/spaces/z02/dir").exists());
+
+        // Check out the original one again, this time it should restore the snapshotted changes as well
+        cli::checkout(data_dir.to_owned(), String::new(), "my-alias".to_string());
+        assert!(!std::path::Path::new("/tmp/src_integration/spaces/z02/main.cc").exists());
+        assert!(std::path::Path::new("/tmp/src_integration/spaces/z02/another_file").exists());
+        assert_eq!(
+            &std::fs::read_to_string("/tmp/src_integration/spaces/z02/another_file").unwrap(),
+            "content2"
+        );
+        assert!(std::path::Path::new("/tmp/src_integration/spaces/z02/dir/newfile").exists());
+        assert!(std::path::Path::new("/tmp/src_integration/spaces/z02/dir").exists());
     })
     .await;
 }
