@@ -1,14 +1,15 @@
 use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 
 use bus::{Deserialize, Serialize};
 
 mod checkout;
+mod diff;
 mod helpers;
 mod metadata;
 
+#[derive(Clone)]
 pub struct Src {
-    // table: managed_largetable::ManagedLargeTable,
     root: std::path::PathBuf,
     remotes: RwLock<HashMap<String, service::SrcServerClient>>,
 }
@@ -73,7 +74,7 @@ impl Src {
             .with_extension("sstable");
 
         if metadata_path.exists() {
-            return metadata::Metadata::from_path(&metadata_path);
+            return metadata::Metadata::from_path(metadata_path.clone());
         }
 
         let client = self.get_client(basis.get_host())?;
@@ -102,178 +103,7 @@ impl Src {
         }
         std::fs::write(&metadata_path, &resp.data)?;
 
-        metadata::Metadata::from_path(&metadata_path)
-    }
-
-    fn diff_from(
-        &self,
-        root: &std::path::Path,
-        path: &std::path::Path,
-        metadata: &metadata::Metadata,
-        differences: &mut Vec<service::FileDiff>,
-    ) -> std::io::Result<()> {
-        let get_metadata =
-            |p: &std::path::Path| -> Option<service::FileView> { metadata.get(p.to_str()?) };
-
-        let mut observed_paths = Vec::new();
-        for entry in std::fs::read_dir(path)? {
-            let entry = entry?;
-            let ty = entry.file_type()?;
-
-            if ty.is_symlink() {
-                continue;
-            }
-
-            let path = entry.path();
-            observed_paths.push(path.clone());
-
-            let relative_path = path
-                .strip_prefix(root)
-                .map_err(|_| std::io::Error::from(std::io::ErrorKind::InvalidInput))?;
-
-            // Entry is a directory. Only recurse if the mtime has changed.
-            if ty.is_dir() {
-                let mut should_recurse = true;
-
-                if let Some(s) = get_metadata(&relative_path) {
-                    let metadata = entry.metadata()?;
-                    if helpers::metadata_compatible(s, &metadata) {
-                        should_recurse = false;
-                    }
-                } else {
-                    differences.push(service::FileDiff {
-                        path: relative_path
-                            .to_str()
-                            .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::InvalidInput))?
-                            .to_string(),
-                        differences: vec![],
-                        is_dir: true,
-                        kind: service::DiffKind::Added,
-                    });
-                }
-                if should_recurse {
-                    self.diff_from(root, &path, metadata, differences)?;
-                }
-
-                continue;
-            }
-
-            // Entry is a file.
-            if let Some(s) = get_metadata(&relative_path) {
-                let metadata = entry.metadata()?;
-                if helpers::metadata_compatible(s, &metadata) {
-                    continue;
-                }
-
-                let modified = std::fs::read(&path)?;
-                if core::hash_bytes(&modified) == s.get_sha() {
-                    continue;
-                }
-
-                let original = match self.get_blob(s.get_sha()) {
-                    Some(o) => o,
-                    _ => {
-                        return Err(std::io::Error::new(
-                            std::io::ErrorKind::NotFound,
-                            format!("blob {:?} not found!", core::fmt_sha(s.get_sha())),
-                        ));
-                    }
-                };
-
-                differences.push(service::FileDiff {
-                    path: relative_path
-                        .to_str()
-                        .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::InvalidInput))?
-                        .to_string(),
-                    differences: core::diff(&original, &modified),
-                    is_dir: false,
-                    kind: service::DiffKind::Modified,
-                });
-            } else {
-                let mut data = Vec::new();
-                core::compress_rw(
-                    &mut std::io::BufReader::new(std::fs::File::open(&path)?),
-                    &mut data,
-                )?;
-
-                differences.push(service::FileDiff {
-                    path: relative_path
-                        .to_str()
-                        .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::InvalidInput))?
-                        .to_string(),
-                    differences: vec![service::ByteDiff {
-                        start: 0,
-                        end: 0,
-                        kind: service::DiffKind::Added,
-                        data,
-                        compression: service::CompressionKind::LZ4,
-                    }],
-                    is_dir: false,
-                    kind: service::DiffKind::Added,
-                });
-            }
-        }
-
-        observed_paths.sort();
-
-        let nothing: Vec<std::path::PathBuf> = Vec::new();
-        let mut observed_iter = observed_paths.iter().peekable();
-        let mut expected_iter = nothing.iter().peekable();
-
-        loop {
-            match (expected_iter.peek(), observed_iter.peek()) {
-                (Some(exp), Some(obs)) => {
-                    if exp == obs {
-                        expected_iter.next();
-                        observed_iter.next();
-                        continue;
-                    }
-
-                    if obs > exp {
-                        // We missed an expected document. Report it as missing
-                        differences.push(service::FileDiff {
-                            path: exp
-                                .strip_prefix(root)
-                                .map_err(|_| {
-                                    std::io::Error::from(std::io::ErrorKind::InvalidInput)
-                                })?
-                                .to_str()
-                                .ok_or_else(|| {
-                                    std::io::Error::from(std::io::ErrorKind::InvalidInput)
-                                })?
-                                .to_string(),
-                            differences: vec![],
-                            is_dir: false,
-                            kind: service::DiffKind::Removed,
-                        });
-
-                        expected_iter.next();
-                    } else {
-                        // We got an extra document, this case is already covered
-                        observed_iter.next();
-                    }
-                }
-                (Some(exp), None) => {
-                    // We missed an expected document. Report it as missing
-                    differences.push(service::FileDiff {
-                        path: exp
-                            .strip_prefix(root)
-                            .map_err(|_| std::io::Error::from(std::io::ErrorKind::InvalidInput))?
-                            .to_str()
-                            .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::InvalidInput))?
-                            .to_string(),
-                        differences: vec![],
-                        is_dir: false,
-                        kind: service::DiffKind::Removed,
-                    });
-
-                    expected_iter.next();
-                }
-                _ => break,
-            }
-        }
-
-        Ok(())
+        metadata::Metadata::from_path(metadata_path)
     }
 
     pub fn initialize_repo(
@@ -333,7 +163,7 @@ impl Src {
         let metadata = self.get_metadata(basis.as_view())?;
         let mut differences = Vec::new();
 
-        self.diff_from(&directory, &directory, &metadata, &mut differences)?;
+        self.diff_from(directory, directory.clone(), metadata, &mut differences)?;
         differences.sort_by_cached_key(|d| d.path.clone());
 
         Ok(service::DiffResponse {

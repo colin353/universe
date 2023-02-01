@@ -10,9 +10,10 @@ rust_bus_library(
 
 rust_library(
     name = "src_lib",
-    srcs = ["lib.rs", "helpers.rs", "metadata.rs", "checkout.rs"],
+    srcs = ["lib.rs", "helpers.rs", "metadata.rs", "checkout.rs", "diff.rs"],
     deps = [
       ":service",
+      "//util/pool",
       "//tools/largetable:managed_largetable",
       "//util/bus",
       "//util/bus:bus_rpc",

@@ -13,7 +13,7 @@ impl<'a> Metadata<'a> {
         }
     }
 
-    pub fn from_path(path: &std::path::Path) -> std::io::Result<Self> {
+    pub fn from_path(path: std::path::PathBuf) -> std::io::Result<Self> {
         Ok(Self {
             table: sstable::SSTableReader::from_filename(path)?,
         })
