@@ -1,3 +1,4 @@
+use std::ops::DerefMut;
 use std::sync::{Arc, Mutex, RwLock};
 
 use crate::{helpers, metadata};
@@ -8,33 +9,43 @@ impl crate::Src {
         root: std::path::PathBuf,
         path: std::path::PathBuf,
         metadata: metadata::Metadata<'static>,
-        differences: &mut Vec<service::FileDiff>,
-    ) -> std::io::Result<()> {
+    ) -> std::io::Result<Vec<service::FileDiff>> {
         let metadata = Arc::new(metadata);
         let observed: Arc<Mutex<Vec<std::path::PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
         let differences: Arc<Mutex<Vec<service::FileDiff>>> = Arc::new(Mutex::new(Vec::new()));
         let pool = pool::PoolQueue::new(16);
         let _pool = pool.clone();
         let _self = self.clone();
-        pool.start(|p| {
-            _self.__diff_from_inner(_pool, root, p, metadata, differences, observed);
+        let _root = root.clone();
+        let _differences = differences.clone();
+        pool.start(move |p| {
+            _self.__diff_from_inner(
+                &_pool,
+                _root.clone(),
+                p,
+                &metadata,
+                &_differences,
+                &observed,
+            );
         });
         pool.enqueue(path);
 
         // Join, check observed vs. expected
         pool.join();
 
-        Ok(())
+        let out = { std::mem::replace(differences.lock().unwrap().deref_mut(), Vec::new()) };
+
+        Ok(out)
     }
 
     fn __diff_from_inner(
         &self,
-        pool: pool::PoolQueue<std::path::PathBuf>,
+        pool: &pool::PoolQueue<std::path::PathBuf>,
         root: std::path::PathBuf,
         path: std::path::PathBuf,
-        metadata: Arc<metadata::Metadata>,
-        differences: Arc<Mutex<Vec<service::FileDiff>>>,
-        observed: Arc<Mutex<Vec<std::path::PathBuf>>>,
+        metadata: &metadata::Metadata,
+        differences: &Mutex<Vec<service::FileDiff>>,
+        observed: &Mutex<Vec<std::path::PathBuf>>,
     ) -> std::io::Result<()> {
         let get_metadata =
             |p: &std::path::Path| -> Option<service::FileView> { metadata.get(p.to_str()?) };
@@ -52,13 +63,11 @@ impl crate::Src {
             observed_paths.push(path.clone());
 
             let relative_path = path
-                .strip_prefix(root)
+                .strip_prefix(&root)
                 .map_err(|_| std::io::Error::from(std::io::ErrorKind::InvalidInput))?;
 
             // Entry is a directory. We must always recurse directories
             if ty.is_dir() {
-                let mut should_recurse = true;
-
                 if get_metadata(&relative_path).is_none() {
                     differences.lock().unwrap().push(service::FileDiff {
                         path: relative_path
@@ -149,7 +158,7 @@ impl crate::Src {
                         // We missed an expected document. Report it as missing
                         differences.lock().unwrap().push(service::FileDiff {
                             path: exp
-                                .strip_prefix(root)
+                                .strip_prefix(&root)
                                 .map_err(|_| {
                                     std::io::Error::from(std::io::ErrorKind::InvalidInput)
                                 })?
@@ -173,7 +182,7 @@ impl crate::Src {
                     // We missed an expected document. Report it as missing
                     differences.lock().unwrap().push(service::FileDiff {
                         path: exp
-                            .strip_prefix(root)
+                            .strip_prefix(&root)
                             .map_err(|_| std::io::Error::from(std::io::ErrorKind::InvalidInput))?
                             .to_str()
                             .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::InvalidInput))?

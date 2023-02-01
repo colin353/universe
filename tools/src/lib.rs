@@ -11,7 +11,7 @@ mod metadata;
 #[derive(Clone)]
 pub struct Src {
     root: std::path::PathBuf,
-    remotes: RwLock<HashMap<String, service::SrcServerClient>>,
+    remotes: Arc<RwLock<HashMap<String, service::SrcServerClient>>>,
 }
 
 impl Src {
@@ -20,7 +20,7 @@ impl Src {
 
         Ok(Self {
             root,
-            remotes: RwLock::new(HashMap::new()),
+            remotes: Arc::new(RwLock::new(HashMap::new())),
         })
     }
 
@@ -62,7 +62,10 @@ impl Src {
         Ok(client)
     }
 
-    pub fn get_metadata(&self, basis: service::BasisView) -> std::io::Result<metadata::Metadata> {
+    pub fn get_metadata(
+        &self,
+        basis: service::BasisView,
+    ) -> std::io::Result<metadata::Metadata<'static>> {
         // Check whether we already downloaded the metadata
         let metadata_path = self
             .root
@@ -161,9 +164,8 @@ impl Src {
         let directory = std::path::PathBuf::from(change.directory);
 
         let metadata = self.get_metadata(basis.as_view())?;
-        let mut differences = Vec::new();
 
-        self.diff_from(directory, directory.clone(), metadata, &mut differences)?;
+        let mut differences = self.diff_from(directory.clone(), directory.clone(), metadata)?;
         differences.sort_by_cached_key(|d| d.path.clone());
 
         Ok(service::DiffResponse {
