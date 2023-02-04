@@ -76,7 +76,13 @@ fn main() {
         "status" => status(data_dir),
         "push" => push(data_dir, msg.value()),
         "sync" => sync(data_dir),
-        "revert" => revert(data_dir),
+        "revert" => {
+            if args.len() < 2 {
+                eprintln!("usage: src revert <filename> [<filename2>, ...]");
+                std::process::exit(1);
+            }
+            revert(data_dir, &args[1..])
+        }
         "spaces" => spaces(data_dir),
         "clean" => clean(data_dir),
         _ => usage(),

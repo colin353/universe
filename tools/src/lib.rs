@@ -288,6 +288,50 @@ impl Src {
         }
         Ok(candidate)
     }
+
+    pub fn revert(
+        &self,
+        path: &std::path::Path,
+        metadata: &metadata::Metadata<'static>,
+    ) -> std::io::Result<()> {
+        match metadata.get(path.to_str().unwrap()) {
+            Some(file) => {
+                // The file exists in the basis, so return it to that state. First,
+                // if the file exists, delete it.
+                if path.exists() {
+                    if path.is_dir() {
+                        std::fs::remove_dir(path).expect("failed to remove directory");
+                    } else {
+                        std::fs::remove_file(path).expect("failed to remove file");
+                    }
+                }
+
+                if !self.get_blob_path(file.get_sha()).exists() {
+                    unimplemented!("I didn't implement blob cache re-fetching for revert yet!");
+                }
+
+                if path.is_dir() {
+                    std::fs::create_dir(&path).unwrap();
+                } else {
+                    std::fs::copy(self.get_blob_path(file.get_sha()), &path).unwrap();
+                }
+                self.set_mtime(&path, file.get_mtime())
+                    .expect("failed to set mtime");
+            }
+            None => {
+                // If the path doesn't exist and shouldn't exist, do nothing. Otherwise delete it
+                if path.exists() {
+                    if path.is_dir() {
+                        std::fs::remove_dir(path).expect("failed to remove directory");
+                    } else {
+                        std::fs::remove_file(path).expect("failed to remove file");
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]

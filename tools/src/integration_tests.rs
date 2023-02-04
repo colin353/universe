@@ -135,7 +135,7 @@ fn setup_repository_2() {
     cli::submit(data_dir.to_owned());
 }
 
-async fn run_test(name: &'static str, f: impl FnOnce() + Sync + Send + 'static) {
+async fn run_test(name: &'static str, f: impl FnOnce() + Sync + Send + 'static) -> Result<(), ()> {
     let term = tui::Terminal::new();
     term.set_underline();
     print!("RUN\t");
@@ -147,11 +147,13 @@ async fn run_test(name: &'static str, f: impl FnOnce() + Sync + Send + 'static) 
         print!("PASSED\t");
         term.set_normal();
         println!("{}", name);
+        Ok(())
     } else {
         term.set_underline();
         print!("FAILED\t");
         term.set_normal();
         println!("{}", name);
+        Err(())
     }
 }
 
@@ -210,7 +212,104 @@ async fn main() {
         assert_eq!(s.files[1].kind, service::DiffKind::Added);
         assert_eq!(&s.message, "some updates");
     })
-    .await;
+    .await
+    .unwrap();
+
+    run_test("create, delete, revert", || {
+        let data_dir = std::path::Path::new(DATA_DIR);
+        setup_repository();
+
+        std::fs::create_dir_all("/tmp/src_integration/spaces/z02").unwrap();
+        std::env::set_current_dir("/tmp/src_integration/spaces/z02").unwrap();
+        cli::checkout(
+            data_dir.to_owned(),
+            "my-alias".to_string(),
+            "localhost:44959/colin/test".to_string(),
+        );
+
+        // Make sure checkout worked OK
+        assert_eq!(
+            &std::fs::read_to_string("/tmp/src_integration/spaces/z02/another_file").unwrap(),
+            "content"
+        );
+
+        // Diff should have no changes
+        let d = src_lib::Src::new(data_dir.to_owned()).expect("failed to initialize src!");
+        let resp = d
+            .diff(service::DiffRequest {
+                dir: "/tmp/src_integration/spaces/z02".to_string(),
+                ..Default::default()
+            })
+            .unwrap();
+        assert_eq!(resp.failed, false);
+        assert_eq!(resp.files.len(), 0);
+
+        // Now create some further changes on top of that...
+        write_files(
+            std::path::Path::new("/tmp/src_integration/spaces/z02"),
+            "
+        another_file content2
+        dir
+         - newfile 1001001
+    ",
+        )
+        .unwrap();
+
+        // Diff should see new files
+        let d = src_lib::Src::new(data_dir.to_owned()).expect("failed to initialize src!");
+        let resp = d
+            .diff(service::DiffRequest {
+                dir: "/tmp/src_integration/spaces/z02".to_string(),
+                ..Default::default()
+            })
+            .unwrap();
+        assert_eq!(resp.failed, false);
+        assert_eq!(
+            resp.files.iter().map(|f| &f.path).collect::<Vec<_>>(),
+            vec!["another_file", "dir/newfile",]
+        );
+
+        // Revert changes
+        cli::revert(
+            data_dir.to_owned(),
+            &["another_file".to_string(), "dir/newfile".to_string()],
+        );
+
+        // No changes after revert
+        let d = src_lib::Src::new(data_dir.to_owned()).expect("failed to initialize src!");
+        let resp = d
+            .diff(service::DiffRequest {
+                dir: "/tmp/src_integration/spaces/z02".to_string(),
+                ..Default::default()
+            })
+            .unwrap();
+        assert_eq!(resp.failed, false);
+        assert_eq!(resp.files.len(), 0);
+
+        // Delete some files
+        std::fs::remove_file("another_file").unwrap();
+
+        // Deleted file appears in diff as removed
+        let d = src_lib::Src::new(data_dir.to_owned()).expect("failed to initialize src!");
+        let resp = d
+            .diff(service::DiffRequest {
+                dir: "/tmp/src_integration/spaces/z02".to_string(),
+                ..Default::default()
+            })
+            .unwrap();
+        assert_eq!(resp.failed, false);
+        assert_eq!(resp.files.len(), 1);
+        assert_eq!(resp.files[0].path, "another_file");
+        assert_eq!(resp.files[0].kind, service::DiffKind::Removed);
+
+        // Revert deletion
+        cli::revert(data_dir.to_owned(), &["another_file".to_string()]);
+
+        // File should be back after revert
+        assert!(std::path::Path::new("/tmp/src_integration/spaces/z02/another_file").exists());
+    })
+    .await
+    .unwrap();
 
     run_test("attach and detach spaces", || {
         let data_dir = std::path::Path::new(DATA_DIR);
@@ -262,5 +361,6 @@ async fn main() {
         assert!(std::path::Path::new("/tmp/src_integration/spaces/z02/dir/newfile").exists());
         assert!(std::path::Path::new("/tmp/src_integration/spaces/z02/dir").exists());
     })
-    .await;
+    .await
+    .unwrap();
 }

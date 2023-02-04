@@ -603,8 +603,53 @@ pub fn submit(data_dir: std::path::PathBuf) {
     println!("submitted as {}", resp.index);
 }
 
-pub fn revert(_data_dir: std::path::PathBuf) {
-    unimplemented!()
+pub fn revert(data_dir: std::path::PathBuf, paths: &[String]) {
+    let cwd = match std::env::current_dir() {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("unable to determine current working directory! {:?}", e);
+            std::process::exit(1);
+        }
+    };
+
+    let d = src_lib::Src::new(data_dir).expect("failed to initialize src!");
+
+    let alias = match d.get_change_alias_by_dir(&cwd) {
+        Some(a) => a,
+        None => {
+            eprintln!("current directory is not a src directory!");
+            std::process::exit(1);
+        }
+    };
+
+    let space = match d.get_change_by_alias(&alias) {
+        Some(s) => s,
+        None => {
+            eprintln!("current directory is not a src directory!");
+            std::process::exit(1);
+        }
+    };
+
+    let metadata = match d.get_metadata(space.basis.as_view()) {
+        Ok(m) => m,
+        Err(e) => {
+            eprintln!(
+                "unable to get metadata for {:?}: {:?}",
+                core::fmt_basis(space.basis.as_view()),
+                e
+            );
+            std::process::exit(1);
+        }
+    };
+
+    // TODO: somehow refactor checkout(...) to do this as well
+    for path in paths {
+        let path = cwd.join(path);
+        let normalized = path
+            .strip_prefix(&space.directory)
+            .expect("must specify a path within the current space!");
+        d.revert(normalized, &metadata).unwrap();
+    }
 }
 
 pub fn sync(_data_dir: std::path::PathBuf) {

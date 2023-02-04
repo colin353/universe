@@ -2,9 +2,39 @@ pub struct Metadata<'a> {
     table: sstable::SSTableReader<service::FileView<'a>>,
 }
 
+type Filter = String;
+
 impl<'a> Metadata<'a> {
     pub fn iter(&self) -> impl Iterator<Item = (String, service::FileView)> {
         self.table.iter()
+    }
+
+    pub fn key(&self, path: &str) -> String {
+        format!("{}/{}", path.split("/").count(), path)
+    }
+
+    pub fn filter_key(&self, path: &str) -> Filter {
+        if path.is_empty() {
+            "1/".to_string()
+        } else {
+            format!("{}/{}/", path.split("/").count() + 1, path)
+        }
+    }
+
+    pub fn list_directory(
+        &'a self,
+        filter: &'a Filter,
+    ) -> impl Iterator<Item = (String, service::FileView)> {
+        self.table
+            .iter_at(sstable::Filter {
+                spec: &filter,
+                min: "",
+                max: "",
+            })
+            .map(|(s, f)| {
+                let first_slash = s.find('/').map(|i| i + 1).unwrap_or(0);
+                (s[first_slash..].to_owned(), f)
+            })
     }
 
     pub fn empty() -> Self {
@@ -20,8 +50,7 @@ impl<'a> Metadata<'a> {
     }
 
     pub fn get(&self, path: &str) -> Option<service::FileView> {
-        let key = format!("{}/{}", path.split("/").count(), path);
-        self.table.get(&key)
+        self.table.get(&self.key(path))
     }
 
     pub fn diff(&self, other: &'a Metadata<'a>) -> MetadataDiffIterator {

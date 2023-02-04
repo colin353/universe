@@ -51,7 +51,7 @@ impl crate::Src {
             |p: &std::path::Path| -> Option<service::FileView> { metadata.get(p.to_str()?) };
 
         let mut observed_paths = Vec::new();
-        for entry in std::fs::read_dir(path)? {
+        for entry in std::fs::read_dir(&path)? {
             let entry = entry?;
             let ty = entry.file_type()?;
 
@@ -143,18 +143,26 @@ impl crate::Src {
 
         let nothing: Vec<std::path::PathBuf> = Vec::new();
         let mut observed_iter = observed_paths.iter().peekable();
-        let mut expected_iter = nothing.iter().peekable();
+
+        let relative_path = path
+            .strip_prefix(&root)
+            .map_err(|_| std::io::Error::from(std::io::ErrorKind::InvalidInput))?;
+        let filter = metadata.filter_key(relative_path.to_str().unwrap());
+        let mut expected_iter = metadata
+            .list_directory(&filter)
+            .map(|(p, _)| root.join(p))
+            .peekable();
 
         loop {
             match (expected_iter.peek(), observed_iter.peek()) {
                 (Some(exp), Some(obs)) => {
-                    if exp == obs {
+                    if &exp == obs {
                         expected_iter.next();
                         observed_iter.next();
                         continue;
                     }
 
-                    if obs > exp {
+                    if obs > &exp {
                         // We missed an expected document. Report it as missing
                         differences.lock().unwrap().push(service::FileDiff {
                             path: exp
