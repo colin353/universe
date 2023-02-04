@@ -148,6 +148,7 @@ impl crate::Src {
             .strip_prefix(&root)
             .map_err(|_| std::io::Error::from(std::io::ErrorKind::InvalidInput))?;
         let filter = metadata.filter_key(relative_path.to_str().unwrap());
+
         let mut expected_iter = metadata
             .list_directory(&filter)
             .map(|(p, _)| root.join(p))

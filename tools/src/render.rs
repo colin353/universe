@@ -244,6 +244,10 @@ pub fn print_patch(files: &[(&service::FileDiff, Option<&service::Blob>)]) -> St
                     writeln!(&mut out, "+{}", line).unwrap();
                 }
             }
+            service::DiffKind::Removed => {
+                writeln!(&mut out, "--- a/{}", fd.path).unwrap();
+                writeln!(&mut out, "+++ /dev/null").unwrap();
+            }
             _ => {}
         }
     }

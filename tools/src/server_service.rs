@@ -591,6 +591,7 @@ impl service::SrcServerServiceHandler for SrcServer {
         // Read all of the files at this basis, and emit them into an SSTableBuilder
         let mut min = "".to_string();
         let row = format!("code/submitted/{}/{}", req.basis.owner, req.basis.name);
+        let batch_size = 1000;
         loop {
             let filter = largetable::Filter {
                 row: &row,
@@ -600,7 +601,7 @@ impl service::SrcServerServiceHandler for SrcServer {
             };
             let resp = self
                 .table
-                .read_range(filter, req.basis.index, 1000)
+                .read_range(filter, req.basis.index, batch_size)
                 .map_err(|e| {
                     eprintln!("{:?}", e);
                     bus::BusRpcError::InternalError("failed to touch parent folders".to_string())
@@ -613,7 +614,7 @@ impl service::SrcServerServiceHandler for SrcServer {
 
             min = resp.records[resp.records.len() - 1].key.clone();
 
-            for record in resp.records {
+            for record in resp.records.into_iter().take(batch_size - 1) {
                 builder
                     .write_ordered(&record.key, bus::PackedIn(record.data))
                     .map_err(|e| {
@@ -624,7 +625,7 @@ impl service::SrcServerServiceHandler for SrcServer {
                     })?;
             }
 
-            if count < 1000 {
+            if count < batch_size {
                 break;
             }
         }
