@@ -379,4 +379,55 @@ async fn main() {
     })
     .await
     .unwrap();
+
+    run_test("sync", || {
+        let data_dir = std::path::Path::new(DATA_DIR);
+        setup_repository();
+
+        // Check out the repository and don't modify it yet
+        std::fs::create_dir_all("/tmp/src_integration/spaces/z03").unwrap();
+        std::env::set_current_dir("/tmp/src_integration/spaces/z03").unwrap();
+        cli::checkout(
+            data_dir.to_owned(),
+            "laggard".to_string(),
+            "localhost:44959/colin/test".to_string(),
+        );
+
+        // Check out in another space, modify and submit
+        std::fs::create_dir_all("/tmp/src_integration/spaces/z02").unwrap();
+        std::env::set_current_dir("/tmp/src_integration/spaces/z02").unwrap();
+        cli::checkout(
+            data_dir.to_owned(),
+            "my-alias".to_string(),
+            "localhost:44959/colin/test".to_string(),
+        );
+        write_files(
+            std::path::Path::new("/tmp/src_integration/spaces/z02"),
+            "
+        another_file content2
+        dir
+         - newfile 1001001
+    ",
+        )
+        .unwrap();
+        cli::push(data_dir.to_owned(), "small changes".to_string());
+        cli::submit(data_dir.to_owned());
+
+        // Should be submitted as localhost:44959/colin/example/3. Now go back to the old space
+        // and sync.
+        std::env::set_current_dir("/tmp/src_integration/spaces/z03").unwrap();
+        cli::sync(data_dir.to_owned());
+
+        // Should observe modifications to `another_file` and `dir/newfile`
+        assert_eq!(
+            &std::fs::read_to_string("/tmp/src_integration/spaces/z03/another_file").unwrap(),
+            "content2"
+        );
+        assert_eq!(
+            &std::fs::read_to_string("/tmp/src_integration/spaces/z03/dir/newfile").unwrap(),
+            "1001001"
+        );
+    })
+    .await
+    .unwrap();
 }

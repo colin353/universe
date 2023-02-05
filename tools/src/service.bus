@@ -186,6 +186,18 @@ message GetChangeResponse {
     latest_snapshot: Snapshot = 3
 }
 
+message GetBasisDiffRequest {
+    token: string = 0
+    old: Basis = 1
+    new: Basis = 2
+}
+
+message GetBasisDiffResponse {
+    failed: bool = 0
+    error_message: string = 1
+    files: repeated FileDiff = 3
+}
+
 service SrcServer {
     rpc create(CreateRequest) -> CreateResponse
     rpc get_repository(GetRepositoryRequest) -> GetRepositoryResponse
@@ -196,6 +208,7 @@ service SrcServer {
     rpc list_changes(ListChangesRequest) -> ListChangesResponse
     rpc get_change(GetChangeRequest) -> GetChangeResponse
     rpc get_blobs_by_path(GetBlobsByPathRequest) -> GetBlobsByPathResponse
+    rpc get_basis_diff(GetBasisDiffRequest) -> GetBasisDiffResponse
 }
 
 message CheckoutResponse {

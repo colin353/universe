@@ -41,7 +41,7 @@ impl SrcServer {
     }
 
     pub fn get_blob(&self, basis: service::BasisView, sha: &[u8]) -> std::io::Result<Vec<u8>> {
-        if !basis.get_host().is_empty() {
+        if !basis.get_host().is_empty() && basis.get_host() != self.hostname {
             todo!("I don't know how to read from remotes yet!");
         }
 
@@ -996,6 +996,191 @@ impl service::SrcServerServiceHandler for SrcServer {
         Ok(GetChangeResponse {
             change,
             latest_snapshot: snapshot.unwrap_or_else(Snapshot::default),
+            ..Default::default()
+        })
+    }
+
+    fn get_basis_diff(
+        &self,
+        req: GetBasisDiffRequest,
+    ) -> Result<GetBasisDiffResponse, bus::BusRpcError> {
+        let username = match self.auth(&req.token) {
+            Ok(u) => u,
+            Err(e) => {
+                return Ok(GetBasisDiffResponse {
+                    failed: true,
+                    error_message: e,
+                    ..Default::default()
+                })
+            }
+        };
+
+        if !req.new.host.is_empty() && req.new.host != self.hostname {
+            return Ok(GetBasisDiffResponse {
+                failed: true,
+                error_message: "Can't check basis diff from a different host!".to_string(),
+                ..Default::default()
+            });
+        }
+
+        if req.new.host != req.old.host {
+            return Ok(GetBasisDiffResponse {
+                failed: true,
+                error_message: "Can't check basis diff across hosts!".to_string(),
+                ..Default::default()
+            });
+        }
+
+        if req.new.owner != req.old.owner || req.new.name != req.old.name {
+            return Ok(GetBasisDiffResponse {
+                failed: true,
+                error_message: "Can't check basis diff across repos!".to_string(),
+                ..Default::default()
+            });
+        }
+
+        if req.old.change != 0 || req.new.change != 0 {
+            return Ok(GetBasisDiffResponse {
+                failed: true,
+                error_message: "Checking basis across changes is not supported yet".to_string(),
+                ..Default::default()
+            });
+        }
+
+        if req.old.index > req.new.index {
+            return Ok(GetBasisDiffResponse {
+                failed: true,
+                error_message: "Checking reverse diff is not supported yet".to_string(),
+                ..Default::default()
+            });
+        }
+
+        let mut accumulated_changes = std::collections::HashMap::new();
+        let row = format!("{}/{}/changes", req.new.owner, req.new.name);
+        for id in req.old.index + 1..req.new.index {
+            let change = match self.table.read(&row, &core::encode_id(id), 0) {
+                Some(c) => c.map_err(|e| {
+                    bus::BusRpcError::InternalError(format!("failed to read from table: {:?}", e))
+                })?,
+                None => continue,
+            };
+            let snapshot = match self.get_snapshot(&change, 0)? {
+                Some(s) => s,
+                None => continue,
+            };
+
+            for file in snapshot.files {
+                if accumulated_changes.contains_key(&file.path) {
+                    accumulated_changes.insert(file.path, None);
+                } else {
+                    accumulated_changes.insert(file.path.clone(), Some(file));
+                }
+            }
+        }
+
+        let mut output = Vec::new();
+        let row = format!("code/submitted/{}/{}", &req.new.owner, req.new.name);
+        for (path, maybe_file) in accumulated_changes {
+            if let Some(file) = maybe_file {
+                output.push(file);
+            } else {
+                // Get the old file and the new file, and compute a new diff
+                let old = self.table.read::<File>(
+                    &row,
+                    &format!("{}/{}", path.split("/").count(), path),
+                    req.old.index,
+                );
+                let new = self.table.read::<File>(
+                    &row,
+                    &format!("{}/{}", path.split("/").count(), path),
+                    req.new.index,
+                );
+
+                match (old, new) {
+                    (Some(Ok(old_f)), Some(Ok(new_f))) => {
+                        let old_file_content =
+                            self.get_blob(req.old.as_view(), &new_f.sha).map_err(|e| {
+                                bus::BusRpcError::InternalError(format!(
+                                    "failed to get blob: {:?}",
+                                    e
+                                ))
+                            })?;
+                        let new_file_content =
+                            self.get_blob(req.new.as_view(), &new_f.sha).map_err(|e| {
+                                bus::BusRpcError::InternalError(format!(
+                                    "failed to get blob: {:?}",
+                                    e
+                                ))
+                            })?;
+
+                        // Emit diff between the files
+                        let bytediffs = core::diff(&old_file_content, &new_file_content);
+                        output.push(FileDiff {
+                            path: path,
+                            differences: bytediffs,
+                            is_dir: new_f.is_dir,
+                            kind: service::DiffKind::Modified,
+                        });
+                    }
+                    (Some(Ok(old_f)), None) => {
+                        // Emit deletion
+                        output.push(FileDiff {
+                            path: path,
+                            differences: vec![],
+                            is_dir: old_f.is_dir,
+                            kind: service::DiffKind::Removed,
+                        });
+                    }
+                    (None, Some(Ok(new_f))) => {
+                        // Emit add
+                        if new_f.is_dir {
+                            output.push(FileDiff {
+                                path: path,
+                                differences: vec![],
+                                is_dir: new_f.is_dir,
+                                kind: service::DiffKind::Added,
+                            });
+                            continue;
+                        }
+
+                        // Compress file content and emit add
+                        let file_content =
+                            self.get_blob(req.new.as_view(), &new_f.sha).map_err(|e| {
+                                bus::BusRpcError::InternalError(format!(
+                                    "failed to get blob: {:?}",
+                                    e
+                                ))
+                            })?;
+                        output.push(FileDiff {
+                            path: path,
+                            differences: vec![ByteDiff {
+                                start: 0,
+                                end: 0,
+                                kind: DiffKind::Added,
+                                data: core::compress(&file_content),
+                                compression: CompressionKind::LZ4,
+                            }],
+                            is_dir: new_f.is_dir,
+                            kind: DiffKind::Added,
+                        });
+                    }
+                    (None, None) => {
+                        // Created but then deleted, ignore
+                    }
+                    _ => {
+                        // Bus error ocurred
+                        return Ok(GetBasisDiffResponse {
+                            failed: true,
+                            error_message: "Failed to connect to largetable".to_string(),
+                            ..Default::default()
+                        });
+                    }
+                }
+            }
+        }
+
+        Ok(GetBasisDiffResponse {
+            files: output,
             ..Default::default()
         })
     }

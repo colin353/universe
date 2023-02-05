@@ -332,6 +332,83 @@ impl Src {
 
         Ok(())
     }
+
+    pub fn sync(
+        &self,
+        alias: &str,
+        dry_run: bool,
+        conflict_resolutions: &[(&std::path::Path, &str)],
+    ) -> std::io::Result<Result<service::Basis, Vec<String>>> {
+        let space = match self.get_change_by_alias(alias) {
+            Some(c) => c,
+            _ => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    format!("unknown alias {}", alias),
+                ))
+            }
+        };
+
+        if space.basis.change != 0 {
+            unimplemented!("I didn't implement syncing when the basis is another change!");
+        }
+
+        let client = self.get_client(&space.basis.host)?;
+        let repo = client
+            .get_repository(service::GetRepositoryRequest {
+                token: String::new(),
+                owner: space.basis.owner.clone(),
+                name: space.basis.name.clone(),
+            })
+            .unwrap();
+
+        // If we're already up to date, nothing to do
+        if repo.index == space.basis.index {
+            return Ok(Ok(space.basis.clone()));
+        }
+
+        let mut new_basis = space.basis.clone();
+        new_basis.index = repo.index;
+
+        // Reach out and find the diff between the two bases
+        let resp = client
+            .get_basis_diff(service::GetBasisDiffRequest {
+                token: String::new(),
+                old: space.basis.clone(),
+                new: new_basis.clone(),
+            })
+            .unwrap();
+
+        if resp.failed {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("failed to diff to new basis: {}", resp.error_message),
+            ));
+        }
+
+        let resp = self.snapshot(SnapshotRequest {
+            alias: alias.clone(),
+            message: format!("sync to #{}", new_basis.index),
+            skip_if_no_changes: true,
+        })?;
+
+        if resp.failed {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("failed to snapshot: {}", resp.error_message),
+            ));
+        }
+
+        let snapshot = self.get_latest_snapshot(alias)?.unwrap();
+
+        // 1. Merge the snapshots
+        // 2. Determine if there are any conflicts, and if so quit and indicate conflicts
+        // 3. If overrides are specified for the conflicts, use them
+        // 4. Construct a joined snapshot
+        // 5. Apply the snapshot using `apply_snapshot`
+
+        unimplemented!("didn't get this far yet...");
+    }
 }
 
 #[cfg(test)]

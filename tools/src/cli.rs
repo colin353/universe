@@ -653,8 +653,23 @@ pub fn revert(data_dir: std::path::PathBuf, paths: &[String]) {
     }
 }
 
-pub fn sync(_data_dir: std::path::PathBuf) {
-    unimplemented!()
+pub fn sync(data_dir: std::path::PathBuf) {
+    let d = src_lib::Src::new(data_dir).expect("failed to initialize src!");
+    let cwd = match std::env::current_dir() {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("unable to determine current working directory! {:?}", e);
+            std::process::exit(1);
+        }
+    };
+    let alias = match d.get_change_alias_by_dir(&cwd) {
+        Some(a) => a,
+        None => {
+            eprintln!("current directory is not a src directory!");
+            std::process::exit(1);
+        }
+    };
+    d.sync(&alias, false, &[]);
 }
 
 pub fn spaces(data_dir: std::path::PathBuf) {
