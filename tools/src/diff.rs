@@ -151,12 +151,14 @@ impl crate::Src {
 
         let mut expected_iter = metadata
             .list_directory(&filter)
-            .map(|(p, _)| root.join(p))
+            .map(|(p, file)| (root.join(p), file))
             .peekable();
 
+        // Track deleted directories, so we can report all deleted files within them
+        let mut deleted_directories: Vec<String> = Vec::new();
         loop {
             match (expected_iter.peek(), observed_iter.peek()) {
-                (Some(exp), Some(obs)) => {
+                (Some((exp, expected_file)), Some(obs)) => {
                     if &exp == obs {
                         expected_iter.next();
                         observed_iter.next();
@@ -177,9 +179,19 @@ impl crate::Src {
                                 })?
                                 .to_string(),
                             differences: vec![],
-                            is_dir: false,
+                            is_dir: expected_file.get_is_dir(),
                             kind: service::DiffKind::Removed,
                         });
+
+                        if expected_file.get_is_dir() {
+                            deleted_directories.push(
+                                exp.strip_prefix(&root)
+                                    .unwrap()
+                                    .to_str()
+                                    .unwrap()
+                                    .to_owned(),
+                            );
+                        }
 
                         expected_iter.next();
                     } else {
@@ -187,7 +199,7 @@ impl crate::Src {
                         observed_iter.next();
                     }
                 }
-                (Some(exp), None) => {
+                (Some((exp, expected_file)), None) => {
                     // We missed an expected document. Report it as missing
                     differences.lock().unwrap().push(service::FileDiff {
                         path: exp
@@ -197,13 +209,40 @@ impl crate::Src {
                             .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::InvalidInput))?
                             .to_string(),
                         differences: vec![],
-                        is_dir: false,
+                        is_dir: expected_file.get_is_dir(),
                         kind: service::DiffKind::Removed,
                     });
+
+                    if expected_file.get_is_dir() {
+                        deleted_directories.push(
+                            exp.strip_prefix(&root)
+                                .unwrap()
+                                .to_str()
+                                .unwrap()
+                                .to_owned(),
+                        );
+                    }
 
                     expected_iter.next();
                 }
                 _ => break,
+            }
+        }
+
+        // For all deleted directories, report all the files that were in them
+        while let Some(path) = deleted_directories.pop() {
+            let filter = metadata.filter_key(&path);
+            for (path, file) in metadata.list_directory(&filter) {
+                differences.lock().unwrap().push(service::FileDiff {
+                    path: path.to_string(),
+                    differences: vec![],
+                    is_dir: file.get_is_dir(),
+                    kind: service::DiffKind::Removed,
+                });
+
+                if file.get_is_dir() {
+                    deleted_directories.push(path);
+                }
             }
         }
 

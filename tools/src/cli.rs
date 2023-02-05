@@ -188,6 +188,7 @@ pub fn diff(data_dir: std::path::PathBuf) {
     let _files_and_originals: Vec<_> = resp
         .files
         .iter()
+        .filter(|f| !f.is_dir)
         .map(|f| {
             let original = metadata.get(&f.path).map(|fv| {
                 let data = match d.get_blob(fv.get_sha()) {

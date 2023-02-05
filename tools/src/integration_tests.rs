@@ -211,6 +211,22 @@ async fn main() {
         assert_eq!(s.files[1].path, "dir/newfile");
         assert_eq!(s.files[1].kind, service::DiffKind::Added);
         assert_eq!(&s.message, "some updates");
+
+        // Delete the directory and observe the diff
+        std::fs::remove_dir_all("/tmp/src_integration/spaces/z02/dir").unwrap();
+
+        // Diff should see new files
+        let resp = d
+            .diff(service::DiffRequest {
+                dir: "/tmp/src_integration/spaces/z02".to_string(),
+                ..Default::default()
+            })
+            .unwrap();
+        assert_eq!(resp.failed, false);
+        assert_eq!(
+            resp.files.iter().map(|f| &f.path).collect::<Vec<_>>(),
+            vec!["another_file", "dir", "dir/zombo.com"]
+        );
     })
     .await
     .unwrap();
