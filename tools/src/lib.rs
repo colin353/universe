@@ -337,9 +337,10 @@ impl Src {
         &self,
         alias: &str,
         dry_run: bool,
-        conflict_resolutions: &[(&std::path::Path, &str)],
-    ) -> std::io::Result<Result<service::Basis, Vec<String>>> {
-        let space = match self.get_change_by_alias(alias) {
+        conflict_resolutions: &[(String, String)],
+    ) -> std::io::Result<Result<service::Basis, Vec<(String, service::FileDiff, service::FileDiff)>>>
+    {
+        let mut space = match self.get_change_by_alias(alias) {
             Some(c) => c,
             _ => {
                 return Err(std::io::Error::new(
@@ -386,10 +387,13 @@ impl Src {
             ));
         }
 
-        let resp = self.snapshot(SnapshotRequest {
-            alias: alias.clone(),
-            message: format!("sync to #{}", new_basis.index),
+        let mut remote_changes = resp.files;
+
+        let resp = self.snapshot(service::SnapshotRequest {
+            alias: alias.to_string(),
+            message: format!("before syncing to #{}", new_basis.index),
             skip_if_no_changes: true,
+            ..Default::default()
         })?;
 
         if resp.failed {
@@ -399,15 +403,73 @@ impl Src {
             ));
         }
 
-        let snapshot = self.get_latest_snapshot(alias)?.unwrap();
+        let merged_changes = match self.get_latest_snapshot(alias)? {
+            Some(s) => {
+                let mut local_changes = s.files;
+                remote_changes.sort_by(|l, r| l.path.cmp(&r.path));
+                local_changes.sort_by(|l, r| l.path.cmp(&r.path));
 
-        // 1. Merge the snapshots
-        // 2. Determine if there are any conflicts, and if so quit and indicate conflicts
-        // 3. If overrides are specified for the conflicts, use them
-        // 4. Construct a joined snapshot
-        // 5. Apply the snapshot using `apply_snapshot`
+                let local_iter = local_changes.into_iter();
+                let remote_iter = remote_changes.into_iter();
+                let mut joined =
+                    itertools::JoinedOrderedIterators::new(local_iter, remote_iter, |l, r| {
+                        l.path.cmp(&r.path)
+                    });
 
-        unimplemented!("didn't get this far yet...");
+                let mut merged_changes = Vec::new();
+                let mut conflicts = Vec::new();
+                loop {
+                    match joined.next() {
+                        (Some(local), Some(remote)) => {
+                            // Possible conflict? TODO: auto-resolve some conflicts
+                            conflicts.push((local.path.clone(), local, remote));
+                        }
+                        (Some(local), None) => {
+                            merged_changes.push(local);
+                        }
+                        (None, Some(remote)) => {
+                            merged_changes.push(remote);
+                        }
+                        (None, None) => break,
+                    }
+                }
+                if !conflicts.is_empty() {
+                    return Ok(Err(conflicts));
+                }
+                merged_changes
+            }
+            None => {
+                // There are no changes on this branch at all, so just return the remote changes.
+                remote_changes
+            }
+        };
+
+        self.apply_snapshot(
+            std::path::Path::new(&space.directory),
+            space.basis.as_view(),
+            &merged_changes,
+        )?;
+
+        // Update the space to point to the new basis
+        space.basis = new_basis.clone();
+        self.set_change_by_alias(alias, &space)?;
+
+        // Record one final snapshot, with the new basis
+        let resp = self.snapshot(service::SnapshotRequest {
+            alias: alias.to_string(),
+            message: format!("sync to #{}", new_basis.index),
+            skip_if_no_changes: false,
+            ..Default::default()
+        })?;
+
+        if resp.failed {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("failed to snapshot after merge: {}", resp.error_message),
+            ));
+        }
+
+        return Ok(Ok((new_basis)));
     }
 }
 

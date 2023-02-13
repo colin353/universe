@@ -16,6 +16,7 @@ rust_library(
       "//util/pool",
       "//tools/largetable:managed_largetable",
       "//util/bus",
+      "//util/itertools",
       "//util/bus:bus_rpc",
       "//util/sstable/v3:sstable",
       "//third_party:libc",
@@ -65,7 +66,8 @@ rust_library(
       "core.rs",
       "patience.rs",
       "lcs.rs",
-      "render.rs"
+      "render.rs",
+      "conflict.rs"
     ],
     deps = [
       ":service",
@@ -117,6 +119,7 @@ rust_binary(
       ":server_service",
       ":src_lib",
       ":service",
+      "//util/flags",
       "//util/tui",
       "//third_party:tokio",
       "//util/bus",

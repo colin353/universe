@@ -5,6 +5,7 @@ use std::io::{Read, Write as _};
 pub const COMPRESSION_THRESHOLD: usize = 128;
 const COMPRESSION_LEVEL: u32 = 1;
 
+pub mod conflict;
 mod lcs;
 pub mod patience;
 pub mod render;
@@ -531,7 +532,7 @@ pub fn encode_id(id: u64) -> String {
 }
 
 pub fn summarize_description(description: &str) -> &str {
-    let mut summary = match description.lines().next() {
+    let summary = match description.lines().next() {
         Some(t) => t,
         None => return "",
     };

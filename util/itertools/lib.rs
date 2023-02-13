@@ -2,8 +2,42 @@
 extern crate primitive;
 
 use primitive::Serializable;
-use std::cmp::{Ordering, Reverse};
+use std::cmp::Reverse;
 use std::collections::BinaryHeap;
+
+pub struct JoinedOrderedIterators<T, L: Iterator<Item = T>, R: Iterator<Item = T>, F> {
+    left: std::iter::Peekable<L>,
+    right: std::iter::Peekable<R>,
+    cmp: F,
+}
+
+impl<T, L, R, F> JoinedOrderedIterators<T, L, R, F>
+where
+    L: Iterator<Item = T>,
+    R: Iterator<Item = T>,
+    F: Fn(&T, &T) -> std::cmp::Ordering,
+{
+    pub fn new(left: L, right: R, cmp: F) -> Self {
+        Self {
+            left: left.peekable(),
+            right: right.peekable(),
+            cmp,
+        }
+    }
+
+    pub fn next(&mut self) -> (Option<T>, Option<T>) {
+        match (self.left.peek(), self.right.peek()) {
+            (Some(l), Some(r)) => match (self.cmp)(l, r) {
+                std::cmp::Ordering::Equal => (self.left.next(), self.right.next()),
+                std::cmp::Ordering::Less => (self.left.next(), None),
+                std::cmp::Ordering::Greater => (None, self.right.next()),
+            },
+            (Some(l), None) => (self.left.next(), None),
+            (None, Some(r)) => (None, self.right.next()),
+            (None, None) => (None, None),
+        }
+    }
+}
 
 pub trait StreamingIterator {
     type Item;
@@ -67,7 +101,7 @@ impl<K, V> Serializable for KV<K, V>
 where
     V: Serializable,
 {
-    fn write(&self, write: &mut std::io::Write) -> std::io::Result<u64> {
+    fn write(&self, write: &mut dyn std::io::Write) -> std::io::Result<u64> {
         Ok(0)
     }
     fn read_from_bytes(&mut self, buffer: &[u8]) -> std::io::Result<()> {

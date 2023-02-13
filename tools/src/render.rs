@@ -39,8 +39,8 @@ pub fn print_diff(files: &[service::FileDiff]) {
     }
 }
 
-#[derive(Debug)]
-struct Snippet {
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Snippet {
     old_start_pos: usize,
     old_end_pos: usize,
     modified_start_pos: usize,
@@ -48,37 +48,87 @@ struct Snippet {
     new_data: Vec<u8>,
 }
 
+pub enum ConflictResolution {
+    ThisThenThat,
+    ThatThenThis,
+    Overlapping,
+}
+
+impl Ord for Snippet {
+    fn cmp(&self, other: &Snippet) -> std::cmp::Ordering {
+        self.old_start_pos.cmp(&other.old_start_pos)
+    }
+}
+
+impl PartialOrd for Snippet {
+    fn partial_cmp(&self, other: &Snippet) -> Option<std::cmp::Ordering> {
+        Some(self.old_start_pos.cmp(&other.old_start_pos))
+    }
+}
+
 impl Snippet {
-    fn from_bytediff(diff: &service::ByteDiff, prev_data: &[u8]) -> Self {
+    pub fn into_bytediff(self) -> service::ByteDiff {
+        service::ByteDiff {
+            start: self.old_start_pos as u32,
+            end: self.old_end_pos as u32,
+            kind: service::DiffKind::Modified,
+            data: self.new_data,
+            compression: service::CompressionKind::None,
+        }
+    }
+
+    pub fn from_bytediff(diff: &service::ByteDiff, prev_data: &[u8], mut context: usize) -> Self {
+        // Check if this inserts an isolated new line. If that's the case, then we should include
+        // one less line of context before and after.
+        let diff_data =
+            crate::decompress(diff.compression, &diff.data).expect("failed to decompress!");
+
+        let diff_starts_with_newline = *diff_data.get(0).unwrap_or(&0x0a) == 0x0a;
+        let diff_ends_with_newline = *diff_data.get(diff_data.len() - 1).unwrap_or(&0x0a) == 0x0a;
+        let preceding_byte_is_newline =
+            diff.start == 0 || prev_data.get((diff.start - 1) as usize) == Some(&0x0a);
+        let following_byte_is_newline =
+            diff.end == 0 || prev_data.get(diff.end as usize) == Some(&0x0a);
+
+        if (diff_starts_with_newline && following_byte_is_newline)
+            || (diff_ends_with_newline && preceding_byte_is_newline)
+        {
+            context -= 1;
+        }
+
         let mut old_start_pos = diff.start as usize;
         let mut line_idx = 0;
-        for byte in prev_data[0..diff.start as usize].iter().rev() {
-            if *byte == 0x0a {
-                line_idx += 1;
+        if context > 0 {
+            for byte in prev_data[0..diff.start as usize].iter().rev() {
+                if *byte == 0x0a {
+                    line_idx += 1;
 
-                if line_idx == 3 {
-                    break;
+                    if line_idx == context {
+                        break;
+                    }
                 }
+                old_start_pos -= 1;
             }
-            old_start_pos -= 1;
         }
 
         let mut old_end_pos = diff.end as usize;
-        for byte in prev_data[diff.end as usize..].iter() {
-            if *byte == 0x0a {
-                line_idx += 1;
+        if context > 0 {
+            for byte in prev_data[diff.end as usize..].iter() {
+                if *byte == 0x0a {
+                    line_idx += 1;
 
-                if line_idx == 3 {
-                    old_end_pos += 1;
-                    break;
+                    if line_idx == context {
+                        old_end_pos += 1;
+                        break;
+                    }
                 }
+                old_end_pos += 1;
             }
-            old_end_pos += 1;
         }
 
         let mut new_data = prev_data[old_start_pos..diff.start as usize].to_owned();
         let modified_start_pos = new_data.len();
-        new_data.extend_from_slice(diff.data.as_slice());
+        new_data.extend_from_slice(diff_data.as_slice());
         let modified_end_pos = new_data.len();
         new_data.extend_from_slice(&prev_data[diff.end as usize..old_end_pos]);
 
@@ -91,12 +141,25 @@ impl Snippet {
         };
     }
 
-    pub fn merge(&mut self, next_snippet: &Snippet, prev_data: &[u8]) -> bool {
-        // Merge if the snippets overlap
-        if next_snippet.old_start_pos > self.old_end_pos {
-            return false;
+    // Whether the two snippets conflict with one another
+    pub fn conflicts(&self, other: &Snippet) -> ConflictResolution {
+        // Are the two overlapping in any way?
+        if self.old_start_pos <= other.old_start_pos && self.old_end_pos >= other.old_start_pos {
+            return ConflictResolution::Overlapping;
         }
 
+        if other.old_start_pos <= self.old_start_pos && other.old_end_pos >= self.old_start_pos {
+            return ConflictResolution::Overlapping;
+        }
+
+        let mut result = ConflictResolution::ThatThenThis;
+        if other.old_start_pos > self.old_start_pos {
+            result = ConflictResolution::ThisThenThat;
+        }
+        result
+    }
+
+    pub fn force_merge(&mut self, next_snippet: &Snippet, prev_data: &[u8]) {
         self.old_end_pos = next_snippet.old_end_pos;
 
         // --prefix--[modified]--suffix
@@ -120,6 +183,15 @@ impl Snippet {
         // Append the remainder of the other snippet
         self.new_data
             .extend(&next_snippet.new_data[next_snippet.modified_start_pos..]);
+    }
+
+    pub fn merge(&mut self, next_snippet: &Snippet, prev_data: &[u8]) -> bool {
+        // Merge if the snippets overlap
+        if next_snippet.old_start_pos > self.old_end_pos {
+            return false;
+        }
+
+        self.force_merge(next_snippet, prev_data);
 
         true
     }
@@ -151,7 +223,7 @@ pub fn print_patch(files: &[(&service::FileDiff, Option<&service::Blob>)]) -> St
                 let mut current_snippet: Option<Snippet> = None;
 
                 for bd in &fd.differences {
-                    let s = Snippet::from_bytediff(bd, &prev.data);
+                    let s = Snippet::from_bytediff(bd, &prev.data, 4);
                     if let Some(ps) = &mut current_snippet {
                         if !ps.merge(&s, &prev.data) {
                             snippets.push(std::mem::replace(ps, s));

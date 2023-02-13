@@ -135,7 +135,17 @@ fn setup_repository_2() {
     cli::submit(data_dir.to_owned());
 }
 
-async fn run_test(name: &'static str, f: impl FnOnce() + Sync + Send + 'static) -> Result<(), ()> {
+async fn run_test(
+    name: &'static str,
+    f: impl FnOnce() + Sync + Send + 'static,
+    filters: &[String],
+) -> Result<(), ()> {
+    for filter in filters {
+        if !name.contains(filter) {
+            return Ok(());
+        }
+    }
+
     let term = tui::Terminal::new();
     term.set_underline();
     print!("RUN\t");
@@ -159,275 +169,301 @@ async fn run_test(name: &'static str, f: impl FnOnce() + Sync + Send + 'static) 
 
 #[tokio::main]
 async fn main() {
-    run_test("submit and checkout", || {
-        let data_dir = std::path::Path::new(DATA_DIR);
-        setup_repository();
+    let args = flags::parse_flags!();
 
-        // We've submitted a change in the previous step, so the repo should be at 2
-        let d = src_lib::Src::new(data_dir.to_owned()).expect("failed to initialize src!");
-        let client = d.get_client("localhost:44959").unwrap();
-        let repo = match client.get_repository(service::GetRepositoryRequest {
-            token: String::new(),
-            owner: "colin".to_string(),
-            name: "test".to_string(),
-            ..Default::default()
-        }) {
-            Ok(r) => r,
-            Err(e) => {
-                eprintln!("failed to checkout: {:?}", e);
-                std::process::exit(1);
-            }
-        };
-        assert_eq!(repo.index, 2);
+    run_test(
+        "submit and checkout",
+        || {
+            let data_dir = std::path::Path::new(DATA_DIR);
+            setup_repository();
 
-        std::fs::create_dir_all("/tmp/src_integration/spaces/z02").unwrap();
-        std::env::set_current_dir("/tmp/src_integration/spaces/z02").unwrap();
-        cli::checkout(
-            data_dir.to_owned(),
-            "my-alias".to_string(),
-            "localhost:44959/colin/test".to_string(),
-        );
-        assert_eq!(
-            &std::fs::read_to_string("/tmp/src_integration/spaces/z02/another_file").unwrap(),
-            "content"
-        );
+            // We've submitted a change in the previous step, so the repo should be at 2
+            let d = src_lib::Src::new(data_dir.to_owned()).expect("failed to initialize src!");
+            let client = d.get_client("localhost:44959").unwrap();
+            let repo = match client.get_repository(service::GetRepositoryRequest {
+                token: String::new(),
+                owner: "colin".to_string(),
+                name: "test".to_string(),
+                ..Default::default()
+            }) {
+                Ok(r) => r,
+                Err(e) => {
+                    eprintln!("failed to checkout: {:?}", e);
+                    std::process::exit(1);
+                }
+            };
+            assert_eq!(repo.index, 2);
 
-        // Now create some further changes on top of that...
-        write_files(
-            std::path::Path::new("/tmp/src_integration/spaces/z02"),
-            "
+            std::fs::create_dir_all("/tmp/src_integration/spaces/z02").unwrap();
+            std::env::set_current_dir("/tmp/src_integration/spaces/z02").unwrap();
+            cli::checkout(
+                data_dir.to_owned(),
+                "my-alias".to_string(),
+                "localhost:44959/colin/test".to_string(),
+            );
+            assert_eq!(
+                &std::fs::read_to_string("/tmp/src_integration/spaces/z02/another_file").unwrap(),
+                "content"
+            );
+
+            // Now create some further changes on top of that...
+            write_files(
+                std::path::Path::new("/tmp/src_integration/spaces/z02"),
+                "
         another_file content2
         dir
          - newfile 1001001
     ",
-        )
-        .unwrap();
-        cli::snapshot(data_dir.to_owned(), "some updates".to_string());
-
-        let s = d.get_latest_snapshot("my-alias").unwrap().unwrap();
-        assert_eq!(s.files.len(), 2);
-        assert_eq!(s.files[0].path, "another_file");
-        assert_eq!(s.files[0].kind, service::DiffKind::Modified);
-        assert_eq!(s.files[1].path, "dir/newfile");
-        assert_eq!(s.files[1].kind, service::DiffKind::Added);
-        assert_eq!(&s.message, "some updates");
-
-        // Delete the directory and observe the diff
-        std::fs::remove_dir_all("/tmp/src_integration/spaces/z02/dir").unwrap();
-
-        // Diff should see new files
-        let resp = d
-            .diff(service::DiffRequest {
-                dir: "/tmp/src_integration/spaces/z02".to_string(),
-                ..Default::default()
-            })
+            )
             .unwrap();
-        assert_eq!(resp.failed, false);
-        assert_eq!(
-            resp.files.iter().map(|f| &f.path).collect::<Vec<_>>(),
-            vec!["another_file", "dir", "dir/zombo.com"]
-        );
-    })
+            cli::snapshot(data_dir.to_owned(), "some updates".to_string());
+
+            let s = d.get_latest_snapshot("my-alias").unwrap().unwrap();
+            assert_eq!(s.files.len(), 2);
+            assert_eq!(s.files[0].path, "another_file");
+            assert_eq!(s.files[0].kind, service::DiffKind::Modified);
+            assert_eq!(s.files[1].path, "dir/newfile");
+            assert_eq!(s.files[1].kind, service::DiffKind::Added);
+            assert_eq!(&s.message, "some updates");
+
+            // Delete the directory and observe the diff
+            std::fs::remove_dir_all("/tmp/src_integration/spaces/z02/dir").unwrap();
+
+            // Diff should see new files
+            let resp = d
+                .diff(service::DiffRequest {
+                    dir: "/tmp/src_integration/spaces/z02".to_string(),
+                    ..Default::default()
+                })
+                .unwrap();
+            assert_eq!(resp.failed, false);
+            assert_eq!(
+                resp.files.iter().map(|f| &f.path).collect::<Vec<_>>(),
+                vec!["another_file", "dir", "dir/zombo.com"]
+            );
+        },
+        &args,
+    )
     .await
     .unwrap();
 
-    run_test("create, delete, revert", || {
-        let data_dir = std::path::Path::new(DATA_DIR);
-        setup_repository();
+    run_test(
+        "create, delete, revert",
+        || {
+            let data_dir = std::path::Path::new(DATA_DIR);
+            setup_repository();
 
-        std::fs::create_dir_all("/tmp/src_integration/spaces/z02").unwrap();
-        std::env::set_current_dir("/tmp/src_integration/spaces/z02").unwrap();
-        cli::checkout(
-            data_dir.to_owned(),
-            "my-alias".to_string(),
-            "localhost:44959/colin/test".to_string(),
-        );
+            std::fs::create_dir_all("/tmp/src_integration/spaces/z02").unwrap();
+            std::env::set_current_dir("/tmp/src_integration/spaces/z02").unwrap();
+            cli::checkout(
+                data_dir.to_owned(),
+                "my-alias".to_string(),
+                "localhost:44959/colin/test".to_string(),
+            );
 
-        // Make sure checkout worked OK
-        assert_eq!(
-            &std::fs::read_to_string("/tmp/src_integration/spaces/z02/another_file").unwrap(),
-            "content"
-        );
+            // Make sure checkout worked OK
+            assert_eq!(
+                &std::fs::read_to_string("/tmp/src_integration/spaces/z02/another_file").unwrap(),
+                "content"
+            );
 
-        // Diff should have no changes
-        let d = src_lib::Src::new(data_dir.to_owned()).expect("failed to initialize src!");
-        let resp = d
-            .diff(service::DiffRequest {
-                dir: "/tmp/src_integration/spaces/z02".to_string(),
-                ..Default::default()
-            })
-            .unwrap();
-        assert_eq!(resp.failed, false);
-        assert_eq!(resp.files.len(), 0);
+            // Diff should have no changes
+            let d = src_lib::Src::new(data_dir.to_owned()).expect("failed to initialize src!");
+            let resp = d
+                .diff(service::DiffRequest {
+                    dir: "/tmp/src_integration/spaces/z02".to_string(),
+                    ..Default::default()
+                })
+                .unwrap();
+            assert_eq!(resp.failed, false);
+            assert_eq!(resp.files.len(), 0);
 
-        // Now create some further changes on top of that...
-        write_files(
-            std::path::Path::new("/tmp/src_integration/spaces/z02"),
-            "
+            // Now create some further changes on top of that...
+            write_files(
+                std::path::Path::new("/tmp/src_integration/spaces/z02"),
+                "
         another_file content2
         dir
          - newfile 1001001
     ",
-        )
-        .unwrap();
-
-        // Diff should see new files
-        let d = src_lib::Src::new(data_dir.to_owned()).expect("failed to initialize src!");
-        let resp = d
-            .diff(service::DiffRequest {
-                dir: "/tmp/src_integration/spaces/z02".to_string(),
-                ..Default::default()
-            })
+            )
             .unwrap();
-        assert_eq!(resp.failed, false);
-        assert_eq!(
-            resp.files.iter().map(|f| &f.path).collect::<Vec<_>>(),
-            vec!["another_file", "dir/newfile",]
-        );
 
-        // Revert changes
-        cli::revert(
-            data_dir.to_owned(),
-            &["another_file".to_string(), "dir/newfile".to_string()],
-        );
+            // Diff should see new files
+            let d = src_lib::Src::new(data_dir.to_owned()).expect("failed to initialize src!");
+            let resp = d
+                .diff(service::DiffRequest {
+                    dir: "/tmp/src_integration/spaces/z02".to_string(),
+                    ..Default::default()
+                })
+                .unwrap();
+            assert_eq!(resp.failed, false);
+            assert_eq!(
+                resp.files.iter().map(|f| &f.path).collect::<Vec<_>>(),
+                vec!["another_file", "dir/newfile",]
+            );
 
-        // No changes after revert
-        let d = src_lib::Src::new(data_dir.to_owned()).expect("failed to initialize src!");
-        let resp = d
-            .diff(service::DiffRequest {
-                dir: "/tmp/src_integration/spaces/z02".to_string(),
-                ..Default::default()
-            })
-            .unwrap();
-        assert_eq!(resp.failed, false);
-        assert_eq!(resp.files.len(), 0);
+            // Revert changes
+            cli::revert(
+                data_dir.to_owned(),
+                &["another_file".to_string(), "dir/newfile".to_string()],
+            );
 
-        // Delete some files
-        std::fs::remove_file("another_file").unwrap();
+            // No changes after revert
+            let d = src_lib::Src::new(data_dir.to_owned()).expect("failed to initialize src!");
+            let resp = d
+                .diff(service::DiffRequest {
+                    dir: "/tmp/src_integration/spaces/z02".to_string(),
+                    ..Default::default()
+                })
+                .unwrap();
+            assert_eq!(resp.failed, false);
+            assert_eq!(resp.files.len(), 0);
 
-        // Deleted file appears in diff as removed
-        let d = src_lib::Src::new(data_dir.to_owned()).expect("failed to initialize src!");
-        let resp = d
-            .diff(service::DiffRequest {
-                dir: "/tmp/src_integration/spaces/z02".to_string(),
-                ..Default::default()
-            })
-            .unwrap();
-        assert_eq!(resp.failed, false);
-        assert_eq!(resp.files.len(), 1);
-        assert_eq!(resp.files[0].path, "another_file");
-        assert_eq!(resp.files[0].kind, service::DiffKind::Removed);
+            // Delete some files
+            std::fs::remove_file("another_file").unwrap();
 
-        // Revert deletion
-        cli::revert(data_dir.to_owned(), &["another_file".to_string()]);
+            // Deleted file appears in diff as removed
+            let d = src_lib::Src::new(data_dir.to_owned()).expect("failed to initialize src!");
+            let resp = d
+                .diff(service::DiffRequest {
+                    dir: "/tmp/src_integration/spaces/z02".to_string(),
+                    ..Default::default()
+                })
+                .unwrap();
+            assert_eq!(resp.failed, false);
+            assert_eq!(resp.files.len(), 1);
+            assert_eq!(resp.files[0].path, "another_file");
+            assert_eq!(resp.files[0].kind, service::DiffKind::Removed);
 
-        // File should be back after revert
-        assert!(std::path::Path::new("/tmp/src_integration/spaces/z02/another_file").exists());
-    })
+            // Revert deletion
+            cli::revert(data_dir.to_owned(), &["another_file".to_string()]);
+
+            // File should be back after revert
+            assert!(std::path::Path::new("/tmp/src_integration/spaces/z02/another_file").exists());
+        },
+        &args,
+    )
     .await
     .unwrap();
 
-    run_test("attach and detach spaces", || {
-        let data_dir = std::path::Path::new(DATA_DIR);
-        setup_repository();
-        setup_repository_2();
+    run_test(
+        "attach and detach spaces",
+        || {
+            let data_dir = std::path::Path::new(DATA_DIR);
+            setup_repository();
+            setup_repository_2();
 
-        std::fs::create_dir_all("/tmp/src_integration/spaces/z02").unwrap();
-        std::env::set_current_dir("/tmp/src_integration/spaces/z02").unwrap();
-        cli::checkout(
-            data_dir.to_owned(),
-            "my-alias".to_string(),
-            "localhost:44959/colin/test".to_string(),
-        );
-        assert_eq!(
-            &std::fs::read_to_string("/tmp/src_integration/spaces/z02/another_file").unwrap(),
-            "content"
-        );
+            std::fs::create_dir_all("/tmp/src_integration/spaces/z02").unwrap();
+            std::env::set_current_dir("/tmp/src_integration/spaces/z02").unwrap();
+            cli::checkout(
+                data_dir.to_owned(),
+                "my-alias".to_string(),
+                "localhost:44959/colin/test".to_string(),
+            );
+            assert_eq!(
+                &std::fs::read_to_string("/tmp/src_integration/spaces/z02/another_file").unwrap(),
+                "content"
+            );
 
-        // Write some more changes to the space before checking out something else
-        write_files(
-            std::path::Path::new("/tmp/src_integration/spaces/z02"),
-            "
+            // Write some more changes to the space before checking out something else
+            write_files(
+                std::path::Path::new("/tmp/src_integration/spaces/z02"),
+                "
         another_file content2
         dir
          - newfile 1001001
     ",
-        )
-        .unwrap();
+            )
+            .unwrap();
 
-        // Checkout another repository. This should snapshot the unsaved changes to my-alias
-        cli::checkout(
-            data_dir.to_owned(),
-            "other-project".to_string(),
-            "localhost:44959/colin/example".to_string(),
-        );
-        assert!(std::path::Path::new("/tmp/src_integration/spaces/z02/main.cc").exists());
-        assert!(!std::path::Path::new("/tmp/src_integration/spaces/z02/another_file").exists());
-        assert!(!std::path::Path::new("/tmp/src_integration/spaces/z02/dir/newfile").exists());
-        assert!(!std::path::Path::new("/tmp/src_integration/spaces/z02/dir").exists());
+            // Checkout another repository. This should snapshot the unsaved changes to my-alias
+            cli::checkout(
+                data_dir.to_owned(),
+                "other-project".to_string(),
+                "localhost:44959/colin/example".to_string(),
+            );
+            assert!(std::path::Path::new("/tmp/src_integration/spaces/z02/main.cc").exists());
+            assert!(!std::path::Path::new("/tmp/src_integration/spaces/z02/another_file").exists());
+            assert!(!std::path::Path::new("/tmp/src_integration/spaces/z02/dir/newfile").exists());
+            assert!(!std::path::Path::new("/tmp/src_integration/spaces/z02/dir").exists());
 
-        // Check out the original one again, this time it should restore the snapshotted changes as well
-        cli::checkout(data_dir.to_owned(), String::new(), "my-alias".to_string());
-        assert!(!std::path::Path::new("/tmp/src_integration/spaces/z02/main.cc").exists());
-        assert!(std::path::Path::new("/tmp/src_integration/spaces/z02/another_file").exists());
-        assert_eq!(
-            &std::fs::read_to_string("/tmp/src_integration/spaces/z02/another_file").unwrap(),
-            "content2"
-        );
-        assert!(std::path::Path::new("/tmp/src_integration/spaces/z02/dir/newfile").exists());
-        assert!(std::path::Path::new("/tmp/src_integration/spaces/z02/dir").exists());
-    })
+            // Check out the original one again, this time it should restore the snapshotted changes as well
+            cli::checkout(data_dir.to_owned(), String::new(), "my-alias".to_string());
+            assert!(!std::path::Path::new("/tmp/src_integration/spaces/z02/main.cc").exists());
+            assert!(std::path::Path::new("/tmp/src_integration/spaces/z02/another_file").exists());
+            assert_eq!(
+                &std::fs::read_to_string("/tmp/src_integration/spaces/z02/another_file").unwrap(),
+                "content2"
+            );
+            assert!(std::path::Path::new("/tmp/src_integration/spaces/z02/dir/newfile").exists());
+            assert!(std::path::Path::new("/tmp/src_integration/spaces/z02/dir").exists());
+        },
+        &args,
+    )
     .await
     .unwrap();
 
-    run_test("sync", || {
-        let data_dir = std::path::Path::new(DATA_DIR);
-        setup_repository();
+    run_test(
+        "sync",
+        || {
+            let data_dir = std::path::Path::new(DATA_DIR);
+            setup_repository();
 
-        // Check out the repository and don't modify it yet
-        std::fs::create_dir_all("/tmp/src_integration/spaces/z03").unwrap();
-        std::env::set_current_dir("/tmp/src_integration/spaces/z03").unwrap();
-        cli::checkout(
-            data_dir.to_owned(),
-            "laggard".to_string(),
-            "localhost:44959/colin/test".to_string(),
-        );
+            // Check out the repository and don't modify it yet
+            std::fs::create_dir_all("/tmp/src_integration/spaces/z03").unwrap();
+            std::env::set_current_dir("/tmp/src_integration/spaces/z03").unwrap();
+            cli::checkout(
+                data_dir.to_owned(),
+                "laggard".to_string(),
+                "localhost:44959/colin/test".to_string(),
+            );
 
-        // Check out in another space, modify and submit
-        std::fs::create_dir_all("/tmp/src_integration/spaces/z02").unwrap();
-        std::env::set_current_dir("/tmp/src_integration/spaces/z02").unwrap();
-        cli::checkout(
-            data_dir.to_owned(),
-            "my-alias".to_string(),
-            "localhost:44959/colin/test".to_string(),
-        );
-        write_files(
-            std::path::Path::new("/tmp/src_integration/spaces/z02"),
-            "
+            write_files(
+                std::path::Path::new("/tmp/src_integration/spaces/z03"),
+                "
+        newf newcontent
+    ",
+            )
+            .unwrap();
+
+            // Check out in another space, modify and submit
+            std::fs::create_dir_all("/tmp/src_integration/spaces/z02").unwrap();
+            std::env::set_current_dir("/tmp/src_integration/spaces/z02").unwrap();
+            cli::checkout(
+                data_dir.to_owned(),
+                "my-alias".to_string(),
+                "localhost:44959/colin/test".to_string(),
+            );
+            write_files(
+                std::path::Path::new("/tmp/src_integration/spaces/z02"),
+                "
         another_file content2
         dir
          - newfile 1001001
     ",
-        )
-        .unwrap();
-        cli::push(data_dir.to_owned(), "small changes".to_string());
-        cli::submit(data_dir.to_owned());
+            )
+            .unwrap();
+            cli::push(data_dir.to_owned(), "small changes".to_string());
+            cli::submit(data_dir.to_owned());
 
-        // Should be submitted as localhost:44959/colin/example/3. Now go back to the old space
-        // and sync.
-        std::env::set_current_dir("/tmp/src_integration/spaces/z03").unwrap();
-        cli::sync(data_dir.to_owned());
+            // Should be submitted as localhost:44959/colin/example/3. Now go back to the old space
+            // and sync.
+            std::env::set_current_dir("/tmp/src_integration/spaces/z03").unwrap();
+            cli::sync(data_dir.to_owned());
 
-        // Should observe modifications to `another_file` and `dir/newfile`
-        assert_eq!(
-            &std::fs::read_to_string("/tmp/src_integration/spaces/z03/another_file").unwrap(),
-            "content2"
-        );
-        assert_eq!(
-            &std::fs::read_to_string("/tmp/src_integration/spaces/z03/dir/newfile").unwrap(),
-            "1001001"
-        );
-    })
+            // Should observe modifications to `another_file` and `dir/newfile`
+            assert_eq!(
+                &std::fs::read_to_string("/tmp/src_integration/spaces/z03/another_file").unwrap(),
+                "content2"
+            );
+            assert_eq!(
+                &std::fs::read_to_string("/tmp/src_integration/spaces/z03/dir/newfile").unwrap(),
+                "1001001"
+            );
+        },
+        &args,
+    )
     .await
     .unwrap();
 }
