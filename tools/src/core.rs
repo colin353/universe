@@ -10,6 +10,8 @@ mod lcs;
 pub mod patience;
 pub mod render;
 
+pub use conflict::{merge, MergeResult};
+
 pub fn timestamp_usec() -> u64 {
     let now = std::time::SystemTime::now();
     let since_epoch = now.duration_since(std::time::UNIX_EPOCH).unwrap();
@@ -41,6 +43,16 @@ pub fn compress(data: &[u8]) -> Vec<u8> {
     let (output, result) = encoder.finish();
     result.expect("writing to encoder should be infallible!");
     output
+}
+
+pub fn data_length(diff: &service::ByteDiff) -> std::io::Result<usize> {
+    Ok(match diff.compression {
+        service::CompressionKind::None => diff.data.len(),
+        service::CompressionKind::LZ4 => {
+            let decoder = lz4::Decoder::new(diff.data.as_slice())?;
+            decoder.bytes().count()
+        }
+    })
 }
 
 pub fn decompress(method: service::CompressionKind, data: &[u8]) -> std::io::Result<Vec<u8>> {

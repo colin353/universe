@@ -669,7 +669,17 @@ pub fn sync(data_dir: std::path::PathBuf) {
             std::process::exit(1);
         }
     };
-    d.sync(&alias, false, &[]);
+
+    match d.sync(&alias, false, &[]).expect("failed to sync") {
+        Ok(basis) => println!("synced to {}", core::fmt_basis(basis.as_view())),
+        Err(conflicts) => {
+            println!("unable to sync due to conflicts:");
+            for (conflict, _, _) in conflicts {
+                println!(" - {conflict}");
+            }
+            std::process::exit(1);
+        }
+    }
 }
 
 pub fn spaces(data_dir: std::path::PathBuf) {

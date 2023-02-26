@@ -338,8 +338,7 @@ impl Src {
         alias: &str,
         dry_run: bool,
         conflict_resolutions: &[(String, String)],
-    ) -> std::io::Result<Result<service::Basis, Vec<(String, service::FileDiff, service::FileDiff)>>>
-    {
+    ) -> std::io::Result<Result<service::Basis, Vec<(String, core::MergeResult)>>> {
         let mut space = match self.get_change_by_alias(alias) {
             Some(c) => c,
             _ => {
@@ -422,7 +421,14 @@ impl Src {
                     match joined.next() {
                         (Some(local), Some(remote)) => {
                             // Possible conflict? TODO: auto-resolve some conflicts
-                            conflicts.push((local.path.clone(), local, remote));
+                            let merge_result = core::merge(original, &remote, &local);
+
+                            if let core::MergeResult::Merged(m) = merge_result {
+                                // Apply the merged result to the filesystem??
+                            }
+
+                            // Emit the conflict??
+                            conflicts.push(path);
                         }
                         (Some(local), None) => {
                             merged_changes.push(local);

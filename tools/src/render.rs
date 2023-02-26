@@ -84,7 +84,11 @@ impl Snippet {
             crate::decompress(diff.compression, &diff.data).expect("failed to decompress!");
 
         let diff_starts_with_newline = *diff_data.get(0).unwrap_or(&0x0a) == 0x0a;
-        let diff_ends_with_newline = *diff_data.get(diff_data.len() - 1).unwrap_or(&0x0a) == 0x0a;
+        let diff_ends_with_newline = if diff_data.is_empty() {
+            false
+        } else {
+            *diff_data.get(diff_data.len() - 1).unwrap_or(&0x0a) == 0x0a
+        };
         let preceding_byte_is_newline =
             diff.start == 0 || prev_data.get((diff.start - 1) as usize) == Some(&0x0a);
         let following_byte_is_newline =

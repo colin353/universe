@@ -108,6 +108,35 @@ fn setup_repository() {
     cli::submit(data_dir.to_owned());
 }
 
+fn setup_repository_3() {
+    let data_dir = std::path::Path::new(DATA_DIR);
+    std::fs::create_dir_all("/tmp/src_integration/spaces/x01").unwrap();
+    std::env::set_current_dir("/tmp/src_integration/spaces/x01").unwrap();
+    cli::create(
+        data_dir.to_owned(),
+        "localhost:44959/colin/program".to_string(),
+    );
+    cli::checkout(
+        data_dir.to_owned(),
+        String::new(),
+        "localhost:44959/colin/program".to_string(),
+    );
+    std::fs::write(
+        "/tmp/src_integration/spaces/x01/main.rs",
+        r#"
+fn main() {
+    // Some content
+    println!("hello, world!");
+}
+"#,
+    )
+    .unwrap();
+    cli::push(data_dir.to_owned(), "initial code".to_string());
+
+    // Should be submitted as localhost:44959/colin/example/2
+    cli::submit(data_dir.to_owned());
+}
+
 fn setup_repository_2() {
     let data_dir = std::path::Path::new(DATA_DIR);
     std::fs::create_dir_all("/tmp/src_integration/spaces/y01").unwrap();
@@ -461,6 +490,67 @@ async fn main() {
                 &std::fs::read_to_string("/tmp/src_integration/spaces/z03/dir/newfile").unwrap(),
                 "1001001"
             );
+        },
+        &args,
+    )
+    .await
+    .unwrap();
+
+    run_test(
+        "sync with conflicts",
+        || {
+            let data_dir = std::path::Path::new(DATA_DIR);
+            setup_repository_3();
+
+            // Check out the repository and change it
+            std::fs::create_dir_all("/tmp/src_integration/spaces/z03").unwrap();
+            std::env::set_current_dir("/tmp/src_integration/spaces/z03").unwrap();
+            cli::checkout(
+                data_dir.to_owned(),
+                "version_a".to_string(),
+                "localhost:44959/colin/program".to_string(),
+            );
+
+            std::fs::write(
+                "/tmp/src_integration/spaces/z03/main.rs",
+                r#"
+fn main() {
+    // Some content that I changed
+    println!("hello, world!");
+}
+"#,
+            )
+            .unwrap();
+
+            // Check out in another space, modify and submit
+            std::fs::create_dir_all("/tmp/src_integration/spaces/z02").unwrap();
+            std::env::set_current_dir("/tmp/src_integration/spaces/z02").unwrap();
+            cli::checkout(
+                data_dir.to_owned(),
+                "version_b".to_string(),
+                "localhost:44959/colin/program".to_string(),
+            );
+
+            std::fs::write(
+                "/tmp/src_integration/spaces/z02/main.rs",
+                r#"
+fn main() {
+    // Some content which I have modified
+    println!("hello, world!");
+}
+"#,
+            )
+            .unwrap();
+            cli::push(data_dir.to_owned(), "small changes".to_string());
+            cli::submit(data_dir.to_owned());
+
+            // Should be submitted as localhost:44959/colin/program/3. Now go back to the old space
+            // and sync.
+            std::env::set_current_dir("/tmp/src_integration/spaces/z03").unwrap();
+            cli::sync(data_dir.to_owned());
+
+            // Should fail due to conflicts?
+            assert!(false);
         },
         &args,
     )
