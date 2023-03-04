@@ -10,7 +10,7 @@ mod lcs;
 pub mod patience;
 pub mod render;
 
-pub use conflict::{merge, MergeResult};
+pub use conflict::{merge, render_conflict, ConflictResolutionOverride, MergeResult};
 
 pub fn timestamp_usec() -> u64 {
     let now = std::time::SystemTime::now();

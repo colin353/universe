@@ -2,6 +2,13 @@ use crate::render::{ConflictResolution, Snippet};
 use service::DiffKind;
 
 #[derive(Debug, PartialEq)]
+pub enum ConflictResolutionOverride {
+    Remote,
+    Local,
+    Merged(Vec<u8>),
+}
+
+#[derive(Debug, PartialEq)]
 pub enum MergeResult {
     Merged(service::FileDiff),
     Conflict(Vec<u8>, Vec<(service::ByteDiff, service::ByteDiff)>),
@@ -319,6 +326,36 @@ fn deconflict_zones(
     }
 
     Ok((non_conflicting_changes, conflicting_changes))
+}
+
+pub fn render_conflict(
+    original: &[u8],
+    conflicts: &[(service::ByteDiff, service::ByteDiff)],
+    left_label: &str,
+    right_label: &str,
+) -> Vec<u8> {
+    let mut pos: usize = 0;
+    let mut out = Vec::new();
+    for (left, right) in conflicts {
+        assert_eq!(left.start, right.start);
+        assert_eq!(left.end, right.end);
+
+        if left.start as usize > pos {
+            out.extend(&original[pos..left.start as usize]);
+        }
+        out.extend(format!("<<<<<<< {left_label}\n").as_bytes());
+        out.extend(&crate::decompress(left.compression, &left.data).unwrap());
+        out.extend("=======\n".as_bytes());
+        out.extend(&crate::decompress(right.compression, &right.data).unwrap());
+        out.extend(format!(">>>>>>> {right_label}\n").as_bytes());
+
+        pos = left.end as usize;
+    }
+
+    if pos < original.len() {
+        out.extend(&original[pos..]);
+    }
+    out
 }
 
 #[cfg(test)]

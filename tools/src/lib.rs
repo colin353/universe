@@ -337,7 +337,7 @@ impl Src {
         &self,
         alias: &str,
         dry_run: bool,
-        conflict_resolutions: &[(String, String)],
+        conflict_resolutions: &[(String, core::ConflictResolutionOverride)],
     ) -> std::io::Result<Result<service::Basis, Vec<(String, core::MergeResult)>>> {
         let mut space = match self.get_change_by_alias(alias) {
             Some(c) => c,
@@ -366,6 +366,8 @@ impl Src {
         if repo.index == space.basis.index {
             return Ok(Ok(space.basis.clone()));
         }
+
+        let original_metadata = self.get_metadata(space.basis.as_view())?;
 
         let mut new_basis = space.basis.clone();
         new_basis.index = repo.index;
@@ -420,15 +422,19 @@ impl Src {
                 loop {
                     match joined.next() {
                         (Some(local), Some(remote)) => {
-                            // Possible conflict? TODO: auto-resolve some conflicts
-                            let merge_result = core::merge(original, &remote, &local);
+                            let original = original_metadata
+                                .get(&local.path)
+                                .and_then(|f| self.get_blob(f.get_sha()))
+                                .unwrap_or_else(Vec::new);
+
+                            // Possible conflict? Try to auto-resolve/reduce conflicts
+                            let merge_result = core::merge(&original, &remote, &local);
 
                             if let core::MergeResult::Merged(m) = merge_result {
-                                // Apply the merged result to the filesystem??
+                                merged_changes.push(m);
+                            } else {
+                                conflicts.push((local.path, merge_result));
                             }
-
-                            // Emit the conflict??
-                            conflicts.push(path);
                         }
                         (Some(local), None) => {
                             merged_changes.push(local);
@@ -475,7 +481,7 @@ impl Src {
             ));
         }
 
-        return Ok(Ok((new_basis)));
+        return Ok(Ok(new_basis));
     }
 }
 

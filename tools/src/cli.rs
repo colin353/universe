@@ -1,4 +1,5 @@
 use rand::Rng;
+use std::io::Write;
 
 mod termui;
 
@@ -670,14 +671,125 @@ pub fn sync(data_dir: std::path::PathBuf) {
         }
     };
 
-    match d.sync(&alias, false, &[]).expect("failed to sync") {
-        Ok(basis) => println!("synced to {}", core::fmt_basis(basis.as_view())),
-        Err(conflicts) => {
-            println!("unable to sync due to conflicts:");
-            for (conflict, _, _) in conflicts {
-                println!(" - {conflict}");
+    let mut conflict_resolutions = Vec::new();
+    loop {
+        match d
+            .sync(&alias, false, &conflict_resolutions)
+            .expect("failed to sync")
+        {
+            Ok(basis) => {
+                println!("synced to {}", core::fmt_basis(basis.as_view()));
+                break;
             }
-            std::process::exit(1);
+            Err(conflicts) => {
+                println!("unable to sync due to conflicts:");
+                let mut has_errors = false;
+                for (path, conflict) in &conflicts {
+                    match &conflict {
+                        core::MergeResult::Conflict(_, _) => {
+                            println!(" conflict: {path}");
+                        }
+                        core::MergeResult::Error(e) => {
+                            has_errors = true;
+                            println!(" error:    {path}\n\n{e}");
+                        }
+                        core::MergeResult::IrreconcilableStateChange(_, _) => {
+                            println!(" conflict: {path}");
+                        }
+                        _ => continue,
+                    }
+                }
+                if has_errors {
+                    std::process::exit(1);
+                }
+
+                // Interactive conflict resolution
+                println!("\ninteractive conflict resolution:");
+                for (path, conflict) in &conflicts {
+                    match &conflict {
+                        core::MergeResult::Conflict(content, file_conflicts) => {
+                            println!("conflict: {path}");
+                            println!("use remote (r), use local (l), manually edit (e): ");
+                            let mut input = String::new();
+                            std::io::stdin().read_line(&mut input).unwrap();
+
+                            if input.trim() == "e" {
+                                let filename = format!(
+                                    "/tmp/conflict-{}",
+                                    std::path::Path::new(&path)
+                                        .file_name()
+                                        .expect("must have filename")
+                                        .to_str()
+                                        .expect("must be a valid str")
+                                );
+                                {
+                                    let marked_conflict_content = core::render_conflict(
+                                        content,
+                                        file_conflicts,
+                                        "local",
+                                        "remote",
+                                    );
+                                    let mut file = std::fs::File::create(&filename).unwrap();
+                                    file.write_all(&marked_conflict_content).unwrap();
+                                }
+                                let editor = match std::env::var("EDITOR") {
+                                    Ok(x) => x,
+                                    Err(_) => String::from("nano"),
+                                };
+                                std::process::Command::new(editor)
+                                    .arg(&filename)
+                                    .stdout(std::process::Stdio::inherit())
+                                    .stdin(std::process::Stdio::inherit())
+                                    .output()
+                                    .unwrap();
+
+                                // TODO: check for change markers??
+                                let merged_content = std::fs::read(&filename).unwrap();
+                                conflict_resolutions.push((
+                                    path.to_owned(),
+                                    core::ConflictResolutionOverride::Merged(merged_content),
+                                ));
+                            } else if input.trim() == "r" {
+                                conflict_resolutions.push((
+                                    path.to_owned(),
+                                    core::ConflictResolutionOverride::Remote,
+                                ));
+                            } else if input.trim() == "l" {
+                                conflict_resolutions.push((
+                                    path.to_owned(),
+                                    core::ConflictResolutionOverride::Local,
+                                ));
+                            } else {
+                                continue;
+                            }
+                        }
+                        core::MergeResult::IrreconcilableStateChange(remote, local) => {
+                            println!("conflict: {path}");
+                            println!("remote was {remote:?}, local was {local:?}");
+                            println!("use remote (r), use local (l): ");
+                            let mut input = String::new();
+                            std::io::stdin().read_line(&mut input).unwrap();
+
+                            if input.trim() == "l" {
+                                conflict_resolutions.push((
+                                    path.to_owned(),
+                                    core::ConflictResolutionOverride::Local,
+                                ));
+                            } else if input.trim() == "r" {
+                                conflict_resolutions.push((
+                                    path.to_owned(),
+                                    core::ConflictResolutionOverride::Remote,
+                                ));
+                            } else {
+                                continue;
+                            }
+                        }
+                        _ => continue,
+                    }
+                }
+
+                std::process::exit(1);
+            }
         }
     }
 }
