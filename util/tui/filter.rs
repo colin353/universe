@@ -106,6 +106,10 @@ impl tui::AppController<FilterState, KeyboardEvent> for Filter {
         }
     }
 
+    fn clean_up(&self, term: &mut tui::Terminal) {
+        term.clean_up();
+    }
+
     fn render(
         &mut self,
         t: &mut tui::Terminal,

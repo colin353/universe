@@ -3,7 +3,7 @@ use std::io::Read;
 use raw_tty::{GuardMode, IntoRawMode};
 use tui::{Component, Transition};
 
-fn main() {
+fn main() -> Result<(), &'static str> {
     let mut term = tui::Terminal::new();
     let prompt = flags::define_flag!("prompt", String::new(), "The prompt to show");
     flags::parse_flags!(prompt);
@@ -30,22 +30,23 @@ fn main() {
     let stream = tui::KeyboardEventStream::new(&mut tty_input);
     for event in stream {
         match app.handle_event(event) {
-            Transition::Terminate(s) | Transition::Finished(s) => {
+            Transition::Terminate(s) => return Err("no item selected"),
+            Transition::Finished(s) => {
                 let length = match s.items {
                     filter::ItemsState::All => {
                         if choices.len() > s.scroll + s.selected {
                             println!("{}", choices[s.scroll + s.selected]);
-                            std::process::exit(0);
+                            return Ok(())
                         } else {
-                            std::process::exit(1);
+                            return Err("no item selected")
                         }
                     }
                     filter::ItemsState::Subset(subset) => {
                         if subset.len() > s.scroll + s.selected {
                             println!("{}", choices[subset[s.scroll + s.selected]]);
-                            std::process::exit(0);
+                            return Ok(())
                         } else {
-                            std::process::exit(1);
+                            return Err("no item selected")
                         }
                     }
                 };
@@ -53,4 +54,6 @@ fn main() {
             _ => continue,
         }
     }
+
+    Err("unreachable state")
 }

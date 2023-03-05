@@ -99,13 +99,13 @@ impl tui::AppController<SelectionState, char> for App {
             '\x03' | '\x04' => Transition::Terminate((*state).clone()),
             '\n' | '\x0d' => Transition::Finished((*state).clone()),
             _ => {
-                Transition::Nothing,
+                Transition::Nothing
             }
         }
     }
 
     fn initial_state(&self) -> SelectionState {
-        SelectionState { selected: 0 }
+        SelectionState { selected: 0, focused: false }
     }
 }
 

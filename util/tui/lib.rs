@@ -76,7 +76,7 @@ impl Terminal {
         unsafe {
             let mut winsize: libc::winsize = std::mem::zeroed();
 
-            libc::ioctl(libc::STDOUT_FILENO, libc::TIOCGWINSZ.into(), &mut winsize);
+            libc::ioctl(libc::STDERR_FILENO, libc::TIOCGWINSZ.into(), &mut winsize);
             if winsize.ws_row > 0 && winsize.ws_col > 0 {
                 self.width = winsize.ws_col as usize;
                 self.height = winsize.ws_row as usize;
@@ -152,6 +152,11 @@ impl Terminal {
 
     pub fn flush(&self) {
         std::io::stdout().flush().unwrap()
+    }
+
+    pub fn clean_up(&mut self) {
+        self.set_normal();
+        self.show_cursor();
     }
 
     pub fn print(&mut self, content: &str) {
