@@ -337,7 +337,7 @@ impl Src {
         &self,
         alias: &str,
         dry_run: bool,
-        conflict_resolutions: &[(String, core::ConflictResolutionOverride)],
+        conflict_resolutions: &std::collections::HashMap<String, core::ConflictResolutionOverride>,
     ) -> std::io::Result<Result<service::Basis, Vec<(String, core::MergeResult)>>> {
         let mut space = match self.get_change_by_alias(alias) {
             Some(c) => c,
@@ -433,7 +433,32 @@ impl Src {
                             if let core::MergeResult::Merged(m) = merge_result {
                                 merged_changes.push(m);
                             } else {
-                                conflicts.push((local.path, merge_result));
+                                if let Some(resolution) = conflict_resolutions.get(&local.path) {
+                                    match resolution {
+                                        core::ConflictResolutionOverride::Remote => {
+                                            merged_changes.push(remote);
+                                        }
+                                        core::ConflictResolutionOverride::Local => {
+                                            merged_changes.push(local);
+                                        }
+                                        core::ConflictResolutionOverride::Merged(merged) => {
+                                            merged_changes.push(service::FileDiff {
+                                                path: local.path,
+                                                kind: local.kind,
+                                                is_dir: false,
+                                                differences: vec![service::ByteDiff {
+                                                    start: 0,
+                                                    end: original.len() as u32,
+                                                    kind: service::DiffKind::Modified,
+                                                    data: merged.clone(),
+                                                    compression: service::CompressionKind::None,
+                                                }],
+                                            });
+                                        }
+                                    }
+                                } else {
+                                    conflicts.push((local.path, merge_result));
+                                }
                             }
                         }
                         (Some(local), None) => {

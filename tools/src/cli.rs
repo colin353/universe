@@ -654,7 +654,10 @@ pub fn revert(data_dir: std::path::PathBuf, paths: &[String]) {
     }
 }
 
-pub fn sync(data_dir: std::path::PathBuf) {
+pub fn sync(
+    data_dir: std::path::PathBuf,
+    mut conflict_resolutions: std::collections::HashMap<String, core::ConflictResolutionOverride>,
+) {
     let d = src_lib::Src::new(data_dir).expect("failed to initialize src!");
     let cwd = match std::env::current_dir() {
         Ok(d) => d,
@@ -671,7 +674,6 @@ pub fn sync(data_dir: std::path::PathBuf) {
         }
     };
 
-    let mut conflict_resolutions = Vec::new();
     loop {
         match d
             .sync(&alias, false, &conflict_resolutions)
@@ -708,6 +710,8 @@ pub fn sync(data_dir: std::path::PathBuf) {
                 for (path, conflict) in &conflicts {
                     match &conflict {
                         core::MergeResult::Conflict(content, file_conflicts) => {
+                            conflict_resolutions.clear();
+
                             println!("conflict: {path}");
                             println!("use remote (r), use local (l), manually edit (e): ");
                             let mut input = String::new();
@@ -745,20 +749,20 @@ pub fn sync(data_dir: std::path::PathBuf) {
 
                                 // TODO: check for change markers??
                                 let merged_content = std::fs::read(&filename).unwrap();
-                                conflict_resolutions.push((
+                                conflict_resolutions.insert(
                                     path.to_owned(),
                                     core::ConflictResolutionOverride::Merged(merged_content),
-                                ));
+                                );
                             } else if input.trim() == "r" {
-                                conflict_resolutions.push((
+                                conflict_resolutions.insert(
                                     path.to_owned(),
                                     core::ConflictResolutionOverride::Remote,
-                                ));
+                                );
                             } else if input.trim() == "l" {
-                                conflict_resolutions.push((
+                                conflict_resolutions.insert(
                                     path.to_owned(),
                                     core::ConflictResolutionOverride::Local,
-                                ));
+                                );
                             } else {
                                 continue;
                             }
@@ -771,15 +775,15 @@ pub fn sync(data_dir: std::path::PathBuf) {
                             std::io::stdin().read_line(&mut input).unwrap();
 
                             if input.trim() == "l" {
-                                conflict_resolutions.push((
+                                conflict_resolutions.insert(
                                     path.to_owned(),
                                     core::ConflictResolutionOverride::Local,
-                                ));
+                                );
                             } else if input.trim() == "r" {
-                                conflict_resolutions.push((
+                                conflict_resolutions.insert(
                                     path.to_owned(),
                                     core::ConflictResolutionOverride::Remote,
-                                ));
+                                );
                             } else {
                                 continue;
                             }
@@ -787,8 +791,6 @@ pub fn sync(data_dir: std::path::PathBuf) {
                         _ => continue,
                     }
                 }
-
-                std::process::exit(1);
             }
         }
     }

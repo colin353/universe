@@ -479,7 +479,7 @@ async fn main() {
             // Should be submitted as localhost:44959/colin/example/3. Now go back to the old space
             // and sync.
             std::env::set_current_dir("/tmp/src_integration/spaces/z03").unwrap();
-            cli::sync(data_dir.to_owned());
+            cli::sync(data_dir.to_owned(), std::collections::HashMap::new());
 
             // Should observe modifications to `another_file` and `dir/newfile`
             assert_eq!(
@@ -547,10 +547,20 @@ fn main() {
             // Should be submitted as localhost:44959/colin/program/3. Now go back to the old space
             // and sync.
             std::env::set_current_dir("/tmp/src_integration/spaces/z03").unwrap();
-            cli::sync(data_dir.to_owned());
 
-            // Should fail due to conflicts?
-            assert!(false);
+            let mut resolutions = std::collections::HashMap::new();
+            let data = "my resolution".as_bytes().to_owned();
+            resolutions.insert(
+                "main.rs".to_string(),
+                core::ConflictResolutionOverride::Merged(data),
+            );
+
+            cli::sync(data_dir.to_owned(), resolutions);
+
+            assert_eq!(
+                &std::fs::read_to_string("/tmp/src_integration/spaces/z03/main.rs").unwrap(),
+                "my resolution"
+            );
         },
         &args,
     )

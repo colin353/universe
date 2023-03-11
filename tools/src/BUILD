@@ -124,5 +124,6 @@ rust_binary(
       "//third_party:tokio",
       "//util/bus",
       "//util/bus:bus_rpc",
+      ":core",
     ]
 )
