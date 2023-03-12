@@ -35,11 +35,12 @@ impl AuthPlugin for FakeAuthPlugin {
 pub struct AuthServicePlugin {
     client: auth_client::AuthClient,
     host: String,
+    port: u16,
 }
 
 impl AuthServicePlugin {
-    pub fn new(client: auth_client::AuthClient, host: String) -> Self {
-        Self { client, host: host }
+    pub fn new(client: auth_client::AuthClient, host: String, port: u16) -> Self {
+        Self { client, host, port }
     }
 }
 
@@ -59,6 +60,7 @@ impl AuthPlugin for AuthServicePlugin {
         service::DiscoverAuthResponse {
             auth_kind: service::AuthKind::AuthService,
             auth_service_host: self.host.clone(),
+            auth_service_port: self.port,
         }
     }
 }

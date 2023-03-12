@@ -1,7 +1,12 @@
+use auth_client::AuthServer;
 use rand::Rng;
+use std::io::BufRead;
 use std::io::Write;
 
 mod termui;
+
+#[macro_use]
+extern crate lazy_static;
 
 const DEFAULT_CHANGE_DESCRIPTION: &str = "
 
@@ -18,16 +23,74 @@ pub fn usage() {
 }
 
 lazy_static! {
-    static ref AUTH_CONTEXT: RwLock<std::collections::HashMap<String, String>> =
-        RwLock::new(std::collections::HashMap::new());
+    static ref AUTH_CONTEXT: std::sync::RwLock<std::collections::HashMap<String, String>> =
+        std::sync::RwLock::new(std::collections::HashMap::new());
 }
 
-pub fn get_identity(client: &service::SrcServerClient, host: &str) -> String {
+pub fn clear_identity(d: &src_lib::Src, host: &str) {
+    AUTH_CONTEXT.write().unwrap().remove(host);
+    d.clear_identity(host);
+}
+
+pub fn get_identity(d: &src_lib::Src, host: &str) -> String {
     if let Some(token) = AUTH_CONTEXT.read().unwrap().get(host) {
         return token.to_string();
     }
 
-    // TODO: No identity exists for this... try to get one
+    if let Some(token) = d.get_identity(host) {
+        AUTH_CONTEXT
+            .write()
+            .unwrap()
+            .insert(host.to_string(), token.clone());
+        return token;
+    }
+
+    let client = d.get_client(host).expect("failed to construct client");
+    let response = client
+        .discover_auth(service::DiscoverAuthRequest {})
+        .expect("failed to discover auth");
+    let token = match response.auth_kind {
+        service::AuthKind::None => {
+            // Just use the currently logged in user's username as the token
+            match std::env::var("USER") {
+                Ok(u) => u.to_string(),
+                Err(_) => String::from("anonymous"),
+            }
+        }
+        service::AuthKind::AuthService => {
+            let ac = auth_client::AuthClient::new_tls(
+                &response.auth_service_host,
+                response.auth_service_port,
+            );
+            loop {
+                let mut challenge = ac.login();
+                eprintln!(
+                    "Visit this URL: \n\n{}\n\nthen press enter when you've logged in.",
+                    challenge.get_url()
+                );
+
+                std::io::stdout().flush();
+                for line in std::io::stdin().lock().lines() {
+                    break;
+                }
+
+                let response = ac.authenticate(challenge.get_token().to_string());
+                if response.get_success() {
+                    break challenge.take_token();
+                }
+
+                eprintln!("That didn't work. Let's try again.");
+            }
+        }
+    };
+
+    d.set_identity(host, &token)
+        .expect("failed to set identity");
+    AUTH_CONTEXT
+        .write()
+        .unwrap()
+        .insert(host.to_string(), token.clone());
+    token
 }
 
 pub fn create(data_dir: std::path::PathBuf, basis: String) {
@@ -44,8 +107,10 @@ pub fn create(data_dir: std::path::PathBuf, basis: String) {
         .get_client(&basis.host)
         .expect("failed to construct client");
 
+    let token = get_identity(&d, &basis.host);
+
     let resp = match client.create(service::CreateRequest {
-        token: String::new(),
+        token,
         name: basis.name.clone(),
     }) {
         Ok(r) => r,
@@ -94,11 +159,13 @@ pub fn checkout(data_dir: std::path::PathBuf, name: String, arg0: String) {
                 alias = basis.name.clone();
             }
 
+            let token = get_identity(&d, &basis.host);
+
             // If the basis index is zero, we should checkout the latest change.
             if basis.index == 0 {
                 let client = d.get_client(&basis.host).unwrap();
                 let repo = match client.get_repository(service::GetRepositoryRequest {
-                    token: String::new(),
+                    token,
                     owner: basis.owner.clone(),
                     name: basis.name.clone(),
                     ..Default::default()
@@ -527,8 +594,9 @@ pub fn push(data_dir: std::path::PathBuf, description: String) {
         .get_client(&space.basis.host)
         .expect("failed to construct client");
 
+    let token = get_identity(&d, &space.basis.host);
     let resp = match client.update_change(service::UpdateChangeRequest {
-        token: String::new(),
+        token,
         change: change,
         snapshot,
     }) {
@@ -597,8 +665,9 @@ pub fn submit(data_dir: std::path::PathBuf) {
     let client = d
         .get_client(&space.basis.host)
         .expect("failed to construct client");
+    let token = get_identity(&d, &space.basis.host);
     let resp = match client.submit(service::SubmitRequest {
-        token: String::new(),
+        token,
         repo_owner: space.basis.owner.clone(),
         repo_name: space.basis.name.clone(),
         change_id: space.change_id,
@@ -920,8 +989,10 @@ pub fn clean(data_dir: std::path::PathBuf) {
         let client = d
             .get_client(&space.basis.host)
             .expect("failed to construct client");
+
+        let token = get_identity(&d, &space.basis.host);
         let resp = match client.get_change(service::GetChangeRequest {
-            token: String::new(),
+            token,
             repo_owner: space.basis.owner.clone(),
             repo_name: space.basis.name.clone(),
             id: space.change_id,
@@ -985,4 +1056,16 @@ pub fn clean(data_dir: std::path::PathBuf) {
     if already_submitted == 0 && empty_no_changes == 0 && alias_desync == 0 {
         println!("nothing to do");
     }
+}
+
+pub fn login(data_dir: std::path::PathBuf, host: &str, token: Option<&str>) {
+    let d = src_lib::Src::new(data_dir).expect("failed to initialize src!");
+    clear_identity(&d, host);
+
+    if let Some(t) = token {
+        d.set_identity(host, t);
+    } else {
+        get_identity(&d, host);
+    }
+    println!("OK");
 }

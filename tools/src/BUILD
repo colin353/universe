@@ -109,8 +109,10 @@ rust_library(
         ":src_lib",
         "//util/tui",
         "//util/tui:filter",
+        "//auth:auth_client",
         "//third_party/raw_tty",
         "//third_party:rand",
+        "//third_party:lazy_static",
     ]
 )
 

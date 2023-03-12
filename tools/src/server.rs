@@ -37,7 +37,9 @@ async fn main() {
     } else {
         let client = auth_client::AuthClient::new(&auth_host, auth_port.value());
         Arc::new(server_service::auth::AuthServicePlugin::new(
-            client, auth_host,
+            client,
+            auth_host,
+            auth_port.value(),
         ))
     };
 

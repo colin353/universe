@@ -222,6 +222,7 @@ enum AuthKind {
 message DiscoverAuthResponse {
     auth_kind: AuthKind = 0
     auth_service_host: string = 1
+    auth_service_port: u16 = 2
 }
 
 message CheckoutResponse {

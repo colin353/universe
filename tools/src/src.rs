@@ -75,7 +75,7 @@ fn main() {
         "jump" => jump(data_dir, name.value()),
         "status" => status(data_dir),
         "push" => push(data_dir, msg.value()),
-        "sync" => sync(data_dir),
+        "sync" => sync(data_dir, std::collections::HashMap::new()),
         "revert" => {
             if args.len() < 2 {
                 eprintln!("usage: src revert <filename> [<filename2>, ...]");
@@ -85,6 +85,12 @@ fn main() {
         }
         "spaces" => spaces(data_dir),
         "clean" => clean(data_dir),
+        "login" => {
+            if args.len() != 2 {
+                eprintln!("usage: src login <host>");
+            }
+            login(data_dir, &args[1], args.get(2).map(|s| s.as_str()))
+        }
         _ => usage(),
     }
 }

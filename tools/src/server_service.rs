@@ -1210,7 +1210,12 @@ mod tests {
         let path = std::path::PathBuf::from("/tmp/asdf");
         std::fs::remove_dir_all(&path);
         std::fs::create_dir_all(&path);
-        SrcServer::new(path, "localhost:4959".to_string()).unwrap()
+        SrcServer::new(
+            path,
+            "localhost:4959".to_string(),
+            std::sync::Arc::new(auth::FakeAuthPlugin::new()),
+        )
+        .unwrap()
     }
 
     fn full_setup() -> SrcServer {

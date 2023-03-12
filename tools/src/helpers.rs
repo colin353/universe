@@ -35,6 +35,7 @@ impl crate::Src {
         std::fs::create_dir_all(root.join("changes").join("by_alias")).ok();
         std::fs::create_dir_all(root.join("changes").join("by_dir")).ok();
         std::fs::create_dir_all(root.join("metadata")).ok();
+        std::fs::create_dir_all(root.join("identity")).ok();
         Ok(())
     }
 
@@ -138,6 +139,19 @@ impl crate::Src {
             idx += 1;
         }
         alias
+    }
+
+    pub fn set_identity(&self, host: &str, token: &str) -> std::io::Result<()> {
+        std::fs::write(self.root.join("identity").join(host), token.as_bytes())?;
+        Ok(())
+    }
+
+    pub fn get_identity(&self, host: &str) -> Option<String> {
+        std::fs::read_to_string(self.root.join("identity").join(host)).ok()
+    }
+
+    pub fn clear_identity(&self, host: &str) {
+        std::fs::remove_file(self.root.join("identity").join(host)).ok();
     }
 
     pub(crate) fn validate_basis(&self, basis: service::BasisView) -> std::io::Result<u64> {
