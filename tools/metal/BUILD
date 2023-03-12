@@ -5,10 +5,16 @@ load("@rules_rust//rust:defs.bzl", "rust_test")
 load("@rules_rust//rust:defs.bzl", "rust_library")
 load("@rules_rust//proto:proto.bzl", "rust_proto_library")
 load("@rules_rust//proto:proto.bzl", "rust_grpc_library")
+load("//util/bus:bus.bzl", "rust_bus_library")
 
 proto_library(
     name = "metal_proto",
     srcs = ["metal.proto"],
+)
+
+rust_bus_library(
+    name = "metal_bus",
+    srcs = ["metal.bus"],
 )
 
 rust_grpc_library(

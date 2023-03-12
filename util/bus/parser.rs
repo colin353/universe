@@ -50,6 +50,10 @@ pub struct EnumDefinition {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum FieldType {
+    Ti64,
+    Ti32,
+    Ti16,
+    Ti8,
     Tu64,
     Tu32,
     Tu16,
@@ -66,6 +70,10 @@ pub enum FieldType {
 impl FieldType {
     fn from(s: &str) -> Self {
         match s {
+            "i64" => Self::Ti64,
+            "i32" => Self::Ti32,
+            "i16" => Self::Ti16,
+            "i8" => Self::Ti8,
             "u64" => Self::Tu64,
             "u32" => Self::Tu32,
             "u16" => Self::Tu16,

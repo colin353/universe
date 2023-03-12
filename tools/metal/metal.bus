@@ -1,0 +1,143 @@
+message Binary {
+    url: string = 1
+    path: string = 2
+}
+
+enum ArgKind {
+    Unknown = 0
+    String = 1
+    PortAssignment = 2
+}
+
+message ArgValue {
+    value: string = 1
+    kind: ArgKind = 2
+}
+
+message Environment {
+    name: string = 1
+    value: ArgValue = 2
+}
+
+enum TaskState {
+    Unknown = 0
+    Starting = 1
+    Running = 2
+    Success = 3
+    Failed = 4
+    Restarting = 5
+    Stopped = 6
+}
+
+message ServiceAssignment {
+    port: u32 = 1
+    service_name: string = 2
+}
+
+message TaskRuntimeInfo {
+    pid: u32 = 1
+    ip_address: bytes = 2
+    services: repeated ServiceAssignment = 3
+    last_start_time: u64 = 4
+    last_stopped_time: u64 = 5
+    exit_status: u32 = 6
+    state: TaskState = 7
+}
+
+enum RestartMode {
+    Unknown = 0
+    OneShot = 1
+    OnFailure = 2
+    Always = 3
+}
+
+message Task {
+    // Specified during task creation
+    name: string = 1
+    binary: Binary = 2
+    environment: repeated Environment = 3
+    arguments: repeated ArgValue = 4
+
+    runtime_info: TaskRuntimeInfo = 5
+    restart_mode: RestartMode = 6
+}
+
+enum DiffType {
+    None = 0
+    Added = 1
+    Modified = 2
+    Deleted = 3
+}
+
+message Diff {
+    name: string = 1
+    kind: DiffType = 2
+}
+
+message Configuration {
+    tasks: repeated Task = 1
+}
+
+message UpdateRequest {
+    config: Configuration = 1
+
+    // If set, tear down rather than create
+    down: bool = 2
+}
+
+message UpdateResponse {
+    success: bool = 1
+    error_message: string = 2
+    diff_applied: DiffResponse = 3
+}
+
+message DiffResponse {
+    added: Configuration = 1
+    removed: Configuration = 2
+}
+
+message Endpoint {
+    ip_address: bytes = 1
+    port: u32 = 2
+}
+
+message ResolveRequest {
+    service_name: string = 1
+}
+
+message ResolveResponse {
+    endpoints: repeated Endpoint = 1
+    ttl_seconds: u32 = 2
+}
+
+message StatusRequest {
+    selector: string = 1
+}
+
+message StatusResponse {
+    tasks: repeated Task = 1
+}
+
+message GetLogsRequest {
+    resource_name: string = 1
+}
+
+message Logs {
+    start_time: u64 = 1
+    end_time: u64 = 2
+    stdout: string = 3
+    stderr: string = 4
+    exit_status: i32 = 5
+}
+
+message GetLogsResponse {
+    logs: repeated Logs = 1
+}
+
+service MetalService {
+    rpc update(UpdateRequest) -> UpdateResponse
+    rpc diff(UpdateRequest) -> DiffResponse
+    rpc resolve(ResolveRequest) -> ResolveResponse
+    rpc status(StatusRequest) -> StatusResponse
+    rpc get_logs(GetLogsRequest) -> GetLogsResponse
+}

@@ -39,6 +39,65 @@ impl DeserializeOwned for Nothing {
     }
 }
 
+impl Serialize for i64 {
+    fn encode<W: std::io::Write>(&self, writer: &mut W) -> Result<usize, std::io::Error> {
+        varint::encode_ivarint(*self, writer)
+    }
+}
+
+impl DeserializeOwned for i64 {
+    fn decode_owned(bytes: &[u8]) -> Result<Self, std::io::Error> {
+        let (x, _) = varint::decode_ivarint(bytes);
+        Ok(x)
+    }
+}
+
+impl Serialize for i32 {
+    fn encode<W: std::io::Write>(&self, writer: &mut W) -> Result<usize, std::io::Error> {
+        varint::encode_ivarint(*self as i64, writer)
+    }
+}
+
+impl DeserializeOwned for i32 {
+    fn decode_owned(bytes: &[u8]) -> Result<Self, std::io::Error> {
+        let (x, _) = varint::decode_ivarint(bytes);
+        Ok(x as i32)
+    }
+}
+
+impl Serialize for i16 {
+    fn encode<W: std::io::Write>(&self, writer: &mut W) -> Result<usize, std::io::Error> {
+        varint::encode_ivarint(*self as i64, writer)
+    }
+}
+
+impl DeserializeOwned for i16 {
+    fn decode_owned(bytes: &[u8]) -> Result<Self, std::io::Error> {
+        let (x, _) = varint::decode_ivarint(bytes);
+        Ok(x as i16)
+    }
+}
+
+impl Serialize for i8 {
+    fn encode<W: std::io::Write>(&self, writer: &mut W) -> Result<usize, std::io::Error> {
+        if *self == 0 {
+            return Ok(0);
+        }
+        let byte_representation = unsafe { std::mem::transmute::<i8, u8>(*self) };
+        writer.write_all(&[byte_representation])?;
+        Ok(1)
+    }
+}
+
+impl DeserializeOwned for i8 {
+    fn decode_owned(bytes: &[u8]) -> Result<Self, std::io::Error> {
+        if bytes.len() == 0 {
+            return Ok(0);
+        }
+        Ok(unsafe { std::mem::transmute::<u8, i8>(bytes[0]) })
+    }
+}
+
 impl Serialize for u8 {
     fn encode<W: std::io::Write>(&self, writer: &mut W) -> Result<usize, std::io::Error> {
         if *self == 0 {
@@ -220,5 +279,20 @@ mod tests {
         test_encode_decode(&mut buf, 456789 as u64);
 
         test_encode_decode(&mut buf, u64::MAX);
+
+        test_encode_decode(&mut buf, "asdf");
+        test_encode_decode(&mut buf, -123 as i8);
+        test_encode_decode(&mut buf, -123 as i16);
+        test_encode_decode(&mut buf, -123 as i32);
+        test_encode_decode(&mut buf, -123 as i64);
+
+        test_encode_decode(&mut buf, -456 as i16);
+        test_encode_decode(&mut buf, -456 as i32);
+        test_encode_decode(&mut buf, -456 as i64);
+
+        test_encode_decode(&mut buf, -456789 as i32);
+        test_encode_decode(&mut buf, -456789 as i64);
+
+        test_encode_decode(&mut buf, -i64::MAX);
     }
 }

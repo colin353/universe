@@ -46,6 +46,10 @@ pub fn generate<W: std::io::Write>(
 
 fn get_type_name(f: &parser::FieldDefinition) -> String {
     let typ = match &f.field_type {
+        FieldType::Ti64 => "i64",
+        FieldType::Ti32 => "i32",
+        FieldType::Ti16 => "i16",
+        FieldType::Ti8 => "i8",
         FieldType::Tu64 => "u64",
         FieldType::Tu32 => "u32",
         FieldType::Tu16 => "u16",
@@ -74,6 +78,10 @@ fn get_type_name(f: &parser::FieldDefinition) -> String {
 
 fn get_return_type_name(f: &parser::FieldDefinition) -> String {
     let typ = match &f.field_type {
+        FieldType::Ti64 => "i64",
+        FieldType::Ti32 => "i32",
+        FieldType::Ti16 => "i16",
+        FieldType::Ti8 => "i8",
         FieldType::Tu64 => "u64",
         FieldType::Tu32 => "u32",
         FieldType::Tu16 => "u16",
