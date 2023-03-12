@@ -17,6 +17,19 @@ pub fn usage() {
     std::process::exit(1);
 }
 
+lazy_static! {
+    static ref AUTH_CONTEXT: RwLock<std::collections::HashMap<String, String>> =
+        RwLock::new(std::collections::HashMap::new());
+}
+
+pub fn get_identity(client: &service::SrcServerClient, host: &str) -> String {
+    if let Some(token) = AUTH_CONTEXT.read().unwrap().get(host) {
+        return token.to_string();
+    }
+
+    // TODO: No identity exists for this... try to get one
+}
+
 pub fn create(data_dir: std::path::PathBuf, basis: String) {
     let basis = match core::parse_basis(&basis) {
         Ok(b) => b,

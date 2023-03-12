@@ -34,7 +34,7 @@ rust_library(
     deps = [
         "//third_party/vendor/openssl-0.10.19:openssl",
         "//third_party/vendor/openssl-probe-0.1.2:openssl_probe",
-        "//third_party/vendor/openssl-sys-0.9.42:openssl_sys",
+#        "//third_party/vendor/openssl-sys-0.9.42:openssl_sys",
     ],
     rustc_flags = [
         "--cap-lints=allow",

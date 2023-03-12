@@ -35,6 +35,7 @@ rust_binary(
     deps = [
       ":server_service",
       ":service",
+      "//auth:auth_client",
       "//util/bus",
       "//util/bus:bus_rpc",
       "//util/flags",
@@ -44,7 +45,10 @@ rust_binary(
 
 rust_library(
     name = "server_service",
-    srcs = ["server_service.rs"],
+    srcs = [
+      "server_service.rs",
+      "auth.rs",
+    ],
     deps = [
       ":service",
       ":core",
@@ -52,6 +56,7 @@ rust_library(
       "//tools/largetable:managed_largetable",
       "//util/sstable/v3:sstable",
       "//tools/largetable",
+      "//auth:auth_client",
     ],
 )
 

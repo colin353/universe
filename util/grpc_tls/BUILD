@@ -5,7 +5,6 @@ load("@rules_rust//rust:defs.bzl", "rust_library")
 rust_library(
     name = "grpc_tls",
     srcs = ["lib.rs"],
-    edition = "2018",
     deps = [
         "//third_party:tls_api_openssl",
         "@rules_rust//proto/raze:grpc",

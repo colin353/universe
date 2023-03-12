@@ -1,21 +1,29 @@
 use service::*;
 use std::collections::HashSet;
 
+pub mod auth;
+
 pub struct SrcServer {
     table: managed_largetable::ManagedLargeTable,
     hostname: String,
+    auth: std::sync::Arc<dyn auth::AuthPlugin>,
 }
 
 impl SrcServer {
-    pub fn new(root: std::path::PathBuf, hostname: String) -> std::io::Result<Self> {
+    pub fn new(
+        root: std::path::PathBuf,
+        hostname: String,
+        auth: std::sync::Arc<dyn auth::AuthPlugin>,
+    ) -> std::io::Result<Self> {
         Ok(Self {
             table: managed_largetable::ManagedLargeTable::new(root)?,
             hostname,
+            auth,
         })
     }
 
-    pub fn auth(&self, _token: &str) -> Result<String, String> {
-        Ok(String::from("colin"))
+    pub fn auth(&self, token: &str) -> Result<auth::User, String> {
+        self.auth.validate(token)
     }
 
     pub fn get_file(
@@ -173,10 +181,10 @@ impl service::SrcServerServiceHandler for SrcServer {
         self.table
             .write(
                 "repos".to_string(),
-                format!("{}/{}", user, req.name),
+                format!("{}/{}", user.username, req.name),
                 0,
                 service::Repository {
-                    owner: user,
+                    owner: user.username,
                     name: req.name,
                 },
             )
@@ -645,7 +653,7 @@ impl service::SrcServerServiceHandler for SrcServer {
         &self,
         req: UpdateChangeRequest,
     ) -> Result<UpdateChangeResponse, bus::BusRpcError> {
-        let username = match self.auth(&req.token) {
+        let user = match self.auth(&req.token) {
             Ok(u) => u,
             Err(e) => {
                 return Ok(UpdateChangeResponse {
@@ -697,7 +705,7 @@ impl service::SrcServerServiceHandler for SrcServer {
                 }
             };
 
-            if existing_change.owner != username {
+            if existing_change.owner != user.username {
                 return Ok(UpdateChangeResponse {
                     failed: true,
                     error_message: format!("No permission to modify change",),
@@ -786,7 +794,7 @@ impl service::SrcServerServiceHandler for SrcServer {
 
         let mut change = req.change;
         change.id = id;
-        change.owner = username;
+        change.owner = user.username;
         change.status = service::ChangeStatus::Pending;
 
         if let Err(e) = self.add_snapshot(&change, req.snapshot) {
@@ -831,7 +839,7 @@ impl service::SrcServerServiceHandler for SrcServer {
         &self,
         req: ListChangesRequest,
     ) -> Result<ListChangesResponse, bus::BusRpcError> {
-        let username = match self.auth(&req.token) {
+        let user = match self.auth(&req.token) {
             Ok(u) => u,
             Err(e) => {
                 return Ok(ListChangesResponse {
@@ -850,7 +858,7 @@ impl service::SrcServerServiceHandler for SrcServer {
         };
 
         let changes = if !req.owner.is_empty() {
-            let row = format!("{}/changes", username);
+            let row = format!("{}/changes", user.username);
             let filter = largetable::Filter {
                 row: &row,
                 spec: "",
@@ -1004,7 +1012,7 @@ impl service::SrcServerServiceHandler for SrcServer {
         &self,
         req: GetBasisDiffRequest,
     ) -> Result<GetBasisDiffResponse, bus::BusRpcError> {
-        let username = match self.auth(&req.token) {
+        match self.auth(&req.token) {
             Ok(u) => u,
             Err(e) => {
                 return Ok(GetBasisDiffResponse {
@@ -1183,6 +1191,13 @@ impl service::SrcServerServiceHandler for SrcServer {
             files: output,
             ..Default::default()
         })
+    }
+
+    fn discover_auth(
+        &self,
+        _: service::DiscoverAuthRequest,
+    ) -> Result<service::DiscoverAuthResponse, bus::BusRpcError> {
+        Ok(self.auth.discover())
     }
 }
 

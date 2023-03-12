@@ -209,6 +209,19 @@ service SrcServer {
     rpc get_change(GetChangeRequest) -> GetChangeResponse
     rpc get_blobs_by_path(GetBlobsByPathRequest) -> GetBlobsByPathResponse
     rpc get_basis_diff(GetBasisDiffRequest) -> GetBasisDiffResponse
+    rpc discover_auth(DiscoverAuthRequest) -> DiscoverAuthResponse
+}
+
+message DiscoverAuthRequest {}
+
+enum AuthKind {
+    None = 0
+    AuthService = 1
+}
+
+message DiscoverAuthResponse {
+    auth_kind: AuthKind = 0
+    auth_service_host: string = 1
 }
 
 message CheckoutResponse {

@@ -14,7 +14,15 @@ async fn main() {
         "The hostname of the src server"
     );
 
-    flags::parse_flags!(data_dir, hostname);
+    let auth_hostname = flags::define_flag!(
+        "auth_hostname",
+        String::new(),
+        "The hostname of the auth service (if empty, no authentication required)"
+    );
+
+    let auth_port = flags::define_flag!("auth_port", 8888, "The port of the auth service");
+
+    flags::parse_flags!(data_dir, hostname, auth_hostname, auth_port);
 
     if data_dir.value().is_empty() {
         eprintln!("ERROR: A data directory must be specified! (--data_directory)");
@@ -23,8 +31,18 @@ async fn main() {
 
     std::fs::create_dir_all(data_dir.value()).ok();
 
+    let auth_host = auth_hostname.value();
+    let auth: Arc<dyn server_service::auth::AuthPlugin> = if auth_host.is_empty() {
+        Arc::new(server_service::auth::FakeAuthPlugin::new())
+    } else {
+        let client = auth_client::AuthClient::new(&auth_host, auth_port.value());
+        Arc::new(server_service::auth::AuthServicePlugin::new(
+            client, auth_host,
+        ))
+    };
+
     let data_path = std::path::PathBuf::from(data_dir.value());
-    let table = server_service::SrcServer::new(data_path, hostname.value())
+    let table = server_service::SrcServer::new(data_path, hostname.value(), auth)
         .expect("failed to create src server");
 
     let handler = Arc::new(table);

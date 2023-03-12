@@ -10,6 +10,7 @@ async fn in_cleanroom(f: impl FnOnce() + Sync + Send + 'static) -> bool {
     let service = server_service::SrcServer::new(
         std::path::PathBuf::from("/tmp/src_integration/server"),
         String::from("localhost:44959"),
+        std::sync::Arc::new(server_service::auth::FakeAuthPlugin::new()),
     )
     .unwrap();
 
