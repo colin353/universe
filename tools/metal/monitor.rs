@@ -1,5 +1,5 @@
 use core::{Coordinator, MetalMonitorError};
-use metal_grpc_rust::{DiffResponse, Logs, RestartMode, Task, TaskState};
+use metal_bus::{DiffResponse, Logs, RestartMode, Task, TaskState};
 
 use std::collections::HashMap;
 use std::io::{Read, Seek};
@@ -104,7 +104,7 @@ impl core::Monitor for MetalMonitor {
             }
 
             let mut log_entry = Logs::new();
-            log_entry.set_start_time(*t);
+            log_entry.start_time = *t;
             for path in paths {
                 let stem = match path.file_stem().map(|s| s.to_string_lossy()) {
                     Some(s) => s,
@@ -115,7 +115,7 @@ impl core::Monitor for MetalMonitor {
                     "EXIT_TIME" => match std::fs::read_to_string(path) {
                         Ok(c) => {
                             if let Ok(i) = c.trim().parse::<u64>() {
-                                log_entry.set_end_time(i * 1_000_000);
+                                log_entry.end_time = i * 1_000_000;
                             }
                         }
                         Err(_) => continue,
@@ -123,7 +123,7 @@ impl core::Monitor for MetalMonitor {
                     "EXIT_STATUS" => match std::fs::read_to_string(path) {
                         Ok(c) => {
                             if let Ok(i) = c.trim().parse() {
-                                log_entry.set_exit_status(i);
+                                log_entry.exit_status = i;
                             }
                         }
                         Err(_) => continue,
@@ -140,9 +140,9 @@ impl core::Monitor for MetalMonitor {
                                 remaining_bytes = remaining_bytes - (b as i64);
 
                                 if s == "STDOUT" {
-                                    log_entry.set_stdout(log_data);
+                                    log_entry.stdout = log_data;
                                 } else {
-                                    log_entry.set_stderr(log_data);
+                                    log_entry.stderr = log_data;
                                 }
                             }
                         }
@@ -206,41 +206,39 @@ impl MetalMonitor {
         loop {
             let mut runtime_state = self.check_tasks();
             for (task_name, runtime_state) in &mut runtime_state {
-                let mut restart_mode = RestartMode::ONE_SHOT;
+                let mut restart_mode = RestartMode::OneShot;
                 {
                     let _tasks = self.tasks.read().unwrap();
                     if let Some(t) = _tasks.get(task_name) {
                         let mut _t = t.write().unwrap();
-                        restart_mode = _t.get_restart_mode();
-                        _t.set_runtime_info(runtime_state.clone());
+                        restart_mode = _t.restart_mode;
+                        _t.runtime_info = runtime_state.clone();
                     }
                 }
 
                 // If the task is no longer running, we may need to restart it, or else clean it up
-                if runtime_state.get_state() != TaskState::RUNNING
-                    && runtime_state.get_state() != TaskState::RESTARTING
+                if runtime_state.state != TaskState::Running
+                    && runtime_state.state != TaskState::Restarting
                 {
                     match restart_mode {
-                        RestartMode::ONE_SHOT => {
+                        RestartMode::OneShot => {
                             // No need to restart
                         }
                         mode => {
-                            if mode == RestartMode::ON_FAILURE
-                                && runtime_state.get_state() == TaskState::SUCCESS
+                            if mode == RestartMode::OnFailure
+                                && runtime_state.state == TaskState::Success
                             {
                                 continue;
                             }
 
                             // Mark task state as restarting
                             match self.tasks.read().unwrap().get(task_name) {
-                                Some(t) => t
-                                    .write()
-                                    .unwrap()
-                                    .mut_runtime_info()
-                                    .set_state(TaskState::RESTARTING),
+                                Some(t) => {
+                                    t.write().unwrap().runtime_info.state = TaskState::Restarting
+                                }
                                 _ => (),
                             }
-                            runtime_state.set_state(TaskState::RESTARTING);
+                            runtime_state.state = TaskState::Restarting;
 
                             self.queue_restart(&task_name);
                         }
@@ -299,7 +297,7 @@ impl MetalMonitor {
 
                 if let Ok(runtime_info) = self.start_task(&task) {
                     match self.tasks.read().unwrap().get(&task_name) {
-                        Some(t) => t.write().unwrap().set_runtime_info(runtime_info),
+                        Some(t) => t.write().unwrap().runtime_info = runtime_info,
                         None => {
                             // Task was unscheduled but I just started it... TODO: do something
                             // here?
@@ -308,11 +306,7 @@ impl MetalMonitor {
                     }
                 } else {
                     match self.tasks.read().unwrap().get(&task_name) {
-                        Some(t) => t
-                            .write()
-                            .unwrap()
-                            .mut_runtime_info()
-                            .set_state(TaskState::FAILED),
+                        Some(t) => t.write().unwrap().runtime_info.state = TaskState::Failed,
                         None => continue,
                     }
                 }
@@ -322,18 +316,18 @@ impl MetalMonitor {
 
     fn execute(&self, diff: &DiffResponse) -> Result<Vec<Task>, MetalMonitorError> {
         let mut results = Vec::new();
-        for added in diff.get_added().get_tasks() {
+        for added in &diff.added.tasks {
             // Update or create the task lock entry
             {
                 let mut _taskmap = self.tasks.write().unwrap();
                 let mut task = _taskmap
-                    .entry(added.get_name().to_owned())
+                    .entry(added.name.to_owned())
                     .or_insert_with(|| RwLock::new(added.clone()))
                     .write()
                     .unwrap();
 
                 let mut added = added.clone();
-                added.set_runtime_info(task.get_runtime_info().clone());
+                added.runtime_info = task.runtime_info.clone();
                 *task = added
             }
 
@@ -341,29 +335,29 @@ impl MetalMonitor {
             {
                 let _taskmap = self.tasks.read().unwrap();
                 let task_lock = _taskmap
-                    .get(added.get_name())
+                    .get(&added.name)
                     .ok_or(MetalMonitorError::ConcurrencyError)?;
 
                 let mut task = task_lock.write().unwrap();
                 let runtime_info = self.stop_task(&task)?;
-                task.set_runtime_info(runtime_info);
+                task.runtime_info = runtime_info;
                 let runtime_info = self.start_task(&task)?;
-                task.set_runtime_info(runtime_info);
+                task.runtime_info = runtime_info;
                 results.push(task.clone());
             }
         }
 
-        for removed in diff.get_removed().get_tasks() {
+        for removed in &diff.removed.tasks {
             let mut _taskmap = self.tasks.read().unwrap();
-            let mut task = match _taskmap.get(removed.get_name()) {
+            let mut task = match _taskmap.get(&removed.name) {
                 Some(t) => t.write().unwrap(),
                 // No need to stop it if it doesn't exist
                 None => continue,
             };
 
             let runtime_info = self.stop_task(&task)?;
-            task.set_runtime_info(runtime_info.clone());
-            task.mut_runtime_info().set_state(TaskState::STOPPED);
+            task.runtime_info = runtime_info.clone();
+            task.runtime_info.state = TaskState::Stopped;
             results.push(task.clone());
         }
 
@@ -374,7 +368,7 @@ impl MetalMonitor {
                 to_clean_up = c.report_tasks(
                     results
                         .iter()
-                        .map(|t| (t.get_name().to_owned(), t.get_runtime_info().clone()))
+                        .map(|t| (t.name.to_owned(), t.runtime_info.clone()))
                         .collect(),
                 );
             }

@@ -40,7 +40,7 @@ message TaskRuntimeInfo {
     services: repeated ServiceAssignment = 3
     last_start_time: u64 = 4
     last_stopped_time: u64 = 5
-    exit_status: u32 = 6
+    exit_status: i32 = 6
     state: TaskState = 7
 }
 
@@ -134,7 +134,7 @@ message GetLogsResponse {
     logs: repeated Logs = 1
 }
 
-service MetalService {
+service Metal {
     rpc update(UpdateRequest) -> UpdateResponse
     rpc diff(UpdateRequest) -> DiffResponse
     rpc resolve(ResolveRequest) -> ResolveResponse

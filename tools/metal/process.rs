@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::{MetalMonitor, MetalMonitorError, PortAllocator};
 use core::ts;
-use metal_grpc_rust::{ArgKind, ServiceAssignment, Task, TaskRuntimeInfo, TaskState};
+use metal_bus::{ArgKind, ServiceAssignment, Task, TaskRuntimeInfo, TaskState};
 
 impl MetalMonitor {
     fn ip_address(&self) -> Vec<u8> {
@@ -21,11 +21,11 @@ impl MetalMonitor {
     }
 
     pub fn stop_task(&self, task: &Task) -> Result<TaskRuntimeInfo, MetalMonitorError> {
-        if task.get_runtime_info().get_pid() == 0 {
-            return Ok(task.get_runtime_info().clone());
+        if task.runtime_info.pid == 0 {
+            return Ok(task.runtime_info.clone());
         }
 
-        match unsafe { libc::kill(task.get_runtime_info().get_pid() as i32, libc::SIGTERM) } {
+        match unsafe { libc::kill(task.runtime_info.pid as i32, libc::SIGTERM) } {
             // If the process isn't found, that means we don't need to kill it
             libc::ESRCH => (),
             // 0 indicates success
@@ -34,20 +34,20 @@ impl MetalMonitor {
             _ => (),
         }
 
-        let mut runtime_info = task.get_runtime_info().clone();
-        runtime_info.set_last_stopped_time(ts());
-        runtime_info.set_exit_status(128 + libc::SIGTERM); // NOTE: traditional exit code for being killed
+        let mut runtime_info = task.runtime_info.clone();
+        runtime_info.last_stopped_time = ts();
+        runtime_info.exit_status = 128 + libc::SIGTERM; // NOTE: traditional exit code for being killed
 
         Ok(runtime_info)
     }
 
     pub fn start_task(&self, task: &Task) -> Result<TaskRuntimeInfo, MetalMonitorError> {
         // Make sure that the appropriate parent directories are created
-        let logs_dir = self.resource_logs_dir(task.get_name());
+        let logs_dir = self.resource_logs_dir(&task.name);
         std::fs::create_dir_all(&logs_dir)
             .map_err(|_| MetalMonitorError::FailedToCreateDirectories)?;
 
-        if task.get_binary().get_path().is_empty() {
+        if task.binary.path.is_empty() {
             return Err(MetalMonitorError::InvalidBinaryFormat(String::from(
                 "only path-based binary resolution is implemented",
             )));
@@ -55,14 +55,14 @@ impl MetalMonitor {
 
         // Allocate all the service ports that we need
         let mut ports = HashMap::new();
-        for arg in task.get_arguments() {
-            if arg.get_kind() == ArgKind::PORT_ASSIGNMENT {
-                ports.insert(arg.get_value().to_string(), 0);
+        for arg in &task.arguments {
+            if arg.kind == ArgKind::PortAssignment {
+                ports.insert(arg.value.to_string(), 0);
             }
         }
-        for env in task.get_environment() {
-            if env.get_value().get_kind() == ArgKind::PORT_ASSIGNMENT {
-                ports.insert(env.get_value().get_value().to_string(), 0);
+        for env in &task.environment {
+            if env.value.kind == ArgKind::PortAssignment {
+                ports.insert(env.value.value.to_string(), 0);
             }
         }
         let mut allocated_ports = self.port_allocator.allocate_ports(ports.len())?;
@@ -87,34 +87,32 @@ impl MetalMonitor {
         process.arg("--");
 
         // All remaining arguments are the "real" command
-        process.arg(task.get_binary().get_path());
+        process.arg(&task.binary.path);
 
-        for arg in task.get_arguments() {
-            if arg.get_kind() == ArgKind::PORT_ASSIGNMENT {
+        for arg in &task.arguments {
+            if arg.kind == ArgKind::PortAssignment {
                 process.arg(format!(
                     "{}",
-                    ports
-                        .get(arg.get_value())
-                        .expect("must have allocated port!")
+                    ports.get(&arg.value).expect("must have allocated port!")
                 ));
             } else {
-                process.arg(arg.get_value());
+                process.arg(&arg.value);
             }
         }
 
-        for env in task.get_environment() {
-            let value = if env.get_value().get_kind() == ArgKind::PORT_ASSIGNMENT {
+        for env in &task.environment {
+            let value = if env.value.kind == ArgKind::PortAssignment {
                 format!(
                     "{}",
                     ports
-                        .get(env.get_value().get_value())
+                        .get(&env.value.value)
                         .expect("must have allocated port!")
                 )
             } else {
-                env.get_value().get_value().to_string()
+                env.value.value.to_string()
             };
 
-            process.env(env.get_name(), value);
+            process.env(&env.name, value);
         }
 
         let stdout_file = std::fs::File::create(logs_dir.join(format!("STDOUT.{}", start_time)))
@@ -129,10 +127,10 @@ impl MetalMonitor {
             .map_err(|_| MetalMonitorError::FailedToStartTask)?;
 
         let mut runtime_info = TaskRuntimeInfo::new();
-        runtime_info.set_state(TaskState::RUNNING);
-        runtime_info.set_pid(child.id());
-        runtime_info.set_last_start_time(start_time);
-        runtime_info.set_ip_address(self.ip_address());
+        runtime_info.state = TaskState::Running;
+        runtime_info.pid = child.id();
+        runtime_info.last_start_time = start_time;
+        runtime_info.ip_address = self.ip_address();
 
         std::thread::spawn(move || {
             child.wait();
@@ -140,9 +138,9 @@ impl MetalMonitor {
 
         for (service_name, port) in ports {
             let mut assignment = ServiceAssignment::new();
-            assignment.set_service_name(service_name);
-            assignment.set_port(port as u32);
-            runtime_info.mut_services().push(assignment);
+            assignment.service_name = service_name;
+            assignment.port = port as u32;
+            runtime_info.services.push(assignment);
         }
 
         Ok(runtime_info)
@@ -154,67 +152,66 @@ impl MetalMonitor {
             .read()
             .unwrap()
             .iter()
-            .map(|(k, v)| (k.clone(), v.read().unwrap().get_runtime_info().to_owned()))
+            .map(|(k, v)| (k.clone(), v.read().unwrap().runtime_info.to_owned()))
             .collect();
 
         let mut to_update = Vec::new();
         for (task_name, mut runtime_info) in all_tasks {
             // Skip if the process hasn't been scheduled yet
-            if runtime_info.get_pid() == 0 {
+            if runtime_info.pid == 0 {
                 continue;
             }
 
-            let prev_state = runtime_info.get_state();
+            let prev_state = runtime_info.state;
 
             // If we already know this task is waiting for restart, don't probe
-            if prev_state == TaskState::RESTARTING {
+            if prev_state == TaskState::Restarting {
                 continue;
             }
 
-            let new_state = match get_proc_state(runtime_info.get_pid()) {
-                Some(ProcessState::Running) => TaskState::RUNNING,
+            let new_state = match get_proc_state(runtime_info.pid) {
+                Some(ProcessState::Running) => TaskState::Running,
                 Some(ProcessState::Exited(status)) => {
-                    runtime_info.set_exit_status(status);
+                    runtime_info.exit_status = status;
                     if status == 0 {
-                        TaskState::SUCCESS
+                        TaskState::Success
                     } else {
-                        TaskState::FAILED
+                        TaskState::Failed
                     }
                 }
-                None => TaskState::UNKNOWN,
+                None => TaskState::Unknown,
             };
-            runtime_info.set_state(new_state);
+            runtime_info.state = new_state;
 
-            if runtime_info.get_state() != TaskState::RUNNING {
+            if runtime_info.state != TaskState::Running {
                 // The process has newly ended. Let's look up the termination timestamp
                 // and update the runtime info with that as well.
                 let resource_dir = self.resource_logs_dir(&task_name);
 
-                if let Ok(s) = std::fs::read_to_string(resource_dir.join(format!(
-                    "EXIT_STATUS.{}",
-                    runtime_info.get_last_start_time()
-                ))) {
+                if let Ok(s) = std::fs::read_to_string(
+                    resource_dir.join(format!("EXIT_STATUS.{}", runtime_info.last_start_time)),
+                ) {
                     if let Ok(i) = s.trim().parse() {
-                        runtime_info.set_exit_status(i);
+                        runtime_info.exit_status = i;
                         if i == 0 {
-                            runtime_info.set_state(TaskState::SUCCESS);
+                            runtime_info.state = TaskState::Success;
                         } else {
-                            runtime_info.set_state(TaskState::FAILED);
+                            runtime_info.state = TaskState::Failed;
                         }
                     }
                 }
 
                 if let Ok(s) = std::fs::read_to_string(
-                    resource_dir.join(format!("EXIT_TIME.{}", runtime_info.get_last_start_time())),
+                    resource_dir.join(format!("EXIT_TIME.{}", runtime_info.last_start_time)),
                 ) {
                     if let Ok(i) = s.trim().parse::<u64>() {
-                        runtime_info.set_last_stopped_time(i * 1000 * 1000);
+                        runtime_info.last_stopped_time = i * 1000 * 1000;
                     }
                 }
             }
 
             // Don't report known state changes
-            if prev_state == runtime_info.get_state() {
+            if prev_state == runtime_info.state {
                 continue;
             }
 

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
-use metal_grpc_rust::{Configuration, DiffResponse, DiffType, Task, TaskRuntimeInfo, TaskState};
+use metal_bus::{Configuration, DiffResponse, DiffType, Task, TaskRuntimeInfo, TaskState};
 use state::{MetalStateError, MetalStateManager};
 
 const RESOLUTION_TTL: u64 = 5;
@@ -23,7 +23,7 @@ impl MetalServiceHandler {
         let tasks = state
             .all_tasks()?
             .into_iter()
-            .map(|t| (t.get_name().to_string(), t))
+            .map(|t| (t.name.to_string(), t))
             .collect();
 
         Ok(MetalServiceHandler(Arc::new(MetalServiceHandlerInner {
@@ -39,16 +39,16 @@ impl core::Coordinator for MetalServiceHandlerInner {
         let mut _tasks = self.tasks.write().unwrap();
         let mut to_clean_up = Vec::new();
         for (task_name, runtime_state) in tasks {
-            let state = runtime_state.get_state();
+            let state = &runtime_state.state;
 
             // Update current task status in state
             if let Some(t) = _tasks.get_mut(&task_name) {
-                t.set_runtime_info(runtime_state);
-                self.state.set_task(t);
+                t.runtime_info = runtime_state.clone();
+                self.state.set_task(t).unwrap(); // Don't unwrap??
             }
 
             match state {
-                TaskState::SUCCESS | TaskState::STOPPED | TaskState::FAILED => {
+                TaskState::Success | TaskState::Stopped | TaskState::Failed => {
                     // Task is done, remove it
                     _tasks.remove(&task_name);
                     to_clean_up.push(task_name.clone());
@@ -67,164 +67,131 @@ fn compute_diff(
     down: bool,
 ) -> DiffResponse {
     let mut response = DiffResponse::new();
-    for task in desired.get_tasks() {
-        if let Some(current_task) = current.get(task.get_name()) {
+    for task in &desired.tasks {
+        if let Some(current_task) = current.get(&task.name) {
             if down {
-                response.mut_removed().mut_tasks().push(task.clone());
+                response.removed.tasks.push(task.clone());
             } else {
-                let difference = diff::diff_task(&current_task, task);
-                if difference.get_kind() == DiffType::MODIFIED {
-                    response.mut_added().mut_tasks().push(task.clone());
+                let difference = diff::diff_task(current_task, task);
+                if difference.kind == DiffType::None {
+                    response.added.tasks.push(task.clone());
                 }
             }
         } else {
             if !down {
-                response.mut_added().mut_tasks().push(task.clone());
+                response.added.tasks.push(task.clone());
             }
         }
     }
     response
 }
 
-impl MetalServiceHandlerInner {
-    fn update(&self, req: metal_grpc_rust::UpdateRequest) -> metal_grpc_rust::UpdateResponse {
+impl metal_bus::MetalServiceHandler for MetalServiceHandler {
+    fn update(
+        &self,
+        req: metal_bus::UpdateRequest,
+    ) -> Result<metal_bus::UpdateResponse, bus::BusRpcError> {
         let difference: DiffResponse;
         {
-            let mut locked = self.tasks.write().unwrap();
-            difference = compute_diff(&locked, req.get_config(), req.get_down());
-            for task in difference.get_added().get_tasks() {
-                if let Some(t) = locked.get_mut(task.get_name()) {
-                    t.set_binary(task.get_binary().to_owned());
-                    t.set_environment(task.get_environment().to_owned().into_iter().collect());
-                    t.set_arguments(task.get_arguments().to_owned().into_iter().collect());
-                    self.state.set_task(t).unwrap();
+            let mut locked = self.0.tasks.write().unwrap();
+            difference = compute_diff(&locked, &req.config, req.down);
+            for task in &difference.added.tasks {
+                if let Some(t) = locked.get_mut(&task.name) {
+                    t.binary = task.binary.clone();
+                    t.environment = task.environment.clone();
+                    t.arguments = task.arguments.clone();
+                    self.0.state.set_task(t).unwrap();
                 } else {
-                    locked.insert(task.get_name().to_owned(), task.to_owned());
-                    self.state.set_task(task).unwrap();
+                    locked.insert(task.name.to_owned(), task.to_owned());
+                    self.0.state.set_task(&task).unwrap();
                 }
             }
 
-            for task in difference.get_removed().get_tasks() {
-                if let Some(t) = locked.get_mut(task.get_name()) {
-                    t.set_environment(task.get_environment().to_owned().into_iter().collect());
-                    self.state.set_task(t).unwrap();
+            for task in &difference.removed.tasks {
+                if let Some(t) = locked.get_mut(&task.name) {
+                    t.environment = task.environment.to_owned().into_iter().collect();
+                    self.0.state.set_task(t).unwrap();
                 }
             }
         }
 
-        let mut out = metal_grpc_rust::UpdateResponse::new();
+        let mut out = metal_bus::UpdateResponse::new();
 
         // Try to actually enact the difference using the monitor
-        match self.monitor.execute(&difference) {
-            Ok(_) => out.set_success(true),
-            Err(e) => out.set_error_message(format!("failed to enact diff: {:?}", e)),
+        match self.0.monitor.execute(&difference) {
+            Ok(_) => out.success = true,
+            Err(e) => out.error_message = format!("failed to enact diff: {:?}", e),
         }
 
-        out.set_diff_applied(difference);
-        out
+        out.diff_applied = difference;
+        Ok(out)
     }
 
-    fn diff(&self, req: metal_grpc_rust::UpdateRequest) -> metal_grpc_rust::DiffResponse {
-        let locked = self.tasks.read().unwrap();
-        compute_diff(&locked, req.get_config(), req.get_down())
+    fn diff(
+        &self,
+        req: metal_bus::UpdateRequest,
+    ) -> Result<metal_bus::DiffResponse, bus::BusRpcError> {
+        let locked = self.0.tasks.read().unwrap();
+        Ok(compute_diff(&locked, &req.config, req.down))
     }
 
-    fn resolve(&self, req: metal_grpc_rust::ResolveRequest) -> metal_grpc_rust::ResolveResponse {
-        let mut response = metal_grpc_rust::ResolveResponse::new();
+    fn resolve(
+        &self,
+        req: metal_bus::ResolveRequest,
+    ) -> Result<metal_bus::ResolveResponse, bus::BusRpcError> {
+        let mut response = metal_bus::ResolveResponse::new();
 
         // Try to resolve as a task + binding name
-        if let Some(pos) = req.get_service_name().rfind('.') {
-            let task_name = &req.get_service_name()[..pos];
-            let binding_name = &req.get_service_name()[pos + 1..];
+        if let Some(pos) = req.service_name.rfind('.') {
+            let task_name = &req.service_name[..pos];
+            let binding_name = &req.service_name[pos + 1..];
             if !task_name.is_empty() {
-                let locked = self.tasks.read().unwrap();
+                let locked = self.0.tasks.read().unwrap();
                 if let Some(t) = locked.get(task_name) {
-                    for binding in t.get_runtime_info().get_services() {
-                        if binding.get_service_name() == binding_name {
-                            let mut endpoint = metal_grpc_rust::Endpoint::new();
-                            endpoint
-                                .set_ip_address(t.get_runtime_info().get_ip_address().to_owned());
-                            endpoint.set_port(binding.get_port());
-
-                            response.mut_endpoints().push(endpoint);
+                    for binding in &t.runtime_info.services {
+                        if binding.service_name == binding_name {
+                            let mut endpoint = metal_bus::Endpoint::new();
+                            endpoint.ip_address = t.runtime_info.ip_address.to_owned();
+                            endpoint.port = binding.port;
+                            response.endpoints.push(endpoint);
                         }
                     }
                 }
             }
         }
 
-        response
-    }
-
-    fn status(&self, req: metal_grpc_rust::StatusRequest) -> metal_grpc_rust::StatusResponse {
-        let mut response = metal_grpc_rust::StatusResponse::new();
-        for task in self.state.all_tasks().unwrap() {
-            if task.get_name().starts_with(req.get_selector()) {
-                response.mut_tasks().push(task);
-            }
-        }
-        response
-    }
-
-    fn get_logs(&self, req: metal_grpc_rust::GetLogsRequest) -> metal_grpc_rust::GetLogsResponse {
-        let mut response = metal_grpc_rust::GetLogsResponse::new();
-        for log in self.monitor.get_logs(req.get_resource_name()).unwrap() {
-            response.mut_logs().push(log);
-        }
-        response
-    }
-}
-
-impl metal_grpc_rust::MetalService for MetalServiceHandler {
-    fn update(
-        &self,
-        _: grpc::ServerHandlerContext,
-        req: grpc::ServerRequestSingle<metal_grpc_rust::UpdateRequest>,
-        resp: grpc::ServerResponseUnarySink<metal_grpc_rust::UpdateResponse>,
-    ) -> grpc::Result<()> {
-        resp.finish(self.0.update(req.message))
-    }
-
-    fn diff(
-        &self,
-        _: grpc::ServerHandlerContext,
-        req: grpc::ServerRequestSingle<metal_grpc_rust::UpdateRequest>,
-        resp: grpc::ServerResponseUnarySink<metal_grpc_rust::DiffResponse>,
-    ) -> grpc::Result<()> {
-        resp.finish(self.0.diff(req.message))
-    }
-
-    fn resolve(
-        &self,
-        _: grpc::ServerHandlerContext,
-        req: grpc::ServerRequestSingle<metal_grpc_rust::ResolveRequest>,
-        resp: grpc::ServerResponseUnarySink<metal_grpc_rust::ResolveResponse>,
-    ) -> grpc::Result<()> {
-        resp.finish(self.0.resolve(req.message))
+        Ok(response)
     }
 
     fn status(
         &self,
-        _: grpc::ServerHandlerContext,
-        req: grpc::ServerRequestSingle<metal_grpc_rust::StatusRequest>,
-        resp: grpc::ServerResponseUnarySink<metal_grpc_rust::StatusResponse>,
-    ) -> grpc::Result<()> {
-        resp.finish(self.0.status(req.message))
+        req: metal_bus::StatusRequest,
+    ) -> Result<metal_bus::StatusResponse, bus::BusRpcError> {
+        let mut response = metal_bus::StatusResponse::new();
+        for task in self.0.state.all_tasks().unwrap() {
+            if task.name.starts_with(&req.selector) {
+                response.tasks.push(task);
+            }
+        }
+        Ok(response)
     }
 
     fn get_logs(
         &self,
-        _: grpc::ServerHandlerContext,
-        req: grpc::ServerRequestSingle<metal_grpc_rust::GetLogsRequest>,
-        resp: grpc::ServerResponseUnarySink<metal_grpc_rust::GetLogsResponse>,
-    ) -> grpc::Result<()> {
-        resp.finish(self.0.get_logs(req.message))
+        req: metal_bus::GetLogsRequest,
+    ) -> Result<metal_bus::GetLogsResponse, bus::BusRpcError> {
+        let mut response = metal_bus::GetLogsResponse::new();
+        for log in self.0.monitor.get_logs(&req.resource_name).unwrap() {
+            response.logs.push(log);
+        }
+        Ok(response)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use metal_bus::MetalServiceHandler as _;
     use state::FakeState;
 
     #[test]
@@ -233,32 +200,32 @@ mod tests {
         let monitor = Arc::new(core::FakeMonitor::new());
         let service = MetalServiceHandler::new(state, monitor).unwrap();
 
-        let mut update = metal_grpc_rust::UpdateRequest::new();
+        let mut update = metal_bus::UpdateRequest::new();
         let mut t = Task::new();
-        t.set_name(String::from("task_one"));
-        update.mut_config().mut_tasks().push(t);
-        let resp = service.0.update(update);
+        t.name = String::from("task_one");
+        update.config.tasks.push(t);
+        let resp = service.update(update).unwrap();
 
-        assert_eq!(resp.get_diff_applied().get_added().get_tasks().len(), 1);
+        assert_eq!(resp.diff_applied.added.tasks.len(), 1);
 
         // Now try to apply the same update again, and check diff
-        let mut update = metal_grpc_rust::UpdateRequest::new();
+        let mut update = metal_bus::UpdateRequest::new();
         let mut t = Task::new();
-        t.set_name(String::from("task_one"));
-        update.mut_config().mut_tasks().push(t);
-        let resp = service.0.update(update);
+        t.name = String::from("task_one");
+        update.config.tasks.push(t);
+        let resp = service.update(update).unwrap();
 
-        assert_eq!(resp.get_diff_applied().get_added().get_tasks().len(), 0);
+        assert_eq!(resp.diff_applied.added.tasks.len(), 0);
 
         // Now bring it down, should get removed
-        let mut update = metal_grpc_rust::UpdateRequest::new();
-        update.set_down(true);
+        let mut update = metal_bus::UpdateRequest::new();
+        update.down = true;
         let mut t = Task::new();
-        t.set_name(String::from("task_one"));
-        update.mut_config().mut_tasks().push(t);
-        let resp = service.0.update(update);
+        t.name = String::from("task_one");
+        update.config.tasks.push(t);
+        let resp = service.update(update).unwrap();
 
-        assert_eq!(resp.get_diff_applied().get_removed().get_tasks().len(), 1);
-        assert_eq!(resp.get_diff_applied().get_added().get_tasks().len(), 0);
+        assert_eq!(resp.diff_applied.removed.tasks.len(), 1);
+        assert_eq!(resp.diff_applied.added.tasks.len(), 0);
     }
 }

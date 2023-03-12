@@ -1,5 +1,4 @@
-use grpc::ClientStubExt;
-use metal_grpc_rust::TaskState;
+use metal_bus::TaskState;
 use std::convert::TryInto;
 
 #[macro_use]
@@ -21,11 +20,7 @@ fn render_time(ts: u64) -> String {
     format!("{} {}", time, units)
 }
 
-fn wait<T: Send + Sync>(resp: grpc::SingleResponse<T>) -> Result<T, grpc::Error> {
-    futures::executor::block_on(resp.join_metadata_result()).map(|r| r.1)
-}
-
-fn update(down: bool, filename: &str, client: &metal_grpc_rust::MetalServiceClient) {
+fn update(down: bool, filename: &str, client: &metal_bus::MetalClient) {
     let content = match std::fs::read_to_string(filename) {
         Ok(c) => c,
         Err(_) => {
@@ -42,11 +37,11 @@ fn update(down: bool, filename: &str, client: &metal_grpc_rust::MetalServiceClie
         }
     };
 
-    let mut req = metal_grpc_rust::UpdateRequest::new();
-    req.set_config(cfg);
-    req.set_down(down);
+    let mut req = metal_bus::UpdateRequest::new();
+    req.config = cfg;
+    req.down = down;
 
-    let resp = match wait(client.update(grpc::RequestOptions::new(), req)) {
+    let resp = match client.update(req) {
         Ok(r) => r,
         Err(_) => {
             eprintln!("failed to connect to metal service, is the metal service running?");
@@ -54,17 +49,17 @@ fn update(down: bool, filename: &str, client: &metal_grpc_rust::MetalServiceClie
         }
     };
 
-    if !resp.get_success() {
-        eprintln!("operation failed: {}", resp.get_error_message());
+    if !resp.success {
+        eprintln!("operation failed: {}", resp.error_message);
         std::process::exit(1);
     }
 
-    println!("{}", diff::fmt_diff(resp.get_diff_applied()));
+    println!("{}", diff::fmt_diff(&resp.diff_applied));
 
     println!("OK");
 }
 
-fn up(args: &[String], client: &metal_grpc_rust::MetalServiceClient) {
+fn up(args: &[String], client: &metal_bus::MetalClient) {
     if args.len() != 1 {
         eprintln!("USAGE: metal [options] up [config]");
         std::process::exit(1);
@@ -72,7 +67,7 @@ fn up(args: &[String], client: &metal_grpc_rust::MetalServiceClient) {
     update(false, args.get(0).unwrap().as_str(), client);
 }
 
-fn down(args: &[String], client: &metal_grpc_rust::MetalServiceClient) {
+fn down(args: &[String], client: &metal_bus::MetalClient) {
     if args.len() != 1 {
         eprintln!("USAGE: metal [options] down [config]");
         std::process::exit(1);
@@ -80,8 +75,8 @@ fn down(args: &[String], client: &metal_grpc_rust::MetalServiceClient) {
     update(true, args.get(0).unwrap().as_str(), client);
 }
 
-fn status(args: &[String], client: &metal_grpc_rust::MetalServiceClient) {
-    let mut req = metal_grpc_rust::StatusRequest::new();
+fn status(args: &[String], client: &metal_bus::MetalClient) {
+    let mut req = metal_bus::StatusRequest::new();
 
     if args.len() > 1 {
         eprintln!("USAGE: metal [options] status [selector]");
@@ -89,9 +84,9 @@ fn status(args: &[String], client: &metal_grpc_rust::MetalServiceClient) {
     }
 
     if args.len() == 1 {
-        req.set_selector(args[0].to_string());
+        req.selector = args[0].to_string();
     }
-    let response = match wait(client.status(grpc::RequestOptions::new(), req)) {
+    let response = match client.status(req) {
         Ok(r) => r,
         Err(_) => {
             eprintln!("failed to connect to metal service, is the metal service running?");
@@ -103,8 +98,8 @@ fn status(args: &[String], client: &metal_grpc_rust::MetalServiceClient) {
     println!("TYPE  {: <32}  STATE", "NAME");
     println!("====  {: <32}  =====", "====");
 
-    let mut tasks: Vec<_> = response.get_tasks().iter().collect();
-    tasks.sort_by_key(|t| t.get_name());
+    let mut tasks: Vec<_> = response.tasks.iter().collect();
+    tasks.sort_by_key(|t| &t.name);
 
     if tasks.is_empty() {
         if args.len() == 0 {
@@ -115,42 +110,34 @@ fn status(args: &[String], client: &metal_grpc_rust::MetalServiceClient) {
     }
 
     for task in tasks {
-        let status_line = match task.get_runtime_info().get_state() {
-            TaskState::RUNNING => {
-                let tr = render_time(core::ts() - task.get_runtime_info().get_last_start_time());
+        let status_line = match task.runtime_info.state {
+            TaskState::Running => {
+                let tr = render_time(core::ts() - task.runtime_info.last_start_time);
                 format!(" ({})", tr)
             }
-            TaskState::SUCCESS => {
-                let tr = render_time(core::ts() - task.get_runtime_info().get_last_start_time());
+            TaskState::Success => {
+                let tr = render_time(core::ts() - task.runtime_info.last_start_time);
                 format!(" ({} ago)", tr)
             }
-            _ => format!(" (code={})", task.get_runtime_info().get_exit_status()),
+            _ => format!(" (code={})", task.runtime_info.exit_status),
         };
         println!(
             "task  {: <32}  {:?}{}",
-            task.get_name(),
-            task.get_runtime_info().get_state(),
-            status_line,
+            task.name, task.runtime_info.state, status_line,
         )
     }
 }
 
-fn logs(
-    args: &[String],
-    client: &metal_grpc_rust::MetalServiceClient,
-    all: bool,
-    stdout: bool,
-    stderr: bool,
-) {
+fn logs(args: &[String], client: &metal_bus::MetalClient, all: bool, stdout: bool, stderr: bool) {
     if args.len() != 1 {
         eprintln!("USAGE: metal [options] logs [resource_name]");
         std::process::exit(1);
     }
 
-    let mut req = metal_grpc_rust::GetLogsRequest::new();
-    req.set_resource_name(args[0].to_string());
+    let mut req = metal_bus::GetLogsRequest::new();
+    req.resource_name = args[0].to_string();
 
-    let response = match wait(client.get_logs(grpc::RequestOptions::new(), req)) {
+    let response = match client.get_logs(req) {
         Ok(r) => r,
         Err(_) => {
             eprintln!("failed to connect to metal service, is the metal service running?");
@@ -158,62 +145,39 @@ fn logs(
         }
     };
 
-    let mut logs_to_render: Box<dyn Iterator<Item = &metal_grpc_rust::Logs>> =
-        Box::new(std::iter::once(response.get_logs().last()).filter_map(|x| x));
+    let mut logs_to_render: Box<dyn Iterator<Item = &metal_bus::Logs>> =
+        Box::new(std::iter::once(response.logs.last()).filter_map(|x| x));
     if all {
-        logs_to_render = Box::new(response.get_logs().iter());
+        logs_to_render = Box::new(response.logs.iter());
     }
 
     for log in logs_to_render {
-        // Print log header
-        let header = format!(
-            "{} (started {} ago{})",
-            &args[0],
-            render_time(core::ts() - log.get_start_time()),
-            if log.get_end_time() == 0 {
-                String::new()
-            } else {
-                format!(
-                    ", ran for {}, exit status {}",
-                    render_time(
-                        log.get_end_time()
-                            .checked_sub(log.get_start_time())
-                            .unwrap_or(0)
-                    ),
-                    log.get_exit_status(),
-                )
-            }
-        );
         println!("{}", "=".repeat(70));
         println!("= TASK       {:<55} =", &args[0]);
         println!(
             "= STARTED    {:<55} =",
-            format!("{} ago", render_time(core::ts() - log.get_start_time())),
+            format!("{} ago", render_time(core::ts() - log.start_time)),
         );
-        if log.get_end_time() != 0 {
+        if log.end_time != 0 {
             println!(
                 "= RAN FOR    {:<55} =",
-                render_time(
-                    log.get_end_time()
-                        .checked_sub(log.get_start_time())
-                        .unwrap_or(0)
-                )
+                render_time(log.end_time.checked_sub(log.start_time).unwrap_or(0))
             );
-            println!("= EXIT CODE  {:<55} =", log.get_exit_status());
+            println!("= EXIT CODE  {:<55} =", log.exit_status);
         }
         println!("{}\n", "=".repeat(70));
 
         let mut showed_logs = false;
-        if stdout && log.get_stdout().len() > 0 {
+        if stdout && log.stdout.len() > 0 {
             showed_logs = true;
             println!("{:=^1$}\n", " STDOUT ", 70);
-            println!("{}", log.get_stdout());
+            println!("{}", log.stdout);
         }
 
-        if stderr && log.get_stderr().len() > 0 {
+        if stderr && log.stderr.len() > 0 {
             showed_logs = true;
             println!("{:=^1$}\n", " STDERR ", 70);
-            println!("{}", log.get_stderr());
+            println!("{}", log.stderr);
         }
 
         if !showed_logs && (stderr || stdout) {
@@ -222,16 +186,16 @@ fn logs(
     }
 }
 
-fn resolve(args: &[String], client: &metal_grpc_rust::MetalServiceClient) {
+fn resolve(args: &[String], client: &metal_bus::MetalClient) {
     if args.len() != 1 {
         eprintln!("USAGE: metal [options] resolve [resource_name]");
         std::process::exit(1);
     }
 
-    let mut req = metal_grpc_rust::ResolveRequest::new();
-    req.set_service_name(args[0].to_string());
+    let mut req = metal_bus::ResolveRequest::new();
+    req.service_name = args[0].to_string();
 
-    let response = match wait(client.resolve(grpc::RequestOptions::new(), req)) {
+    let response = match client.resolve(req) {
         Ok(r) => r,
         Err(_) => {
             eprintln!("failed to connect to metal service, is the metal service running?");
@@ -239,25 +203,25 @@ fn resolve(args: &[String], client: &metal_grpc_rust::MetalServiceClient) {
         }
     };
 
-    if response.get_endpoints().is_empty() {
+    if response.endpoints.is_empty() {
         eprintln!("failed to resolve resource");
         std::process::exit(1);
     }
 
-    for endpoint in response.get_endpoints() {
+    for endpoint in &response.endpoints {
         let ip: std::net::IpAddr;
-        if endpoint.get_ip_address().len() == 4 {
-            let bytes: [u8; 4] = endpoint.get_ip_address()[0..4].try_into().unwrap();
+        if endpoint.ip_address.len() == 4 {
+            let bytes: [u8; 4] = endpoint.ip_address[0..4].try_into().unwrap();
             ip = std::net::IpAddr::from(bytes);
-        } else if endpoint.get_ip_address().len() == 16 {
-            let bytes: [u8; 16] = endpoint.get_ip_address()[0..16].try_into().unwrap();
+        } else if endpoint.ip_address.len() == 16 {
+            let bytes: [u8; 16] = endpoint.ip_address[0..16].try_into().unwrap();
             ip = std::net::IpAddr::from(bytes);
         } else {
-            eprintln!("invalid IP address: {:?}", endpoint.get_ip_address());
+            eprintln!("invalid IP address: {:?}", endpoint.ip_address);
             continue;
         }
 
-        println!("{}:{}", ip, endpoint.get_port());
+        println!("{}:{}", ip, endpoint.port);
     }
 }
 
@@ -277,9 +241,11 @@ fn main() {
 
     let args = parse_flags!(all, stdout, stderr);
 
-    let client =
-        metal_grpc_rust::MetalServiceClient::new_plain("localhost", 20202, Default::default())
-            .expect("failed to create metal gRPC client");
+    let connector = std::sync::Arc::new(bus_rpc::HyperSyncClient::new(
+        "localhost".to_string(),
+        20202,
+    ));
+    let client = metal_bus::MetalClient::new(connector);
 
     match args.get(0).map(|s| s.as_str()) {
         Some("up") => up(&args[1..], &client),

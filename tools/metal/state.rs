@@ -1,13 +1,14 @@
-use metal_grpc_rust::Task;
-use protobuf::Message;
+use bus::{DeserializeOwned, Serialize};
+use metal_bus::Task;
 
 use std::collections::HashMap;
+use std::io::Read;
 use std::sync::Mutex;
 
 #[derive(Debug)]
 pub enum MetalStateError {
     FilesystemError(std::io::Error),
-    ProtobufError(protobuf::ProtobufError),
+    BusError(std::io::Error),
 }
 
 pub trait MetalStateManager: Send + Sync {
@@ -62,9 +63,12 @@ impl FilesystemState {
                 return Err(MetalStateError::FilesystemError(e));
             }
         };
-        match protobuf::parse_from_reader(&mut f) {
+        let mut buf = Vec::new();
+        f.read_to_end(&mut buf)
+            .map_err(|e| MetalStateError::FilesystemError(e))?;
+        match Task::decode_owned(&buf) {
             Ok(t) => Ok(Some(t)),
-            Err(e) => return Err(MetalStateError::ProtobufError(e)),
+            Err(e) => return Err(MetalStateError::BusError(e)),
         }
     }
 
@@ -101,15 +105,15 @@ impl MetalStateManager for FilesystemState {
 
     fn set_task(&self, task: &Task) -> Result<(), MetalStateError> {
         let root = self.root.lock().unwrap();
-        let mut filename = path_from_resource_name(&root, task.get_name());
+        let mut filename = path_from_resource_name(&root, &task.name);
         filename.set_extension("task");
         let mut f = match std::fs::File::create(filename) {
             Ok(f) => f,
             Err(e) => return Err(MetalStateError::FilesystemError(e)),
         };
-        match task.write_to_writer(&mut f) {
+        match task.encode(&mut f) {
             Ok(_) => Ok(()),
-            Err(e) => return Err(MetalStateError::ProtobufError(e)),
+            Err(e) => return Err(MetalStateError::BusError(e)),
         }
     }
 
@@ -146,7 +150,7 @@ impl MetalStateManager for FakeState {
         self.tasks
             .lock()
             .unwrap()
-            .insert(task.get_name().to_string(), task.clone());
+            .insert(task.name.clone(), task.clone());
         Ok(())
     }
 

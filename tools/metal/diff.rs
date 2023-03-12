@@ -1,10 +1,10 @@
-use metal_grpc_rust::{Diff, DiffResponse, DiffType, Task};
+use metal_bus::{Diff, DiffResponse, DiffType, Task};
 
 use std::collections::HashSet;
 
 pub fn fmt_diff(diff: &DiffResponse) -> String {
-    let added_tasks = diff.get_added().get_tasks().len();
-    let removed_tasks = diff.get_removed().get_tasks().len();
+    let added_tasks = diff.added.tasks.len();
+    let removed_tasks = diff.removed.tasks.len();
 
     if added_tasks == 0 && removed_tasks == 0 {
         return format!("No changes");
@@ -18,8 +18,8 @@ pub fn fmt_diff(diff: &DiffResponse) -> String {
             if added_tasks == 1 { "" } else { "s" }
         );
 
-        for task in diff.get_added().get_tasks() {
-            out += &format!("  {}", task.get_name());
+        for task in &diff.added.tasks {
+            out += &format!("  {}", task.name);
         }
     }
 
@@ -30,8 +30,8 @@ pub fn fmt_diff(diff: &DiffResponse) -> String {
             if removed_tasks == 1 { "" } else { "s" }
         );
 
-        for task in diff.get_removed().get_tasks() {
-            out += &format!("  {}", task.get_name());
+        for task in &diff.removed.tasks {
+            out += &format!("  {}", task.name);
         }
     }
     out
@@ -40,50 +40,49 @@ pub fn fmt_diff(diff: &DiffResponse) -> String {
 // TODO: make this more sophisticated (capable of printing a nice diff of tasks in the terminal)
 pub fn diff_task(original: &Task, proposed: &Task) -> Diff {
     assert_eq!(
-        original.get_name(),
-        proposed.get_name(),
+        original.name, proposed.name,
         "must only diff tasks with the same name!"
     );
 
     let mut out = Diff::new();
-    out.set_name(original.get_name().to_string());
-    if original.get_binary() != proposed.get_binary() {
-        out.set_kind(DiffType::MODIFIED);
+    out.name = original.name.to_string();
+    if original.binary != proposed.binary {
+        out.kind = DiffType::Modified;
         return out;
     }
 
-    if original.get_restart_mode() != proposed.get_restart_mode() {
-        out.set_kind(DiffType::MODIFIED);
+    if original.restart_mode != proposed.restart_mode {
+        out.kind = DiffType::Modified;
         return out;
     }
 
     let original_env: HashSet<_> = original
-        .get_environment()
+        .environment
         .iter()
-        .map(|env| format!("{:?}", env.get_value()))
+        .map(|env| format!("{:?}", env.value))
         .collect();
     let proposed_env: HashSet<_> = proposed
-        .get_environment()
+        .environment
         .iter()
-        .map(|env| format!("{:?}", env.get_value()))
+        .map(|env| format!("{:?}", env.value))
         .collect();
     if original_env != proposed_env {
-        out.set_kind(DiffType::MODIFIED);
+        out.kind = DiffType::Modified;
         return out;
     }
 
     let original_args: HashSet<_> = original
-        .get_arguments()
+        .arguments
         .iter()
         .map(|a| format!("{:?}", a))
         .collect();
     let proposed_args: HashSet<_> = proposed
-        .get_arguments()
+        .arguments
         .iter()
         .map(|a| format!("{:?}", a))
         .collect();
     if original_env != proposed_env {
-        out.set_kind(DiffType::MODIFIED);
+        out.kind = DiffType::Modified;
         return out;
     }
 

@@ -1,4 +1,4 @@
-use metal_grpc_rust::RestartMode;
+use metal_bus::{ArgKind, ArgValue, RestartMode};
 
 use std::sync::Arc;
 
@@ -11,7 +11,7 @@ pub enum MetalConfigError {
     ConversionError(String),
 }
 
-pub fn read_config(input: &str) -> Result<metal_grpc_rust::Configuration, MetalConfigError> {
+pub fn read_config(input: &str) -> Result<metal_bus::Configuration, MetalConfigError> {
     let ast = match ccl::get_ast(input) {
         Ok(a) => a,
         Err(e) => return Err(MetalConfigError::CCLParseError(e)),
@@ -39,7 +39,7 @@ pub fn read_config(input: &str) -> Result<metal_grpc_rust::Configuration, MetalC
         }
     };
 
-    let mut out = metal_grpc_rust::Configuration::new();
+    let mut out = metal_bus::Configuration::new();
     extract_config("", &dict, &mut out)?;
     Ok(out)
 }
@@ -55,7 +55,7 @@ fn join_prefix(prefix: &str, suffix: &str) -> String {
 fn extract_config(
     prefix: &str,
     dict: &ccl::Dictionary,
-    out: &mut metal_grpc_rust::Configuration,
+    out: &mut metal_bus::Configuration,
 ) -> Result<(), MetalConfigError> {
     if let Some(ccl::Value::String(ty)) = dict.get("_metal_type") {
         return match ty.as_str() {
@@ -79,14 +79,14 @@ fn extract_config(
 fn extract_task(
     prefix: &str,
     dict: &ccl::Dictionary,
-    out: &mut metal_grpc_rust::Configuration,
+    out: &mut metal_bus::Configuration,
 ) -> Result<(), MetalConfigError> {
-    let mut task = metal_grpc_rust::Task::new();
-    task.set_name(prefix.to_string());
+    let mut task = metal_bus::Task::new();
+    task.name = prefix.to_string();
     for (k, v) in &dict.kv_pairs {
         match k.as_str() {
             "binary" => match v {
-                ccl::Value::Dictionary(bin) => task.set_binary(extract_binary(bin)?),
+                ccl::Value::Dictionary(bin) => task.binary = extract_binary(bin)?,
                 _ => {
                     return Err(MetalConfigError::ConversionError(format!(
                         "task's binary field must be a dictionary, got {:?}",
@@ -95,8 +95,7 @@ fn extract_task(
                 }
             },
             "environment" => match v {
-                ccl::Value::Dictionary(env) => task
-                    .set_environment(protobuf::RepeatedField::from_vec(extract_environment(env)?)),
+                ccl::Value::Dictionary(env) => task.environment = extract_environment(env)?,
                 _ => {
                     return Err(MetalConfigError::ConversionError(format!(
                         "task's environment field must be a dictionary, got {}",
@@ -106,7 +105,7 @@ fn extract_task(
             },
             "arguments" => match v {
                 ccl::Value::Array(arr) => {
-                    task.set_arguments(protobuf::RepeatedField::from_vec(extract_arguments(&arr)?))
+                    task.arguments = extract_arguments(&arr)?;
                 }
                 _ => {
                     return Err(MetalConfigError::ConversionError(format!(
@@ -116,17 +115,19 @@ fn extract_task(
                 }
             },
             "restart_mode" => match v {
-                ccl::Value::String(v) => task.set_restart_mode(match v.as_str() {
-                    "one_shot" => RestartMode::ONE_SHOT,
-                    "on_failure" => RestartMode::ON_FAILURE,
-                    "always" => RestartMode::ALWAYS,
-                    x => {
-                        return Err(MetalConfigError::ConversionError(format!(
-                            "restart_policy must be an one_shot, on_failure or always, got {}",
-                            x
-                        )))
+                ccl::Value::String(v) => {
+                    task.restart_mode = match v.as_str() {
+                        "one_shot" => RestartMode::OneShot,
+                        "on_failure" => RestartMode::OnFailure,
+                        "always" => RestartMode::Always,
+                        x => {
+                            return Err(MetalConfigError::ConversionError(format!(
+                                "restart_policy must be an one_shot, on_failure or always, got {}",
+                                x
+                            )))
+                        }
                     }
-                }),
+                }
                 x => {
                     return Err(MetalConfigError::ConversionError(format!(
                         "restart_policy must be a string, got {}",
@@ -139,22 +140,22 @@ fn extract_task(
     }
 
     // Validate task
-    if task.get_binary().get_url().is_empty() && task.get_binary().get_path().is_empty() {
+    if task.binary.url.is_empty() && task.binary.path.is_empty() {
         return Err(MetalConfigError::ConversionError(String::from(
             "task must contain a binary!",
         )));
     }
 
-    out.mut_tasks().push(task);
+    out.tasks.push(task);
     Ok(())
 }
 
-fn extract_binary(dict: &ccl::Dictionary) -> Result<metal_grpc_rust::Binary, MetalConfigError> {
-    let mut binary = metal_grpc_rust::Binary::new();
+fn extract_binary(dict: &ccl::Dictionary) -> Result<metal_bus::Binary, MetalConfigError> {
+    let mut binary = metal_bus::Binary::new();
     for (k, v) in &dict.kv_pairs {
         match k.as_str() {
             "url" => match v {
-                ccl::Value::String(url) => binary.set_url(url.clone()),
+                ccl::Value::String(url) => binary.url = url.clone(),
                 _ => {
                     return Err(MetalConfigError::ConversionError(format!(
                         "binary's url field must be a string, got {:?}",
@@ -163,7 +164,7 @@ fn extract_binary(dict: &ccl::Dictionary) -> Result<metal_grpc_rust::Binary, Met
                 }
             },
             "path" => match v {
-                ccl::Value::String(path) => binary.set_path(path.clone()),
+                ccl::Value::String(path) => binary.path = path.clone(),
                 _ => {
                     return Err(MetalConfigError::ConversionError(format!(
                         "binary's path field must be a string, got {:?}",
@@ -176,7 +177,7 @@ fn extract_binary(dict: &ccl::Dictionary) -> Result<metal_grpc_rust::Binary, Met
     }
 
     // Validate the binary
-    if binary.get_url().is_empty() && binary.get_path().is_empty() {
+    if binary.url.is_empty() && binary.path.is_empty() {
         return Err(MetalConfigError::ConversionError(String::from(
             "binary must contain a url or path field!",
         )));
@@ -187,32 +188,33 @@ fn extract_binary(dict: &ccl::Dictionary) -> Result<metal_grpc_rust::Binary, Met
 
 fn extract_environment(
     dict: &ccl::Dictionary,
-) -> Result<Vec<metal_grpc_rust::Environment>, MetalConfigError> {
+) -> Result<Vec<metal_bus::Environment>, MetalConfigError> {
     let mut environment = Vec::new();
     for (k, v) in &dict.kv_pairs {
-        let mut env = metal_grpc_rust::Environment::new();
-        env.set_name(k.clone());
+        let mut env = metal_bus::Environment::new();
+        env.name = k.clone();
         match v {
             ccl::Value::String(s) => {
-                let mut av = metal_grpc_rust::ArgValue::new();
-                av.set_value(s.clone());
-                env.set_value(av);
+                let mut av = ArgValue::new();
+                av.value = s.clone();
+                av.kind = ArgKind::String;
+                env.value = av;
             }
             ccl::Value::Dictionary(dict) => {
                 if let Some(ccl::Value::String(ty)) = dict.get("_metal_type") {
                     if ty.as_str() == "port" {
-                        let mut av = metal_grpc_rust::ArgValue::new();
-                        av.set_kind(metal_grpc_rust::ArgKind::PORT_ASSIGNMENT);
+                        let mut av = ArgValue::new();
+                        av.kind = ArgKind::PortAssignment;
 
                         if let Some(ccl::Value::String(service_name)) = dict.get("name") {
-                            av.set_value(service_name.to_string());
+                            av.value = service_name.to_string();
                         } else {
                             return Err(MetalConfigError::ConversionError(format!(
                                 "port binding must have a name",
                             )));
                         }
 
-                        env.set_value(av);
+                        env.value = av;
                     } else {
                         return Err(MetalConfigError::ConversionError(format!(
                             "expected _metal_type port, got {}",
@@ -236,22 +238,21 @@ fn extract_environment(
     Ok(environment)
 }
 
-fn extract_arguments(
-    args: &[ccl::Value],
-) -> Result<Vec<metal_grpc_rust::ArgValue>, MetalConfigError> {
+fn extract_arguments(args: &[ccl::Value]) -> Result<Vec<ArgValue>, MetalConfigError> {
     let mut out = Vec::new();
     for arg in args {
         match arg {
             ccl::Value::String(s) => {
-                let mut arg = metal_grpc_rust::ArgValue::new();
-                arg.set_value(s.clone());
+                let mut arg = ArgValue::new();
+                arg.value = s.clone();
+                arg.kind = ArgKind::String;
                 out.push(arg);
             }
             ccl::Value::Dictionary(dict) => {
                 if let Some(ccl::Value::String(ty)) = dict.get("_metal_type") {
                     if ty == "port" {
-                        let mut arg = metal_grpc_rust::ArgValue::new();
-                        arg.set_kind(metal_grpc_rust::ArgKind::PORT_ASSIGNMENT);
+                        let mut arg = ArgValue::new();
+                        arg.kind = ArgKind::PortAssignment;
                         out.push(arg);
                     } else {
                         return Err(MetalConfigError::ConversionError(format!(
@@ -309,33 +310,24 @@ namespace = {
             println!("got error: {:?}", e);
         }
         let r = result.unwrap();
-        assert_eq!(r.get_tasks().len(), 1);
-        let t = &r.get_tasks()[0];
-        assert_eq!(t.get_name(), "namespace.server");
-        assert_eq!(t.get_binary().get_url(), "http://test.com/server.exe");
-        assert_eq!(t.get_environment().len(), 2);
-        assert_eq!(t.get_restart_mode(), RestartMode::ON_FAILURE);
+        assert_eq!(r.tasks.len(), 1);
+        let t = &r.tasks[0];
+        assert_eq!(t.name, "namespace.server");
+        assert_eq!(t.binary.url, "http://test.com/server.exe");
+        assert_eq!(t.environment.len(), 2);
+        assert_eq!(t.restart_mode, RestartMode::OnFailure);
 
         // NOTE: ccl dictionary values are sorted alphabetically
-        assert_eq!(t.get_environment()[0].get_name(), "PORT");
-        assert_eq!(
-            t.get_environment()[0].get_value().get_kind(),
-            metal_grpc_rust::ArgKind::PORT_ASSIGNMENT
-        );
-        assert_eq!(t.get_environment()[0].get_value().get_value(), "my_service");
+        assert_eq!(t.environment[0].name, "PORT");
+        assert_eq!(t.environment[0].value.kind, ArgKind::PortAssignment);
+        assert_eq!(t.environment[0].value.value, "my_service");
 
-        assert_eq!(t.get_environment()[1].get_name(), "SECRET_VALUE");
-        assert_eq!(
-            t.get_environment()[1].get_value().get_value(),
-            "secret_content"
-        );
-        assert_eq!(
-            t.get_environment()[1].get_value().get_kind(),
-            metal_grpc_rust::ArgKind::STRING
-        );
+        assert_eq!(t.environment[1].name, "SECRET_VALUE");
+        assert_eq!(t.environment[1].value.value, "secret_content");
+        assert_eq!(t.environment[1].value.kind, ArgKind::String);
 
-        assert_eq!(t.get_arguments().len(), 2);
-        assert_eq!(t.get_arguments()[0].get_value(), "--help");
-        assert_eq!(t.get_arguments()[1].get_value(), "xyz",);
+        assert_eq!(t.arguments.len(), 2);
+        assert_eq!(t.arguments[0].value, "--help");
+        assert_eq!(t.arguments[1].value, "xyz",);
     }
 }

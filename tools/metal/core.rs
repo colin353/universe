@@ -1,4 +1,4 @@
-use metal_grpc_rust::{DiffResponse, Logs, Task, TaskRuntimeInfo};
+use metal_bus::{DiffResponse, Logs, Task, TaskRuntimeInfo};
 
 #[derive(Debug)]
 pub enum MetalMonitorError {
@@ -29,7 +29,7 @@ impl FakeMonitor {
 }
 
 impl Monitor for FakeMonitor {
-    fn execute(&self, diff: &DiffResponse) -> Result<Vec<Task>, MetalMonitorError> {
+    fn execute(&self, _: &DiffResponse) -> Result<Vec<Task>, MetalMonitorError> {
         Ok(Vec::new())
     }
 

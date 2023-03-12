@@ -2,7 +2,8 @@ use state::MetalStateManager;
 
 use std::sync::Arc;
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let root_dir = std::path::PathBuf::from("/tmp/metal");
     let ip_address = "127.0.0.1".parse().expect("failed to parse IP address");
 
@@ -28,15 +29,5 @@ fn main() {
         monitor.restart_loop();
     });
 
-    let mut server = grpc::ServerBuilder::<tls_api_stub::TlsAcceptor>::new();
-    server.http.set_port(20202);
-    server.add_service(metal_grpc_rust::MetalServiceServer::new_service_def(
-        handler,
-    ));
-
-    let _server = server.build().expect("failed to build server");
-
-    loop {
-        std::thread::sleep(std::time::Duration::from_secs(60));
-    }
+    bus_rpc::serve(20202, metal_bus::MetalService(Arc::new(handler))).await;
 }
