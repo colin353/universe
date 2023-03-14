@@ -39,5 +39,6 @@ rust_binary(
         ":ws",
         "//third_party:tokio",
         "//util/tmpl",
+        "//util/flags",
     ],
 )

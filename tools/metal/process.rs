@@ -228,6 +228,7 @@ enum ProcessState {
     Exited(i32),
 }
 
+#[cfg(not(target_os = "macos"))]
 fn get_proc_state(pid: u32) -> Option<ProcessState> {
     let data = match std::fs::read_to_string(format!("/proc/{}/stat", pid)) {
         Ok(d) => d,
@@ -245,4 +246,45 @@ fn get_proc_state(pid: u32) -> Option<ProcessState> {
         "T" | "X" | "x" => ProcessState::Exited(exit_code),
         _ => return None,
     })
+}
+
+// NOTE: this was written by chatGPT so I have no clue if it's right,
+// but it seems to work
+#[cfg(target_os = "macos")]
+fn get_proc_state(pid: u32) -> Option<ProcessState> {
+    let output = match std::process::Command::new("ps")
+        .args(&["-p", &pid.to_string(), "-o", "state="])
+        .output()
+    {
+        Ok(output) => output,
+        Err(_) => {
+            return None;
+        }
+    };
+
+    if !output.status.success() {
+        // Exited? Harvest exit code somehow?
+        return Some(ProcessState::Exited(1));
+    }
+
+    let stdout = match String::from_utf8(output.stdout) {
+        Ok(stdout) => stdout,
+        Err(_) => return None,
+    };
+
+    let mut parts = stdout.trim().split_whitespace();
+    let state = match parts.next().and_then(|s| s.chars().next()) {
+        Some('R') => ProcessState::Running,
+        Some('S') => ProcessState::Running,
+        Some('T') => ProcessState::Running,
+        Some('Z') => {
+            // Exited? Harvest exit code? Just say exit 1
+            return Some(ProcessState::Exited(1));
+        }
+        x => {
+            return None;
+        }
+    };
+
+    Some(state)
 }

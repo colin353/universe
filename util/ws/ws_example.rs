@@ -59,6 +59,9 @@ impl Server for ExampleServer {
 
 #[tokio::main]
 async fn main() {
+    let port = flags::define_flag!("port", 9988, "the port to use");
+    flags::parse_flags!(port);
+
     println!("Start server...");
-    ws::serve(ExampleServer::new(), 9988).await;
+    ws::serve(ExampleServer::new(), port.value()).await;
 }

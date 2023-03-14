@@ -1,6 +1,57 @@
+use futures::join;
+use metal_bus::MetalServiceHandler;
 use state::MetalStateManager;
+use std::convert::TryInto;
 
 use std::sync::Arc;
+
+struct ServiceResolver {
+    service: service::MetalServiceHandler,
+}
+impl load_balancer::Resolver for ServiceResolver {
+    fn resolve(&self, host: &str) -> Option<(std::net::IpAddr, u16)> {
+        let mut req = metal_bus::ResolveRequest::new();
+        // TODO: do something smarter... reverse the segments here,
+        // so that the resolution makes more sense as a URL
+        if host.ends_with(".localhost") {
+            let taskname = host[0..host.len() - 10].to_owned();
+            req.service_name = taskname;
+        } else {
+            return None;
+        }
+        let resp = match self.service.resolve(req) {
+            Ok(r) => r,
+            Err(_) => {
+                eprintln!("failed to resolve!");
+                return None;
+            }
+        };
+        for endpoint in &resp.endpoints {
+            let ip = match endpoint.ip_address.len() {
+                4 => {
+                    let packed: [u8; 4] = endpoint
+                        .ip_address
+                        .as_slice()
+                        .try_into()
+                        .expect("length checked");
+                    std::net::IpAddr::from(packed)
+                }
+                16 => {
+                    let packed: [u8; 16] = endpoint
+                        .ip_address
+                        .as_slice()
+                        .try_into()
+                        .expect("length checked");
+                    std::net::IpAddr::from(packed)
+                }
+                // Invalid IP address
+                _ => continue,
+            };
+            return Some((ip, endpoint.port as u16));
+        }
+        None
+    }
+}
 
 #[tokio::main]
 async fn main() {
@@ -29,5 +80,11 @@ async fn main() {
         monitor.restart_loop();
     });
 
-    bus_rpc::serve(20202, metal_bus::MetalService(Arc::new(handler))).await;
+    let service = bus_rpc::serve(20202, metal_bus::MetalService(Arc::new(handler.clone())));
+    let proxy = load_balancer::proxy(
+        20000,
+        std::sync::Arc::new(ServiceResolver { service: handler }),
+    );
+
+    join!(service, proxy);
 }

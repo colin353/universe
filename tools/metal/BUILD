@@ -20,6 +20,16 @@ rust_library(
     ]
 )
 
+rust_library(
+    name = "load_balancer",
+    srcs = ["load_balancer.rs"],
+    edition = "2018",
+    deps = [
+        "//third_party:futures",
+        "//third_party:hyper",
+        "//third_party:tokio",
+    ],
+)
 
 rust_library(
     name = "config",
@@ -112,8 +122,10 @@ rust_binary(
         ":state",
         ":monitor",
         ":metal_bus",
+        ":load_balancer",
         "//util/bus:bus_rpc",
         "//third_party:tokio",
+        "//third_party:futures",
     ]
 )
 

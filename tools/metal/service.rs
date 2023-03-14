@@ -6,6 +6,7 @@ use state::{MetalStateError, MetalStateManager};
 
 const RESOLUTION_TTL: u64 = 5;
 
+#[derive(Clone)]
 pub struct MetalServiceHandler(pub Arc<MetalServiceHandlerInner>);
 
 pub struct MetalServiceHandlerInner {
