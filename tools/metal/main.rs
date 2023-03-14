@@ -8,13 +8,17 @@ use std::sync::Arc;
 struct ServiceResolver {
     service: service::MetalServiceHandler,
 }
+
 impl load_balancer::Resolver for ServiceResolver {
     fn resolve(&self, host: &str) -> Option<(std::net::IpAddr, u16)> {
         let mut req = metal_bus::ResolveRequest::new();
         // TODO: do something smarter... reverse the segments here,
         // so that the resolution makes more sense as a URL
         if host.ends_with(".localhost") {
-            let taskname = host[0..host.len() - 10].to_owned();
+            let taskname = host[0..host.len() - 10]
+                .rsplit(".")
+                .collect::<Vec<_>>()
+                .join(".");
             req.service_name = taskname;
         } else {
             return None;
