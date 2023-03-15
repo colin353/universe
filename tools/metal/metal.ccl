@@ -1,8 +1,18 @@
 task = {
     _metal_type = "task"
+
+    binary = null
     restart_mode = "on_failure"
+}
+
+taskset = {
+    _metal_type = "taskset"
 }
 
 port_binding = {
     _metal_type = "port"
+}
+
+service_binding = {
+    _metal_type = "binding"
 }

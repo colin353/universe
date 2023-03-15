@@ -76,6 +76,19 @@ message Diff {
 
 message Configuration {
     tasks: repeated Task = 1
+    tasksets: repeated TaskSet = 2
+}
+
+message TaskSet {
+    name: string = 0
+    tasks: repeated string = 1
+    service_bindings: repeated ServiceBinding = 2
+}
+
+message ServiceBinding {
+    name: string = 0
+    port: u16 = 1
+    hostname: string = 2
 }
 
 message UpdateRequest {

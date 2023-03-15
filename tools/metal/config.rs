@@ -60,6 +60,7 @@ fn extract_config(
     if let Some(ccl::Value::String(ty)) = dict.get("_metal_type") {
         return match ty.as_str() {
             "task" => extract_task(prefix, dict, out),
+            "taskset" => extract_taskset(prefix, dict, out),
             v => Err(MetalConfigError::ConversionError(format!(
                 "unrecognized _metal_type {:?}",
                 v
@@ -72,6 +73,51 @@ fn extract_config(
             extract_config(&join_prefix(prefix, k.as_str()), dict, out)?;
         }
     }
+
+    Ok(())
+}
+
+fn extract_taskset(
+    prefix: &str,
+    dict: &ccl::Dictionary,
+    out: &mut metal_bus::Configuration,
+) -> Result<(), MetalConfigError> {
+    let mut inner_config = metal_bus::Configuration::new();
+    let mut taskset = metal_bus::TaskSet::new();
+    taskset.name = prefix.to_string();
+
+    // Extract the inner content
+    for (k, v) in &dict.kv_pairs {
+        if let ccl::Value::Dictionary(dict) = v {
+            if let Some(ccl::Value::String(ty)) = dict.get("_metal_type") {
+                if ty.as_str() == "binding" {
+                    taskset
+                        .service_bindings
+                        .push(extract_service_binding(k.as_str(), dict)?);
+                    continue;
+                };
+            }
+
+            // If not a binding, perhaps it's another task
+            extract_config(&join_prefix(prefix, k.as_str()), dict, &mut inner_config)?;
+        }
+    }
+
+    // Validate that the taskset contains at least one binding
+    if taskset.service_bindings.is_empty() {
+        return Err(MetalConfigError::ConversionError(format!(
+            "tasksets must contain at least one binding!",
+        )));
+    }
+
+    for task in &inner_config.tasks {
+        taskset.tasks.push(task.name.to_string());
+    }
+
+    println!("inner_config: {inner_config:#?}");
+
+    out.tasksets.push(taskset);
+    out.tasks.extend(inner_config.tasks);
 
     Ok(())
 }
@@ -122,7 +168,7 @@ fn extract_task(
                         "always" => RestartMode::Always,
                         x => {
                             return Err(MetalConfigError::ConversionError(format!(
-                                "restart_policy must be an one_shot, on_failure or always, got {}",
+                                "restart_mode must be an one_shot, on_failure or always, got {}",
                                 x
                             )))
                         }
@@ -130,7 +176,7 @@ fn extract_task(
                 }
                 x => {
                     return Err(MetalConfigError::ConversionError(format!(
-                        "restart_policy must be a string, got {}",
+                        "restart_mode must be a string, got {}",
                         x.type_name()
                     )))
                 }
@@ -184,6 +230,57 @@ fn extract_binary(dict: &ccl::Dictionary) -> Result<metal_bus::Binary, MetalConf
     }
 
     Ok(binary)
+}
+
+fn extract_service_binding(
+    name: &str,
+    dict: &ccl::Dictionary,
+) -> Result<metal_bus::ServiceBinding, MetalConfigError> {
+    let mut binding = metal_bus::ServiceBinding::new();
+    binding.name = name.to_string();
+
+    for (k, v) in &dict.kv_pairs {
+        match k.as_str() {
+            "port" => match v {
+                ccl::Value::Number(num) => {
+                    if *num <= 0.0 || *num > (u16::MAX as f64) {
+                        return Err(MetalConfigError::ConversionError(format!(
+                            "binding's port field must be a number between 1-65535, got {num}",
+                        )));
+                    }
+
+                    binding.port = *num as u16;
+                }
+                _ => {
+                    return Err(MetalConfigError::ConversionError(format!(
+                        "binding's port field must be a number, got {:?}",
+                        v.type_name()
+                    )))
+                }
+            },
+            "hostname" => match v {
+                ccl::Value::String(name) => {
+                    binding.hostname = name.to_string();
+                }
+                _ => {
+                    return Err(MetalConfigError::ConversionError(format!(
+                        "binding's hostname field must be a string, got {:?}",
+                        v.type_name()
+                    )))
+                }
+            },
+            _ => continue,
+        }
+    }
+
+    // Validate the binary
+    if binding.port == 0 || binding.hostname.is_empty() {
+        return Err(MetalConfigError::ConversionError(String::from(
+            "binary must contain a url or path field!",
+        )));
+    }
+
+    Ok(binding)
 }
 
 fn extract_environment(
@@ -329,5 +426,54 @@ namespace = {
         assert_eq!(t.arguments.len(), 2);
         assert_eq!(t.arguments[0].value, "--help");
         assert_eq!(t.arguments[1].value, "xyz",);
+    }
+
+    #[test]
+    fn test_read_taskset() {
+        let result = read_config(
+            r#"
+
+import { task, taskset, port_binding, service_binding } from "metal"
+
+service = taskset {
+    server = task {
+        binary = {
+            url = "http://test.com/server.exe"
+        }
+        environment = {
+            SECRET_VALUE = "secret_content"
+            PORT = port_binding {
+                name = "http"
+            }
+        }
+        arguments = [
+            "--help", "xyz",
+        ]
+    }
+
+    http = service_binding {
+        hostname = "colinmerkel.xyz"
+        port = 80
+    }
+}
+"#,
+        );
+        if let Err(e) = &result {
+            println!("got error: {:?}", e);
+        }
+        let r = result.unwrap();
+        assert_eq!(r.tasks.len(), 1);
+        let t = &r.tasks[0];
+        assert_eq!(t.name, "service.server");
+        assert_eq!(t.binary.url, "http://test.com/server.exe");
+        assert_eq!(t.environment.len(), 2);
+        assert_eq!(t.restart_mode, RestartMode::OnFailure);
+
+        assert_eq!(r.tasksets.len(), 1);
+        let t = &r.tasksets[0];
+        assert_eq!(t.tasks, &["service.server"]);
+        assert_eq!(t.service_bindings.len(), 1);
+        assert_eq!(t.service_bindings[0].hostname, "colinmerkel.xyz");
+        assert_eq!(t.service_bindings[0].port, 80);
     }
 }
