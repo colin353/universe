@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
-use metal_bus::{Configuration, DiffResponse, DiffType, Task, TaskRuntimeInfo, TaskState};
+use metal_bus::{Configuration, DiffResponse, DiffType, Task, TaskRuntimeInfo, TaskSet, TaskState};
 use state::{MetalStateError, MetalStateManager};
 
 const RESOLUTION_TTL: u64 = 5;
@@ -11,6 +11,8 @@ pub struct MetalServiceHandler(pub Arc<MetalServiceHandlerInner>);
 
 pub struct MetalServiceHandlerInner {
     tasks: RwLock<HashMap<String, Task>>,
+    tasksets: RwLock<HashMap<String, TaskSet>>,
+    service_bindings: RwLock<HashMap<(u16, String), String>>,
     state: Arc<dyn MetalStateManager>,
     monitor: Arc<dyn core::Monitor>,
 }
@@ -27,8 +29,27 @@ impl MetalServiceHandler {
             .map(|t| (t.name.to_string(), t))
             .collect();
 
+        let tasksets: HashMap<_, _> = state
+            .all_tasksets()?
+            .into_iter()
+            .map(|t| (t.name.to_string(), t))
+            .collect();
+
+        // The index of service bindings must be maintained based on the tasksets...
+        let mut service_bindings = HashMap::new();
+        for (_, taskset) in tasksets.iter() {
+            for binding in &taskset.service_bindings {
+                service_bindings.insert(
+                    (binding.port, binding.hostname.clone()),
+                    binding.name.clone(),
+                );
+            }
+        }
+
         Ok(MetalServiceHandler(Arc::new(MetalServiceHandlerInner {
             tasks: RwLock::new(tasks),
+            tasksets: RwLock::new(tasksets),
+            service_bindings: RwLock::new(service_bindings),
             monitor,
             state,
         })))
@@ -63,27 +84,84 @@ impl core::Coordinator for MetalServiceHandlerInner {
 }
 
 fn compute_diff(
-    current: &HashMap<String, Task>,
+    tasks: &HashMap<String, Task>,
+    tasksets: &HashMap<String, TaskSet>,
     desired: &Configuration,
     down: bool,
 ) -> DiffResponse {
-    let mut response = DiffResponse::new();
+    let mut added_tasks = HashMap::new();
+    let mut removed_tasks = HashMap::new();
+
     for task in &desired.tasks {
-        if let Some(current_task) = current.get(&task.name) {
+        if let Some(current_task) = tasks.get(&task.name) {
             if down {
-                response.removed.tasks.push(task.clone());
+                removed_tasks.insert(task.name.as_str(), task.clone());
             } else {
                 let difference = diff::diff_task(current_task, task);
-                if difference.kind == DiffType::None {
-                    response.added.tasks.push(task.clone());
+                if difference.kind != DiffType::None {
+                    added_tasks.insert(task.name.as_str(), task.clone());
                 }
             }
         } else {
             if !down {
-                response.added.tasks.push(task.clone());
+                added_tasks.insert(&task.name, task.clone());
             }
         }
     }
+
+    let mut response = DiffResponse::new();
+    for taskset in &desired.tasksets {
+        // After the changes are applied, how many tasks will remain in the taskset?
+        // If no tasks remain, the taskset is deleted. If unchanged, the taskset is
+        // unchanged. If tasks are added, the taskset is modified.
+        let mut modified = false;
+        let mut deleted = true;
+
+        let mut tasks: std::collections::HashSet<&str> = tasksets
+            .get(&taskset.name)
+            .map(|t| t.tasks.as_slice())
+            .unwrap_or(&[])
+            .iter()
+            .map(|s| s.as_str())
+            .collect();
+
+        for task_name in &taskset.tasks {
+            if removed_tasks.contains_key(task_name.as_str()) {
+                tasks.remove(task_name.as_str());
+                modified = true;
+            } else if added_tasks.contains_key(task_name.as_str()) {
+                tasks.insert(task_name);
+                modified = true;
+            }
+        }
+
+        if tasks.is_empty() {
+            response.removed.tasksets.push(taskset.clone());
+            continue;
+        }
+
+        if !down {
+            // Check whether bindings were modified
+            if let Some(taskset) = tasksets.get(&taskset.name) {
+                if taskset.service_bindings != taskset.service_bindings {
+                    modified = true;
+                }
+            } else {
+                modified = true;
+            }
+        }
+
+        if modified {
+            let mut ts = taskset.clone();
+            ts.tasks = tasks.iter().map(|s| s.to_string()).collect();
+
+            response.added.tasksets.push(ts)
+        }
+    }
+
+    response.added.tasks = added_tasks.into_iter().map(|(_, t)| t).collect();
+    response.removed.tasks = removed_tasks.into_iter().map(|(_, t)| t).collect();
+
     response
 }
 
@@ -94,25 +172,57 @@ impl metal_bus::MetalServiceHandler for MetalServiceHandler {
     ) -> Result<metal_bus::UpdateResponse, bus::BusRpcError> {
         let difference: DiffResponse;
         {
-            let mut locked = self.0.tasks.write().unwrap();
-            difference = compute_diff(&locked, &req.config, req.down);
+            let mut tasks = self.0.tasks.write().unwrap();
+            let mut tasksets = self.0.tasksets.write().unwrap();
+            let mut service_bindings = self.0.service_bindings.write().unwrap();
+            difference = compute_diff(&tasks, &tasksets, &req.config, req.down);
             for task in &difference.added.tasks {
-                if let Some(t) = locked.get_mut(&task.name) {
+                if let Some(t) = tasks.get_mut(&task.name) {
                     t.binary = task.binary.clone();
                     t.environment = task.environment.clone();
                     t.arguments = task.arguments.clone();
                     self.0.state.set_task(t).unwrap();
                 } else {
-                    locked.insert(task.name.to_owned(), task.to_owned());
+                    tasks.insert(task.name.to_owned(), task.to_owned());
                     self.0.state.set_task(&task).unwrap();
                 }
             }
 
             for task in &difference.removed.tasks {
-                if let Some(t) = locked.get_mut(&task.name) {
+                if let Some(t) = tasks.get_mut(&task.name) {
                     t.environment = task.environment.to_owned().into_iter().collect();
                     self.0.state.set_task(t).unwrap();
                 }
+            }
+
+            for taskset in &difference.added.tasksets {
+                // Check if the taskset exists already. If so, we need to update the service
+                // bindings with the changes.
+                if let Some(existing) = tasksets.get(&taskset.name) {
+                    for binding in &existing.service_bindings {
+                        service_bindings.remove(&(binding.port, binding.name.clone()));
+                    }
+                }
+
+                // Re-insert service bindings
+                for binding in &taskset.service_bindings {
+                    service_bindings.insert(
+                        (binding.port, binding.hostname.clone()),
+                        binding.name.clone(),
+                    );
+                }
+
+                tasksets.insert(taskset.name.clone(), taskset.clone());
+            }
+
+            for taskset in &difference.removed.tasksets {
+                if let Some(existing) = tasksets.get(&taskset.name) {
+                    for binding in &existing.service_bindings {
+                        service_bindings.remove(&(binding.port, binding.name.clone()));
+                    }
+                }
+
+                tasksets.remove(&taskset.name);
             }
         }
 
@@ -132,8 +242,9 @@ impl metal_bus::MetalServiceHandler for MetalServiceHandler {
         &self,
         req: metal_bus::UpdateRequest,
     ) -> Result<metal_bus::DiffResponse, bus::BusRpcError> {
-        let locked = self.0.tasks.read().unwrap();
-        Ok(compute_diff(&locked, &req.config, req.down))
+        let tasks = self.0.tasks.read().unwrap();
+        let tasksets = self.0.tasksets.read().unwrap();
+        Ok(compute_diff(&tasks, &tasksets, &req.config, req.down))
     }
 
     fn resolve(
@@ -141,6 +252,30 @@ impl metal_bus::MetalServiceHandler for MetalServiceHandler {
         req: metal_bus::ResolveRequest,
     ) -> Result<metal_bus::ResolveResponse, bus::BusRpcError> {
         let mut response = metal_bus::ResolveResponse::new();
+
+        // Try to resolve as a taskset name
+        if let Some(pos) = req.service_name.rfind('.') {
+            let taskset_name = &req.service_name[..pos];
+            let binding_name = &req.service_name[pos + 1..];
+            if !taskset_name.is_empty() {
+                let tasksets = self.0.tasksets.read().unwrap();
+                if let Some(taskset) = tasksets.get(taskset_name) {
+                    let tasks = self.0.tasks.read().unwrap();
+                    for task_name in &taskset.tasks {
+                        if let Some(t) = tasks.get(task_name) {
+                            for binding in &t.runtime_info.services {
+                                if binding.service_name == binding_name {
+                                    let mut endpoint = metal_bus::Endpoint::new();
+                                    endpoint.ip_address = t.runtime_info.ip_address.to_owned();
+                                    endpoint.port = binding.port;
+                                    response.endpoints.push(endpoint);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         // Try to resolve as a task + binding name
         if let Some(pos) = req.service_name.rfind('.') {

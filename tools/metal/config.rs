@@ -103,18 +103,9 @@ fn extract_taskset(
         }
     }
 
-    // Validate that the taskset contains at least one binding
-    if taskset.service_bindings.is_empty() {
-        return Err(MetalConfigError::ConversionError(format!(
-            "tasksets must contain at least one binding!",
-        )));
-    }
-
     for task in &inner_config.tasks {
         taskset.tasks.push(task.name.to_string());
     }
-
-    println!("inner_config: {inner_config:#?}");
 
     out.tasksets.push(taskset);
     out.tasks.extend(inner_config.tasks);

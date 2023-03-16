@@ -1,5 +1,6 @@
 use futures::join;
 use metal_bus::MetalServiceHandler;
+use rand::Rng;
 use state::MetalStateManager;
 use std::convert::TryInto;
 
@@ -30,30 +31,38 @@ impl load_balancer::Resolver for ServiceResolver {
                 return None;
             }
         };
-        for endpoint in &resp.endpoints {
-            let ip = match endpoint.ip_address.len() {
-                4 => {
-                    let packed: [u8; 4] = endpoint
-                        .ip_address
-                        .as_slice()
-                        .try_into()
-                        .expect("length checked");
-                    std::net::IpAddr::from(packed)
-                }
-                16 => {
-                    let packed: [u8; 16] = endpoint
-                        .ip_address
-                        .as_slice()
-                        .try_into()
-                        .expect("length checked");
-                    std::net::IpAddr::from(packed)
-                }
-                // Invalid IP address
-                _ => continue,
-            };
-            return Some((ip, endpoint.port as u16));
+
+        if resp.endpoints.is_empty() {
+            return None;
         }
-        None
+
+        let mut rng = rand::thread_rng();
+        let endpoint = &resp.endpoints[rng.gen::<usize>() % resp.endpoints.len()];
+
+        let ip = match endpoint.ip_address.len() {
+            4 => {
+                let packed: [u8; 4] = endpoint
+                    .ip_address
+                    .as_slice()
+                    .try_into()
+                    .expect("length checked");
+                std::net::IpAddr::from(packed)
+            }
+            16 => {
+                let packed: [u8; 16] = endpoint
+                    .ip_address
+                    .as_slice()
+                    .try_into()
+                    .expect("length checked");
+                std::net::IpAddr::from(packed)
+            }
+            // Invalid IP address
+            _ => {
+                println!("invalid IP address!");
+                return None;
+            }
+        };
+        Some((ip, endpoint.port as u16))
     }
 }
 

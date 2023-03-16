@@ -133,7 +133,7 @@ impl MetalMonitor {
         runtime_info.ip_address = self.ip_address();
 
         std::thread::spawn(move || {
-            child.wait();
+            child.wait().unwrap();
         });
 
         for (service_name, port) in ports {

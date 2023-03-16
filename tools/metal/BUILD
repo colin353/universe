@@ -125,6 +125,7 @@ rust_binary(
         ":load_balancer",
         "//util/bus:bus_rpc",
         "//third_party:tokio",
+        "//third_party:rand",
         "//third_party:futures",
     ]
 )

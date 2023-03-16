@@ -15,4 +15,5 @@ port_binding = {
 
 service_binding = {
     _metal_type = "binding"
+    port = 20000
 }
