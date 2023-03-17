@@ -12,6 +12,7 @@ use self::security_framework::secure_transport::{
 };
 use self::security_framework_sys::base::errSecIO;
 use self::tempfile::TempDir;
+use crate::imp::security_framework::os::macos::import_export::Pkcs12ImportOptionsExt;
 use std::error;
 use std::fmt;
 use std::io;

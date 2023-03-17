@@ -33,8 +33,13 @@ rust_library(
     srcs = glob(["**/*.rs"]),
     deps = [
         "//third_party/vendor/openssl-0.10.19:openssl",
+        "//third_party/vendor/security-framework:security_framework",
+        "//third_party/vendor/security-framework-sys:security_framework_sys",
+        "//third_party:libc",
         "//third_party/vendor/openssl-probe-0.1.2:openssl_probe",
-#        "//third_party/vendor/openssl-sys-0.9.42:openssl_sys",
+        "//third_party/vendor/openssl-sys-0.9.42:openssl_sys",
+        "//third_party:lazy_static",
+        "//third_party/vendor/tempfile-3.1.0:tempfile",
     ],
     rustc_flags = [
         "--cap-lints=allow",

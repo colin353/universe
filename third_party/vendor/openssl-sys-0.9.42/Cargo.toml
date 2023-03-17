@@ -14,7 +14,7 @@
 name = "openssl-sys"
 version = "0.9.42"
 authors = ["Alex Crichton <alex@alexcrichton.com>", "Steven Fackler <sfackler@gmail.com>"]
-build = "build/main.rs"
+build = "o_build/main.rs"
 links = "openssl"
 description = "FFI bindings to OpenSSL"
 readme = "README.md"
