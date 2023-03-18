@@ -88,6 +88,18 @@ impl FlagValue for bool {
 }
 
 // TODO: implement flags for Vec<...>?
+impl<T: FlagValue> FlagValue for Vec<T> {
+    fn from_str(s: &str) -> Result<Self, std::io::Error> {
+        let mut value = Vec::new();
+        for el in s.split(",") {
+            if el.is_empty() {
+                continue;
+            }
+            value.push(T::from_str(s)?);
+        }
+        Ok(value)
+    }
+}
 
 #[derive(Clone)]
 pub struct Flag<T: FlagValue> {
@@ -130,7 +142,7 @@ pub fn parse_flags_or_panic(flags: &[&dyn ParseableFlag]) -> Vec<String> {
     }
 }
 
-impl<T: std::clone::Clone + FlagValue + std::fmt::Display> ParseableFlag for Flag<T> {
+impl<T: std::clone::Clone + FlagValue + std::fmt::Debug> ParseableFlag for Flag<T> {
     fn validate(&self, value: &str) -> Result<(), Error> {
         match self.parse(value) {
             Ok(_) => return Ok(()),
@@ -147,7 +159,7 @@ impl<T: std::clone::Clone + FlagValue + std::fmt::Display> ParseableFlag for Fla
     }
 
     fn get_default_value(&self) -> String {
-        format!("{}", self.default)
+        format!("{:?}", self.default)
     }
 }
 

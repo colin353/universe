@@ -3,7 +3,7 @@ use crate::varint;
 #[derive(Debug, Clone)]
 pub struct Nothing {}
 
-pub trait Serialize: Sized {
+pub trait Serialize {
     fn encode<W: std::io::Write>(&self, writer: &mut W) -> Result<usize, std::io::Error>;
 }
 
@@ -168,6 +168,14 @@ impl DeserializeOwned for String {
     fn decode_owned(bytes: &[u8]) -> Result<Self, std::io::Error> {
         String::from_utf8(bytes.to_owned())
             .map_err(|_| std::io::Error::from(std::io::ErrorKind::InvalidData))
+    }
+}
+
+impl Serialize for str {
+    fn encode<W: std::io::Write>(&self, writer: &mut W) -> Result<usize, std::io::Error> {
+        let buf = self.as_bytes();
+        writer.write_all(buf)?;
+        Ok(buf.len())
     }
 }
 

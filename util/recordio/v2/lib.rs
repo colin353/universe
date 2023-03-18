@@ -60,9 +60,9 @@ mod tests {
     fn write_recordio() {
         let mut buf = Vec::new();
         {
-            let mut w = RecordIOBuilder::new(&mut buf);
-            w.write("asdf").unwrap();
-            w.write("fdsa").unwrap();
+            let mut w = RecordIOBuilder::<&str, _>::new(&mut buf);
+            w.write(&"asdf").unwrap();
+            w.write(&"fdsa").unwrap();
         }
 
         let c = std::io::Cursor::new(&buf);
@@ -75,8 +75,8 @@ mod tests {
     #[test]
     fn write_recordio_owned() {
         let buf = Vec::new();
-        let mut w = RecordIOBuilder::new(buf);
-        w.write("asdf").unwrap();
-        w.write("fdsa").unwrap();
+        let mut w = RecordIOBuilder::<&str, _>::new(buf);
+        w.write(&"asdf").unwrap();
+        w.write(&"fdsa").unwrap();
     }
 }

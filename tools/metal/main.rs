@@ -72,10 +72,10 @@ async fn main() {
     let root_dir = std::path::PathBuf::from("/tmp/metal");
     let ip_address = "127.0.0.1".parse().expect("failed to parse IP address");
 
-    let ports = flags::define_flag!("ports", Vec::new(), "list of non-TLS ports to serve");
+    let ports = flags::define_flag!("ports", Vec::<u16>::new(), "list of non-TLS ports to serve");
     let tls_ports = flags::define_flag!(
         "tls_ports",
-        Vec::new(),
+        Vec::<u16>::new(),
         "list of TLS-enabled ports to serve"
     );
 
@@ -106,7 +106,10 @@ async fn main() {
     let service = bus_rpc::serve(20202, metal_bus::MetalService(Arc::new(handler.clone())));
     let proxy = load_balancer::proxy(
         20000,
-        std::sync::Arc::new(ServiceResolver { service: handler }),
+        std::sync::Arc::new(ServiceResolver {
+            port: 20000,
+            service: handler,
+        }),
     );
 
     join!(service, proxy);
