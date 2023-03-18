@@ -37,10 +37,9 @@ fn main() {
         "the hostname of the largetable service"
     );
     let port = flags::define_flag!("port", 4321, "the port of the largetable service");
-    let timestamp = flags::define_flag!("timestamp", 0, "the timestamp to use when querying");
     let args = flags::parse_flags!(host, port);
 
-    let connector = Arc::new(bus_rpc::HyperClient::new(host.value(), port.value()));
+    let connector = Arc::new(bus_rpc::HyperSyncClient::new(host.value(), port.value()));
     let client = service::LargeTableClient::new(connector);
 
     let query_count = Arc::new(AtomicU32::new(0));

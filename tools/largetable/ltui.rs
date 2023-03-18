@@ -12,7 +12,7 @@ fn main() {
 
     let strargs: Vec<_> = args.iter().map(|s| s.as_str()).collect();
 
-    let connector = Arc::new(bus_rpc::HyperClient::new(host.value(), port.value()));
+    let connector = Arc::new(bus_rpc::HyperSyncClient::new(host.value(), port.value()));
     let client = service::LargeTableClient::new(connector);
 
     match strargs.get(0) {

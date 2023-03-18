@@ -7,6 +7,7 @@ use std::convert::TryInto;
 use std::sync::Arc;
 
 struct ServiceResolver {
+    port: u16,
     service: service::MetalServiceHandler,
 }
 
@@ -70,6 +71,15 @@ impl load_balancer::Resolver for ServiceResolver {
 async fn main() {
     let root_dir = std::path::PathBuf::from("/tmp/metal");
     let ip_address = "127.0.0.1".parse().expect("failed to parse IP address");
+
+    let ports = flags::define_flag!("ports", Vec::new(), "list of non-TLS ports to serve");
+    let tls_ports = flags::define_flag!(
+        "tls_ports",
+        Vec::new(),
+        "list of TLS-enabled ports to serve"
+    );
+
+    flags::parse_flags!(ports, tls_ports);
 
     //let state_mgr = state::FilesystemState::new(root_dir.clone());
     let state_mgr = state::FakeState::new();
