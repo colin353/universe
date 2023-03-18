@@ -116,6 +116,10 @@ message Endpoint {
 
 message ResolveRequest {
     service_name: string = 1
+
+    // If specified, restrict the resolution request to the specific
+    // bound port, rather than a service name.
+    port: u16 = 2
 }
 
 message ResolveResponse {

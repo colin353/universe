@@ -95,7 +95,7 @@ impl<T: FlagValue> FlagValue for Vec<T> {
             if el.is_empty() {
                 continue;
             }
-            value.push(T::from_str(s)?);
+            value.push(T::from_str(el)?);
         }
         Ok(value)
     }

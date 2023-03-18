@@ -253,10 +253,23 @@ impl metal_bus::MetalServiceHandler for MetalServiceHandler {
     ) -> Result<metal_bus::ResolveResponse, bus::BusRpcError> {
         let mut response = metal_bus::ResolveResponse::new();
 
+        // If the port is specified, we must only check service bindings
+        let mut service_name = if req.port != 0 {
+            {
+                let locked = self.0.service_bindings.read().unwrap();
+                match locked.get(&(req.port, req.service_name.clone())) {
+                    Some(b) => b.clone(),
+                    None => return Ok(response),
+                }
+            }
+        } else {
+            req.service_name
+        };
+
         // Try to resolve as a taskset name
-        if let Some(pos) = req.service_name.rfind('.') {
-            let taskset_name = &req.service_name[..pos];
-            let binding_name = &req.service_name[pos + 1..];
+        if let Some(pos) = service_name.rfind('.') {
+            let taskset_name = &service_name[..pos];
+            let binding_name = &service_name[pos + 1..];
             if !taskset_name.is_empty() {
                 let tasksets = self.0.tasksets.read().unwrap();
                 if let Some(taskset) = tasksets.get(taskset_name) {
@@ -278,9 +291,9 @@ impl metal_bus::MetalServiceHandler for MetalServiceHandler {
         }
 
         // Try to resolve as a task + binding name
-        if let Some(pos) = req.service_name.rfind('.') {
-            let task_name = &req.service_name[..pos];
-            let binding_name = &req.service_name[pos + 1..];
+        if let Some(pos) = service_name.rfind('.') {
+            let task_name = &service_name[..pos];
+            let binding_name = &service_name[pos + 1..];
             if !task_name.is_empty() {
                 let locked = self.0.tasks.read().unwrap();
                 if let Some(t) = locked.get(task_name) {

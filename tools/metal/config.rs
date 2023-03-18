@@ -91,9 +91,10 @@ fn extract_taskset(
         if let ccl::Value::Dictionary(dict) = v {
             if let Some(ccl::Value::String(ty)) = dict.get("_metal_type") {
                 if ty.as_str() == "binding" {
-                    taskset
-                        .service_bindings
-                        .push(extract_service_binding(k.as_str(), dict)?);
+                    taskset.service_bindings.push(extract_service_binding(
+                        &join_prefix(prefix, k.as_str()),
+                        dict,
+                    )?);
                     continue;
                 };
             }
@@ -466,5 +467,6 @@ service = taskset {
         assert_eq!(t.service_bindings.len(), 1);
         assert_eq!(t.service_bindings[0].hostname, "colinmerkel.xyz");
         assert_eq!(t.service_bindings[0].port, 80);
+        assert_eq!(t.service_bindings[0].name, "service.http");
     }
 }

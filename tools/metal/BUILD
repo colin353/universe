@@ -28,6 +28,8 @@ rust_library(
         "//third_party:futures",
         "//third_party:hyper",
         "//third_party:tokio",
+        "//third_party:native_tls",
+        "//third_party/vendor/tokio-native-tls-0.3.1:tokio_tls",
     ],
 )
 
@@ -127,6 +129,7 @@ rust_binary(
         "//util/flags",
         "//third_party:tokio",
         "//third_party:rand",
+        "//third_party:native_tls",
         "//third_party:futures",
     ]
 )

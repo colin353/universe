@@ -172,6 +172,7 @@ pub fn get_flag_value(flag_name: &str, args: &[&str], envargs: &[(&str, &str)]) 
 mod test {
     use super::*;
     use crate::Flag;
+    use crate::FlagValue;
 
     #[test]
     fn test_parse_flags() {
@@ -305,6 +306,15 @@ mod test {
         assert_eq!(
             split("--settings=--flag=false").unwrap().unwrap(),
             ("settings", "--flag=false",)
+        );
+    }
+
+    #[test]
+    fn test_vec_parsing() {
+        assert_eq!(split("--vec=a,b,c").unwrap().unwrap(), ("vec", "a,b,c"));
+        assert_eq!(
+            Vec::<String>::from_str("a,b,c").unwrap(),
+            vec!["a".to_string(), "b".to_string(), "c".to_string(),]
         );
     }
 
