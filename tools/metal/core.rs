@@ -8,6 +8,7 @@ pub enum MetalMonitorError {
     PortSpaceExhausted,
     FailedToKillProcess,
     ConcurrencyError,
+    InaccessibleSecret(String),
 }
 
 pub trait Coordinator: Send + Sync {

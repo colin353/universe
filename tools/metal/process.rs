@@ -90,26 +90,39 @@ impl MetalMonitor {
         process.arg(&task.binary.path);
 
         for arg in &task.arguments {
-            if arg.kind == ArgKind::PortAssignment {
-                process.arg(format!(
-                    "{}",
-                    ports.get(&arg.value).expect("must have allocated port!")
-                ));
-            } else {
-                process.arg(&arg.value);
+            match arg.kind {
+                ArgKind::PortAssignment => {
+                    process.arg(format!(
+                        "{}",
+                        ports.get(&arg.value).expect("must have allocated port!")
+                    ));
+                }
+                ArgKind::Secret => {
+                    let secret_value = std::fs::read_to_string(&arg.value).map_err(|e| {
+                        MetalMonitorError::InaccessibleSecret(arg.value.to_string())
+                    })?;
+                    process.arg(secret_value);
+                }
+                _ => {
+                    process.arg(&arg.value);
+                }
             }
         }
 
         for env in &task.environment {
-            let value = if env.value.kind == ArgKind::PortAssignment {
-                format!(
-                    "{}",
-                    ports
-                        .get(&env.value.value)
-                        .expect("must have allocated port!")
-                )
-            } else {
-                env.value.value.to_string()
+            let value = match env.value.kind {
+                ArgKind::PortAssignment => {
+                    format!(
+                        "{}",
+                        ports
+                            .get(&env.value.value)
+                            .expect("must have allocated port!")
+                    )
+                }
+                ArgKind::Secret => std::fs::read_to_string(&env.value.value).map_err(|e| {
+                    MetalMonitorError::InaccessibleSecret(env.value.value.to_string())
+                })?,
+                _ => env.value.value.to_string(),
             };
 
             process.env(&env.name, value);

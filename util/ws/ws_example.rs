@@ -6,12 +6,14 @@ use ws::{Body, Request, Response, Server};
 static MSG: &str = "Start svr: {}";
 static TEMPLATE: &str = include_str!("template.html");
 
-#[derive(Copy, Clone)]
-struct ExampleServer {}
+#[derive(Clone)]
+struct ExampleServer {
+    secret_code: String,
+}
 
 impl ExampleServer {
-    fn new() -> Self {
-        ExampleServer {}
+    fn new(secret_code: String) -> Self {
+        ExampleServer { secret_code }
     }
 
     fn index(&self, path: String, req: Request) -> Response {
@@ -26,7 +28,8 @@ impl ExampleServer {
                 "title" => "Hello, world!",
                 "name" => name,
                 "noun" => "templates",
-                "verb" => "create"
+                "verb" => "create",
+                "secret" => &self.secret_code
             ),
         );
 
@@ -60,8 +63,9 @@ impl Server for ExampleServer {
 #[tokio::main]
 async fn main() {
     let port = flags::define_flag!("port", 9988, "the port to use");
-    flags::parse_flags!(port);
+    let secret_code = flags::define_flag!("secret_code", String::new(), "a secret code word");
+    flags::parse_flags!(port, secret_code);
 
     println!("Start server...");
-    ws::serve(ExampleServer::new(), port.value()).await;
+    ws::serve(ExampleServer::new(secret_code.value()), port.value()).await;
 }

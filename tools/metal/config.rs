@@ -304,6 +304,18 @@ fn extract_environment(
                         }
 
                         env.value = av;
+                    } else if ty.as_str() == "secret" {
+                        let mut av = ArgValue::new();
+                        av.kind = ArgKind::Secret;
+
+                        if let Some(ccl::Value::String(filename)) = dict.get("filename") {
+                            av.value = filename.to_string();
+                        } else {
+                            return Err(MetalConfigError::ConversionError(format!(
+                                "secret must have a filename",
+                            )));
+                        }
+                        env.value = av;
                     } else {
                         return Err(MetalConfigError::ConversionError(format!(
                             "expected _metal_type port, got {}",
@@ -425,7 +437,7 @@ namespace = {
         let result = read_config(
             r#"
 
-import { task, taskset, port_binding, service_binding } from "metal"
+import { secret, task, taskset, port_binding, service_binding } from "metal"
 
 service = taskset {
     server = task {
@@ -433,7 +445,10 @@ service = taskset {
             url = "http://test.com/server.exe"
         }
         environment = {
-            SECRET_VALUE = "secret_content"
+            VALUE = "1234"
+            SECRET_VALUE = secret {
+                filename = "/tmp/secret.txt"
+            }
             PORT = port_binding {
                 name = "http"
             }
@@ -458,7 +473,7 @@ service = taskset {
         let t = &r.tasks[0];
         assert_eq!(t.name, "service.server");
         assert_eq!(t.binary.url, "http://test.com/server.exe");
-        assert_eq!(t.environment.len(), 2);
+        assert_eq!(t.environment.len(), 3);
         assert_eq!(t.restart_mode, RestartMode::OnFailure);
 
         assert_eq!(r.tasksets.len(), 1);

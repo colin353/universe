@@ -13,6 +13,11 @@ port_binding = {
     _metal_type = "port"
 }
 
+secret = {
+    _metal_type = "secret"
+    filename = ""
+}
+
 service_binding = {
     _metal_type = "binding"
     port = 20000
