@@ -90,6 +90,11 @@ rust_library(
         ":core",
         ":metal_bus",
         "//third_party:libc",
+        "//third_party:sha256",
+        "//third_party:futures",
+        "//third_party:tokio",
+        "//third_party:hyper",
+        "//third_party:hyper_tls",
     ],
 )
 

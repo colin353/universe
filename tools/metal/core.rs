@@ -1,6 +1,6 @@
 use metal_bus::{DiffResponse, Logs, Task, TaskRuntimeInfo};
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum MetalMonitorError {
     InvalidBinaryFormat(String),
     FailedToStartTask,
@@ -9,6 +9,7 @@ pub enum MetalMonitorError {
     FailedToKillProcess,
     ConcurrencyError,
     InaccessibleSecret(String),
+    FailedToDownloadBinary(String),
 }
 
 pub trait Coordinator: Send + Sync {

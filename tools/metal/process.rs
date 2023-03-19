@@ -6,14 +6,14 @@ use metal_bus::{ArgKind, ServiceAssignment, Task, TaskRuntimeInfo, TaskState};
 
 impl MetalMonitor {
     fn ip_address(&self) -> Vec<u8> {
-        match self.ip_address {
+        match self.0.ip_address {
             std::net::IpAddr::V4(a) => a.octets().to_vec(),
             std::net::IpAddr::V6(a) => a.octets().to_vec(),
         }
     }
 
     pub fn resource_logs_dir(&self, name: &str) -> std::path::PathBuf {
-        let mut out = self.root_dir.join("logs");
+        let mut out = self.0.root_dir.join("logs");
         for component in name.split(".") {
             out.push(component);
         }
@@ -41,17 +41,69 @@ impl MetalMonitor {
         Ok(runtime_info)
     }
 
+    pub async fn download_and_start_task(&self, task: &Task) {
+        if let Err(e) = self.download_binary(&task.binary.url).await {
+            // Failed to download the binary, update status as failed
+            let mut runtime_info = TaskRuntimeInfo::new();
+            runtime_info.state = TaskState::Failed;
+            self.write_log(&task.name, &format!("{e:#?}")).unwrap();
+            if let Some(c) = &*self.0.coordinator.lock().unwrap() {
+                c.report_tasks(vec![(task.name.to_owned(), runtime_info)]);
+            }
+            return;
+        }
+
+        match self.start_task(task) {
+            Ok(runtime_info) => {
+                // Update coordinator with runtime info
+                if let Some(c) = &*self.0.coordinator.lock().unwrap() {
+                    c.report_tasks(vec![(task.name.to_owned(), runtime_info)]);
+                }
+            }
+            Err(e) => {
+                // Indicate failure
+                let mut runtime_info = TaskRuntimeInfo::new();
+                runtime_info.state = TaskState::Failed;
+                self.write_log(&task.name, &format!("{e:#?}")).unwrap();
+                if let Some(c) = &*self.0.coordinator.lock().unwrap() {
+                    c.report_tasks(vec![(task.name.to_owned(), runtime_info)]);
+                }
+            }
+        }
+    }
+
     pub fn start_task(&self, task: &Task) -> Result<TaskRuntimeInfo, MetalMonitorError> {
         // Make sure that the appropriate parent directories are created
         let logs_dir = self.resource_logs_dir(&task.name);
         std::fs::create_dir_all(&logs_dir)
             .map_err(|_| MetalMonitorError::FailedToCreateDirectories)?;
 
-        if task.binary.path.is_empty() {
+        if task.binary.path.is_empty() && task.binary.url.is_empty() {
             return Err(MetalMonitorError::InvalidBinaryFormat(String::from(
-                "only path-based binary resolution is implemented",
+                "only URL-based and path-based binary resolution is implemented",
             )));
         }
+
+        // Download the file's url if necessary
+        let binary_path = if !task.binary.path.is_empty() {
+            std::path::PathBuf::from(&task.binary.path)
+        } else {
+            let path = self.binary_cache_path_for_url(&task.binary.url);
+            if !path.exists() {
+                // We need to download the binary before we can start the task. Let's schedule
+                // the task to be downloaded and set the current state as Preparing.
+                let _t = task.clone();
+                let _self = self.clone();
+                tokio::spawn(async move {
+                    _self.download_and_start_task(&_t).await;
+                });
+
+                let mut runtime_info = TaskRuntimeInfo::new();
+                runtime_info.state = TaskState::Preparing;
+                return Ok(runtime_info);
+            }
+            path
+        };
 
         // Allocate all the service ports that we need
         let mut ports = HashMap::new();
@@ -65,7 +117,7 @@ impl MetalMonitor {
                 ports.insert(env.value.value.to_string(), 0);
             }
         }
-        let mut allocated_ports = self.port_allocator.allocate_ports(ports.len())?;
+        let mut allocated_ports = self.0.port_allocator.allocate_ports(ports.len())?;
         for (_, v) in ports.iter_mut() {
             *v = allocated_ports.pop().expect("should have enough ports");
         }
@@ -87,7 +139,7 @@ impl MetalMonitor {
         process.arg("--");
 
         // All remaining arguments are the "real" command
-        process.arg(&task.binary.path);
+        process.arg(&binary_path);
 
         for arg in &task.arguments {
             match arg.kind {
@@ -161,6 +213,7 @@ impl MetalMonitor {
 
     pub fn check_tasks(&self) -> Vec<(String, TaskRuntimeInfo)> {
         let all_tasks: Vec<_> = self
+            .0
             .tasks
             .read()
             .unwrap()

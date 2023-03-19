@@ -1,8 +1,15 @@
 use core::{Coordinator, MetalMonitorError};
 use metal_bus::{DiffResponse, Logs, RestartMode, Task, TaskState};
 
+use futures::future::Shared;
+use futures::{Future, FutureExt};
+use hyper::body::HttpBody;
+
 use std::collections::HashMap;
-use std::io::{Read, Seek};
+use std::hash::{Hash, Hasher};
+use std::io::{Read, Seek, Write};
+use std::os::unix::fs::PermissionsExt;
+use std::pin::Pin;
 use std::sync::{Arc, Mutex, RwLock};
 
 mod process;
@@ -41,7 +48,10 @@ impl PortAllocator {
     }
 }
 
-pub struct MetalMonitor {
+#[derive(Clone)]
+pub struct MetalMonitor(Arc<MetalMonitorInner>);
+
+pub struct MetalMonitorInner {
     tasks: RwLock<HashMap<String, RwLock<Task>>>,
     ip_address: std::net::IpAddr,
     port_allocator: PortAllocator,
@@ -49,6 +59,14 @@ pub struct MetalMonitor {
     coordinator: Mutex<Option<Arc<dyn Coordinator>>>,
     restart_queue: Mutex<Vec<(String, u64)>>,
     restart_accumulator: Mutex<HashMap<String, (u64, u64)>>,
+    downloads: Mutex<
+        HashMap<
+            String,
+            Shared<
+                Pin<Box<dyn Future<Output = Result<std::path::PathBuf, MetalMonitorError>> + Send>>,
+            >,
+        >,
+    >,
 }
 
 impl core::Monitor for MetalMonitor {
@@ -164,7 +182,7 @@ impl core::Monitor for MetalMonitor {
 
 impl MetalMonitor {
     pub fn new(root_dir: std::path::PathBuf, ip_address: std::net::IpAddr) -> Self {
-        Self {
+        Self(Arc::new(MetalMonitorInner {
             tasks: RwLock::new(HashMap::new()),
             ip_address,
             port_allocator: PortAllocator::new(10000, 20000),
@@ -172,18 +190,134 @@ impl MetalMonitor {
             coordinator: Mutex::new(None),
             restart_queue: Mutex::new(Vec::new()),
             restart_accumulator: Mutex::new(HashMap::new()),
+            downloads: Mutex::new(HashMap::new()),
+        }))
+    }
+
+    pub fn write_log(&self, resource_name: &str, message: &str) -> std::io::Result<()> {
+        let logs_dir = self.resource_logs_dir(resource_name);
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .append(true)
+            .create(true)
+            .open(logs_dir.join(format!("STDERR.{}", core::ts())))?;
+
+        file.write_all("\n".as_bytes())?;
+        file.write_all(message.as_bytes())?;
+        file.write_all("\n".as_bytes())?;
+        Ok(())
+    }
+
+    pub fn binary_cache_path_for_url(&self, url: &str) -> std::path::PathBuf {
+        let mut h = sha256::Sha256::new();
+        h.absorb(url.as_bytes());
+        let filename = h
+            .finish()
+            .iter()
+            .map(|b| format!("{b:x}"))
+            .collect::<Vec<_>>()
+            .join("");
+        self.0.root_dir.join("binaries").join(filename)
+    }
+
+    pub async fn download_binary(
+        &self,
+        url: &str,
+    ) -> Result<std::path::PathBuf, MetalMonitorError> {
+        let maybe_fut = {
+            let mut _downloads = self.0.downloads.lock().unwrap();
+            _downloads.get(url).map(|f| f.clone())
+        };
+        if let Some(fut) = maybe_fut {
+            return fut.await;
         }
+
+        let _url = url.to_string();
+        let _self = self.clone();
+        let fut = async move { _self._download_binary(_url).await }
+            .boxed()
+            .shared();
+
+        {
+            let mut _downloads = self.0.downloads.lock().unwrap();
+            _downloads.insert(url.to_string(), fut.clone());
+        }
+
+        fut.await
+    }
+
+    async fn _download_binary(&self, url: String) -> Result<std::path::PathBuf, MetalMonitorError> {
+        if url.is_empty() {
+            return Err(MetalMonitorError::FailedToDownloadBinary(String::from(
+                "url is empty",
+            )));
+        }
+
+        std::fs::create_dir_all(self.0.root_dir.join("binaries")).map_err(|e| {
+            MetalMonitorError::FailedToDownloadBinary(String::from(
+                "failed to create binaries directory",
+            ))
+        });
+
+        let out_path = self.binary_cache_path_for_url(&url);
+        if out_path.exists() {
+            return Ok(out_path);
+        }
+
+        let uri: hyper::Uri = url.parse().map_err(|e| {
+            MetalMonitorError::FailedToDownloadBinary(format!("invalid url: {url:?}"))
+        })?;
+
+        let https = hyper_tls::HttpsConnector::new();
+        let client = hyper::Client::builder().build::<_, hyper::Body>(https);
+        let mut res = client.get(uri).await.map_err(|e| {
+            MetalMonitorError::FailedToDownloadBinary(format!("download request failed: {e:#?}"))
+        })?;
+
+        if !res.status().is_success() {
+            return Err(MetalMonitorError::FailedToDownloadBinary(format!(
+                "download failed with status code {} {:?}",
+                res.status().as_str(),
+                res.status().canonical_reason()
+            )));
+        }
+
+        let mut tmp_path = out_path.clone();
+        tmp_path.set_extension("temp");
+
+        let mut f = std::fs::File::create(&tmp_path).map_err(|e| {
+            MetalMonitorError::FailedToDownloadBinary(format!("failed to create temp file"))
+        })?;
+        while let Some(next) = res.data().await {
+            let chunk = next.map_err(|e| {
+                MetalMonitorError::FailedToDownloadBinary(format!("invalid url: {e:#?}"))
+            })?;
+            f.write_all(&chunk).map_err(|e| {
+                MetalMonitorError::FailedToDownloadBinary(format!("failed to write to disk"))
+            })?;
+        }
+
+        std::fs::rename(&tmp_path, &out_path).map_err(|e| {
+            MetalMonitorError::FailedToDownloadBinary(format!("failed to rename downloaded binary"))
+        })?;
+        let perm = std::fs::Permissions::from_mode(0o777);
+        std::fs::set_permissions(&out_path, perm).map_err(|e| {
+            MetalMonitorError::FailedToDownloadBinary(format!(
+                "failed to set permissions on binary"
+            ))
+        })?;
+        Ok(out_path)
     }
 
     pub fn set_coordinator(&self, coordinator: Arc<dyn Coordinator>) {
-        *self.coordinator.lock().unwrap() = Some(coordinator);
+        *self.0.coordinator.lock().unwrap() = Some(coordinator);
     }
 
     pub fn queue_restart(&self, task_name: &str) {
         // Check the accumulator to see what the delay should be
         let target_start_time = {
             let now = core::ts();
-            let mut acc = self.restart_accumulator.lock().unwrap();
+            let mut acc = self.0.restart_accumulator.lock().unwrap();
             let delay = if let Some((delay, ts)) = acc.get(task_name) {
                 let decayed_delay = (*delay as f64
                     * 2f64.powf(1.0 - ((now - ts) as f64) / (60_000_000 as f64)))
@@ -196,7 +330,7 @@ impl MetalMonitor {
             delay + now
         };
 
-        let mut queue = self.restart_queue.lock().unwrap();
+        let mut queue = self.0.restart_queue.lock().unwrap();
         queue.push((task_name.to_owned(), target_start_time));
         queue.sort_by_key(|(_, t)| *t);
         queue.dedup_by_key(|(n, _)| n.clone());
@@ -208,7 +342,7 @@ impl MetalMonitor {
             for (task_name, runtime_state) in &mut runtime_state {
                 let mut restart_mode = RestartMode::OneShot;
                 {
-                    let _tasks = self.tasks.read().unwrap();
+                    let _tasks = self.0.tasks.read().unwrap();
                     if let Some(t) = _tasks.get(task_name) {
                         let mut _t = t.write().unwrap();
                         restart_mode = _t.restart_mode;
@@ -218,6 +352,7 @@ impl MetalMonitor {
 
                 // If the task is no longer running, we may need to restart it, or else clean it up
                 if runtime_state.state != TaskState::Running
+                    && runtime_state.state != TaskState::Preparing
                     && runtime_state.state != TaskState::Restarting
                 {
                     match restart_mode {
@@ -232,7 +367,7 @@ impl MetalMonitor {
                             }
 
                             // Mark task state as restarting
-                            match self.tasks.read().unwrap().get(task_name) {
+                            match self.0.tasks.read().unwrap().get(task_name) {
                                 Some(t) => {
                                     t.write().unwrap().runtime_info.state = TaskState::Restarting
                                 }
@@ -249,14 +384,14 @@ impl MetalMonitor {
             // Report task state to coordinator
             let mut to_clean_up = Vec::new();
             if !runtime_state.is_empty() {
-                if let Some(c) = &*self.coordinator.lock().unwrap() {
+                if let Some(c) = &*self.0.coordinator.lock().unwrap() {
                     to_clean_up = c.report_tasks(runtime_state);
                 }
             }
 
             // Clean up removed tasks
             if !to_clean_up.is_empty() {
-                let mut _tasks = self.tasks.write().unwrap();
+                let mut _tasks = self.0.tasks.write().unwrap();
                 for task_name in &to_clean_up {
                     _tasks.remove(task_name);
                 }
@@ -270,7 +405,7 @@ impl MetalMonitor {
             std::thread::sleep(std::time::Duration::from_secs(2));
 
             // Possibly restart tasks
-            let mut queue = self.restart_queue.lock().unwrap();
+            let mut queue = self.0.restart_queue.lock().unwrap();
             let now = core::ts();
             let mut to_take = 0;
             for (task_name, timestamp) in queue.iter() {
@@ -287,7 +422,7 @@ impl MetalMonitor {
             let mut to_restart = queue.split_off(to_take);
             std::mem::swap(&mut to_restart, &mut *queue);
             for (task_name, _) in to_restart {
-                let task = match self.tasks.read().unwrap().get(&task_name) {
+                let task = match self.0.tasks.read().unwrap().get(&task_name) {
                     Some(t) => t.read().unwrap().clone(),
                     None => {
                         // Task was unscheduled before it could be restarted
@@ -296,7 +431,7 @@ impl MetalMonitor {
                 };
 
                 if let Ok(runtime_info) = self.start_task(&task) {
-                    match self.tasks.read().unwrap().get(&task_name) {
+                    match self.0.tasks.read().unwrap().get(&task_name) {
                         Some(t) => t.write().unwrap().runtime_info = runtime_info,
                         None => {
                             // Task was unscheduled but I just started it... TODO: do something
@@ -305,7 +440,7 @@ impl MetalMonitor {
                         }
                     }
                 } else {
-                    match self.tasks.read().unwrap().get(&task_name) {
+                    match self.0.tasks.read().unwrap().get(&task_name) {
                         Some(t) => t.write().unwrap().runtime_info.state = TaskState::Failed,
                         None => continue,
                     }
@@ -319,7 +454,7 @@ impl MetalMonitor {
         for added in &diff.added.tasks {
             // Update or create the task lock entry
             {
-                let mut _taskmap = self.tasks.write().unwrap();
+                let mut _taskmap = self.0.tasks.write().unwrap();
                 let mut task = _taskmap
                     .entry(added.name.to_owned())
                     .or_insert_with(|| RwLock::new(added.clone()))
@@ -333,7 +468,7 @@ impl MetalMonitor {
 
             // Re-acquire the taskmap as a readlock, attempt to stop/start the task
             {
-                let _taskmap = self.tasks.read().unwrap();
+                let _taskmap = self.0.tasks.read().unwrap();
                 let task_lock = _taskmap
                     .get(&added.name)
                     .ok_or(MetalMonitorError::ConcurrencyError)?;
@@ -348,7 +483,7 @@ impl MetalMonitor {
         }
 
         for removed in &diff.removed.tasks {
-            let mut _taskmap = self.tasks.read().unwrap();
+            let mut _taskmap = self.0.tasks.read().unwrap();
             let mut task = match _taskmap.get(&removed.name) {
                 Some(t) => t.write().unwrap(),
                 // No need to stop it if it doesn't exist
@@ -364,7 +499,7 @@ impl MetalMonitor {
         // Report started/changed tasks
         let mut to_clean_up = Vec::new();
         if !results.is_empty() {
-            if let Some(c) = &*self.coordinator.lock().unwrap() {
+            if let Some(c) = &*self.0.coordinator.lock().unwrap() {
                 to_clean_up = c.report_tasks(
                     results
                         .iter()
@@ -376,7 +511,7 @@ impl MetalMonitor {
 
         // Clean up removed tasks
         if !to_clean_up.is_empty() {
-            let mut _tasks = self.tasks.write().unwrap();
+            let mut _tasks = self.0.tasks.write().unwrap();
             for task_name in &to_clean_up {
                 _tasks.remove(task_name);
             }

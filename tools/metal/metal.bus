@@ -22,12 +22,13 @@ message Environment {
 
 enum TaskState {
     Unknown = 0
-    Starting = 1
-    Running = 2
-    Success = 3
-    Failed = 4
-    Restarting = 5
-    Stopped = 6
+    Preparing = 1
+    Starting = 2
+    Running = 3
+    Success = 4
+    Failed = 5
+    Restarting = 6
+    Stopped = 7
 }
 
 message ServiceAssignment {
