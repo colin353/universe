@@ -205,9 +205,10 @@ ggen::one_of!(
 ggen::sequence!(
     MultipleBindings,
     "{",
-    _ws1: Option<Whitespace>,
+    _ws1: Option<NewlineWhitespace>,
     identifiers: RepeatWithSeparator<Identifier, CommaSeparator>,
-    _ws2: Option<Whitespace>,
+    _comma: Option<CommaSeparator>,
+    _ws2: Option<NewlineWhitespace>,
     "}",
 );
 
@@ -369,6 +370,16 @@ b
         get_ast_or_panic(
             r#"
             import { ABC, DEF } from "../zzz.ccl"
+            import zzz from "../zzz.ccl"
+       "#,
+        );
+
+        get_ast_or_panic(
+            r#"
+            import {
+                ABC,
+                DEF
+            } from "../zzz.ccl"
             import zzz from "../zzz.ccl"
        "#,
         );

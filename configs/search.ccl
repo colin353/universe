@@ -1,0 +1,40 @@
+import {
+    secret,
+    task,
+    taskset,
+    port_binding,
+    service_binding,
+} from "metal"
+
+search = taskset {
+    task1 = task {
+        binary = {
+            url = "https://storage.googleapis.com/x20-binaries/search_server"
+        }
+
+        environment = {
+            ARGS_BASE_URL = "https://search.colinmerkel.xyz"
+            ARGS_DISABLE_AUTH = "true"
+
+            ARGS_INDEX_DIR = "/home/colin/index"
+
+            ARGS_WEB_PORT = port_binding {
+                name = "http"
+            }
+            ARGS_GRPC_PORT = port_binding {
+                name = "grpc"
+            }
+        }
+    }
+
+    http = service_binding {
+        port = 443
+        hostname = "search.colinmerkel.xyz"
+    }
+    grpc = service_binding {
+        port = 8888
+        hostname = "search.colinmerkel.xyz"
+    }
+}
+
+

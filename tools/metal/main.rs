@@ -75,9 +75,11 @@ impl load_balancer::Resolver for ServiceResolver {
 
 #[tokio::main]
 async fn main() {
-    let root_dir = std::path::PathBuf::from("/tmp/metal");
-    let ip_address = "127.0.0.1".parse().expect("failed to parse IP address");
-
+    let data_dir = flags::define_flag!(
+        "data_dir",
+        String::from("/tmp/metal"),
+        "the directory to use to store data"
+    );
     let ports = flags::define_flag!("ports", Vec::<u16>::new(), "list of non-TLS ports to serve");
     let certificate = flags::define_flag!(
         "certificate",
@@ -89,8 +91,19 @@ async fn main() {
         Vec::<u16>::new(),
         "list of TLS-enabled ports to serve"
     );
+    let ip_address = flags::define_flag!(
+        "ip_address",
+        String::from("127.0.0.1"),
+        "the ip address of the current node"
+    );
 
-    flags::parse_flags!(ports, tls_ports, certificate);
+    flags::parse_flags!(ports, data_dir, tls_ports, certificate);
+
+    let root_dir = std::path::PathBuf::from(data_dir.value());
+    let ip_address = ip_address
+        .value()
+        .parse()
+        .expect("failed to parse IP address");
 
     //let state_mgr = state::FilesystemState::new(root_dir.clone());
     let state_mgr = state::FakeState::new();

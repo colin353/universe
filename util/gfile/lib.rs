@@ -19,7 +19,7 @@ pub enum Mode {
 pub struct GoogleCloudFile {
     bucket: String,
     object: String,
-    token: String,
+    token: Option<String>,
     resumable_url: Option<String>,
     buf: Vec<u8>,
     size: u64,
@@ -65,9 +65,13 @@ impl GFile {
                 Ok(GFile::LocalFile(f))
             }
             GPath::RemotePath(bucket, object) => {
-                let c = auth_client::get_global_client().unwrap();
-                let response = c.get_gcp_token(c.token.clone());
-                let f = GoogleCloudFile::open(response.get_gcp_token(), bucket, object)?;
+                let token = if let Some(c) = auth_client::get_global_client() {
+                    let response = c.get_gcp_token(c.token.clone());
+                    Some(response.get_gcp_token().to_owned())
+                } else {
+                    None
+                };
+                let f = GoogleCloudFile::open(token, bucket, object)?;
                 Ok(GFile::RemoteFile(f))
             }
         }
@@ -127,27 +131,34 @@ impl GFile {
                 Ok(output)
             }
             GPath::RemotePath(bucket, object) => {
-                let c = auth_client::get_global_client().unwrap();
-                let response = c.get_gcp_token(c.token.clone());
-                GoogleCloudFile::read_dir(response.get_gcp_token(), bucket, object)
+                let token = if let Some(c) = auth_client::get_global_client() {
+                    let response = c.get_gcp_token(c.token.clone());
+                    Some(response.get_gcp_token().to_string())
+                } else {
+                    None
+                };
+                GoogleCloudFile::read_dir(token, bucket, object)
             }
         }
     }
 }
 
 impl GoogleCloudFile {
-    fn open(token: &str, bucket: &str, object: &str) -> std::io::Result<Self> {
-        let req = hyper::Request::get(format!("{}/{}/o/{}?alt=json", STORAGE_API, bucket, object))
-            .header(hyper::header::AUTHORIZATION, format!("Bearer {}", token))
-            .body(hyper::Body::from(String::new()))
-            .unwrap();
+    fn open(token: Option<String>, bucket: &str, object: &str) -> std::io::Result<Self> {
+        let mut req =
+            hyper::Request::get(format!("{}/{}/o/{}?alt=json", STORAGE_API, bucket, object));
+        if let Some(token) = &token {
+            req = req.header(hyper::header::AUTHORIZATION, format!("Bearer {}", token));
+        }
+
+        let req = req.body(hyper::Body::from(String::new())).unwrap();
 
         let m = match requests::request(req) {
             Ok(m) => m,
             Err(_) => {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::NotFound,
-                    "file does not exist",
+                    "file does not exist (request failed)",
                 ))
             }
         };
@@ -155,7 +166,7 @@ impl GoogleCloudFile {
         if m.status_code != 200 {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::NotFound,
-                "file does not exist",
+                format!("file does not exist (status code {})", m.status_code),
             ));
         }
 
@@ -163,7 +174,7 @@ impl GoogleCloudFile {
         let size: u64 = parsed["size"].as_str().unwrap().parse().unwrap();
 
         Ok(Self {
-            token: token.to_string(),
+            token: token,
             bucket: bucket.to_string(),
             object: object.to_string(),
             resumable_url: None,
@@ -218,7 +229,7 @@ impl GoogleCloudFile {
         }
 
         let mut s = Self {
-            token: token.to_string(),
+            token: Some(token.to_string()),
             bucket: bucket.to_string(),
             object: object.to_string(),
             resumable_url: Some(location),
@@ -247,17 +258,19 @@ impl GoogleCloudFile {
             std::cmp::min(self.index + BUFFER_SIZE as u64, self.size)
         );
 
-        let req = hyper::Request::get(format!(
+        let mut req = hyper::Request::get(format!(
             "{}/{}/o/{}?alt=media",
             STORAGE_API, self.bucket, self.object
-        ))
-        .header(
-            hyper::header::AUTHORIZATION,
-            format!("Bearer {}", self.token),
-        )
-        .header(hyper::header::RANGE, content_range)
-        .body(hyper::Body::from(String::new()))
-        .unwrap();
+        ));
+
+        if let Some(token) = &self.token {
+            req = req.header(hyper::header::AUTHORIZATION, format!("Bearer {}", token));
+        }
+
+        let req = req
+            .header(hyper::header::RANGE, content_range)
+            .body(hyper::Body::from(String::new()))
+            .unwrap();
 
         let m = match requests::request(req) {
             Ok(m) => m,
@@ -297,7 +310,10 @@ impl GoogleCloudFile {
         let req = hyper::Request::delete(self.resumable_url.as_ref().unwrap())
             .header(
                 hyper::header::AUTHORIZATION,
-                format!("Bearer {}", self.token),
+                format!(
+                    "Bearer {}",
+                    self.token.as_ref().map(|s| s.as_str()).unwrap_or("")
+                ),
             )
             .header(hyper::header::CONTENT_LENGTH, "0")
             .body(hyper::Body::from(String::new()))
@@ -315,17 +331,19 @@ impl GoogleCloudFile {
 
         self.cancel().unwrap();
 
-        let req = hyper::Request::post(format!(
+        let mut req = hyper::Request::post(format!(
             "{}/{}/o?uploadType=resumable&name={}",
             UPLOAD_API, self.bucket, self.object
-        ))
-        .header(
-            hyper::header::AUTHORIZATION,
-            format!("Bearer {}", self.token),
-        )
-        .header(hyper::header::CONTENT_TYPE, "application/json")
-        .body(hyper::Body::from("{}".to_string()))
-        .unwrap();
+        ));
+
+        if let Some(token) = &self.token {
+            req = req.header(hyper::header::AUTHORIZATION, format!("Bearer {}", token));
+        }
+
+        let req = req
+            .header(hyper::header::CONTENT_TYPE, "application/json")
+            .body(hyper::Body::from("{}".to_string()))
+            .unwrap();
 
         let response = requests::request(req)?;
         if let Some(l) = response.headers.get("Location") {
@@ -341,11 +359,13 @@ impl GoogleCloudFile {
     }
 
     fn get_reupload_status(&mut self) -> bool {
-        let req = hyper::Request::put(self.resumable_url.as_ref().unwrap())
-            .header(
-                hyper::header::AUTHORIZATION,
-                format!("Bearer {}", self.token),
-            )
+        let mut req = hyper::Request::put(self.resumable_url.as_ref().unwrap());
+
+        if let Some(token) = &self.token {
+            req = req.header(hyper::header::AUTHORIZATION, format!("Bearer {}", token));
+        }
+
+        let req = req
             .header(hyper::header::CONTENT_LENGTH, "0")
             .header(hyper::header::CONTENT_RANGE, "bytes */*")
             .body(hyper::Body::from(String::new()))
@@ -383,7 +403,10 @@ impl GoogleCloudFile {
         let req = hyper::Request::post(self.resumable_url.as_ref().unwrap())
             .header(
                 hyper::header::AUTHORIZATION,
-                format!("Bearer {}", self.token),
+                format!(
+                    "Bearer {}",
+                    self.token.as_ref().map(|s| s.as_str()).unwrap_or("")
+                ),
             )
             .header(hyper::header::CONTENT_TYPE, "application/json")
             .header(hyper::header::CONTENT_RANGE, content_range.as_str())
@@ -471,18 +494,26 @@ impl GoogleCloudFile {
         Ok(self.index)
     }
 
-    pub fn read_dir(token: &str, bucket: &str, prefix: &str) -> std::io::Result<Vec<String>> {
-        let req = hyper::Request::get(format!("{}/{}/o?prefix={}", STORAGE_API, bucket, prefix))
-            .header(hyper::header::AUTHORIZATION, format!("Bearer {}", token))
-            .body(hyper::Body::from(String::new()))
-            .unwrap();
+    pub fn read_dir(
+        token: Option<String>,
+        bucket: &str,
+        prefix: &str,
+    ) -> std::io::Result<Vec<String>> {
+        let mut req =
+            hyper::Request::get(format!("{}/{}/o?prefix={}", STORAGE_API, bucket, prefix));
+
+        if let Some(token) = token {
+            req = req.header(hyper::header::AUTHORIZATION, format!("Bearer {}", token))
+        }
+
+        let req = req.body(hyper::Body::from(String::new())).unwrap();
 
         let m = match requests::request(req) {
             Ok(m) => m,
             Err(_) => {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::NotFound,
-                    "file does not exist",
+                    "folder does not exist",
                 ))
             }
         };

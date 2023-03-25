@@ -1,0 +1,47 @@
+import {
+    secret,
+    task,
+    taskset,
+    port_binding,
+    service_binding,
+} from "metal"
+
+auth = taskset {
+    task1 = task {
+        binary = {
+            url = "https://storage.googleapis.com/x20-binaries/auth_server"
+        }
+
+        environment = {
+            ARGS_OAUTH_CLIENT_ID = secret {
+                filename = "/home/colin/secrets/oauth_client_id"
+            }
+            ARGS_HOSTNAME = "https://auth.colinmerkel.xyz/"
+            ARGS_ALLOWED_EMAILS = "colin:colin353@gmail.com"
+            ARGS_OAUTH_CLIENT_SECRET = secret {
+                filename = "/home/colin/secrets/oauth_client_secret"
+            }
+            ARGS_SECRET_KEY = secret {
+                filename = "/home/colin/secrets/secret_key"
+            }
+
+            ARGS_WEB_PORT = port_binding {
+                name = "http"
+            }
+            ARGS_GRPC_PORT = port_binding {
+                name = "grpc"
+            }
+        }
+    }
+
+    http = service_binding {
+        port = 443
+        hostname = "auth.colinmerkel.xyz"
+    }
+    grpc = service_binding {
+        port = 8888
+        hostname = "auth.colinmerkel.xyz"
+    }
+}
+
+

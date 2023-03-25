@@ -13,6 +13,11 @@ fn main() {
             // Read from stdin
             let mut buf = String::new();
             std::io::stdin().read_to_string(&mut buf);
+
+            // Add a newline to the end if it's missing
+            if !buf.ends_with('\n') {
+                buf.push('\n');
+            }
             buf
         }
     };
