@@ -13,6 +13,7 @@ struct ServiceResolver {
 
 impl load_balancer::Resolver for ServiceResolver {
     fn resolve(&self, host: &str) -> Option<(std::net::IpAddr, u16)> {
+        println!("resolve: {host:?} {}", self.port);
         let mut req = metal_bus::ResolveRequest::new();
         if self.port != 20000 {
             // Must resolve using only bound services
@@ -40,6 +41,7 @@ impl load_balancer::Resolver for ServiceResolver {
         };
 
         if resp.endpoints.is_empty() {
+            println!("no endpoints");
             return None;
         }
 
@@ -69,6 +71,7 @@ impl load_balancer::Resolver for ServiceResolver {
                 return None;
             }
         };
+        println!("resolved to {ip}:{}", endpoint.port);
         Some((ip, endpoint.port as u16))
     }
 }

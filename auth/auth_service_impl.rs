@@ -39,6 +39,7 @@ pub struct AuthServiceHandler {
     secret_key: String,
     default_access_json: String,
 }
+
 impl AuthServiceHandler {
     pub fn new(
         hostname: String,
@@ -68,64 +69,58 @@ fn random_string() -> String {
     )
 }
 
-impl auth_grpc_rust::AuthenticationService for AuthServiceHandler {
+impl auth_bus::AuthenticationServiceHandler for AuthServiceHandler {
     fn login(
         &self,
-        _: grpc::ServerHandlerContext,
-        mut req: grpc::ServerRequestSingle<auth_grpc_rust::LoginRequest>,
-        resp: grpc::ServerResponseUnarySink<auth_grpc_rust::LoginChallenge>,
-    ) -> grpc::Result<()> {
-        let mut challenge = auth_grpc_rust::LoginChallenge::new();
+        req: auth_bus::LoginRequest,
+    ) -> Result<auth_bus::LoginChallenge, bus::BusRpcError> {
+        let mut challenge = auth_bus::LoginChallenge::new();
         let token = random_string();
         let url = format!("{}begin?token={}", self.hostname, token);
-        challenge.set_url(url);
-        challenge.set_token(token.clone());
+        challenge.url = url;
+        challenge.token = token.clone();
 
         let mut record = LoginRecord::new();
-        record.return_url = req.take_message().take_return_url();
+        record.return_url = req.return_url;
         self.tokens.write().unwrap().insert(token, record);
 
-        resp.finish(challenge)
+        Ok(challenge)
     }
 
     fn authenticate(
         &self,
-        _: grpc::ServerHandlerContext,
-        req: grpc::ServerRequestSingle<auth_grpc_rust::AuthenticateRequest>,
-        resp: grpc::ServerResponseUnarySink<auth_grpc_rust::AuthenticateResponse>,
-    ) -> grpc::Result<()> {
-        let mut response = auth_grpc_rust::AuthenticateResponse::new();
-        if req.message.get_token() == &self.secret_key {
-            response.set_success(true);
-            response.set_username(MACHINE_USERNAME.to_owned());
-        } else if let Some(t) = self.tokens.read().unwrap().get(req.message.get_token()) {
+        req: auth_bus::AuthenticateRequest,
+    ) -> Result<auth_bus::AuthenticateResponse, bus::BusRpcError> {
+        let mut response = auth_bus::AuthenticateResponse::new();
+        if req.token == self.secret_key {
+            response.success = true;
+            response.username = MACHINE_USERNAME.to_owned();
+        } else if let Some(t) = self.tokens.read().unwrap().get(&req.token) {
             if t.is_valid() {
-                response.set_success(true);
-                response.set_username(t.username.clone());
+                response.success = true;
+                response.username = t.username.clone();
             }
         }
-        resp.finish(response)
+        Ok(response)
     }
 
     fn get_gcp_token(
         &self,
-        _: grpc::ServerHandlerContext,
-        req: grpc::ServerRequestSingle<auth_grpc_rust::GCPTokenRequest>,
-        resp: grpc::ServerResponseUnarySink<auth_grpc_rust::GCPTokenResponse>,
-    ) -> grpc::Result<()> {
-        let mut response = auth_grpc_rust::GCPTokenResponse::new();
+        req: auth_bus::GCPTokenRequest,
+    ) -> Result<auth_bus::GCPTokenResponse, bus::BusRpcError> {
+        let mut response = auth_bus::GCPTokenResponse::new();
 
         let mut authenticated = false;
-        if req.message.get_token() == &self.secret_key {
+        if req.token == self.secret_key {
             authenticated = true;
-        } else if let Some(t) = self.tokens.read().unwrap().get(req.message.get_token()) {
+        } else if let Some(t) = self.tokens.read().unwrap().get(&req.token) {
             if t.is_valid() {
                 authenticated = true;
             }
         }
 
         if !authenticated {
-            return resp.finish(response);
+            return Ok(response);
         }
 
         let (token, expiry) = match gcp::get_token_sync(
@@ -135,15 +130,15 @@ impl auth_grpc_rust::AuthenticationService for AuthServiceHandler {
             Ok(z) => z,
             Err(e) => {
                 eprintln!("something went wrong while conducting oauth! {:?}", e);
-                return resp.finish(response);
+                return Ok(response);
             }
         };
 
-        response.set_success(true);
-        response.set_gcp_token(token);
-        response.set_expiry(expiry);
+        response.success = true;
+        response.gcp_token = token;
+        response.expiry = expiry;
 
-        resp.finish(response)
+        Ok(response)
     }
 }
 

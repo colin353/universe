@@ -70,6 +70,7 @@ rust_library(
         ":bus",
         "//third_party:futures",
         "//third_party:hyper",
+        "//third_party:hyper_tls",
         "//third_party:tokio",
     ]
 )

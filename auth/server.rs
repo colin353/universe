@@ -1,13 +1,14 @@
 #[macro_use]
 extern crate flags;
 
+use futures::join;
 use std::collections::HashMap;
 use std::iter::FromIterator;
 use std::sync::{Arc, RwLock};
 
 #[tokio::main]
 async fn main() {
-    let grpc_port = define_flag!("grpc_port", 8888, "The gRPC port to bind to.");
+    let bus_port = define_flag!("bus_port", 8888, "The bus port to bind to.");
     let web_port = define_flag!("web_port", 8899, "The web port to bind to.");
     let oauth_client_id = define_flag!("oauth_client_id", String::new(), "The oauth client ID");
     let oauth_client_secret = define_flag!(
@@ -39,7 +40,7 @@ async fn main() {
 
     parse_flags!(
         allowed_emails,
-        grpc_port,
+        bus_port,
         web_port,
         hostname,
         cookie_domain,
@@ -58,9 +59,6 @@ async fn main() {
             (components[1].to_owned(), components[0].to_owned())
         }));
 
-    let mut server = grpc::ServerBuilder::<tls_api_openssl::TlsAcceptor>::new();
-    server.http.set_port(grpc_port.value());
-
     let default_access_token =
         std::fs::read_to_string(gcp_token_location.value()).unwrap_or_default();
 
@@ -73,10 +71,11 @@ async fn main() {
         default_access_token,
     );
 
-    server.add_service(auth_grpc_rust::AuthenticationServiceServer::new_service_def(handler));
-
-    let _server = server.build().expect("server");
-    ws::serve(
+    let bus_service = bus_rpc::serve(
+        bus_port.value(),
+        auth_bus::AuthenticationService(Arc::new(handler)),
+    );
+    let web_service = ws::serve(
         auth_service_impl::AuthWebServer::new(
             tokens,
             hostname.value(),
@@ -86,6 +85,7 @@ async fn main() {
             Arc::new(email_whitelist),
         ),
         web_port.value(),
-    )
-    .await;
+    );
+
+    join!(web_service, bus_service);
 }

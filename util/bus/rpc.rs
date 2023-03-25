@@ -1,4 +1,5 @@
 use hyper::body::Buf;
+use hyper::client::{connect::Connect, HttpConnector};
 use hyper::http;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Client, Request, Response, Server};
@@ -71,23 +72,24 @@ pub async fn serve<H: bus::BusServer + 'static>(port: u16, handler: H) -> bus::B
     bus::BusRpcError::FailedToBindPort
 }
 
-pub struct HyperSyncClient {
-    inner: HyperClient,
+pub struct HyperSyncClient<T> {
+    inner: HyperClient<T>,
     executor: tokio::runtime::Runtime,
 }
 
-pub struct HyperClientInner {
+pub struct HyperClientInner<T> {
     host: String,
     port: u16,
-    client: HttpClient,
+    client: Client<T>,
+    use_tls: bool,
 }
 
 #[derive(Clone)]
-pub struct HyperClient {
-    inner: Arc<HyperClientInner>,
+pub struct HyperClient<T> {
+    inner: Arc<HyperClientInner<T>>,
 }
 
-impl HyperSyncClient {
+impl HyperSyncClient<HttpConnector> {
     pub fn new(host: String, port: u16) -> Self {
         let executor = tokio::runtime::Builder::new()
             .threaded_scheduler()
@@ -102,20 +104,57 @@ impl HyperSyncClient {
     }
 }
 
-impl HyperClient {
+impl HyperSyncClient<hyper_tls::HttpsConnector<HttpConnector>> {
+    pub fn new_tls(host: String, port: u16) -> Self {
+        let executor = tokio::runtime::Builder::new()
+            .threaded_scheduler()
+            .enable_all()
+            .build()
+            .unwrap();
+
+        HyperSyncClient {
+            inner: HyperClient::new_tls(host, port),
+            executor,
+        }
+    }
+}
+
+impl HyperClient<HttpConnector> {
     pub fn new(host: String, port: u16) -> Self {
         HyperClient {
             inner: Arc::new(HyperClientInner {
                 host,
                 port,
                 client: hyper::Client::builder().http2_only(true).build_http(),
+                use_tls: false,
             }),
         }
     }
+}
 
+impl HyperClient<hyper_tls::HttpsConnector<HttpConnector>> {
+    pub fn new_tls(host: String, port: u16) -> Self {
+        let https = hyper_tls::HttpsConnector::new();
+        HyperClient {
+            inner: Arc::new(HyperClientInner {
+                host,
+                port,
+                client: hyper::Client::builder().http2_only(true).build(https),
+                use_tls: true,
+            }),
+        }
+    }
+}
+
+impl<T: Connect + Clone + Send + Sync + 'static> HyperClient<T> {
     async fn request_async(&self, uri: &str, data: Vec<u8>) -> Result<Vec<u8>, bus::BusRpcError> {
-        let uri = match hyper::Uri::builder()
-            .scheme("http")
+        let builder = hyper::Uri::builder();
+        let builder = if self.inner.use_tls {
+            builder.scheme("https")
+        } else {
+            builder.scheme("http")
+        };
+        let uri = match builder
             .authority(format!("{}:{}", self.inner.host, self.inner.port))
             .path_and_query(uri)
             .build()
@@ -145,7 +184,7 @@ impl HyperClient {
     }
 }
 
-impl bus::BusClient for HyperSyncClient {
+impl<T: Connect + Clone + Send + Sync + 'static> bus::BusClient for HyperSyncClient<T> {
     fn request(&self, uri: &str, data: Vec<u8>) -> Result<Vec<u8>, bus::BusRpcError> {
         self.executor.enter(|| {
             let handle = self.executor.handle();
@@ -154,7 +193,7 @@ impl bus::BusClient for HyperSyncClient {
     }
 }
 
-impl bus::BusAsyncClient for HyperClient {
+impl<T: Connect + Clone + Send + Sync + 'static> bus::BusAsyncClient for HyperClient<T> {
     fn request(
         &self,
         uri: &'static str,

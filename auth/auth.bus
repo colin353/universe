@@ -1,0 +1,33 @@
+message LoginRequest {
+    return_url: string = 1
+}
+
+message LoginChallenge {
+    url: string = 1
+    token: string = 2
+}
+
+message AuthenticateRequest {
+    token: string = 1
+}
+
+message AuthenticateResponse {
+    username: string = 1
+    success: bool = 2
+}
+
+message GCPTokenRequest {
+    token: string = 1
+}
+
+message GCPTokenResponse {
+    success: bool = 1
+    gcp_token: string = 2
+    expiry: u64 = 3
+}
+
+service Authentication {
+    rpc login(LoginRequest) -> LoginChallenge
+    rpc get_gcp_token(GCPTokenRequest) -> GCPTokenResponse
+    rpc authenticate(AuthenticateRequest) -> AuthenticateResponse
+}

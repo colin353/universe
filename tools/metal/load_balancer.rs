@@ -22,9 +22,15 @@ pub async fn proxy(port: u16, resolver: std::sync::Arc<dyn Resolver>) {
                 let client = client.clone();
                 let _res2 = _res1.clone();
                 async move {
-                    let host_header = req.headers()[http::header::HOST].to_str().unwrap();
-                    let authority: http::uri::Authority = host_header.parse().unwrap();
-                    let (ip, port) = match _res2.resolve(authority.host()) {
+                    println!("req: {:?}", req);
+                    let host = match req.headers().get(http::header::HOST) {
+                        // If the host header is set, use that
+                        Some(host_header) => host_header.to_str().unwrap(),
+                        // If not, use the req.uri
+                        None => req.uri().authority().unwrap().host(),
+                    };
+
+                    let (ip, port) = match _res2.resolve(host) {
                         Some(r) => r,
                         None => {
                             return Ok::<_, _>(
@@ -68,9 +74,15 @@ pub async fn tls_proxy(
             let client = client.clone();
             let resolver = resolver.clone();
             async move {
-                let host_header = req.headers()[http::header::HOST].to_str().unwrap();
-                let authority: http::uri::Authority = host_header.parse().unwrap();
-                let (ip, port) = match resolver.resolve(authority.host()) {
+                println!("req: {:?}", req);
+                let host = match req.headers().get(http::header::HOST) {
+                    // If the host header is set, use that
+                    Some(host_header) => host_header.to_str().unwrap(),
+                    // If not, use the req.uri
+                    None => req.uri().authority().unwrap().host(),
+                };
+
+                let (ip, port) = match resolver.resolve(host) {
                     Some(r) => r,
                     None => {
                         return Ok::<_, _>(

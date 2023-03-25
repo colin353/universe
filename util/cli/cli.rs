@@ -4,8 +4,8 @@ use std::io::{BufRead, Write};
 use std::process::{Command, Stdio};
 
 pub fn wait_for_enter() {
-    std::io::stdout().flush();
-    for line in std::io::stdin().lock().lines() {
+    std::io::stdout().flush().unwrap();
+    for _ in std::io::stdin().lock().lines() {
         break;
     }
 }
@@ -17,7 +17,7 @@ pub fn confirm_string(mut input: &str) -> bool {
 
     eprint!("Are you sure? To confirm, type \"{}\": ", input);
 
-    let mut tty = std::io::BufReader::new(
+    let tty = std::io::BufReader::new(
         std::fs::OpenOptions::new()
             .read(true)
             .write(true)
@@ -53,10 +53,10 @@ pub fn load_auth() -> String {
 pub fn load_and_check_auth(auth: auth_client::AuthClient) -> String {
     let home = std::env::var("HOME").unwrap();
     let auth_path = format!("{}/.x20/auth_token", home);
-    let token = match std::fs::read_to_string(&auth_path) {
+    match std::fs::read_to_string(&auth_path) {
         Ok(token) => {
             let response = auth.authenticate(token.clone());
-            if response.get_success() {
+            if response.success {
                 auth.global_init(token.clone());
                 return token;
             }
@@ -66,19 +66,19 @@ pub fn load_and_check_auth(auth: auth_client::AuthClient) -> String {
 
     eprintln!("You need to log in.");
     loop {
-        let mut challenge = auth.login();
+        let challenge = auth.login();
         eprintln!(
             "Visit this URL: \n\n{}\n\nthen press enter when you've logged in.",
-            challenge.get_url()
+            challenge.url
         );
 
         wait_for_enter();
 
-        let response = auth.authenticate(challenge.get_token().to_string());
-        if response.get_success() {
-            std::fs::write(&auth_path, challenge.get_token());
-            auth.global_init(challenge.get_token().to_owned());
-            return challenge.take_token();
+        let response = auth.authenticate(challenge.token.clone());
+        if response.success {
+            std::fs::write(&auth_path, &challenge.token).unwrap();
+            auth.global_init(challenge.token.clone());
+            return challenge.token;
         }
 
         eprintln!("That didn't work. Let's try again.");
