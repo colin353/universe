@@ -150,7 +150,7 @@ impl MetalMonitor {
                     ));
                 }
                 ArgKind::Secret => {
-                    let secret_value = std::fs::read_to_string(&arg.value).map_err(|e| {
+                    let secret_value = std::fs::read_to_string(&arg.value).map_err(|_| {
                         MetalMonitorError::InaccessibleSecret(arg.value.to_string())
                     })?;
                     process.arg(secret_value);
@@ -171,7 +171,7 @@ impl MetalMonitor {
                             .expect("must have allocated port!")
                     )
                 }
-                ArgKind::Secret => std::fs::read_to_string(&env.value.value).map_err(|e| {
+                ArgKind::Secret => std::fs::read_to_string(&env.value.value).map_err(|_| {
                     MetalMonitorError::InaccessibleSecret(env.value.value.to_string())
                 })?,
                 _ => env.value.value.to_string(),

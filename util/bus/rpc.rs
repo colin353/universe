@@ -7,8 +7,6 @@ use hyper::{Body, Client, Request, Response, Server};
 use std::convert::Infallible;
 use std::sync::Arc;
 
-type HttpClient = Client<hyper::client::HttpConnector>;
-
 pub async fn serve<H: bus::BusServer + 'static>(port: u16, handler: H) -> bus::BusRpcError {
     let make_service = make_service_fn(move |_| {
         let handler = handler.clone();

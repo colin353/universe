@@ -6,7 +6,6 @@ use futures::{Future, FutureExt};
 use hyper::body::HttpBody;
 
 use std::collections::HashMap;
-use std::hash::{Hash, Hasher};
 use std::io::{Read, Seek, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::pin::Pin;
@@ -255,7 +254,7 @@ impl MetalMonitor {
 
         std::fs::create_dir_all(self.0.root_dir.join("binaries")).map_err(|e| {
             MetalMonitorError::FailedToDownloadBinary(String::from(
-                "failed to create binaries directory",
+                "failed to create binaries directory: {e:?}",
             ))
         });
 
@@ -264,7 +263,7 @@ impl MetalMonitor {
             return Ok(out_path);
         }
 
-        let uri: hyper::Uri = url.parse().map_err(|e| {
+        let uri: hyper::Uri = url.parse().map_err(|_| {
             MetalMonitorError::FailedToDownloadBinary(format!("invalid url: {url:?}"))
         })?;
 
@@ -285,7 +284,7 @@ impl MetalMonitor {
         let mut tmp_path = out_path.clone();
         tmp_path.set_extension("temp");
 
-        let mut f = std::fs::File::create(&tmp_path).map_err(|e| {
+        let mut f = std::fs::File::create(&tmp_path).map_err(|_| {
             MetalMonitorError::FailedToDownloadBinary(format!("failed to create temp file"))
         })?;
         while let Some(next) = res.data().await {
@@ -293,15 +292,17 @@ impl MetalMonitor {
                 MetalMonitorError::FailedToDownloadBinary(format!("invalid url: {e:#?}"))
             })?;
             f.write_all(&chunk).map_err(|e| {
-                MetalMonitorError::FailedToDownloadBinary(format!("failed to write to disk"))
+                MetalMonitorError::FailedToDownloadBinary(format!("failed to write to disk: {e:?}"))
             })?;
         }
 
         std::fs::rename(&tmp_path, &out_path).map_err(|e| {
-            MetalMonitorError::FailedToDownloadBinary(format!("failed to rename downloaded binary"))
+            MetalMonitorError::FailedToDownloadBinary(format!(
+                "failed to rename downloaded binary {e:?}"
+            ))
         })?;
         let perm = std::fs::Permissions::from_mode(0o777);
-        std::fs::set_permissions(&out_path, perm).map_err(|e| {
+        std::fs::set_permissions(&out_path, perm).map_err(|_| {
             MetalMonitorError::FailedToDownloadBinary(format!(
                 "failed to set permissions on binary"
             ))
@@ -408,7 +409,7 @@ impl MetalMonitor {
             let mut queue = self.0.restart_queue.lock().unwrap();
             let now = core::ts();
             let mut to_take = 0;
-            for (task_name, timestamp) in queue.iter() {
+            for (_, timestamp) in queue.iter() {
                 if *timestamp < now {
                     to_take += 1;
                 } else {

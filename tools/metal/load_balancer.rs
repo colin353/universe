@@ -13,16 +13,19 @@ pub trait Resolver: Send + Sync + 'static {
 pub async fn proxy(port: u16, resolver: std::sync::Arc<dyn Resolver>) {
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
     let client = HttpClient::new();
+    // Due to a bug in hyper, we must construct two clients, one for H1 and one for H2.
+    let h2_client = hyper::Client::builder().http2_only(true).build_http();
     let make_service = make_service_fn(move |_| {
         let _res0 = resolver.clone();
         let client = client.clone();
+        let h2_client = h2_client.clone();
         async move {
             let _res1 = _res0.clone();
             Ok::<_, Infallible>(service_fn(move |mut req| {
                 let client = client.clone();
+                let h2_client = h2_client.clone();
                 let _res2 = _res1.clone();
                 async move {
-                    println!("req: {:?}", req);
                     let host = match req.headers().get(http::header::HOST) {
                         // If the host header is set, use that
                         Some(host_header) => host_header.to_str().unwrap(),
@@ -44,13 +47,14 @@ pub async fn proxy(port: u16, resolver: std::sync::Arc<dyn Resolver>) {
 
                     let mut parts = http::uri::Parts::from(req.uri().clone());
                     parts.authority = Some(format!("{}:{}", ip.to_string(), port).parse().unwrap());
-                    if parts.scheme.is_none() {
-                        parts.scheme = Some("http".parse().unwrap());
-                    }
-
+                    parts.scheme = Some("http".parse().unwrap());
                     *req.uri_mut() = http::uri::Uri::from_parts(parts).unwrap();
 
-                    return client.request(req).await;
+                    if req.version() == hyper::Version::HTTP_2 {
+                        h2_client.request(req).await
+                    } else {
+                        client.request(req).await
+                    }
                 }
             }))
         }
@@ -67,14 +71,17 @@ pub async fn tls_proxy(
     resolver: std::sync::Arc<dyn Resolver>,
 ) {
     let client = HttpClient::new();
+    // Due to a bug in hyper, we must construct two clients, one for H1 and one for H2.
+    let h2_client = hyper::Client::builder().http2_only(true).build_http();
     let make_service = || {
         let client = client.clone();
+        let h2_client = h2_client.clone();
         let resolver = resolver.clone();
         service_fn(move |mut req| {
             let client = client.clone();
+            let h2_client = h2_client.clone();
             let resolver = resolver.clone();
             async move {
-                println!("req: {:?}", req);
                 let host = match req.headers().get(http::header::HOST) {
                     // If the host header is set, use that
                     Some(host_header) => host_header.to_str().unwrap(),
@@ -96,13 +103,15 @@ pub async fn tls_proxy(
 
                 let mut parts = http::uri::Parts::from(req.uri().clone());
                 parts.authority = Some(format!("{}:{}", ip.to_string(), port).parse().unwrap());
-                if parts.scheme.is_none() {
-                    parts.scheme = Some("http".parse().unwrap());
-                }
+                parts.scheme = Some("http".parse().unwrap());
 
                 *req.uri_mut() = http::uri::Uri::from_parts(parts).unwrap();
 
-                return client.request(req).await;
+                if req.version() == hyper::Version::HTTP_2 {
+                    h2_client.request(req).await
+                } else {
+                    client.request(req).await
+                }
             }
         })
     };

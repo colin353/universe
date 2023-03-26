@@ -1,0 +1,28 @@
+import {
+    task,
+    taskset,
+    port_binding,
+    service_binding,
+} from "metal"
+
+fes = taskset {
+    task1 = task {
+        binary = {
+            url = "https://storage.googleapis.com/x20-binaries/fes"
+        }
+
+        environment = {
+            ARGS_PORT = port_binding {
+                name = "http"
+            }
+            ARGS_BASE_DIR = "/home/colin/javascript"
+        }
+    }
+
+    http = service_binding {
+        port = 443
+        hostname = "js.colinmerkel.xyz"
+    }
+}
+
+
