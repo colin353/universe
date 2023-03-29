@@ -39,7 +39,7 @@ def _bus_library_rust_impl(ctx):
           type = "rlib",
           root = lib_rs,
           srcs = depset([lib_rs]),
-          deps = depset([ctx.attr._compiler, ctx.attr._bus_lib]),
+          deps = depset([ctx.attr._compiler, ctx.attr._bus_lib, ctx.attr._futures]),
           proc_macro_deps = depset([]),
           aliases = {},
           output = rust_lib,
@@ -64,6 +64,10 @@ rust_bus_library = rule(
         "_bus_lib" : attr.label(
             allow_single_file = True,
             default = Label("//util/bus"),
+        ),
+        "_futures" : attr.label(
+            allow_single_file = True,
+            default = Label("//third_party:futures"),
         ),
         "_cc_toolchain": attr.label(
             default = Label("@bazel_tools//tools/cpp:current_cc_toolchain"),

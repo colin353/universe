@@ -27,6 +27,27 @@ pub trait BusServer: Clone + Send + Sync {
     fn serve(&self, service: &str, method: &str, payload: &[u8]) -> Result<Vec<u8>, BusRpcError>;
 }
 
+pub trait BusAsyncServer: Clone + Send + Sync {
+    fn serve(
+        &self,
+        service: &str,
+        method: &str,
+        payload: &[u8],
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Vec<u8>, BusRpcError>> + Send>>;
+}
+
+impl<T: BusServer> BusAsyncServer for T {
+    fn serve(
+        &self,
+        service: &str,
+        method: &str,
+        payload: &[u8],
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Vec<u8>, BusRpcError>> + Send>>
+    {
+        Box::pin(std::future::ready(self.serve(service, method, payload)))
+    }
+}
+
 pub trait BusClient: Send + Sync {
     fn request(&self, uri: &'static str, data: Vec<u8>) -> Result<Vec<u8>, BusRpcError>;
 }

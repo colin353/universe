@@ -67,7 +67,7 @@ impl GFile {
             GPath::RemotePath(bucket, object) => {
                 let token = if let Some(c) = auth_client::get_global_client() {
                     let response = c.get_gcp_token(c.token.clone());
-                    Some(response.get_gcp_token().to_owned())
+                    Some(response.gcp_token.clone())
                 } else {
                     None
                 };
@@ -93,7 +93,7 @@ impl GFile {
             GPath::RemotePath(bucket, object) => {
                 let c = auth_client::get_global_client().unwrap();
                 let response = c.get_gcp_token(c.token.clone());
-                let f = GoogleCloudFile::create(response.get_gcp_token(), bucket, object)?;
+                let f = GoogleCloudFile::create(&response.gcp_token, bucket, object)?;
                 Ok(GFile::RemoteFile(f))
             }
         }
@@ -133,7 +133,7 @@ impl GFile {
             GPath::RemotePath(bucket, object) => {
                 let token = if let Some(c) = auth_client::get_global_client() {
                     let response = c.get_gcp_token(c.token.clone());
-                    Some(response.get_gcp_token().to_string())
+                    Some(response.gcp_token)
                 } else {
                     None
                 };

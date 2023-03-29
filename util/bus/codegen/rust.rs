@@ -20,6 +20,8 @@ use bus::{
     RepeatedFieldIterator, RepeatedBytes, RepeatedString, Serialize, PackedIn, PackedOut
 };
 
+use futures::{Future, TryFutureExt};
+
 "#;
 
 pub fn generate<W: std::io::Write>(
@@ -244,8 +246,31 @@ fn generate_service<W: std::io::Write>(
 
     write!(
         w,
+        "pub trait {name}AsyncServiceHandler: Send + Sync {{\n",
+        name = svc.name
+    )?;
+    for rpc in &svc.rpcs {
+        write!(
+            w,
+            "    fn {name}(&self, msg: {argtype}) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<{rettype}, bus::BusRpcError>> + Send>>;\n",
+            name = rpc.name,
+            argtype = rpc.argument_type,
+            rettype = rpc.return_type,
+        )?;
+    }
+    write!(w, "}}\n\n")?;
+
+    write!(
+        w,
         "#[derive(Clone)]
 pub struct {name}Service(pub std::sync::Arc<dyn {name}ServiceHandler>);\n",
+        name = svc.name
+    )?;
+
+    write!(
+        w,
+        "#[derive(Clone)]
+pub struct {name}AsyncService(pub std::sync::Arc<dyn {name}AsyncServiceHandler>);\n",
         name = svc.name
     )?;
 
@@ -281,6 +306,51 @@ pub struct {name}Service(pub std::sync::Arc<dyn {name}ServiceHandler>);\n",
         "            _ => return Err(bus::BusRpcError::NotImplemented),
         }}
         Ok(buf)
+    }}
+}}
+
+"
+    )?;
+
+    write!(
+        w,
+        "impl bus::BusAsyncServer for {name}AsyncService {{
+    fn serve(&self, service: &str, method: &str, payload: &[u8]) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Vec<u8>, bus::BusRpcError>> + Send>> {{
+        if service != \"{name}\" {{
+            return Box::pin(std::future::ready(Err(bus::BusRpcError::ServiceNameDidNotMatch)));
+        }}
+
+        match method {{
+",
+        name = svc.name,
+    )?;
+
+    for rpc in &svc.rpcs {
+        write!(
+            w,
+            r#"            "{name}" => {{
+                let arg = match {argtype}::decode_owned(payload).map_err(|e| bus::BusRpcError::InvalidData(e)) {{
+                    Ok(a) => a,
+                    Err(e) => return Box::pin(std::future::ready(Err(e))),
+                }};
+                return Box::pin(self.0.{name}(arg).and_then(|r| {{
+                    let mut buf = Vec::new();
+                    match r.encode(&mut buf) {{
+                        Ok(_) => Box::pin(std::future::ready(Ok(buf))),
+                        Err(e) => Box::pin(std::future::ready(Err(bus::BusRpcError::InvalidData(e)))),
+                    }}
+                }}));
+            }},
+"#,
+            name = rpc.name,
+            argtype = rpc.argument_type,
+        )?;
+    }
+
+    write!(
+        w,
+        "            _ => return Box::pin(std::future::ready(Err(bus::BusRpcError::NotImplemented))),
+        }}
     }}
 }}
 
@@ -337,7 +407,7 @@ impl {name}AsyncClient {{
     for rpc in &svc.rpcs {
         write!(
             w,
-            "    pub fn {name}(&self, req: {argtype}) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<{rettype}, bus::BusRpcError>> + Send>> {{
+            "    pub fn {name}(&self, req: {argtype}) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<{rettype}, bus::BusRpcError>>>> {{
         let mut buf = Vec::new();
         if let Err(e) = req.encode(&mut buf) {{
             return Box::pin(

@@ -11,12 +11,7 @@ fn get_timestamp() -> u64 {
     since_epoch.as_secs()
 }
 
-pub fn get_token_sync(access_json: &str, scopes: &[&str]) -> Result<(String, u64), hyper::Error> {
-    let mut runtime = tokio::runtime::Runtime::new().unwrap();
-    runtime.block_on(get_token(&access_json, scopes))
-}
-
-async fn get_token(access_json: &str, scopes: &[&str]) -> Result<(String, u64), hyper::Error> {
+pub async fn get_token(access_json: &str, scopes: &[&str]) -> Result<(String, u64), hyper::Error> {
     let access = json::parse(access_json).unwrap();
     let expiration_time = get_timestamp() + 3600 - 5;
 

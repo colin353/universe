@@ -73,7 +73,7 @@ async fn main() {
 
     let bus_service = bus_rpc::serve(
         bus_port.value(),
-        auth_bus::AuthenticationService(Arc::new(handler)),
+        auth_bus::AuthenticationAsyncService(Arc::new(handler)),
     );
     let web_service = ws::serve(
         auth_service_impl::AuthWebServer::new(

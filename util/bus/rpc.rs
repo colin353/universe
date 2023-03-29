@@ -1,3 +1,4 @@
+use futures::TryFutureExt;
 use hyper::body::Buf;
 use hyper::client::{connect::Connect, HttpConnector};
 use hyper::http;
@@ -7,7 +8,7 @@ use hyper::{Body, Client, Request, Response, Server};
 use std::convert::Infallible;
 use std::sync::Arc;
 
-pub async fn serve<H: bus::BusServer + 'static>(port: u16, handler: H) -> bus::BusRpcError {
+pub async fn serve<H: bus::BusAsyncServer + 'static>(port: u16, handler: H) -> bus::BusRpcError {
     let make_service = make_service_fn(move |_| {
         let handler = handler.clone();
         async move {
@@ -39,24 +40,33 @@ pub async fn serve<H: bus::BusServer + 'static>(port: u16, handler: H) -> bus::B
                         }
                     };
 
-                    Ok::<_, Infallible>(match handler.serve(&service, &method, &payload) {
-                        Ok(data) => Response::builder()
-                            .status(http::StatusCode::OK)
-                            .body(data.into())
-                            .unwrap(),
-                        Err(bus::BusRpcError::NotImplemented) => Response::builder()
-                            .status(http::StatusCode::NOT_IMPLEMENTED)
-                            .body(Body::empty())
-                            .unwrap(),
-                        Err(bus::BusRpcError::ServiceNameDidNotMatch) => Response::builder()
-                            .status(http::StatusCode::NOT_FOUND)
-                            .body(Body::empty())
-                            .unwrap(),
-                        _ => Response::builder()
-                            .status(http::StatusCode::INTERNAL_SERVER_ERROR)
-                            .body(Body::empty())
-                            .unwrap(),
-                    })
+                    handler
+                        .serve(&service, &method, &payload)
+                        .and_then(|data| {
+                            std::future::ready(Ok::<_, bus::BusRpcError>(
+                                Response::builder()
+                                    .status(http::StatusCode::OK)
+                                    .body(data.into())
+                                    .unwrap(),
+                            ))
+                        })
+                        .or_else(|e| {
+                            std::future::ready(Ok::<_, Infallible>(match e {
+                                bus::BusRpcError::NotImplemented => Response::builder()
+                                    .status(http::StatusCode::NOT_IMPLEMENTED)
+                                    .body(Body::empty())
+                                    .unwrap(),
+                                bus::BusRpcError::ServiceNameDidNotMatch => Response::builder()
+                                    .status(http::StatusCode::NOT_FOUND)
+                                    .body(Body::empty())
+                                    .unwrap(),
+                                _ => Response::builder()
+                                    .status(http::StatusCode::INTERNAL_SERVER_ERROR)
+                                    .body(Body::empty())
+                                    .unwrap(),
+                            }))
+                        })
+                        .await
                 }
             }))
         }

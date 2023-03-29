@@ -69,8 +69,8 @@ fn random_string() -> String {
     )
 }
 
-impl auth_bus::AuthenticationServiceHandler for AuthServiceHandler {
-    fn login(
+impl AuthServiceHandler {
+    async fn login(
         &self,
         req: auth_bus::LoginRequest,
     ) -> Result<auth_bus::LoginChallenge, bus::BusRpcError> {
@@ -87,24 +87,7 @@ impl auth_bus::AuthenticationServiceHandler for AuthServiceHandler {
         Ok(challenge)
     }
 
-    fn authenticate(
-        &self,
-        req: auth_bus::AuthenticateRequest,
-    ) -> Result<auth_bus::AuthenticateResponse, bus::BusRpcError> {
-        let mut response = auth_bus::AuthenticateResponse::new();
-        if req.token == self.secret_key {
-            response.success = true;
-            response.username = MACHINE_USERNAME.to_owned();
-        } else if let Some(t) = self.tokens.read().unwrap().get(&req.token) {
-            if t.is_valid() {
-                response.success = true;
-                response.username = t.username.clone();
-            }
-        }
-        Ok(response)
-    }
-
-    fn get_gcp_token(
+    async fn get_gcp_token(
         &self,
         req: auth_bus::GCPTokenRequest,
     ) -> Result<auth_bus::GCPTokenResponse, bus::BusRpcError> {
@@ -123,10 +106,12 @@ impl auth_bus::AuthenticationServiceHandler for AuthServiceHandler {
             return Ok(response);
         }
 
-        let (token, expiry) = match gcp::get_token_sync(
+        let (token, expiry) = match gcp::get_token(
             &self.default_access_json,
             &["https://www.googleapis.com/auth/devstorage.read_write"],
-        ) {
+        )
+        .await
+        {
             Ok(z) => z,
             Err(e) => {
                 eprintln!("something went wrong while conducting oauth! {:?}", e);
@@ -139,6 +124,65 @@ impl auth_bus::AuthenticationServiceHandler for AuthServiceHandler {
         response.expiry = expiry;
 
         Ok(response)
+    }
+
+    async fn authenticate(
+        &self,
+        req: auth_bus::AuthenticateRequest,
+    ) -> Result<auth_bus::AuthenticateResponse, bus::BusRpcError> {
+        let mut response = auth_bus::AuthenticateResponse::new();
+        if req.token == self.secret_key {
+            response.success = true;
+            response.username = MACHINE_USERNAME.to_owned();
+        } else if let Some(t) = self.tokens.read().unwrap().get(&req.token) {
+            if t.is_valid() {
+                response.success = true;
+                response.username = t.username.clone();
+            }
+        }
+        Ok(response)
+    }
+}
+
+impl auth_bus::AuthenticationAsyncServiceHandler for AuthServiceHandler {
+    fn login(
+        &self,
+        req: auth_bus::LoginRequest,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<Output = Result<auth_bus::LoginChallenge, bus::BusRpcError>>
+                + Send,
+        >,
+    > {
+        let _self = self.clone();
+        Box::pin(async move { _self.login(req).await })
+    }
+
+    fn authenticate(
+        &self,
+        req: auth_bus::AuthenticateRequest,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<
+                    Output = Result<auth_bus::AuthenticateResponse, bus::BusRpcError>,
+                > + Send,
+        >,
+    > {
+        let _self = self.clone();
+        Box::pin(async move { _self.authenticate(req).await })
+    }
+
+    fn get_gcp_token(
+        &self,
+        req: auth_bus::GCPTokenRequest,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<Output = Result<auth_bus::GCPTokenResponse, bus::BusRpcError>>
+                + Send,
+        >,
+    > {
+        let _self = self.clone();
+        Box::pin(async move { _self.get_gcp_token(req).await })
     }
 }
 
