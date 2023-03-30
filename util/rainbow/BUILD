@@ -9,6 +9,18 @@ rust_library(
         "//util/gfile",
         "//auth:auth_client",
         "//util/cli",
+        "//third_party:sha256",
+    ],
+)
+
+rust_binary(
+    name = "cli",
+    srcs = ["cli.rs"],
+    deps = [
+        "//auth:auth_client",
+        "//util/cli",
+        ":rainbow",
+        "//util/flags",
     ],
 )
 

@@ -17,6 +17,10 @@ impl Response {
     }
 }
 
+pub fn is_success(status_code: u16) -> bool {
+    status_code >= 200 && status_code <= 299
+}
+
 pub fn request(req: hyper::Request<hyper::Body>) -> std::io::Result<Response> {
     let https = hyper_tls::HttpsConnector::new();
     let client = hyper::client::Client::builder().build::<_, hyper::Body>(https);

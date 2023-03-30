@@ -145,8 +145,12 @@ impl GFile {
 
 impl GoogleCloudFile {
     fn open(token: Option<String>, bucket: &str, object: &str) -> std::io::Result<Self> {
-        let mut req =
-            hyper::Request::get(format!("{}/{}/o/{}?alt=json", STORAGE_API, bucket, object));
+        let mut req = hyper::Request::get(format!(
+            "{}/{}/o/{}?alt=json",
+            STORAGE_API,
+            bucket,
+            ws_utils::urlencode(&object)
+        ));
         if let Some(token) = &token {
             req = req.header(hyper::header::AUTHORIZATION, format!("Bearer {}", token));
         }
@@ -166,7 +170,11 @@ impl GoogleCloudFile {
         if m.status_code != 200 {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::NotFound,
-                format!("file does not exist (status code {})", m.status_code),
+                format!(
+                    "file does not exist (status code {}, body {})",
+                    m.status_code,
+                    std::str::from_utf8(&m.body).unwrap()
+                ),
             ));
         }
 
@@ -260,7 +268,9 @@ impl GoogleCloudFile {
 
         let mut req = hyper::Request::get(format!(
             "{}/{}/o/{}?alt=media",
-            STORAGE_API, self.bucket, self.object
+            STORAGE_API,
+            self.bucket,
+            ws_utils::urlencode(&self.object)
         ));
 
         if let Some(token) = &self.token {
@@ -274,18 +284,18 @@ impl GoogleCloudFile {
 
         let m = match requests::request(req) {
             Ok(m) => m,
-            Err(_) => {
+            Err(e) => {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::NotFound,
-                    "file does not exist",
+                    format!("file does not exist: {e:#?}"),
                 ))
             }
         };
 
-        if m.status_code != 200 {
+        if !requests::is_success(m.status_code) {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::NotFound,
-                "file does not exist",
+                format!("file does not exist: status code {}", m.status_code),
             ));
         }
 
@@ -333,7 +343,9 @@ impl GoogleCloudFile {
 
         let mut req = hyper::Request::post(format!(
             "{}/{}/o?uploadType=resumable&name={}",
-            UPLOAD_API, self.bucket, self.object
+            UPLOAD_API,
+            self.bucket,
+            ws_utils::urlencode(&self.object),
         ));
 
         if let Some(token) = &self.token {
