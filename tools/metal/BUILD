@@ -89,6 +89,7 @@ rust_library(
     deps = [
         ":core",
         ":metal_bus",
+        "//util/rainbow",
         "//third_party:libc",
         "//third_party:sha256",
         "//third_party:futures",

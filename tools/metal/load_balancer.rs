@@ -10,6 +10,19 @@ pub trait Resolver: Send + Sync + 'static {
     fn resolve(&self, host: &str) -> Option<(std::net::IpAddr, u16)>;
 }
 
+fn extract_host<T>(req: &hyper::Request<T>) -> String {
+    if let Some(host_header) = req.headers().get(http::header::HOST) {
+        if let Ok(auth) = host_header
+            .to_str()
+            .unwrap()
+            .parse::<http::uri::Authority>()
+        {
+            return auth.host().to_string();
+        }
+    }
+    req.uri().authority().unwrap().host().to_string()
+}
+
 pub async fn proxy(port: u16, resolver: std::sync::Arc<dyn Resolver>) {
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
     let client = HttpClient::new();
@@ -26,14 +39,9 @@ pub async fn proxy(port: u16, resolver: std::sync::Arc<dyn Resolver>) {
                 let h2_client = h2_client.clone();
                 let _res2 = _res1.clone();
                 async move {
-                    let host = match req.headers().get(http::header::HOST) {
-                        // If the host header is set, use that
-                        Some(host_header) => host_header.to_str().unwrap(),
-                        // If not, use the req.uri
-                        None => req.uri().authority().unwrap().host(),
-                    };
+                    let host = extract_host(&req);
 
-                    let (ip, port) = match _res2.resolve(host) {
+                    let (ip, port) = match _res2.resolve(&host) {
                         Some(r) => r,
                         None => {
                             return Ok::<_, _>(

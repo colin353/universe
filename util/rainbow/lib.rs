@@ -1,3 +1,4 @@
+use hyper::body::HttpBody;
 use std::fmt::Write as _;
 use std::io::{Read, Write};
 
@@ -14,7 +15,29 @@ pub fn parse(name: &str) -> std::io::Result<(&str, &str)> {
     Ok((components[0], components[1]))
 }
 
-pub fn resolve_binary(name: &str, tag: &str) -> Option<String> {
+pub async fn async_resolve(name: &str, tag: &str) -> Option<String> {
+    let uri: hyper::Uri =
+        format!("https://storage.googleapis.com/rainbow-binaries/{name}/tags/{tag}")
+            .parse()
+            .unwrap();
+
+    let https = hyper_tls::HttpsConnector::new();
+    let client = hyper::Client::builder().build::<_, hyper::Body>(https);
+    let mut res = client.get(uri).await.ok()?;
+    if !res.status().is_success() {
+        return None;
+    }
+
+    let mut buf = Vec::new();
+    while let Some(next) = res.data().await {
+        let chunk = next.ok()?;
+        buf.write_all(&chunk).ok()?;
+    }
+
+    Some(String::from_utf8(buf).unwrap())
+}
+
+pub fn resolve(name: &str, tag: &str) -> Option<String> {
     let path = format!("/cns/rainbow-binaries/{name}/tags/{tag}");
     let mut f = match gfile::GFile::open(&path) {
         Ok(f) => f,
@@ -52,7 +75,8 @@ pub fn publish(name: &str, tags: &[&str], path: &std::path::Path) -> std::io::Re
     }
 
     let mut f = gfile::GFile::create(format!("/cns/rainbow-binaries/{name}/{sha}"))?;
-    std::io::copy(&mut std::fs::File::open(path)?, &mut f)?;
+    let length = std::io::copy(&mut std::fs::File::open(path)?, &mut f)?;
+    f.flush();
 
     for tag in tags {
         let mut f = gfile::GFile::create(format!("/cns/rainbow-binaries/{name}/tags/{tag}"))?;
@@ -73,7 +97,7 @@ mod tests {
         let token = cli::load_auth();
         client.global_init(token);
         assert_eq!(
-            resolve_binary("ws_example", "test"),
+            resolve("ws_example", "test"),
             Some("https://google.com".to_string())
         )
     }

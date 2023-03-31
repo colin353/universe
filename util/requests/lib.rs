@@ -45,7 +45,7 @@ pub fn request(req: hyper::Request<hyper::Body>) -> std::io::Result<Response> {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::NotFound,
                     "request failed",
-                ))
+                ));
             }
         }
     }

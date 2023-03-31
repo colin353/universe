@@ -3,7 +3,7 @@ use std::path::Path;
 
 const STORAGE_API: &'static str = "https://storage.googleapis.com/storage/v1/b";
 const UPLOAD_API: &'static str = "https://storage.googleapis.com/upload/storage/v1/b";
-const BUFFER_SIZE: usize = 1048576;
+const BUFFER_SIZE: usize = 256 * 1024 * 8;
 
 pub enum GFile {
     LocalFile(std::fs::File),
@@ -445,6 +445,8 @@ impl GoogleCloudFile {
             let values: Vec<_> = range.to_str().unwrap().split("-").collect();
             if values.len() == 2 {
                 if let Ok(offset) = values[1].parse::<u64>() {
+                    let offset = offset + 1;
+
                     let taken = (offset - self.size) as usize;
                     self.buf = self.buf.split_off(taken);
                     self.size = offset;
@@ -585,7 +587,7 @@ impl Drop for GFile {
         match self {
             GFile::RemoteFile(f) => {
                 if f.mode == Mode::Write {
-                    f.flush(true).unwrap()
+                    f.flush(true).unwrap();
                 }
             }
             _ => return,

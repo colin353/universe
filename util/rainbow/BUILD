@@ -10,6 +10,8 @@ rust_library(
         "//auth:auth_client",
         "//util/cli",
         "//third_party:sha256",
+        "//third_party:hyper",
+        "//third_party:hyper_tls",
     ],
 )
 

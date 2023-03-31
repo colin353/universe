@@ -42,6 +42,45 @@ impl MetalMonitor {
     }
 
     pub async fn download_and_start_task(&self, task: &Task) {
+        let mut task = task.clone();
+        if task.binary.url.starts_with("rainbow://") {
+            let (binary, tag) = match rainbow::parse(&task.binary.url[10..]) {
+                Ok(b) => b,
+                Err(_) => {
+                    let mut runtime_info = TaskRuntimeInfo::new();
+                    runtime_info.state = TaskState::Failed;
+                    self.write_log(
+                        &task.name,
+                        &format!("failed to parse rainbow binary spec {:?}", task.binary.url),
+                    )
+                    .unwrap();
+                    if let Some(c) = &*self.0.coordinator.lock().unwrap() {
+                        c.report_tasks(vec![(task.name.to_owned(), runtime_info)]);
+                    }
+                    return;
+                }
+            };
+
+            task.binary.url = match rainbow::async_resolve(binary, tag).await {
+                Some(b) => b,
+                None => {
+                    let mut runtime_info = TaskRuntimeInfo::new();
+                    runtime_info.state = TaskState::Failed;
+                    self.write_log(
+                        &task.name,
+                        &format!("failed to resolve rainbow binary {binary}:{tag}"),
+                    )
+                    .unwrap();
+                    if let Some(c) = &*self.0.coordinator.lock().unwrap() {
+                        c.report_tasks(vec![(task.name.to_owned(), runtime_info)]);
+                    }
+                    return;
+                }
+            };
+
+            println!("resolved to {}", task.binary.url);
+        }
+
         if let Err(e) = self.download_binary(&task.binary.url).await {
             // Failed to download the binary, update status as failed
             let mut runtime_info = TaskRuntimeInfo::new();
@@ -53,7 +92,7 @@ impl MetalMonitor {
             return;
         }
 
-        match self.start_task(task) {
+        match self.start_task(&task) {
             Ok(runtime_info) => {
                 // Update coordinator with runtime info
                 if let Some(c) = &*self.0.coordinator.lock().unwrap() {
@@ -88,8 +127,10 @@ impl MetalMonitor {
         let binary_path = if !task.binary.path.is_empty() {
             std::path::PathBuf::from(&task.binary.path)
         } else {
+            let is_rainbow = task.binary.url.starts_with("rainbow://");
+
             let path = self.binary_cache_path_for_url(&task.binary.url);
-            if !path.exists() {
+            if is_rainbow || !path.exists() {
                 // We need to download the binary before we can start the task. Let's schedule
                 // the task to be downloaded and set the current state as Preparing.
                 let _t = task.clone();

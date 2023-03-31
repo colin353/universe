@@ -12,7 +12,7 @@ fn main() {
                 std::process::exit(1);
             }
             let (binary, tag) = rainbow::parse(&args[1]).unwrap();
-            match rainbow::resolve_binary(binary, tag) {
+            match rainbow::resolve(binary, tag) {
                 Some(b) => {
                     println!("{b}")
                 }
