@@ -1,5 +1,7 @@
 use metal_bus::TaskState;
+
 use std::convert::TryInto;
+use std::sync::Arc;
 
 #[macro_use]
 extern crate flags;
@@ -247,13 +249,30 @@ fn main() {
     );
     let stdout = define_flag!("stdout", true, "[logs] Whether to show the stdout log");
     let stderr = define_flag!("stderr", true, "[logs] Whether to show the stderr log");
+    let host = define_flag!(
+        "host",
+        String::from("localhost"),
+        "the metal host to connect to"
+    );
+    let port = define_flag!("port", 20202_u16, "the port to connect with");
+    let token = define_flag!("token", String::from(""), "the authentication token to use");
+    let args = parse_flags!(all, host, port, token, stdout, stderr);
 
-    let args = parse_flags!(all, stdout, stderr);
+    // If the host is set, but not auth token, try to pick it up from the environment
+    let token = token.value();
+    let connector: Arc<dyn bus::BusClient> = if host.value() != "localhost" && token.is_empty() {
+        let token = cli::load_auth();
+        let mut connector = bus_rpc::HyperSyncClient::new_tls(host.value(), port.value());
+        connector.add_header(hyper::header::AUTHORIZATION, token);
+        std::sync::Arc::new(connector)
+    } else if !token.is_empty() {
+        let mut connector = bus_rpc::HyperSyncClient::new_tls(host.value(), port.value());
+        connector.add_header(hyper::header::AUTHORIZATION, token);
+        Arc::new(connector)
+    } else {
+        Arc::new(bus_rpc::HyperSyncClient::new(host.value(), port.value()))
+    };
 
-    let connector = std::sync::Arc::new(bus_rpc::HyperSyncClient::new(
-        "localhost".to_string(),
-        20202,
-    ));
     let client = metal_bus::MetalClient::new(connector);
 
     match args.get(0).map(|s| s.as_str()) {

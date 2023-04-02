@@ -1,0 +1,14 @@
+[Unit]
+Description=Metal service
+After=network.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=1
+User=colin
+ExecStart=/home/colin/metal --ports=80 --tls_ports=443,8888 --certificate=/home/colin/cert.p12 --data_dir=/home/colin/data
+
+[Install]
+WantedBy=multi-user.target

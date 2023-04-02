@@ -99,8 +99,25 @@ async fn main() {
         String::from("127.0.0.1"),
         "the ip address of the current node"
     );
+    let redirect_http_port = flags::define_flag!(
+        "redirect_http_port",
+        0_u16,
+        "if set, redirect traffic on this port to HTTPS"
+    );
+    let well_known_dir = flags::define_flag!(
+        "well_known_dir",
+        String::new(),
+        "if set, serve HTTP requests within the /.well-known/... paths with this content"
+    );
 
-    flags::parse_flags!(ports, data_dir, tls_ports, certificate);
+    flags::parse_flags!(
+        ports,
+        data_dir,
+        tls_ports,
+        certificate,
+        redirect_http_port,
+        well_known_dir
+    );
 
     let root_dir = std::path::PathBuf::from(data_dir.value());
     let ip_address = ip_address
@@ -153,6 +170,19 @@ async fn main() {
         })
         .collect();
 
+    let redirect_http_port = redirect_http_port.value();
+    let mut http_redirects = Vec::new();
+    if redirect_http_port != 0 {
+        let well_known_dir = well_known_dir.value();
+        let root_dir = if well_known_dir.is_empty() {
+            None
+        } else {
+            Some(std::path::PathBuf::from(well_known_dir))
+        };
+
+        http_redirects.push(load_balancer::handle_http(redirect_http_port, root_dir));
+    }
+
     let tls_ports = tls_ports.value();
     let tls_proxies: Vec<_> = if !tls_ports.is_empty() {
         if certificate.value().is_empty() {
@@ -182,6 +212,7 @@ async fn main() {
         service,
         futures::future::join_all(non_tls_proxies),
         futures::future::join_all(tls_proxies),
+        futures::future::join_all(http_redirects),
         metal_proxy
     );
 }

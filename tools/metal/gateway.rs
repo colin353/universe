@@ -46,8 +46,6 @@ pub async fn gateway(bind_port: u16, target_port: u16, auth: auth_client::AuthAs
                 let h2_client = h2_client.clone();
                 let auth = auth.clone();
                 async move {
-                    println!("received request");
-
                     let token = match extract_token(&req) {
                         Ok(t) => t,
                         Err(_) => {
@@ -59,7 +57,6 @@ pub async fn gateway(bind_port: u16, target_port: u16, auth: auth_client::AuthAs
                             );
                         }
                     };
-                    println!("request w/ token: {token:?}");
 
                     let authorized = match auth.authenticate(token).await {
                         Ok(r) => r.success,
@@ -68,8 +65,6 @@ pub async fn gateway(bind_port: u16, target_port: u16, auth: auth_client::AuthAs
                             false
                         }
                     };
-
-                    println!("authorization: {authorized}");
 
                     if !authorized {
                         return Ok::<_, _>(

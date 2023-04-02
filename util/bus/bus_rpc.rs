@@ -93,6 +93,7 @@ pub struct HyperClientInner<T> {
     port: u16,
     client: Client<T>,
     use_tls: bool,
+    headers: Vec<(hyper::header::HeaderName, String)>,
 }
 
 #[derive(Clone)]
@@ -138,8 +139,24 @@ impl HyperClient<HttpConnector> {
                 port,
                 client: hyper::Client::builder().http2_only(true).build_http(),
                 use_tls: false,
+                headers: Vec::new(),
             }),
         }
+    }
+}
+
+impl<T> HyperClient<T> {
+    pub fn add_header(&mut self, header: hyper::header::HeaderName, value: String) {
+        Arc::get_mut(&mut self.inner)
+            .unwrap()
+            .headers
+            .push((header, value));
+    }
+}
+
+impl<T> HyperSyncClient<T> {
+    pub fn add_header(&mut self, header: hyper::header::HeaderName, value: String) {
+        self.inner.add_header(header, value);
     }
 }
 
@@ -152,6 +169,7 @@ impl HyperClient<hyper_tls::HttpsConnector<HttpConnector>> {
                 port,
                 client: hyper::Client::builder().http2_only(true).build(https),
                 use_tls: true,
+                headers: Vec::new(),
             }),
         }
     }
@@ -174,11 +192,18 @@ impl<T: Connect + Clone + Send + Sync + 'static> HyperClient<T> {
             Err(e) => return Err(bus::BusRpcError::InternalError(format!("{:?}", e))),
         };
 
-        let req = hyper::Request::builder()
+        let mut req = hyper::Request::builder()
             .method("POST")
             .uri(uri)
             .body(hyper::Body::from(data))
             .map_err(|e| bus::BusRpcError::InternalError(format!("{:?}", e)))?;
+
+        for (header, value) in &self.inner.headers {
+            req.headers_mut().insert(
+                header,
+                hyper::header::HeaderValue::from_bytes(value.as_bytes()).unwrap(),
+            );
+        }
 
         let resp = self
             .inner

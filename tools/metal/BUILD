@@ -116,6 +116,9 @@ rust_binary(
         "//util/flags",
         "//third_party:futures",
         "//util/bus:bus_rpc",
+        "//util/bus",
+        "//util/cli",
+        "//third_party:hyper",
     ],
 )
 
