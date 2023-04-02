@@ -23,7 +23,6 @@ rust_library(
 rust_library(
     name = "load_balancer",
     srcs = ["load_balancer.rs"],
-    edition = "2018",
     deps = [
         "//third_party:futures",
         "//third_party:hyper",
@@ -137,6 +136,23 @@ rust_binary(
         "//third_party:rand",
         "//third_party:native_tls",
         "//third_party:futures",
+    ]
+)
+
+rust_binary(
+    name = "gateway",
+    srcs = [
+        "gateway.rs",
+    ],
+    deps = [
+        ":metal_bus",
+        "//auth:auth_client",
+        "//util/bus:bus_rpc",
+        "//util/flags",
+        "//third_party:tokio",
+        "//third_party:rand",
+        "//third_party:futures",
+        "//third_party:hyper",
     ]
 )
 

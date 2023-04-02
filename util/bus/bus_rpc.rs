@@ -8,6 +8,9 @@ use hyper::{Body, Client, Request, Response, Server};
 use std::convert::Infallible;
 use std::sync::Arc;
 
+mod metal;
+pub use metal::MetalAsyncClient;
+
 pub async fn serve<H: bus::BusAsyncServer + 'static>(port: u16, handler: H) -> bus::BusRpcError {
     let make_service = make_service_fn(move |_| {
         let handler = handler.clone();

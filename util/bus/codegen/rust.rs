@@ -407,7 +407,7 @@ impl {name}AsyncClient {{
     for rpc in &svc.rpcs {
         write!(
             w,
-            "    pub fn {name}(&self, req: {argtype}) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<{rettype}, bus::BusRpcError>>>> {{
+            "    pub fn {name}(&self, req: {argtype}) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<{rettype}, bus::BusRpcError>> + Send>> {{
         let mut buf = Vec::new();
         if let Err(e) = req.encode(&mut buf) {{
             return Box::pin(

@@ -33,7 +33,7 @@ rust_library(
 
 rust_library(
     name = "auth_client",
-    srcs = ["client.rs"],
+    srcs = ["auth_client.rs", "async_client.rs"],
     edition = "2018",
     deps = [
         ":auth_bus",

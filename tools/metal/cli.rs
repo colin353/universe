@@ -75,6 +75,15 @@ fn down(args: &[String], client: &metal_bus::MetalClient) {
     update(true, args.get(0).unwrap().as_str(), client);
 }
 
+fn reload(args: &[String], client: &metal_bus::MetalClient) {
+    if args.len() != 1 {
+        eprintln!("USAGE: metal [options] reload [config]");
+        std::process::exit(1);
+    }
+    update(true, args.get(0).unwrap().as_str(), client);
+    update(false, args.get(0).unwrap().as_str(), client);
+}
+
 fn status(args: &[String], client: &metal_bus::MetalClient) {
     let mut req = metal_bus::StatusRequest::new();
 
@@ -250,6 +259,7 @@ fn main() {
     match args.get(0).map(|s| s.as_str()) {
         Some("up") => up(&args[1..], &client),
         Some("down") => down(&args[1..], &client),
+        Some("reload") => reload(&args[1..], &client),
         Some("status") => status(&args[1..], &client),
         Some("resolve") => resolve(&args[1..], &client),
         Some("logs") => logs(

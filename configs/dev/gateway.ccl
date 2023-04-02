@@ -1,0 +1,35 @@
+import {
+    secret,
+    task,
+    taskset,
+    port_binding,
+    service_binding,
+} from "metal"
+
+gateway = taskset {
+    task1 = task {
+        binary = {
+            path = "/home/colin/Documents/code/universe/bazel-bin/tools/metal/gateway"
+        }
+
+        environment = {
+            ARGS_WEB_PORT = port_binding {
+                name = "http"
+            }
+            ARGS_BUS_PORT = port_binding {
+                name = "bus"
+            }
+        }
+    }
+
+    http = service_binding {
+        port = 443
+        hostname = "gateway.colinmerkel.xyz"
+    }
+    bus = service_binding {
+        port = 8888
+        hostname = "gateway.colinmerkel.xyz"
+    }
+}
+
+

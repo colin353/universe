@@ -64,10 +64,12 @@ rust_test(
 rust_library(
     name = "bus_rpc",
     srcs = [
-        "rpc.rs",
+        "bus_rpc.rs",
+        "metal.rs",
     ],
     deps = [
         ":bus",
+        "//tools/metal:metal_bus",
         "//third_party:futures",
         "//third_party:hyper",
         "//third_party:hyper_tls",

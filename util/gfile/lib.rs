@@ -203,6 +203,7 @@ impl GoogleCloudFile {
         ))
         .header(hyper::header::AUTHORIZATION, format!("Bearer {}", token))
         .header(hyper::header::CONTENT_TYPE, "application/json")
+        .header(hyper::header::CACHE_CONTROL, "no-cache")
         .body(hyper::Body::from(format!(
             r#"{{"contentType": "{}"}}"#,
             content_type

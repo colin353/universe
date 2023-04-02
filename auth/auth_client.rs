@@ -5,6 +5,9 @@ pub use auth_bus::*;
 use cache::Cache;
 use std::sync::{Arc, RwLock};
 
+mod async_client;
+pub use async_client::AuthAsyncClient;
+
 lazy_static! {
     static ref GLOBAL_CLIENT: RwLock<Option<AuthClient>> = RwLock::new(None);
 }
@@ -55,8 +58,6 @@ impl AuthClient {
         let mut gc = GLOBAL_CLIENT.write().unwrap();
         *gc = Some(c);
     }
-
-    pub fn upgrade_auth_to_gcloud_token(&self) {}
 
     pub fn new_tls(hostname: &str, port: u16) -> Self {
         let connector = std::sync::Arc::new(bus_rpc::HyperSyncClient::new_tls(

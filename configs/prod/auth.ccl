@@ -9,7 +9,7 @@ import {
 auth = taskset {
     task1 = task {
         binary = {
-            url = "https://storage.googleapis.com/x20-binaries/auth_server"
+            url = "rainbow://auth_server:live"
         }
 
         environment = {
@@ -28,8 +28,8 @@ auth = taskset {
             ARGS_WEB_PORT = port_binding {
                 name = "http"
             }
-            ARGS_GRPC_PORT = port_binding {
-                name = "grpc"
+            ARGS_BUS_PORT = port_binding {
+                name = "bus"
             }
         }
     }
@@ -38,7 +38,7 @@ auth = taskset {
         port = 443
         hostname = "auth.colinmerkel.xyz"
     }
-    grpc = service_binding {
+    bus = service_binding {
         port = 8888
         hostname = "auth.colinmerkel.xyz"
     }

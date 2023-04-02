@@ -1,0 +1,39 @@
+import {
+    task,
+    taskset,
+    port_binding,
+    service_binding,
+} from "metal"
+
+auth = taskset {
+    task1 = task {
+        binary = {
+            path = "/home/colin/Documents/code/universe/bazel-bin/auth/server"
+        }
+
+        environment = {
+            ARGS_OAUTH_CLIENT_ID = ""
+            ARGS_HOSTNAME = "https://auth.colinmerkel.xyz/"
+            ARGS_ALLOWED_EMAILS = "colin:colin353@gmail.com"
+            ARGS_SECRET_KEY = "accesstoken"
+
+            ARGS_WEB_PORT = port_binding {
+                name = "http"
+            }
+            ARGS_BUS_PORT = port_binding {
+                name = "bus"
+            }
+        }
+    }
+
+    http = service_binding {
+        port = 443
+        hostname = "auth.colinmerkel.xyz"
+    }
+    bus = service_binding {
+        port = 8888
+        hostname = "auth.colinmerkel.xyz"
+    }
+}
+
+
