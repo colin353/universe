@@ -1,7 +1,8 @@
 use std::collections::HashMap;
+use std::os::unix::fs::PermissionsExt;
 
-use crate::{MetalMonitor, MetalMonitorError, PortAllocator};
-use core::ts;
+use crate::{MetalMonitor, PortAllocator};
+use core::{ts, MetalMonitorError};
 use metal_bus::{ArgKind, ServiceAssignment, Task, TaskRuntimeInfo, TaskState};
 
 impl MetalMonitor {
@@ -62,7 +63,12 @@ impl MetalMonitor {
             };
 
             task.binary.url = match rainbow::async_resolve(binary, tag).await {
-                Some(b) => b,
+                Some(b) => {
+                    // Detect tarfiles
+                    task.binary.is_tar = b.ends_with(".tar");
+
+                    b
+                }
                 None => {
                     let mut runtime_info = TaskRuntimeInfo::new();
                     runtime_info.state = TaskState::Failed;
@@ -81,7 +87,7 @@ impl MetalMonitor {
             println!("resolved to {}", task.binary.url);
         }
 
-        if let Err(e) = self.download_binary(&task.binary.url).await {
+        if let Err(e) = self.download_binary(&task.binary).await {
             // Failed to download the binary, update status as failed
             let mut runtime_info = TaskRuntimeInfo::new();
             runtime_info.state = TaskState::Failed;
@@ -124,7 +130,7 @@ impl MetalMonitor {
         }
 
         // Download the file's url if necessary
-        let binary_path = if !task.binary.path.is_empty() {
+        let mut binary_path = if !task.binary.path.is_empty() {
             std::path::PathBuf::from(&task.binary.path)
         } else {
             let is_rainbow = task.binary.url.starts_with("rainbow://");
@@ -145,6 +151,41 @@ impl MetalMonitor {
             }
             path
         };
+
+        // If the binary is a tarball, the path is not the executable itself, but the root dir of
+        // the tarball. In that case, we need to find the first executable binary in that dir
+        // and execute it with cwd as the tarball root.
+        let mut cwd = None;
+        if task.binary.is_tar {
+            cwd = Some(binary_path.clone());
+
+            for entry in std::fs::read_dir(&binary_path).map_err(|e| {
+                return MetalMonitorError::InvalidBinaryFormat(String::from(
+                    "tarball directory not valid",
+                ));
+            })? {
+                let entry = match entry {
+                    Ok(e) => e,
+                    Err(_) => continue,
+                };
+
+                match entry.file_type() {
+                    Ok(t) => {
+                        if t.is_dir() {
+                            continue;
+                        }
+                    }
+                    Err(_) => continue,
+                };
+
+                if let Ok(metadata) = entry.metadata() {
+                    if metadata.permissions().mode() & 0o111 != 0 {
+                        // It's executable, use this path
+                        binary_path = entry.path();
+                    }
+                }
+            }
+        }
 
         // Allocate all the service ports that we need
         let mut ports = HashMap::new();
@@ -177,6 +218,12 @@ impl MetalMonitor {
                 .join(format!("EXIT_TIME.{}", start_time))
                 .to_string_lossy()
         ));
+
+        if let Some(cwd) = cwd {
+            println!("using cwd = {cwd:?}");
+            process.current_dir(cwd);
+        }
+
         process.arg("--");
 
         // All remaining arguments are the "real" command

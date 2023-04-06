@@ -8,10 +8,12 @@ load("@io_bazel_rules_docker//docker:docker.bzl", "docker_push")
 load("//homepage/sync:sync.bzl", "bucket_sync")
 
 pkg_tar(
-    name = "static_files",
+    name = "homepage_tar",
     srcs = glob([
         "static/**",
-    ]),
+    ]) + [
+        ":homepage"
+    ],
     strip_prefix = ".",
 )
 

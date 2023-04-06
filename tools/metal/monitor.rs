@@ -1,9 +1,8 @@
 use core::{Coordinator, MetalMonitorError};
-use metal_bus::{DiffResponse, Logs, RestartMode, Task, TaskState};
-
 use futures::future::Shared;
 use futures::{Future, FutureExt};
 use hyper::body::HttpBody;
+use metal_bus::{DiffResponse, Logs, RestartMode, Task, TaskState};
 
 use std::collections::HashMap;
 use std::io::{Read, Seek, Write};
@@ -221,8 +220,9 @@ impl MetalMonitor {
 
     pub async fn download_binary(
         &self,
-        url: &str,
+        binary: &metal_bus::Binary,
     ) -> Result<std::path::PathBuf, MetalMonitorError> {
+        let url = &binary.url;
         let maybe_fut = {
             let mut _downloads = self.0.downloads.lock().unwrap();
             _downloads.get(url).map(|f| f.clone())
@@ -231,9 +231,10 @@ impl MetalMonitor {
             return fut.await;
         }
 
+        let _binary = binary.to_owned();
         let _url = url.to_string();
         let _self = self.clone();
-        let fut = async move { _self._download_binary(_url).await }
+        let fut = async move { _self._download_binary(&_binary).await }
             .boxed()
             .shared();
 
@@ -245,7 +246,12 @@ impl MetalMonitor {
         fut.await
     }
 
-    async fn _download_binary(&self, url: String) -> Result<std::path::PathBuf, MetalMonitorError> {
+    async fn _download_binary(
+        &self,
+        binary: &metal_bus::Binary,
+    ) -> Result<std::path::PathBuf, MetalMonitorError> {
+        let url = &binary.url;
+
         if url.is_empty() {
             return Err(MetalMonitorError::FailedToDownloadBinary(String::from(
                 "url is empty",
@@ -258,9 +264,13 @@ impl MetalMonitor {
             ))
         });
 
-        let out_path = self.binary_cache_path_for_url(&url);
+        let mut out_path = self.binary_cache_path_for_url(&url);
         if out_path.exists() {
             return Ok(out_path);
+        }
+
+        if binary.is_tar {
+            out_path.set_extension(".tar");
         }
 
         let uri: hyper::Uri = url.parse().map_err(|_| {
@@ -301,6 +311,39 @@ impl MetalMonitor {
                 "failed to rename downloaded binary {e:?}"
             ))
         })?;
+
+        // If it's a tarball, extract it
+        if binary.is_tar {
+            let mut final_out_path = out_path.clone();
+
+            // Must set it twice to fully eliminate the extension
+            final_out_path.set_extension("");
+            final_out_path.set_extension("");
+
+            std::fs::create_dir_all(&final_out_path).map_err(|e| {
+                MetalMonitorError::FailedToDownloadBinary(
+                    "failed to create final out path for tarball".to_string(),
+                )
+            })?;
+
+            let result = std::process::Command::new("/bin/tar")
+                .current_dir(&final_out_path)
+                .arg("xvf")
+                .arg(&out_path)
+                .status()
+                .map_err(|e| {
+                    MetalMonitorError::FailedToDownloadBinary("untarring failed".to_string())
+                })?;
+
+            if !result.success() {
+                return Err(MetalMonitorError::FailedToDownloadBinary(
+                    "untar command failed".to_string(),
+                ));
+            }
+
+            println!("untar success");
+        }
+
         let perm = std::fs::Permissions::from_mode(0o777);
         std::fs::set_permissions(&out_path, perm).map_err(|_| {
             MetalMonitorError::FailedToDownloadBinary(format!(

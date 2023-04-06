@@ -1,6 +1,7 @@
 message Binary {
     url: string = 1
     path: string = 2
+    is_tar: bool = 3
 }
 
 enum ArgKind {

@@ -58,6 +58,11 @@ pub fn resolve(name: &str, tag: &str) -> Option<String> {
 }
 
 pub fn publish(name: &str, tags: &[&str], path: &std::path::Path) -> std::io::Result<String> {
+    let mut suffix = "";
+    if let Some("tar") = path.extension().map(|s| s.to_str()).flatten() {
+        suffix = ".tar";
+    }
+
     let mut h = sha256::Sha256::new();
     let mut f = std::fs::File::open(path)?;
     let mut buf = vec![0_u8; 8192];
@@ -74,14 +79,15 @@ pub fn publish(name: &str, tags: &[&str], path: &std::path::Path) -> std::io::Re
         write!(&mut sha, "{:02x}", byte).unwrap();
     }
 
-    let mut f = gfile::GFile::create(format!("/cns/rainbow-binaries/{name}/{sha}"))?;
-    let length = std::io::copy(&mut std::fs::File::open(path)?, &mut f)?;
+    let mut f = gfile::GFile::create(format!("/cns/rainbow-binaries/{name}/{sha}{suffix}"))?;
+    std::io::copy(&mut std::fs::File::open(path)?, &mut f)?;
     f.flush();
 
     for tag in tags {
         let mut f = gfile::GFile::create(format!("/cns/rainbow-binaries/{name}/tags/{tag}"))?;
         f.write_all(
-            format!("https://storage.googleapis.com/rainbow-binaries/{name}/{sha}").as_bytes(),
+            format!("https://storage.googleapis.com/rainbow-binaries/{name}/{sha}{suffix}")
+                .as_bytes(),
         )?;
     }
 
