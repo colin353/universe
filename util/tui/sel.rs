@@ -1,6 +1,6 @@
 use raw_tty::{GuardMode, IntoRawMode};
 use std::io::Read;
-use tui::{Component, Transition};
+use tui::{Component, KeyboardEvent, Transition};
 
 #[derive(Clone, PartialEq)]
 pub struct SelectionState {
@@ -29,22 +29,24 @@ impl tui::Component<SelectionState> for Selector {
             if state == prev {
                 return self.choices.len();
             }
+        } else {
+            t.disable_wrap();
         }
 
         // If there is no previous state, then we must do the initial render
-        if let Some(prev) = prev_state {
-            t.move_cursor_to(1, prev.selected);
+        for (idx, choice) in self.choices.iter().enumerate() {
+            t.move_cursor_to(0, idx);
+            t.clear_line();
+            t.set_inverted();
             t.print(" ");
-            t.move_cursor_to(1, state.selected);
-            t.print("x");
-        } else {
-            for (idx, choice) in self.choices.iter().enumerate() {
-                t.move_cursor_to(0, idx);
-                if idx == state.selected {
-                    t.print("[x] ");
-                } else {
-                    t.print("[ ] ");
-                }
+
+            if idx == state.selected {
+                t.print(" ");
+                t.print(choice);
+                t.set_normal();
+            } else {
+                t.set_normal();
+                t.print(" ");
                 t.print(choice);
             }
         }
@@ -64,7 +66,7 @@ impl App {
     }
 }
 
-impl tui::AppController<SelectionState, char> for App {
+impl tui::AppController<SelectionState, KeyboardEvent> for App {
     fn render(
         &mut self,
         term: &mut tui::Terminal,
@@ -77,12 +79,17 @@ impl tui::AppController<SelectionState, char> for App {
     fn clean_up(&self, term: &mut tui::Terminal) {
         term.move_cursor_to(0, self.component.choices.len());
         term.print("\r\n");
+        term.enable_wrap();
         term.show_cursor();
     }
 
-    fn transition(&mut self, state: &SelectionState, event: char) -> Transition<SelectionState> {
+    fn transition(
+        &mut self,
+        state: &SelectionState,
+        event: KeyboardEvent,
+    ) -> Transition<SelectionState> {
         match event {
-            'k' => {
+            KeyboardEvent::Character('k') | KeyboardEvent::UpArrow => {
                 let mut new_state = (*state).clone();
                 if new_state.selected == 0 {
                     new_state.selected = self.component.choices.len() - 1;
@@ -91,21 +98,22 @@ impl tui::AppController<SelectionState, char> for App {
                 }
                 Transition::Updated(new_state)
             }
-            'j' => {
+            KeyboardEvent::Character('j') | KeyboardEvent::DownArrow => {
                 let mut new_state = (*state).clone();
                 new_state.selected = (new_state.selected + 1) % self.component.choices.len();
                 Transition::Updated(new_state)
             }
-            '\x03' | '\x04' => Transition::Terminate((*state).clone()),
-            '\n' | '\x0d' => Transition::Finished((*state).clone()),
-            _ => {
-                Transition::Nothing
-            }
+            KeyboardEvent::CtrlC | KeyboardEvent::CtrlD => Transition::Terminate((*state).clone()),
+            KeyboardEvent::Enter => Transition::Finished((*state).clone()),
+            _ => Transition::Nothing,
         }
     }
 
     fn initial_state(&self) -> SelectionState {
-        SelectionState { selected: 0, focused: false }
+        SelectionState {
+            selected: 0,
+            focused: false,
+        }
     }
 }
 
@@ -117,7 +125,7 @@ pub fn select(choices: Vec<String>) -> Option<usize> {
         0 => None,
         1 => Some(0),
         _ => {
-            eprint!("{}", (0..size + 1).map(|_| "\n").collect::<String>());
+            eprint!("{}", (0..size).map(|_| "\n").collect::<String>());
             let mut term = tui::Terminal::new();
             let (x, y) = term.get_cursor_pos();
             term.offset_y = y - size - 1;
@@ -130,10 +138,9 @@ pub fn select(choices: Vec<String>) -> Option<usize> {
                 .unwrap();
             let mut tty_input = tty.try_clone().unwrap().guard_mode().unwrap();
             tty_input.set_raw_mode();
-            for ch in (&mut tty_input).bytes() {
-                let ch: char = ch.unwrap().into();
 
-                match app.handle_event(ch) {
+            for e in tui::KeyboardEventStream::new(&mut tty_input) {
+                match app.handle_event(e) {
                     Transition::Finished(final_state) => {
                         return Some(final_state.selected);
                     }

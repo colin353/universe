@@ -92,6 +92,14 @@ impl Terminal {
         eprint!("\r\x1b[2J\r\x1b[H");
     }
 
+    pub fn disable_wrap(&self) {
+        eprint!("\x1b[7l");
+    }
+
+    pub fn enable_wrap(&self) {
+        eprint!("\x1b[7h");
+    }
+
     pub fn show_cursor(&self) {
         eprint!("\x1b[?25h");
     }

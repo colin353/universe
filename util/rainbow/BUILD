@@ -9,6 +9,7 @@ rust_library(
         "//util/gfile",
         "//auth:auth_client",
         "//util/cli",
+        "//util/time",
         "//third_party:sha256",
         "//third_party:hyper",
         "//third_party:hyper_tls",
@@ -23,6 +24,8 @@ rust_binary(
         "//util/cli",
         ":rainbow",
         "//util/flags",
+        "//util/time",
+        "//util/tui:sel",
     ],
 )
 

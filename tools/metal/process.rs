@@ -66,7 +66,6 @@ impl MetalMonitor {
                 Some(b) => {
                     // Detect tarfiles
                     task.binary.is_tar = b.ends_with(".tar");
-
                     b
                 }
                 None => {

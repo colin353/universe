@@ -205,7 +205,7 @@ impl GoogleCloudFile {
         .header(hyper::header::CONTENT_TYPE, "application/json")
         .header(hyper::header::CACHE_CONTROL, "no-cache")
         .body(hyper::Body::from(format!(
-            r#"{{"contentType": "{}"}}"#,
+            r#"{{"contentType": "{}", "cacheControl": "no-cache"}}"#,
             content_type
         )))
         .unwrap();

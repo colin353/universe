@@ -81,17 +81,114 @@ pub fn publish(name: &str, tags: &[&str], path: &std::path::Path) -> std::io::Re
 
     let mut f = gfile::GFile::create(format!("/cns/rainbow-binaries/{name}/{sha}{suffix}"))?;
     std::io::copy(&mut std::fs::File::open(path)?, &mut f)?;
-    f.flush();
+    f.flush()?;
 
     for tag in tags {
-        let mut f = gfile::GFile::create(format!("/cns/rainbow-binaries/{name}/tags/{tag}"))?;
-        f.write_all(
-            format!("https://storage.googleapis.com/rainbow-binaries/{name}/{sha}{suffix}")
-                .as_bytes(),
+        update_tag(
+            name,
+            tag,
+            format!("https://storage.googleapis.com/rainbow-binaries/{name}/{sha}{suffix}"),
         )?;
     }
 
     Ok(sha)
+}
+
+pub fn update_tag(name: &str, tag: &str, new_target: String) -> std::io::Result<()> {
+    // Create the tag file
+    let tag_path = format!("/cns/rainbow-binaries/{name}/tags/{tag}");
+    let mut f = gfile::GFile::create(&tag_path)?;
+    f.write_all(new_target.as_bytes())?;
+
+    // Read the tag log file, if it exists
+    let log_path = format!("{tag_path}.log");
+    let mut tag_log = match gfile::GFile::open(&log_path) {
+        Ok(mut t) => {
+            let mut buf = Vec::new();
+            t.read_to_end(&mut buf)?;
+            TagLog::from_bytes(&buf)?
+        }
+        Err(_) => TagLog::new(),
+    };
+
+    tag_log.push(time::timestamp(), new_target);
+    tag_log.normalize();
+
+    let mut f = gfile::GFile::create(&log_path)?;
+    tag_log.write(&mut f)?;
+    Ok(())
+}
+
+pub struct TagLog {
+    pub entries: Vec<(u64, String)>,
+}
+
+impl TagLog {
+    pub fn new() -> Self {
+        Self {
+            entries: Vec::new(),
+        }
+    }
+
+    pub fn for_tag(name: &str, tag: &str) -> std::io::Result<Self> {
+        let log_path = format!("/cns/rainbow-binaries/{name}/tags/{tag}.log");
+        Ok(match gfile::GFile::open(&log_path) {
+            Ok(mut t) => {
+                let mut buf = Vec::new();
+                t.read_to_end(&mut buf)?;
+                TagLog::from_bytes(&buf)?
+            }
+            Err(_) => TagLog::new(),
+        })
+    }
+
+    pub fn from_bytes(data: &[u8]) -> std::io::Result<Self> {
+        let mut entries = Vec::new();
+        let data = std::str::from_utf8(data).map_err(|_| {
+            return std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "failed to parse tag log as utf8",
+            );
+        })?;
+        for line in data.split('\n') {
+            let components: Vec<_> = line.split(' ').collect();
+            if components.len() != 2 {
+                continue;
+            }
+
+            let time: u64 = match components[0].parse() {
+                Ok(t) => t,
+                Err(_) => {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        "failed to parse tag log timestamp",
+                    ));
+                }
+            };
+
+            entries.push((time, components[1].to_string()));
+        }
+
+        Ok(Self { entries })
+    }
+
+    pub fn normalize(&mut self) {
+        self.entries.sort_by_key(|(ts, _)| *ts);
+        self.entries.dedup_by(|a, b| a.1 == b.1);
+        self.entries.truncate(20);
+    }
+
+    pub fn push(&mut self, ts: u64, dest: String) {
+        self.entries.push((ts, dest));
+    }
+
+    pub fn write(&self, w: &mut dyn std::io::Write) -> std::io::Result<()> {
+        for (ts, target) in &self.entries {
+            write!(w, "{ts} {target}\n")?;
+        }
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
