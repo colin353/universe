@@ -26,7 +26,10 @@ impl largetable_client::LargeTableClientInner for ManagedLargeTable {
         column: &str,
         timestamp: u64,
     ) -> Future<Option<std::io::Result<Vec<u8>>>> {
-        Box::pin(std::future::ready(self.read(row, column, timestamp)))
+        Box::pin(std::future::ready(
+            self.read::<bus::PackedIn<u8>>(row, column, timestamp)
+                .map(|m| m.map(|d| d.0)),
+        ))
     }
 
     fn delete(
@@ -155,32 +158,22 @@ impl ManagedLargeTable {
         Ok(service::DeleteResponse { timestamp })
     }
 
-    pub fn write<T: bus::Serialize>(
+    pub fn write(
         &self,
         row: String,
         column: String,
         timestamp: u64,
-        data: T,
+        data: Vec<u8>,
     ) -> std::io::Result<service::WriteResponse> {
         let timestamp = match timestamp {
             0 => timestamp_usec(),
             x => x,
         };
 
-        let mut buf = Vec::new();
-        data.encode(&mut buf).unwrap();
-        println!(
-            "[row = {}, col = {}] encoded as {} bytes (ending in {:?})",
-            row,
-            column,
-            buf.len(),
-            &buf[std::cmp::max(6, buf.len()) - 6..]
-        );
-
         self.table
             .read()
             .expect("failed to read lock largetable")
-            .write(row.to_owned(), column, timestamp, data)?;
+            .write(row.to_owned(), column, timestamp, bus::PackedOut(&data))?;
 
         Ok(service::WriteResponse { timestamp })
     }
@@ -351,13 +344,8 @@ impl service::LargeTableServiceHandler for ManagedLargeTable {
             .maybe_throttle(req.data.len())
             .map_err(|_| bus::BusRpcError::BackOff)?;
 
-        self.write(
-            req.row,
-            req.column,
-            req.timestamp,
-            bus::PackedOut(&req.data),
-        )
-        .map_err(|e| bus::BusRpcError::InvalidData(e))
+        self.write(req.row, req.column, req.timestamp, req.data)
+            .map_err(|e| bus::BusRpcError::InvalidData(e))
     }
 
     fn read_range(
@@ -380,7 +368,7 @@ impl service::LargeTableServiceHandler for ManagedLargeTable {
         req: service::WriteBulkRequest,
     ) -> Result<service::WriteBulkResponse, bus::BusRpcError> {
         for w in req.writes {
-            self.write(w.row, w.column, w.timestamp, bus::PackedOut(&w.data))
+            self.write(w.row, w.column, w.timestamp, w.data)
                 .map_err(|e| bus::BusRpcError::InvalidData(e))?;
         }
         Ok(service::WriteBulkResponse::new())

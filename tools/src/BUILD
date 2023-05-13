@@ -35,6 +35,8 @@ rust_binary(
     deps = [
       ":server_service",
       ":service",
+      "//tools/largetable:managed_largetable",
+      "//tools/largetable:largetable_client",
       "//auth:auth_client",
       "//util/bus",
       "//util/bus:bus_rpc",
@@ -53,6 +55,7 @@ rust_library(
       ":service",
       ":core",
       "//util/bus",
+      "//tools/largetable:largetable_client",
       "//tools/largetable:managed_largetable",
       "//util/sstable/v3:sstable",
       "//tools/largetable",
@@ -123,14 +126,16 @@ rust_binary(
     ],
     deps = [
       ":cli",
+      ":core",
       ":server_service",
       ":src_lib",
       ":service",
       "//util/flags",
       "//util/tui",
-      "//third_party:tokio",
       "//util/bus",
       "//util/bus:bus_rpc",
-      ":core",
+      "//tools/largetable:managed_largetable",
+      "//tools/largetable:largetable_client",
+      "//third_party:tokio",
     ]
 )

@@ -7,13 +7,11 @@ async fn main() {
         String::new(),
         "The directory where data is stored and loaded from"
     );
-
     let hostname = flags::define_flag!(
         "hostname",
         String::from("localhost:4959"),
         "The hostname of the src server"
     );
-
     let auth_hostname = flags::define_flag!(
         "auth_hostname",
         String::new(),
@@ -43,16 +41,34 @@ async fn main() {
         ))
     };
 
+    let database = if data_dir.value().is_empty() {
+        largetable_client::LargeTableClient::new(Arc::new(
+            largetable_client::LargeTableBusClient::new(
+                "largetable.bus".to_string(),
+                "src__".to_string(),
+            ),
+        ))
+    } else {
+        let database = Arc::new(
+            managed_largetable::ManagedLargeTable::new(std::path::PathBuf::from(data_dir.value()))
+                .unwrap(),
+        );
+
+        let _db = database.clone();
+        std::thread::spawn(move || {
+            _db.monitor_memory();
+        });
+
+        largetable_client::LargeTableClient::new(database)
+    };
+
     let data_path = std::path::PathBuf::from(data_dir.value());
-    let table = server_service::SrcServer::new(data_path, hostname.value(), auth)
+    let server = server_service::SrcServer::new(database, hostname.value(), auth)
         .expect("failed to create src server");
 
-    let handler = Arc::new(table);
+    let handler = Arc::new(server);
     let _h = handler.clone();
-    std::thread::spawn(move || {
-        _h.monitor_memory();
-    });
 
-    let s = service::SrcServerService(handler);
+    let s = service::SrcServerAsyncService(handler);
     bus_rpc::serve(4959, s).await;
 }

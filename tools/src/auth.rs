@@ -47,9 +47,9 @@ impl AuthServicePlugin {
 impl AuthPlugin for AuthServicePlugin {
     fn validate(&self, token: &str) -> Result<User, String> {
         let resp = self.client.authenticate(token.to_string());
-        if resp.get_success() {
+        if resp.success {
             return Ok(User {
-                username: resp.get_username().to_string(),
+                username: resp.username,
             });
         }
 

@@ -1,22 +1,27 @@
 use service::*;
 use std::collections::HashSet;
 
+use std::sync::Arc;
+
 pub mod auth;
 
+pub type Future<T> = std::pin::Pin<Box<dyn std::future::Future<Output = T> + Send>>;
+
+#[derive(Clone)]
 pub struct SrcServer {
-    table: managed_largetable::ManagedLargeTable,
+    table: largetable_client::LargeTableClient,
     hostname: String,
-    auth: std::sync::Arc<dyn auth::AuthPlugin>,
+    auth: Arc<dyn auth::AuthPlugin>,
 }
 
 impl SrcServer {
     pub fn new(
-        root: std::path::PathBuf,
+        table: largetable_client::LargeTableClient,
         hostname: String,
-        auth: std::sync::Arc<dyn auth::AuthPlugin>,
+        auth: Arc<dyn auth::AuthPlugin>,
     ) -> std::io::Result<Self> {
         Ok(Self {
-            table: managed_largetable::ManagedLargeTable::new(root)?,
+            table,
             hostname,
             auth,
         })
@@ -26,55 +31,53 @@ impl SrcServer {
         self.auth.validate(token)
     }
 
-    pub fn get_file(
+    pub async fn get_file(
         &self,
-        basis: service::BasisView,
+        basis: service::Basis,
         path: &str,
     ) -> std::io::Result<service::File> {
-        if !basis.get_host().is_empty() && basis.get_host() != self.hostname {
+        if !basis.host.is_empty() && basis.host != self.hostname {
             todo!(
                 "I don't know how to read from remotes yet (got basis {}, but I'm {})",
-                basis.get_host(),
+                basis.host,
                 self.hostname
             );
         }
 
         self.table
             .read(
-                &format!("code/submitted/{}/{}", basis.get_owner(), basis.get_name()),
+                &format!("code/submitted/{}/{}", &basis.owner, &basis.name),
                 &format!("{}/{}", path.split("/").count(), path),
-                basis.get_index(),
+                basis.index,
             )
+            .await
             .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::NotFound))?
     }
 
-    pub fn get_blob(&self, basis: service::BasisView, sha: &[u8]) -> std::io::Result<Vec<u8>> {
-        if !basis.get_host().is_empty() && basis.get_host() != self.hostname {
+    pub async fn get_blob(&self, basis: service::Basis, sha: &[u8]) -> std::io::Result<Vec<u8>> {
+        if !basis.host.is_empty() && basis.host != self.hostname {
             todo!("I don't know how to read from remotes yet!");
         }
 
         let result: bus::PackedIn<u8> = self
             .table
             .read("code/blobs", &core::fmt_sha(sha), 0)
+            .await
             .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::NotFound))??;
 
         Ok(result.0)
     }
 
-    pub fn get_blob_from_path(
+    pub async fn get_blob_from_path(
         &self,
-        basis: service::BasisView,
+        basis: service::Basis,
         path: &str,
     ) -> std::io::Result<Vec<u8>> {
-        let f = self.get_file(basis, path)?;
-        self.get_blob(basis, &f.sha)
+        let f = self.get_file(basis.clone(), path).await?;
+        self.get_blob(basis, &f.sha).await
     }
 
-    pub fn monitor_memory(&self) {
-        self.table.monitor_memory();
-    }
-
-    fn get_snapshot(
+    async fn get_snapshot(
         &self,
         change: &Change,
         timestamp: u64,
@@ -93,7 +96,7 @@ impl SrcServer {
             min: "",
             ..Default::default()
         };
-        Ok(match self.table.read_range(filter, 0, 10) {
+        Ok(match self.table.read_range(filter, 0, 10).await {
             Ok(m) => m
                 .records
                 .into_iter()
@@ -108,7 +111,7 @@ impl SrcServer {
         })
     }
 
-    fn add_snapshot(
+    async fn add_snapshot(
         &self,
         change: &Change,
         snapshot: Snapshot,
@@ -147,6 +150,7 @@ impl SrcServer {
                 0,
                 snapshot,
             )
+            .await
             .map_err(|e| {
                 Err(bus::BusRpcError::InternalError(format!(
                     "failed to write snapshot: {:?}",
@@ -158,8 +162,93 @@ impl SrcServer {
     }
 }
 
-impl service::SrcServerServiceHandler for SrcServer {
-    fn create(&self, req: CreateRequest) -> Result<CreateResponse, bus::BusRpcError> {
+impl service::SrcServerAsyncServiceHandler for SrcServer {
+    fn create(&self, req: CreateRequest) -> Future<Result<CreateResponse, bus::BusRpcError>> {
+        let _self = self.clone();
+        Box::pin(async move { _self.create(req).await })
+    }
+
+    fn get_repository(
+        &self,
+        req: GetRepositoryRequest,
+    ) -> Future<Result<GetRepositoryResponse, bus::BusRpcError>> {
+        let _self = self.clone();
+        Box::pin(async move { _self.get_repository(req).await })
+    }
+
+    fn submit(&self, req: SubmitRequest) -> Future<Result<SubmitResponse, bus::BusRpcError>> {
+        let _self = self.clone();
+        Box::pin(async move { _self.submit(req).await })
+    }
+
+    fn get_metadata(
+        &self,
+        req: GetMetadataRequest,
+    ) -> Future<Result<GetMetadataResponse, bus::BusRpcError>> {
+        let _self = self.clone();
+        Box::pin(async move { _self.get_metadata(req).await })
+    }
+
+    fn get_blobs(
+        &self,
+        req: GetBlobsRequest,
+    ) -> Future<Result<GetBlobsResponse, bus::BusRpcError>> {
+        let _self = self.clone();
+        Box::pin(async move { _self.get_blobs(req).await })
+    }
+
+    fn update_change(
+        &self,
+        req: UpdateChangeRequest,
+    ) -> Future<Result<UpdateChangeResponse, bus::BusRpcError>> {
+        let _self = self.clone();
+        Box::pin(async move { _self.update_change(req).await })
+    }
+
+    fn list_changes(
+        &self,
+        req: ListChangesRequest,
+    ) -> Future<Result<ListChangesResponse, bus::BusRpcError>> {
+        let _self = self.clone();
+        Box::pin(async move { _self.list_changes(req).await })
+    }
+
+    fn get_change(
+        &self,
+        req: GetChangeRequest,
+    ) -> Future<Result<GetChangeResponse, bus::BusRpcError>> {
+        let _self = self.clone();
+        Box::pin(async move { _self.get_change(req).await })
+    }
+
+    fn get_blobs_by_path(
+        &self,
+        req: GetBlobsByPathRequest,
+    ) -> Future<Result<GetBlobsByPathResponse, bus::BusRpcError>> {
+        let _self = self.clone();
+        Box::pin(async move { _self.get_blobs_by_path(req).await })
+    }
+
+    fn get_basis_diff(
+        &self,
+        req: GetBasisDiffRequest,
+    ) -> Future<Result<GetBasisDiffResponse, bus::BusRpcError>> {
+        let _self = self.clone();
+        Box::pin(async move { _self.get_basis_diff(req).await })
+    }
+
+    fn discover_auth(
+        &self,
+        req: DiscoverAuthRequest,
+    ) -> Future<Result<DiscoverAuthResponse, bus::BusRpcError>> {
+        let _self = self.clone();
+        Box::pin(async move { _self.discover_auth(req).await })
+    }
+}
+
+// Implement async service methods
+impl SrcServer {
+    async fn create(&self, req: CreateRequest) -> Result<CreateResponse, bus::BusRpcError> {
         let user = match self.auth(&req.token) {
             Ok(u) => u,
             Err(e) => {
@@ -188,6 +277,7 @@ impl service::SrcServerServiceHandler for SrcServer {
                     name: req.name,
                 },
             )
+            .await
             .map_err(|e| {
                 eprintln!("{:?}", e);
                 bus::BusRpcError::InternalError("failed to write repo".to_string())
@@ -199,7 +289,7 @@ impl service::SrcServerServiceHandler for SrcServer {
         })
     }
 
-    fn get_repository(
+    async fn get_repository(
         &self,
         req: GetRepositoryRequest,
     ) -> Result<GetRepositoryResponse, bus::BusRpcError> {
@@ -214,9 +304,10 @@ impl service::SrcServerServiceHandler for SrcServer {
             }
         };
 
-        if let None =
-            self.table
-                .read::<bus::Nothing>("repos", &format!("{}/{}", req.owner, req.name), 0)
+        if let None = self
+            .table
+            .read::<bus::Nothing>("repos", &format!("{}/{}", req.owner, req.name), 0)
+            .await
         {
             return Ok(GetRepositoryResponse {
                 failed: true,
@@ -232,7 +323,7 @@ impl service::SrcServerServiceHandler for SrcServer {
             min: "",
             max: "",
         };
-        let resp = self.table.read_range(filter, 0, 1).map_err(|e| {
+        let resp = self.table.read_range(filter, 0, 1).await.map_err(|e| {
             eprintln!("failed to read range: {:?}", e);
             bus::BusRpcError::InternalError("failed to touch parent folders".to_string())
         })?;
@@ -249,7 +340,7 @@ impl service::SrcServerServiceHandler for SrcServer {
         })
     }
 
-    fn submit(&self, req: SubmitRequest) -> Result<SubmitResponse, bus::BusRpcError> {
+    async fn submit(&self, req: SubmitRequest) -> Result<SubmitResponse, bus::BusRpcError> {
         match self.auth(&req.token) {
             Ok(_) => (),
             Err(e) => {
@@ -261,11 +352,15 @@ impl service::SrcServerServiceHandler for SrcServer {
             }
         };
 
-        let mut change = match self.table.read(
-            &format!("{}/{}/changes", req.repo_owner, req.repo_name),
-            &core::encode_id(req.change_id),
-            0,
-        ) {
+        let mut change = match self
+            .table
+            .read(
+                &format!("{}/{}/changes", req.repo_owner, req.repo_name),
+                &core::encode_id(req.change_id),
+                0,
+            )
+            .await
+        {
             Some(c) => c.map_err(|e| {
                 bus::BusRpcError::InternalError(format!("failed to read from table: {:?}", e))
             })?,
@@ -277,7 +372,8 @@ impl service::SrcServerServiceHandler for SrcServer {
                 });
             }
         };
-        let snapshot = match self.get_snapshot(&change, 0)? {
+
+        let snapshot = match self.get_snapshot(&change, 0).await? {
             Some(s) => s,
             None => {
                 return Ok(SubmitResponse {
@@ -307,6 +403,7 @@ impl service::SrcServerServiceHandler for SrcServer {
                 format!("{}/{}/change_ids", change.repo_owner, change.repo_name),
                 String::new(),
             )
+            .await
             .map_err(|e| {
                 bus::BusRpcError::InternalError(format!("failed to reserve id: {:?}", e))
             })?;
@@ -324,6 +421,7 @@ impl service::SrcServerServiceHandler for SrcServer {
                         format!("{}/{}", diff.path.split("/").count(), diff.path),
                         submitted_id,
                     )
+                    .await
                     .map_err(|e| {
                         eprintln!("failed to delete file: {:?}", e);
                         bus::BusRpcError::InternalError("failed to delete file".to_string())
@@ -344,6 +442,7 @@ impl service::SrcServerServiceHandler for SrcServer {
                             length: 0,
                         },
                     )
+                    .await
                     .map_err(|e| {
                         eprintln!("failed to write dir: {:?}", e);
                         bus::BusRpcError::InternalError("failed to write dir".to_string())
@@ -354,7 +453,8 @@ impl service::SrcServerServiceHandler for SrcServer {
             // Figure out what the byte content of the file is from the diff
             let original = match diff.kind {
                 service::DiffKind::Modified => self
-                    .get_blob_from_path(snapshot.basis.as_view(), &diff.path)
+                    .get_blob_from_path(snapshot.basis.clone(), &diff.path)
+                    .await
                     .map_err(|e| {
                         eprintln!("failed to get blob: {:?}", e);
                         bus::BusRpcError::InternalError("failed to get blob".to_string())
@@ -379,6 +479,7 @@ impl service::SrcServerServiceHandler for SrcServer {
             if self
                 .table
                 .read::<bus::Nothing>("code/blobs", &sha_str, 0)
+                .await
                 .is_none()
             {
                 self.table
@@ -388,6 +489,7 @@ impl service::SrcServerServiceHandler for SrcServer {
                         0,
                         bus::PackedOut(&content),
                     )
+                    .await
                     .map_err(|e| {
                         eprintln!("{:?}", e);
                         bus::BusRpcError::InternalError("failed to write blob".to_string())
@@ -406,6 +508,7 @@ impl service::SrcServerServiceHandler for SrcServer {
                         length: content.len() as u64,
                     },
                 )
+                .await
                 .map_err(|e| {
                     eprintln!("{:?}", e);
                     bus::BusRpcError::InternalError("failed to write file".to_string())
@@ -433,6 +536,7 @@ impl service::SrcServerServiceHandler for SrcServer {
                         length: 0,
                     },
                 )
+                .await
                 .map_err(|e| {
                     eprintln!("{:?}", e);
                     bus::BusRpcError::InternalError("failed to touch parent folders".to_string())
@@ -449,6 +553,7 @@ impl service::SrcServerServiceHandler for SrcServer {
                 0,
                 bus::Nothing {},
             )
+            .await
             .map_err(|e| {
                 bus::BusRpcError::InternalError(format!("failed to write to table: {:?}", e))
             })?;
@@ -467,6 +572,7 @@ impl service::SrcServerServiceHandler for SrcServer {
                 0,
                 change.clone(),
             )
+            .await
             .map_err(|e| {
                 bus::BusRpcError::InternalError(format!("failed to read from table: {:?}", e))
             })?;
@@ -477,6 +583,7 @@ impl service::SrcServerServiceHandler for SrcServer {
                 0,
                 change.clone(),
             )
+            .await
             .map_err(|e| {
                 bus::BusRpcError::InternalError(format!("failed to read from table: {:?}", e))
             })?;
@@ -487,7 +594,7 @@ impl service::SrcServerServiceHandler for SrcServer {
         })
     }
 
-    fn get_blobs_by_path(
+    async fn get_blobs_by_path(
         &self,
         req: GetBlobsByPathRequest,
     ) -> Result<GetBlobsByPathResponse, bus::BusRpcError> {
@@ -509,6 +616,7 @@ impl service::SrcServerServiceHandler for SrcServer {
             let file = match self
                 .table
                 .read::<service::File>(&row, &col, req.basis.index)
+                .await
             {
                 Some(Ok(f)) => f,
                 Some(Err(e)) => {
@@ -531,7 +639,7 @@ impl service::SrcServerServiceHandler for SrcServer {
         let mut blobs = Vec::new();
         for sha in shas {
             let data: bus::PackedIn<u8> =
-                match self.table.read("code/blobs", &core::fmt_sha(&sha), 0) {
+                match self.table.read("code/blobs", &core::fmt_sha(&sha), 0).await {
                     Some(s) => s.map_err(|e| {
                         eprintln!("{:?}", e);
                         bus::BusRpcError::InternalError("failed to get blob".to_string())
@@ -547,7 +655,7 @@ impl service::SrcServerServiceHandler for SrcServer {
         })
     }
 
-    fn get_blobs(&self, req: GetBlobsRequest) -> Result<GetBlobsResponse, bus::BusRpcError> {
+    async fn get_blobs(&self, req: GetBlobsRequest) -> Result<GetBlobsResponse, bus::BusRpcError> {
         match self.auth(&req.token) {
             Ok(_) => (),
             Err(e) => {
@@ -562,7 +670,7 @@ impl service::SrcServerServiceHandler for SrcServer {
         let mut blobs = Vec::new();
         for sha in req.shas {
             let data: bus::PackedIn<u8> =
-                match self.table.read("code/blobs", &core::fmt_sha(&sha), 0) {
+                match self.table.read("code/blobs", &core::fmt_sha(&sha), 0).await {
                     Some(s) => s.map_err(|e| {
                         eprintln!("{:?}", e);
                         bus::BusRpcError::InternalError("failed to get blob".to_string())
@@ -578,7 +686,7 @@ impl service::SrcServerServiceHandler for SrcServer {
         })
     }
 
-    fn get_metadata(
+    async fn get_metadata(
         &self,
         req: GetMetadataRequest,
     ) -> Result<GetMetadataResponse, bus::BusRpcError> {
@@ -610,6 +718,7 @@ impl service::SrcServerServiceHandler for SrcServer {
             let resp = self
                 .table
                 .read_range(filter, req.basis.index, batch_size)
+                .await
                 .map_err(|e| {
                     eprintln!("{:?}", e);
                     bus::BusRpcError::InternalError("failed to touch parent folders".to_string())
@@ -649,7 +758,7 @@ impl service::SrcServerServiceHandler for SrcServer {
         })
     }
 
-    fn update_change(
+    async fn update_change(
         &self,
         req: UpdateChangeRequest,
     ) -> Result<UpdateChangeResponse, bus::BusRpcError> {
@@ -665,11 +774,15 @@ impl service::SrcServerServiceHandler for SrcServer {
         };
 
         // Check that the repository exists
-        match self.table.read::<bus::Nothing>(
-            "repos",
-            &format!("{}/{}", req.change.repo_owner, req.change.repo_name),
-            0,
-        ) {
+        match self
+            .table
+            .read::<bus::Nothing>(
+                "repos",
+                &format!("{}/{}", req.change.repo_owner, req.change.repo_name),
+                0,
+            )
+            .await
+        {
             Some(r) => r.map_err(|e| {
                 bus::BusRpcError::InternalError(format!("failed to read from table: {:?}", e))
             })?,
@@ -688,11 +801,15 @@ impl service::SrcServerServiceHandler for SrcServer {
 
         // Check if the change already exists
         if req.change.id != 0 {
-            let mut existing_change = match self.table.read::<service::Change>(
-                &format!("{}/{}/changes", req.change.repo_owner, req.change.repo_name),
-                &core::encode_id(req.change.id),
-                0,
-            ) {
+            let mut existing_change = match self
+                .table
+                .read::<service::Change>(
+                    &format!("{}/{}/changes", req.change.repo_owner, req.change.repo_name),
+                    &core::encode_id(req.change.id),
+                    0,
+                )
+                .await
+            {
                 Some(c) => c.map_err(|e| {
                     bus::BusRpcError::InternalError(format!("failed to read from table: {:?}", e))
                 })?,
@@ -735,13 +852,14 @@ impl service::SrcServerServiceHandler for SrcServer {
                     0,
                     existing_change.clone(),
                 )
+                .await
                 .map_err(|e| {
                     bus::BusRpcError::InternalError(format!("failed to write to table: {:?}", e))
                 })?;
 
             // Add snapshot, if there's one to add
             if req.snapshot.timestamp != 0 {
-                if let Err(e) = self.add_snapshot(&existing_change, req.snapshot) {
+                if let Err(e) = self.add_snapshot(&existing_change, req.snapshot).await {
                     return e;
                 }
             }
@@ -788,6 +906,7 @@ impl service::SrcServerServiceHandler for SrcServer {
                 ),
                 String::new(),
             )
+            .await
             .map_err(|e| {
                 bus::BusRpcError::InternalError(format!("failed to reserve id: {:?}", e))
             })?;
@@ -797,7 +916,7 @@ impl service::SrcServerServiceHandler for SrcServer {
         change.owner = user.username;
         change.status = service::ChangeStatus::Pending;
 
-        if let Err(e) = self.add_snapshot(&change, req.snapshot) {
+        if let Err(e) = self.add_snapshot(&change, req.snapshot).await {
             return e;
         };
 
@@ -808,6 +927,7 @@ impl service::SrcServerServiceHandler for SrcServer {
                 0,
                 change.clone(),
             )
+            .await
             .map_err(|e| {
                 bus::BusRpcError::InternalError(format!("failed to write to table: {:?}", e))
             })?;
@@ -825,6 +945,7 @@ impl service::SrcServerServiceHandler for SrcServer {
                 0,
                 bus::Nothing {},
             )
+            .await
             .map_err(|e| {
                 bus::BusRpcError::InternalError(format!("failed to write to table: {:?}", e))
             })?;
@@ -835,7 +956,7 @@ impl service::SrcServerServiceHandler for SrcServer {
         })
     }
 
-    fn list_changes(
+    async fn list_changes(
         &self,
         req: ListChangesRequest,
     ) -> Result<ListChangesResponse, bus::BusRpcError> {
@@ -865,7 +986,7 @@ impl service::SrcServerServiceHandler for SrcServer {
                 min: &req.starting_from,
                 max: "",
             };
-            let resp = self.table.read_range(filter, 0, 1000).map_err(|e| {
+            let resp = self.table.read_range(filter, 0, 1000).await.map_err(|e| {
                 eprintln!("{:?}", e);
                 bus::BusRpcError::InternalError("read range error".to_string())
             })?;
@@ -891,7 +1012,7 @@ impl service::SrcServerServiceHandler for SrcServer {
                 let row = format!("{}/{}/changes", components[0], components[1]);
                 let col = components[2];
 
-                if let Some(c) = self.table.read(&row, &col, 0) {
+                if let Some(c) = self.table.read(&row, &col, 0).await {
                     let c = c.map_err(|e| {
                         bus::BusRpcError::InternalError(format!(
                             "failed to read from table: {:?}",
@@ -936,7 +1057,7 @@ impl service::SrcServerServiceHandler for SrcServer {
                 min: &req.starting_from,
                 max: "",
             };
-            let resp = self.table.read_range(filter, 0, 1000).map_err(|e| {
+            let resp = self.table.read_range(filter, 0, 1000).await.map_err(|e| {
                 eprintln!("{:?}", e);
                 bus::BusRpcError::InternalError("failed to read from table".to_string())
             })?;
@@ -970,7 +1091,10 @@ impl service::SrcServerServiceHandler for SrcServer {
         })
     }
 
-    fn get_change(&self, req: GetChangeRequest) -> Result<GetChangeResponse, bus::BusRpcError> {
+    async fn get_change(
+        &self,
+        req: GetChangeRequest,
+    ) -> Result<GetChangeResponse, bus::BusRpcError> {
         let username = match self.auth(&req.token) {
             Ok(u) => u,
             Err(e) => {
@@ -982,11 +1106,15 @@ impl service::SrcServerServiceHandler for SrcServer {
             }
         };
 
-        let change = match self.table.read(
-            &format!("{}/{}/changes", req.repo_owner, req.repo_name),
-            &core::encode_id(req.id),
-            0,
-        ) {
+        let change = match self
+            .table
+            .read(
+                &format!("{}/{}/changes", req.repo_owner, req.repo_name),
+                &core::encode_id(req.id),
+                0,
+            )
+            .await
+        {
             Some(c) => c.map_err(|e| {
                 bus::BusRpcError::InternalError(format!("failed to read from table: {:?}", e))
             })?,
@@ -999,7 +1127,7 @@ impl service::SrcServerServiceHandler for SrcServer {
             }
         };
 
-        let snapshot = self.get_snapshot(&change, 0)?;
+        let snapshot = self.get_snapshot(&change, 0).await?;
 
         Ok(GetChangeResponse {
             change,
@@ -1008,7 +1136,7 @@ impl service::SrcServerServiceHandler for SrcServer {
         })
     }
 
-    fn get_basis_diff(
+    async fn get_basis_diff(
         &self,
         req: GetBasisDiffRequest,
     ) -> Result<GetBasisDiffResponse, bus::BusRpcError> {
@@ -1066,13 +1194,13 @@ impl service::SrcServerServiceHandler for SrcServer {
         let mut accumulated_changes = std::collections::HashMap::new();
         let row = format!("{}/{}/changes", req.new.owner, req.new.name);
         for id in req.old.index + 1..req.new.index {
-            let change = match self.table.read(&row, &core::encode_id(id), 0) {
+            let change = match self.table.read(&row, &core::encode_id(id), 0).await {
                 Some(c) => c.map_err(|e| {
                     bus::BusRpcError::InternalError(format!("failed to read from table: {:?}", e))
                 })?,
                 None => continue,
             };
-            let snapshot = match self.get_snapshot(&change, 0)? {
+            let snapshot = match self.get_snapshot(&change, 0).await? {
                 Some(s) => s,
                 None => continue,
             };
@@ -1093,28 +1221,38 @@ impl service::SrcServerServiceHandler for SrcServer {
                 output.push(file);
             } else {
                 // Get the old file and the new file, and compute a new diff
-                let old = self.table.read::<File>(
-                    &row,
-                    &format!("{}/{}", path.split("/").count(), path),
-                    req.old.index,
-                );
-                let new = self.table.read::<File>(
-                    &row,
-                    &format!("{}/{}", path.split("/").count(), path),
-                    req.new.index,
-                );
+                let old = self
+                    .table
+                    .read::<File>(
+                        &row,
+                        &format!("{}/{}", path.split("/").count(), path),
+                        req.old.index,
+                    )
+                    .await;
+                let new = self
+                    .table
+                    .read::<File>(
+                        &row,
+                        &format!("{}/{}", path.split("/").count(), path),
+                        req.new.index,
+                    )
+                    .await;
 
                 match (old, new) {
                     (Some(Ok(old_f)), Some(Ok(new_f))) => {
-                        let old_file_content =
-                            self.get_blob(req.old.as_view(), &new_f.sha).map_err(|e| {
+                        let old_file_content = self
+                            .get_blob(req.old.clone(), &new_f.sha)
+                            .await
+                            .map_err(|e| {
                                 bus::BusRpcError::InternalError(format!(
                                     "failed to get blob: {:?}",
                                     e
                                 ))
                             })?;
-                        let new_file_content =
-                            self.get_blob(req.new.as_view(), &new_f.sha).map_err(|e| {
+                        let new_file_content = self
+                            .get_blob(req.new.clone(), &new_f.sha)
+                            .await
+                            .map_err(|e| {
                                 bus::BusRpcError::InternalError(format!(
                                     "failed to get blob: {:?}",
                                     e
@@ -1152,8 +1290,10 @@ impl service::SrcServerServiceHandler for SrcServer {
                         }
 
                         // Compress file content and emit add
-                        let file_content =
-                            self.get_blob(req.new.as_view(), &new_f.sha).map_err(|e| {
+                        let file_content = self
+                            .get_blob(req.new.clone(), &new_f.sha)
+                            .await
+                            .map_err(|e| {
                                 bus::BusRpcError::InternalError(format!(
                                     "failed to get blob: {:?}",
                                     e
@@ -1193,7 +1333,7 @@ impl service::SrcServerServiceHandler for SrcServer {
         })
     }
 
-    fn discover_auth(
+    async fn discover_auth(
         &self,
         _: service::DiscoverAuthRequest,
     ) -> Result<service::DiscoverAuthResponse, bus::BusRpcError> {

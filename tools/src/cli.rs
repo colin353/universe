@@ -66,7 +66,7 @@ pub fn get_identity(d: &src_lib::Src, host: &str) -> String {
                 let mut challenge = ac.login();
                 eprintln!(
                     "Visit this URL: \n\n{}\n\nthen press enter when you've logged in.",
-                    challenge.get_url()
+                    challenge.url
                 );
 
                 std::io::stdout().flush();
@@ -74,9 +74,9 @@ pub fn get_identity(d: &src_lib::Src, host: &str) -> String {
                     break;
                 }
 
-                let response = ac.authenticate(challenge.get_token().to_string());
-                if response.get_success() {
-                    break challenge.take_token();
+                let response = ac.authenticate(challenge.token.clone());
+                if response.success {
+                    break challenge.token;
                 }
 
                 eprintln!("That didn't work. Let's try again.");

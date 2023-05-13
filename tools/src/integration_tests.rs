@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 const DATA_DIR: &'static str = "/tmp/src_integration/src";
 
 async fn in_cleanroom(f: impl FnOnce() + Sync + Send + 'static) -> bool {
@@ -7,8 +9,15 @@ async fn in_cleanroom(f: impl FnOnce() + Sync + Send + 'static) -> bool {
     std::fs::create_dir_all("/tmp/src_integration/spaces").unwrap();
     let (tx, rx) = tokio::sync::oneshot::channel();
 
+    let table = largetable_client::LargeTableClient::new(Arc::new(
+        managed_largetable::ManagedLargeTable::new(std::path::PathBuf::from(
+            "/tmp/src_integration/server",
+        ))
+        .unwrap(),
+    ));
+
     let service = server_service::SrcServer::new(
-        std::path::PathBuf::from("/tmp/src_integration/server"),
+        table,
         String::from("localhost:44959"),
         std::sync::Arc::new(server_service::auth::FakeAuthPlugin::new()),
     )
@@ -21,7 +30,7 @@ async fn in_cleanroom(f: impl FnOnce() + Sync + Send + 'static) -> bool {
 
     let handler = std::sync::Arc::new(service);
     tokio::select! {
-        _ = bus_rpc::serve(44959, service::SrcServerService(handler)) => {
+        _ = bus_rpc::serve(44959, service::SrcServerAsyncService(handler)) => {
             assert!(false, "Service failed to start");
             return false;
         }
