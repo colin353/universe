@@ -1,6 +1,8 @@
 use std::sync::atomic::{AtomicIsize, AtomicUsize, Ordering};
 use std::sync::{Mutex, RwLock};
 
+use largetable_client::Future;
+
 use std::os::unix::fs::MetadataExt;
 
 pub fn timestamp_usec() -> u64 {
@@ -15,6 +17,60 @@ pub struct ManagedLargeTable {
     throttler: Throttler,
     journals: Mutex<Vec<std::path::PathBuf>>,
     data_path: std::path::PathBuf,
+}
+
+impl largetable_client::LargeTableClientInner for ManagedLargeTable {
+    fn read(
+        &self,
+        row: &str,
+        column: &str,
+        timestamp: u64,
+    ) -> Future<Option<std::io::Result<Vec<u8>>>> {
+        Box::pin(std::future::ready(self.read(row, column, timestamp)))
+    }
+
+    fn delete(
+        &self,
+        row: String,
+        column: String,
+        timestamp: u64,
+    ) -> Future<std::io::Result<service::DeleteResponse>> {
+        Box::pin(std::future::ready(self.delete(row, column, timestamp)))
+    }
+
+    fn write(
+        &self,
+        row: String,
+        column: String,
+        timestamp: u64,
+        data: Vec<u8>,
+    ) -> Future<std::io::Result<service::WriteResponse>> {
+        Box::pin(std::future::ready(self.write(row, column, timestamp, data)))
+    }
+
+    fn read_range(
+        &self,
+        row: &str,
+        spec: String,
+        min_col: String,
+        max_col: String,
+        limit: usize,
+        timestamp: u64,
+    ) -> Future<std::io::Result<service::ReadRangeResponse>> {
+        let filter = largetable::Filter {
+            row: row,
+            spec: &spec,
+            min: &min_col,
+            max: &max_col,
+        };
+        Box::pin(std::future::ready(
+            self.read_range(filter, timestamp, limit),
+        ))
+    }
+
+    fn reserve_id(&self, row: String, column: String) -> Future<std::io::Result<u64>> {
+        Box::pin(std::future::ready(self.reserve_id(row, column)))
+    }
 }
 
 impl ManagedLargeTable {
@@ -110,6 +166,16 @@ impl ManagedLargeTable {
             0 => timestamp_usec(),
             x => x,
         };
+
+        let mut buf = Vec::new();
+        data.encode(&mut buf).unwrap();
+        println!(
+            "[row = {}, col = {}] encoded as {} bytes (ending in {:?})",
+            row,
+            column,
+            buf.len(),
+            &buf[std::cmp::max(6, buf.len()) - 6..]
+        );
 
         self.table
             .read()
@@ -284,6 +350,7 @@ impl service::LargeTableServiceHandler for ManagedLargeTable {
         self.throttler
             .maybe_throttle(req.data.len())
             .map_err(|_| bus::BusRpcError::BackOff)?;
+
         self.write(
             req.row,
             req.column,

@@ -36,8 +36,24 @@ rust_library(
     deps = [
         ":service", 
         ":largetable",
+        ":largetable_client",
         "//util/bus",
         "//util/flags",
+        "//third_party:futures",
+    ]
+)
+
+rust_library(
+    name = "largetable_client",
+    srcs = [
+        "largetable_client.rs",
+    ],
+    deps = [
+        ":service",
+        ":largetable",
+        "//util/bus",
+        "//third_party:futures",
+        "//util/bus:bus_rpc",
     ]
 )
 

@@ -7,8 +7,9 @@ async fn main() {
         String::new(),
         "The directory where data is stored and loaded from"
     );
+    let port = flags::define_flag!("port", 4321_u16, "The port to bind to");
 
-    flags::parse_flags!(data_dir);
+    flags::parse_flags!(data_dir, port);
 
     if data_dir.value().is_empty() {
         eprintln!("ERROR: A data directory must be specified! (--data_directory)");
@@ -26,5 +27,5 @@ async fn main() {
     });
 
     let s = service::LargeTableService(handler);
-    bus_rpc::serve(4321, s).await;
+    bus_rpc::serve(port.value(), s).await;
 }

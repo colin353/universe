@@ -1,0 +1,23 @@
+import {
+    task,
+    taskset,
+    port_binding,
+    service_binding,
+} from "metal"
+
+largetable = taskset {
+    task1 = task {
+        binary = {
+            url = "rainbow://largetable:live"
+        }
+
+        environment = {
+            ARGS_PORT = port_binding {
+                name = "bus"
+            }
+            ARGS_DATA_DIRECTORY = "/home/colin/data/largetable"
+        }
+    }
+}
+
+

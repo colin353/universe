@@ -268,7 +268,7 @@ fn extract_service_binding(
     // Validate the binary
     if binding.port == 0 || binding.hostname.is_empty() {
         return Err(MetalConfigError::ConversionError(String::from(
-            "binary must contain a url or path field!",
+            "service binding must contain a port or hostname!",
         )));
     }
 
