@@ -21,7 +21,7 @@ fn main() {
                 let result = client
                     .read(service::ReadRequest {
                         row: row.to_string(),
-                        column: row.to_string(),
+                        column: col.to_string(),
                         timestamp: timestamp.value(),
                     })
                     .expect("failed to read from largetable");
@@ -43,7 +43,7 @@ fn main() {
                 let result = client
                     .write(service::WriteRequest {
                         row: row.to_string(),
-                        column: row.to_string(),
+                        column: col.to_string(),
                         timestamp: timestamp.value(),
                         data: data.as_bytes().to_owned(),
                     })
@@ -51,6 +51,27 @@ fn main() {
             }
             _ => {
                 eprintln!("you must specify a row, column, and data to write to");
+            }
+        },
+        Some(&"from") => match (strargs.get(1), strargs.get(2), strargs.get(3)) {
+            (Some(ref row), col_prefix, None) => {
+                let result = client
+                    .read_range(service::ReadRangeRequest {
+                        row: row.to_string(),
+                        filter: service::Filter {
+                            spec: col_prefix.map(|s| *s).unwrap_or("").to_string(),
+                            ..Default::default()
+                        },
+                        timestamp: timestamp.value(),
+                        limit: 100,
+                    })
+                    .expect("failed to write to largetable");
+                for record in result.records {
+                    println!("key: {:?}, data: {:?}", record.key, record.data);
+                }
+            }
+            _ => {
+                eprintln!("you must specify a row and a column prefix");
             }
         },
         _ => {

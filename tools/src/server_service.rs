@@ -96,7 +96,7 @@ impl SrcServer {
             min: "",
             ..Default::default()
         };
-        Ok(match self.table.read_range(filter, 0, 10).await {
+        Ok(match self.table.read_range(filter, timestamp, 10).await {
             Ok(m) => m
                 .records
                 .into_iter()
@@ -984,7 +984,7 @@ impl SrcServer {
         };
 
         let changes = if !req.owner.is_empty() {
-            let row = format!("{}/changes", user.username);
+            let row = format!("{}/changes", req.owner);
             let filter = largetable::Filter {
                 row: &row,
                 spec: "",
@@ -1001,6 +1001,7 @@ impl SrcServer {
             } else {
                 String::new()
             };
+
             let mut changes = Vec::new();
             for record in resp.records {
                 if !record.key.starts_with(&expected_prefix) {
@@ -1026,7 +1027,11 @@ impl SrcServer {
                     })?;
                     if req_filter(&c) {
                         changes.push(c);
+                    } else {
+                        println!("filter rejected change: {c:#?}");
                     }
+                } else {
+                    println!("couldn't find anything at {row} {col}");
                 }
 
                 if changes.len() == req.limit as usize {
@@ -1079,6 +1084,8 @@ impl SrcServer {
                 };
                 if req_filter(&change) {
                     changes.push(change);
+                } else {
+                    println!("filter rejected change: {change:#?}");
                 }
             }
             changes
@@ -1244,7 +1251,7 @@ impl SrcServer {
                     .await;
 
                 match (old, new) {
-                    (Some(Ok(old_f)), Some(Ok(new_f))) => {
+                    (Some(Ok(_)), Some(Ok(new_f))) => {
                         let old_file_content = self
                             .get_blob(req.old.clone(), &new_f.sha)
                             .await
