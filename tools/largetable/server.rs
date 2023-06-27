@@ -16,6 +16,8 @@ async fn main() {
         std::process::exit(1);
     }
 
+    std::fs::create_dir_all(data_dir.value()).ok();
+
     let data_path = std::path::PathBuf::from(data_dir.value());
     let table = managed_largetable::ManagedLargeTable::new(data_path)
         .expect("failed to initialize largetable");

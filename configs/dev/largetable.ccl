@@ -1,0 +1,24 @@
+import {
+    task,
+    taskset,
+    port_binding,
+    service_binding,
+} from "metal"
+
+largetable = taskset {
+    task1 = task {
+        binary = {
+            // url = "rainbow://largetable:live"
+            path = "/home/colin/Documents/code/universe/bazel-bin/tools/largetable/server"
+        }
+
+        environment = {
+            ARGS_PORT = port_binding {
+                name = "bus"
+            }
+            ARGS_DATA_DIRECTORY = "/tmp/largetable"
+        }
+    }
+}
+
+

@@ -220,7 +220,11 @@ impl LargeTableClientInner for LargeTableBusClient {
         data: Vec<u8>,
     ) -> Future<std::io::Result<service::WriteResponse>> {
         let _self = self.clone();
-        Box::pin(async move { _self.write(row, column, timestamp, data).await })
+        Box::pin(async move {
+            _self
+                .write(row, column, timestamp, bus::PackedOut(&data))
+                .await
+        })
     }
 
     fn read_range(

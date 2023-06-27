@@ -825,7 +825,10 @@ impl SrcServer {
             if existing_change.owner != user.username {
                 return Ok(UpdateChangeResponse {
                     failed: true,
-                    error_message: format!("No permission to modify change",),
+                    error_message: format!(
+                        "No permission to modify change (owner = {}, requestor = {})",
+                        existing_change.owner, user.username
+                    ),
                     ..Default::default()
                 });
             }
@@ -919,6 +922,8 @@ impl SrcServer {
         if let Err(e) = self.add_snapshot(&change, req.snapshot).await {
             return e;
         };
+
+        println!("change: {change:#?}");
 
         self.table
             .write(

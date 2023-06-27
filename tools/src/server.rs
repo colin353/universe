@@ -22,13 +22,6 @@ async fn main() {
 
     flags::parse_flags!(data_dir, hostname, auth_hostname, auth_port);
 
-    if data_dir.value().is_empty() {
-        eprintln!("ERROR: A data directory must be specified! (--data_directory)");
-        std::process::exit(1);
-    }
-
-    std::fs::create_dir_all(data_dir.value()).ok();
-
     let auth_host = auth_hostname.value();
     let auth: Arc<dyn server_service::auth::AuthPlugin> = if auth_host.is_empty() {
         Arc::new(server_service::auth::FakeAuthPlugin::new())
@@ -49,6 +42,7 @@ async fn main() {
             ),
         ))
     } else {
+        std::fs::create_dir_all(data_dir.value()).ok();
         let database = Arc::new(
             managed_largetable::ManagedLargeTable::new(std::path::PathBuf::from(data_dir.value()))
                 .unwrap(),
@@ -62,7 +56,6 @@ async fn main() {
         largetable_client::LargeTableClient::new(database)
     };
 
-    let data_path = std::path::PathBuf::from(data_dir.value());
     let server = server_service::SrcServer::new(database, hostname.value(), auth)
         .expect("failed to create src server");
 
