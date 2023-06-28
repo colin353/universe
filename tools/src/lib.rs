@@ -48,10 +48,17 @@ impl Src {
 
                 (&host[0..idx], port)
             }
-            None => (&host, 4959),
+            None => (&host, 8888),
         };
 
-        let connector = Arc::new(bus_rpc::HyperSyncClient::new(hostname.to_string(), port));
+        let connector: Arc<dyn bus::BusClient> = if hostname == "localhost" {
+            Arc::new(bus_rpc::HyperSyncClient::new(hostname.to_string(), port))
+        } else {
+            Arc::new(bus_rpc::HyperSyncClient::new_tls(
+                hostname.to_string(),
+                port,
+            ))
+        };
         let client = service::SrcServerClient::new(connector);
 
         self.remotes
@@ -81,9 +88,13 @@ impl Src {
         }
 
         let client = self.get_client(basis.get_host())?;
+        let token = self
+            .get_identity(basis.get_host())
+            .unwrap_or_else(String::new);
+
         let resp = client
             .get_metadata(service::GetMetadataRequest {
-                token: String::new(),
+                token,
                 basis: basis.to_owned()?,
             })
             .map_err(|e| {
@@ -354,9 +365,12 @@ impl Src {
         }
 
         let client = self.get_client(&space.basis.host)?;
+        let token = self
+            .get_identity(&space.basis.host)
+            .unwrap_or_else(String::new);
         let repo = client
             .get_repository(service::GetRepositoryRequest {
-                token: String::new(),
+                token: token.clone(),
                 owner: space.basis.owner.clone(),
                 name: space.basis.name.clone(),
             })
@@ -375,7 +389,7 @@ impl Src {
         // Reach out and find the diff between the two bases
         let resp = client
             .get_basis_diff(service::GetBasisDiffRequest {
-                token: String::new(),
+                token: token,
                 old: space.basis.clone(),
                 new: new_basis.clone(),
             })

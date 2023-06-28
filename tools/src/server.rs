@@ -15,18 +15,32 @@ async fn main() {
     let auth_hostname = flags::define_flag!(
         "auth_hostname",
         String::new(),
-        "The hostname of the auth service (if empty, no authentication required)"
+        "The hostname of the auth service"
     );
+    let auth_bus = flags::define_flag!(
+        "auth_bus",
+        String::new(),
+        "The bus name of the auth service"
+    );
+    let port = flags::define_flag!("port", 4959, "the port to bind the service to");
 
     let auth_port = flags::define_flag!("auth_port", 8888, "The port of the auth service");
 
-    flags::parse_flags!(data_dir, hostname, auth_hostname, auth_port);
+    flags::parse_flags!(data_dir, hostname, auth_hostname, auth_port, auth_bus, port);
 
     let auth_host = auth_hostname.value();
-    let auth: Arc<dyn server_service::auth::AuthPlugin> = if auth_host.is_empty() {
+    let auth_bus = auth_bus.value();
+    let auth: Arc<dyn server_service::auth::AuthPlugin> = if !auth_bus.is_empty() {
+        let client = auth_client::AuthAsyncClient::new_metal(&auth_bus);
+        Arc::new(server_service::auth::AuthServicePlugin::new(
+            client,
+            auth_host,
+            auth_port.value(),
+        ))
+    } else if auth_host.is_empty() {
         Arc::new(server_service::auth::FakeAuthPlugin::new())
     } else {
-        let client = auth_client::AuthClient::new(&auth_host, auth_port.value());
+        let client = auth_client::AuthAsyncClient::new(&auth_host, auth_port.value());
         Arc::new(server_service::auth::AuthServicePlugin::new(
             client,
             auth_host,
@@ -63,5 +77,5 @@ async fn main() {
     let _h = handler.clone();
 
     let s = service::SrcServerAsyncService(handler);
-    bus_rpc::serve(4959, s).await;
+    bus_rpc::serve(port.value(), s).await;
 }

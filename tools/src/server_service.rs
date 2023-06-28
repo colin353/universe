@@ -27,8 +27,8 @@ impl SrcServer {
         })
     }
 
-    pub fn auth(&self, token: &str) -> Result<auth::User, String> {
-        self.auth.validate(token)
+    pub async fn auth(&self, token: &str) -> Result<auth::User, String> {
+        self.auth.validate(token).await
     }
 
     pub async fn get_file(
@@ -249,7 +249,7 @@ impl service::SrcServerAsyncServiceHandler for SrcServer {
 // Implement async service methods
 impl SrcServer {
     async fn create(&self, req: CreateRequest) -> Result<CreateResponse, bus::BusRpcError> {
-        let user = match self.auth(&req.token) {
+        let user = match self.auth(&req.token).await {
             Ok(u) => u,
             Err(e) => {
                 return Ok(CreateResponse {
@@ -293,7 +293,7 @@ impl SrcServer {
         &self,
         req: GetRepositoryRequest,
     ) -> Result<GetRepositoryResponse, bus::BusRpcError> {
-        match self.auth(&req.token) {
+        match self.auth(&req.token).await {
             Ok(_) => (),
             Err(e) => {
                 return Ok(GetRepositoryResponse {
@@ -341,7 +341,7 @@ impl SrcServer {
     }
 
     async fn submit(&self, req: SubmitRequest) -> Result<SubmitResponse, bus::BusRpcError> {
-        match self.auth(&req.token) {
+        match self.auth(&req.token).await {
             Ok(_) => (),
             Err(e) => {
                 return Ok(SubmitResponse {
@@ -598,7 +598,7 @@ impl SrcServer {
         &self,
         req: GetBlobsByPathRequest,
     ) -> Result<GetBlobsByPathResponse, bus::BusRpcError> {
-        match self.auth(&req.token) {
+        match self.auth(&req.token).await {
             Ok(_) => (),
             Err(e) => {
                 return Ok(GetBlobsByPathResponse {
@@ -656,7 +656,7 @@ impl SrcServer {
     }
 
     async fn get_blobs(&self, req: GetBlobsRequest) -> Result<GetBlobsResponse, bus::BusRpcError> {
-        match self.auth(&req.token) {
+        match self.auth(&req.token).await {
             Ok(_) => (),
             Err(e) => {
                 return Ok(GetBlobsResponse {
@@ -690,7 +690,7 @@ impl SrcServer {
         &self,
         req: GetMetadataRequest,
     ) -> Result<GetMetadataResponse, bus::BusRpcError> {
-        match self.auth(&req.token) {
+        match self.auth(&req.token).await {
             Ok(_) => (),
             Err(e) => {
                 return Ok(GetMetadataResponse {
@@ -762,7 +762,7 @@ impl SrcServer {
         &self,
         req: UpdateChangeRequest,
     ) -> Result<UpdateChangeResponse, bus::BusRpcError> {
-        let user = match self.auth(&req.token) {
+        let user = match self.auth(&req.token).await {
             Ok(u) => u,
             Err(e) => {
                 return Ok(UpdateChangeResponse {
@@ -965,7 +965,7 @@ impl SrcServer {
         &self,
         req: ListChangesRequest,
     ) -> Result<ListChangesResponse, bus::BusRpcError> {
-        let user = match self.auth(&req.token) {
+        let user = match self.auth(&req.token).await {
             Ok(u) => u,
             Err(e) => {
                 return Ok(ListChangesResponse {
@@ -1107,7 +1107,7 @@ impl SrcServer {
         &self,
         req: GetChangeRequest,
     ) -> Result<GetChangeResponse, bus::BusRpcError> {
-        let username = match self.auth(&req.token) {
+        let username = match self.auth(&req.token).await {
             Ok(u) => u,
             Err(e) => {
                 return Ok(GetChangeResponse {
@@ -1152,7 +1152,7 @@ impl SrcServer {
         &self,
         req: GetBasisDiffRequest,
     ) -> Result<GetBasisDiffResponse, bus::BusRpcError> {
-        match self.auth(&req.token) {
+        match self.auth(&req.token).await {
             Ok(u) => u,
             Err(e) => {
                 return Ok(GetBasisDiffResponse {
@@ -1349,7 +1349,7 @@ impl SrcServer {
         &self,
         _: service::DiscoverAuthRequest,
     ) -> Result<service::DiscoverAuthResponse, bus::BusRpcError> {
-        Ok(self.auth.discover())
+        Ok(self.auth.discover().await)
     }
 }
 

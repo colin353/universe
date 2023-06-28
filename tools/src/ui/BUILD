@@ -5,12 +5,14 @@ load("@rules_rust//rust:defs.bzl", "rust_library", "rust_binary", "rust_test")
 rust_binary(
         name = "server",
         srcs = [
-                "server.rs"
+            "server.rs"
         ],
         deps = [
-                ":server_lib",
-                "//util/ws",
-                "//third_party:tokio",
+            ":server_lib",
+            "//util/ws",
+            "//util/flags",
+            "//third_party:tokio",
+            "//auth:auth_client",
         ]
 )
 
@@ -32,6 +34,7 @@ rust_library(
         "//util/tmpl",
         "//util/tmpl:escape",
         "//util/ws",
+        "//auth:auth_client",
         "//tools/src:service",
         "//tools/src:core",
         "//util/bus:bus_rpc",

@@ -1,0 +1,35 @@
+import {
+    task,
+    taskset,
+    port_binding,
+    service_binding,
+} from "metal"
+
+src = taskset {
+    task1 = task {
+        binary = {
+            url = "rainbow://src_server:live"
+        }
+
+        environment = {
+            ARGS_HOSTNAME = "src.colinmerkel.xyz"
+            ARGS_AUTH_BUS = "auth.bus"
+
+            ARGS_PORT = port_binding {
+                name = "bus"
+            }
+
+            // To inform the "discover" RPC, so clients can reach out to
+            // the correct auth service.
+            ARGS_AUTH_HOSTNAME = "auth.colinmerkel.xyz"
+            ARGS_AUTH_PORT = "8888"
+        }
+    }
+
+    bus = service_binding {
+        port = 8888
+        hostname = "src.colinmerkel.xyz"
+    }
+}
+
+

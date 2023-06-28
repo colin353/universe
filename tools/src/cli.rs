@@ -172,7 +172,7 @@ pub fn checkout(data_dir: std::path::PathBuf, name: String, arg0: String) {
                 }) {
                     Ok(r) => r,
                     Err(e) => {
-                        eprintln!("failed to checkout: {:?}", e);
+                        eprintln!("failed to get repository: {:?}", e);
                         std::process::exit(1);
                     }
                 };

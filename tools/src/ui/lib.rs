@@ -13,13 +13,35 @@ static INDEX: &str = include_str!("homepage.html");
 #[derive(Clone)]
 pub struct SrcUIServer {
     client: service::SrcServerAsyncClient,
+    auth: Option<auth_client::AuthAsyncClient>,
+    base_url: String,
 }
 
 impl SrcUIServer {
-    pub fn new(address: String, port: u16) -> Self {
+    pub fn new(
+        address: String,
+        port: u16,
+        base_url: String,
+        auth: Option<auth_client::AuthAsyncClient>,
+    ) -> Self {
         let connector = Arc::new(bus_rpc::HyperClient::new(address, port));
         Self {
             client: service::SrcServerAsyncClient::new(connector),
+            auth,
+            base_url,
+        }
+    }
+
+    pub fn new_metal(
+        service_name: String,
+        base_url: String,
+        auth: Option<auth_client::AuthAsyncClient>,
+    ) -> Self {
+        let connector = Arc::new(bus_rpc::MetalAsyncClient::new(service_name));
+        Self {
+            client: service::SrcServerAsyncClient::new(connector),
+            auth,
+            base_url,
         }
     }
 
@@ -33,7 +55,7 @@ impl SrcUIServer {
         )
     }
 
-    async fn api(&self, path: &str, req: ws::Request) -> ws::Response {
+    async fn api(&self, path: &str, _req: ws::Request, token: String) -> ws::Response {
         let mut path_iter = path.rsplit("/");
         let change_id: u64 = match path_iter.next() {
             Some(c) => c.parse().unwrap_or(0),
@@ -56,7 +78,7 @@ impl SrcUIServer {
             let resp = self
                 .client
                 .update_change(service::UpdateChangeRequest {
-                    token: String::new(),
+                    token,
                     change: service::Change {
                         id: change_id,
                         status: service::ChangeStatus::Archived,
@@ -80,9 +102,10 @@ impl SrcUIServer {
         }
     }
 
-    async fn index_result(&self) -> std::io::Result<ws::Response> {
+    async fn index_result(&self, token: String, username: String) -> std::io::Result<ws::Response> {
         let mut req = service::ListChangesRequest::new();
-        req.owner = "colin".to_string();
+        req.token = token.clone();
+        req.owner = username.clone();
         req.status = service::ChangeStatus::Pending;
         let response = self.client.list_changes(req).await.map_err(|e| {
             // TODO: choose a better error kind
@@ -102,8 +125,9 @@ impl SrcUIServer {
         let changes = response.changes;
 
         let mut req = service::ListChangesRequest::new();
+        req.token = token;
         req.limit = 15;
-        req.owner = "colin".to_string();
+        req.owner = username;
         req.status = service::ChangeStatus::Submitted;
         let submitted_changes = self
             .client
@@ -129,7 +153,7 @@ impl SrcUIServer {
         Ok(ws::Response::new(ws::Body::from(self.wrap_template(page))))
     }
 
-    async fn show_change(&self, path: String, req: ws::Request) -> ws::Response {
+    async fn show_change(&self, path: String, req: ws::Request, token: String) -> ws::Response {
         let mut path_components = path[1..].split("/");
         let repo_owner = match path_components.next() {
             Some(c) => c,
@@ -149,6 +173,7 @@ impl SrcUIServer {
         };
 
         let mut r = service::GetChangeRequest::new();
+        r.token = token;
         r.repo_owner = repo_owner.to_owned();
         r.repo_name = repo_name.to_owned();
         r.id = id;
@@ -193,7 +218,7 @@ impl SrcUIServer {
         path: &str,
         change: service::Change,
         snapshot: service::Snapshot,
-        req: ws::Request,
+        _req: ws::Request,
     ) -> ws::Response {
         let (fd, next_file) = {
             let mut files_iter = snapshot.files.iter();
@@ -268,8 +293,14 @@ impl SrcUIServer {
         ws::Response::new(ws::Body::from(self.wrap_template(page)))
     }
 
-    async fn index(&self, _path: String, _req: ws::Request) -> ws::Response {
-        match self.index_result().await {
+    async fn index(
+        &self,
+        _path: String,
+        _req: ws::Request,
+        token: String,
+        username: String,
+    ) -> ws::Response {
+        match self.index_result(token, username).await {
             Ok(r) => r,
             Err(e) => {
                 eprintln!("{:?}", e);
@@ -280,25 +311,46 @@ impl SrcUIServer {
 }
 
 impl ws::Server for SrcUIServer {
-    fn respond_future(&self, path: String, req: ws::Request, _: &str) -> ws::ResponseFuture {
+    fn respond_future(&self, path: String, req: ws::Request, token: &str) -> ws::ResponseFuture {
         let _self = self.clone();
+        let token = token.to_owned();
+        Box::pin(async move {
+            let username = if let Some(auth) = _self.auth.as_ref() {
+                let result = match auth.authenticate(token.clone()).await {
+                    Ok(r) => r,
+                    Err(_) => {
+                        return _self.failed_500("failed to reach auth service".to_string());
+                    }
+                };
+                if !result.success {
+                    let challenge = auth
+                        .login_then_redirect(format!("{}{}", _self.base_url, path))
+                        .await;
+                    let mut response = ws::Response::new(ws::Body::from("redirect to login"));
+                    _self.redirect(&challenge.url, &mut response);
+                    return response;
+                }
 
-        if path.starts_with("/static/") {
-            return Box::pin(std::future::ready(
-                _self.serve_static_files(path, "/static/", "/tmp"),
-            ));
-        }
+                result.username
+            } else {
+                String::from("colin")
+            };
 
-        if path.starts_with("/redirect") {
-            let mut response = ws::Response::new(ws::Body::from(""));
-            _self.redirect("http://google.com", &mut response);
-            return Box::pin(std::future::ready(response));
-        }
+            if path.starts_with("/static/") {
+                return _self.serve_static_files(path, "/static/", "/tmp");
+            }
 
-        match path.as_str() {
-            "/" => Box::pin(async move { _self.index(path, req).await }),
-            x if x.starts_with("/api/") => Box::pin(async move { _self.api(&path, req).await }),
-            _ => Box::pin(async move { _self.show_change(path, req).await }),
-        }
+            if path.starts_with("/redirect") {
+                let mut response = ws::Response::new(ws::Body::from(""));
+                _self.redirect("http://google.com", &mut response);
+                return response;
+            }
+
+            match path.as_str() {
+                "/" => _self.index(path, req, token, username).await,
+                x if x.starts_with("/api/") => _self.api(&path, req, token).await,
+                _ => _self.show_change(path, req, token).await,
+            }
+        })
     }
 }
