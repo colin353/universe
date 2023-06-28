@@ -21,7 +21,8 @@ pub fn choose_space(mut spaces: Vec<(String, service::Space)>) -> Option<(String
     let stream = tui::KeyboardEventStream::new(&mut tty_input);
     for event in stream {
         match app.handle_event(event) {
-            Transition::Terminate(s) | Transition::Finished(s) => {
+            Transition::Terminate(_) => return None,
+            Transition::Finished(s) => {
                 let idx = match s.items {
                     filter::ItemsState::All => {
                         if choices.len() > s.scroll + s.selected {

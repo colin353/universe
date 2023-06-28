@@ -356,8 +356,20 @@ pub fn snapshot(data_dir: std::path::PathBuf, msg: String) {
     println!("saved snapshot @ {}", resp.timestamp);
 }
 
-pub fn jump(data_dir: std::path::PathBuf, name: String) {
+pub fn choose_space(data_dir: std::path::PathBuf) -> (String, service::Space) {
     let d = src_lib::Src::new(data_dir).expect("failed to initialize src!");
+    let out = match d.list_changes() {
+        Ok(o) => o,
+        Err(_) => std::process::exit(1),
+    };
+    match termui::choose_space(out) {
+        Some(o) => o,
+        None => std::process::exit(1),
+    }
+}
+
+pub fn jump(data_dir: std::path::PathBuf, name: String) {
+    let d = src_lib::Src::new(data_dir.clone()).expect("failed to initialize src!");
 
     let change: service::Space = if !name.is_empty() {
         match d.get_change_by_alias(&name) {
@@ -365,15 +377,7 @@ pub fn jump(data_dir: std::path::PathBuf, name: String) {
             None => std::process::exit(1),
         }
     } else {
-        let out = match d.list_changes() {
-            Ok(o) => o,
-            Err(_) => std::process::exit(1),
-        };
-        let (_, ch) = match termui::choose_space(out) {
-            Some(o) => o,
-            None => std::process::exit(1),
-        };
-        ch
+        choose_space(data_dir).1
     };
 
     std::fs::write("/tmp/jump-destination", &change.directory).unwrap();
@@ -975,7 +979,7 @@ pub fn clean(data_dir: std::path::PathBuf) {
             _ => None,
         };
 
-        // If not linked to a directoy and contains no changes, delete it
+        // If not linked to a directory and contains no changes, delete it
         if snapshot.is_none() && space.directory.is_empty() {
             empty_no_changes += 1;
             std::fs::remove_file(d.get_change_metadata_path(&alias)).unwrap();
@@ -1024,7 +1028,7 @@ pub fn clean(data_dir: std::path::PathBuf) {
             || resp.change.status == service::ChangeStatus::Archived
         {
             already_submitted += 1;
-            std::fs::remove_file(d.get_change_metadata_path(&alias)).unwrap();
+            std::fs::remove_dir_all(d.get_change_metadata_path(&alias).parent().unwrap()).unwrap();
             if !space.directory.is_empty() {
                 std::fs::remove_file(
                     d.get_change_dir_path(&std::path::Path::new(&space.directory)),

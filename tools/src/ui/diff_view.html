@@ -1,10 +1,10 @@
 <div style="display: flex">
-    <p style="flex: 1"><a target="_blank" href="https://search.colinmerkel.xyz{{filename}}">{{filename}}</a> ({{file_history.kind}})</p>
+    <p style="flex: 1"><a target="_blank" href="https://search.colinmerkel.xyz/{{path}}">{{path}}</a> ({{file_history.kind}})</p>
     {{next_file != ""}}
-    <p><a href="/{{id}}{{next_file}}">{{next_file}}</a></p>
+    <p><a href="/{{repo_owner}}/{{repo_name}}/{{id}}/{{next_file}}">{{next_file}}</a></p>
     {{/next_file}}
     {{next_file == ""}}
-    <p><a href="/{{id}}">back to overview</a></p>
+    <p><a href="/{{repo_owner}}/{{repo_name}}/{{id}}">back to overview</a></p>
     {{/next_file}}
 </div>
 
@@ -30,10 +30,10 @@
 </style>
 
 <div id='sticky-header' class='sticky-header'>
-  <div class='sticky-description'><p><a href="/{{id}}">c/{{id}}</a> {{summary}}</p></div>
+  <div class='sticky-description'><p><a href="/{{id}}">{{repo_owner}}/{{repo_name}}/{{id}}</a> {{summary}}</p></div>
 
   <div class='sticky-reviewing'>
-    <p><a target="_blank" href="https://search.colinmerkel.xyz{{filename}}">{{filename}}</a> ({{status}})</p>
+    <p><a target="_blank" href="https://search.colinmerkel.xyz/{{path}}">{{path}}</a> ({{status}})</p>
   </div>
   <div style="flex: 1"></div>
   <div class='sticky-next'>

@@ -285,6 +285,7 @@ impl SrcUIServer {
             render::file_history(&fd, original, modified),
         );
         content.insert("next_file", next_file);
+        content.insert("path", path.to_string());
 
         let body = tmpl::apply(DIFF_VIEW, &content);
         content.insert("body", body);

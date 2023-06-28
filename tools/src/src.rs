@@ -37,11 +37,15 @@ fn main() {
             create(data_dir, args[1].clone())
         }
         "checkout" => {
-            if args.len() != 2 {
-                eprintln!("usage: src init <repo>");
+            if args.len() == 1 {
+                let (alias, _) = choose_space(data_dir.clone());
+                checkout(data_dir, name.value(), alias);
+            } else if args.len() == 2 {
+                checkout(data_dir, name.value(), args[1].clone());
+            } else {
+                eprintln!("usage: src checkout <basis>");
                 std::process::exit(1);
             }
-            checkout(data_dir, name.value(), args[1].clone())
         }
         "diff" => {
             if args.len() != 1 {

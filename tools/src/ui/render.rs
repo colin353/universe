@@ -114,7 +114,10 @@ pub fn file_history(
 
 pub fn snapshot(s: &service::Snapshot) -> tmpl::ContentsMap {
     let basis = core::fmt_basis(s.basis.as_view());
-    let short_basis = basis.split("/").skip(3).collect::<Vec<_>>().join("/");
+    let mut short_basis = basis.split("/").skip(3).collect::<Vec<_>>().join("/");
+    if short_basis.is_empty() {
+        short_basis = "0".to_string();
+    }
 
     tmpl::content!(
         "timestamp" => format!("{:?}", s.timestamp),

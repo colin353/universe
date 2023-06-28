@@ -97,12 +97,19 @@ impl crate::Src {
                 let ft = entry.metadata().unwrap().file_type();
                 ft.is_dir()
             })
-            .map(|entry| {
-                let bytes = std::fs::read(entry.path().join("metadata")).unwrap();
-                (
+            .filter_map(|entry| {
+                let bytes: Vec<_> = match std::fs::read(entry.path().join("metadata")) {
+                    Ok(b) => b,
+                    Err(_) => {
+                        // Invalid state, repair by deleting the by_alias dir
+                        std::fs::remove_dir_all(entry.path()).ok();
+                        return None;
+                    }
+                };
+                Some((
                     entry.file_name().into_string().unwrap(),
                     service::Space::decode(&bytes).unwrap(),
-                )
+                ))
             })
     }
 
