@@ -13,6 +13,7 @@ src_ui = taskset {
 
         environment = {
             ARGS_SRC_METAL = "src.bus"
+            ARGS_AUTH_METAL = "auth.bus"
             ARGS_PORT = port_binding {
                 name = "http"
             }
