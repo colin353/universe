@@ -1,4 +1,5 @@
 use crate::varint;
+use std::convert::TryInto;
 
 #[derive(Debug, Clone)]
 pub struct Nothing {}
@@ -153,6 +154,24 @@ impl DeserializeOwned for u64 {
     fn decode_owned(bytes: &[u8]) -> Result<Self, std::io::Error> {
         let (x, _) = varint::decode_varint(bytes);
         Ok(x as u64)
+    }
+}
+
+impl Serialize for f32 {
+    fn encode<W: std::io::Write>(&self, writer: &mut W) -> Result<usize, std::io::Error> {
+        writer.write_all(&self.to_le_bytes())?;
+        Ok(4)
+    }
+}
+
+impl DeserializeOwned for f32 {
+    fn decode_owned(bytes: &[u8]) -> Result<Self, std::io::Error> {
+        let n = u32::from_le_bytes(
+            bytes
+                .try_into()
+                .map_err(|_| std::io::Error::from(std::io::ErrorKind::InvalidData))?,
+        );
+        Ok(f32::from_bits(n))
     }
 }
 

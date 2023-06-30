@@ -1,0 +1,88 @@
+message Artifact {
+    name: string = 1
+    value_int: i64 = 2
+    value_float: float = 3
+    value_string: string = 4
+    value_bool: bool = 5
+}
+
+enum Status {
+    Unknown = 0
+    Created = 1
+    Started = 2
+    Success = 3
+    Failure = 4
+    Blocked = 5
+    Retry = 6
+    Continue = 7
+}
+
+message QueueWindowLimit {
+    limit: u64 = 1
+}
+
+message BlockingMessage {
+    id: u64 = 1
+    queue: string = 2
+}
+
+message Message {
+    id: u64 = 1
+    arguments: repeated Artifact = 2
+    protobuf: bytes = 3
+
+    status: Status = 4
+
+    results: repeated Artifact = 5
+    protobuf_results: bytes = 6
+
+    failures: u64 = 7
+    reason: string = 8
+
+    enqueued_time: u64 = 9
+    start_time: u64 = 10
+    end_time: u64 = 11
+    info_url: string = 12
+
+    blocked_by: repeated BlockingMessage = 13
+    blocks: BlockingMessage = 14
+
+    queue: string = 15
+    name: string = 16
+}
+
+message EnqueueRequest {
+    queue: string = 1
+    msg: Message = 2
+}
+
+message EnqueueResponse {
+    id: u64 = 1
+}
+
+message ConsumeRequest {
+    queue: string = 1
+}
+
+message ConsumeResponse {
+    messages: repeated Message = 1
+}
+
+message UpdateResponse {}
+
+message ReadRequest {
+    queue: string = 1
+    id: u64 = 2
+}
+
+message ReadResponse {
+    found: bool = 1
+    msg: Message = 2
+}
+
+service QueueService {
+    rpc enqueue(EnqueueRequest) -> EnqueueResponse
+    rpc update(Message) -> UpdateResponse
+    rpc read(ReadRequest) -> ReadResponse
+    rpc consume(ConsumeRequest) -> ConsumeResponse
+}

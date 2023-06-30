@@ -5,6 +5,12 @@ load("@rules_rust//proto:proto.bzl", "rust_grpc_library")
 load("@rules_rust//rust:defs.bzl", "rust_library", "rust_binary", "rust_test")
 load("@io_bazel_rules_docker//rust:image.bzl", "rust_image")
 load("@io_bazel_rules_docker//docker:docker.bzl", "docker_push")
+load("//util/bus:bus.bzl", "rust_bus_library")
+
+rust_bus_library(
+    name = "queue_bus",
+    srcs = ["queue.bus"],
+)
 
 proto_library(
     name = "queue_proto",
