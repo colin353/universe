@@ -73,6 +73,8 @@ impl crate::Src {
             }
         }
 
+        println!("phase 0 complete");
+
         // Phase 1: Prepare for downloading
         //      Iterate differentially through changes and collect a list of blobs for downloading
         let mut shas_to_download: HashSet<Vec<u8>> = HashSet::new();
@@ -120,11 +122,16 @@ impl crate::Src {
             }
         }
 
+        println!("phase 1 complete");
+
         // Phase 2: Download all required blobs
         let client = self.get_client(basis.get_host())?;
+        let token = self
+            .get_identity(basis.get_host())
+            .unwrap_or_else(String::new);
         for shas in shas_to_download.into_iter().collect::<Vec<_>>().chunks(250) {
             let resp = match client.get_blobs(service::GetBlobsRequest {
-                token: String::new(),
+                token: token.clone(),
                 shas: shas.to_owned(),
             }) {
                 Err(_) => {
@@ -154,6 +161,8 @@ impl crate::Src {
             }
         }
 
+        println!("phase 2 complete");
+
         // Phase 3a: Detach the space if one existed
         if let Some(mut space) = existing_space {
             std::fs::remove_file(self.get_change_dir_path(std::path::Path::new(&space.directory)))
@@ -161,6 +170,8 @@ impl crate::Src {
             space.directory = String::new();
             self.set_change_by_alias(&existing_alias, &space)?;
         }
+
+        println!("phase 3a complete");
 
         // Phase 3b: Remove all file <--> directory transitions
         for (path, is_dir) in file_to_folder_transitions {
@@ -171,11 +182,15 @@ impl crate::Src {
             }
         }
 
+        println!("phase 3b complete");
+
         // Phase 3c: Create all required directories
         dirs_to_create.sort_by_key(|(depth, _, _)| *depth);
         for (_, path, _) in &dirs_to_create {
-            std::fs::create_dir(path)?;
+            std::fs::create_dir(path).ok();
         }
+
+        println!("phase 3c complete");
 
         // Phase 4: Create all files
         //      Iterate differentially a second time, and create all files by copying from blob
@@ -207,6 +222,8 @@ impl crate::Src {
             }
         }
 
+        println!("phase 4 complete");
+
         // Phase 5: Revert all remaining snapshot changes
         for (path, file) in snapshot_changes {
             match file.kind {
@@ -230,10 +247,14 @@ impl crate::Src {
             }
         }
 
+        println!("phase 5 complete");
+
         // Clean up all directories to delete
         for dir in dirs_to_remove {
-            std::fs::remove_dir(dir)?;
+            std::fs::remove_dir(dir).ok();
         }
+
+        println!("cleanup complete");
 
         // Phase 6: Set mtime for directories
         //      The mtime for directories may be modified in phase 4, so we need to go back through
@@ -241,6 +262,8 @@ impl crate::Src {
         for (_, path, mtime) in &dirs_to_create {
             self.set_mtime(path, *mtime)?;
         }
+
+        println!("phase 6 complete");
 
         Ok(directory)
     }
