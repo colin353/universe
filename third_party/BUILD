@@ -41,6 +41,11 @@ alias(
 )
 
 alias(
+    name = "bytes",
+    actual = "@rules_rust_proto__bytes__1_1_0//:bytes",
+)
+
+alias(
     name = "glob",
     actual = "//third_party/vendor/glob-0.2.11:glob",
 )

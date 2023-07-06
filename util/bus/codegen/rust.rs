@@ -326,6 +326,9 @@ pub struct {name}AsyncService(pub std::sync::Arc<dyn {name}AsyncServiceHandler>)
     )?;
 
     for rpc in &svc.rpcs {
+        if rpc.ast.stream.is_some() {
+            continue;
+        }
         write!(
             w,
             r#"            "{name}" => {{
@@ -350,6 +353,42 @@ pub struct {name}AsyncService(pub std::sync::Arc<dyn {name}AsyncServiceHandler>)
     write!(
         w,
         "            _ => return Box::pin(std::future::ready(Err(bus::BusRpcError::NotImplemented))),
+        }}
+    }}
+
+
+    fn serve_stream(&self, service: &str, method: &str, payload: &[u8], sink: bus::BusSink<u64>) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> {{
+        if service != \"{name}\" {{
+            return Box::pin(std::future::ready(()));
+        }}
+
+        match method {{
+",
+        name = svc.name,
+    )?;
+
+    for rpc in &svc.rpcs {
+        if !rpc.ast.stream.is_some() {
+            continue;
+        }
+        write!(
+            w,
+            r#"            "{name}" => {{
+                let arg = match {argtype}::decode_owned(payload).map_err(|e| bus::BusRpcError::InvalidData(e)) {{
+                    Ok(a) => a,
+                    Err(e) => return Box::pin(std::future::ready(())),
+                }};
+                return Box::pin(self.0.{name}(arg, sink));
+            }},
+"#,
+            name = rpc.name,
+            argtype = rpc.argument_type,
+        )?;
+    }
+
+    write!(
+        w,
+        "            _ => return Box::pin(std::future::ready(())),
         }}
     }}
 }}

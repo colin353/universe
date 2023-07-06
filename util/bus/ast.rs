@@ -75,6 +75,7 @@ ggen::sequence!(
 );
 
 ggen::unit!(Repeated, "repeated");
+ggen::unit!(Stream, "stream");
 ggen::unit!(Newline, "\n");
 ggen::unit!(Semicolon, ";");
 
@@ -125,6 +126,7 @@ ggen::sequence!(
     _ws6: Option<Whitespace>,
     "->",
     _ws7: Option<Whitespace>,
+    stream: Option<Stream>,
     return_type: Identifier,
     _trailing_semicolon: Option<Semicolon>,
     _trailing_newline: AtLeastOne<WhitespaceNewlineComment>,

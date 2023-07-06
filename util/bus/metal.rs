@@ -3,6 +3,8 @@ use hyper::client::HttpConnector;
 use std::convert::TryInto;
 use std::sync::{Arc, RwLock};
 
+use crate::Stream;
+
 #[derive(Clone)]
 pub struct MetalAsyncClient {
     inner: Arc<MetalClientInner>,
@@ -192,6 +194,24 @@ impl bus::BusAsyncClient for MetalAsyncClient {
         Box::pin(async move {
             let selected_client = _self.select_client().await;
             selected_client.request_async(uri, data).await
+        })
+    }
+
+    fn request_stream(
+        &self,
+        uri: &'static str,
+        data: Vec<u8>,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<
+                Output = Result<std::pin::Pin<Box<dyn Stream>>, bus::BusRpcError>,
+            >,
+        >,
+    > {
+        let _self = self.clone();
+        Box::pin(async move {
+            let selected_client = _self.select_client().await;
+            selected_client.request_stream(uri, data).await
         })
     }
 }

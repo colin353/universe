@@ -12,6 +12,10 @@ rust_library(
         "repeated_field.rs",
         "encoded_struct.rs",
     ],
+    deps = [
+        "//third_party:futures",
+        "//third_party:tokio",
+    ]
 )
 
 rust_library(
@@ -72,6 +76,7 @@ rust_library(
         "//tools/metal:metal_bus",
         "//third_party:futures",
         "//third_party:hyper",
+        "//third_party:bytes",
         "//third_party:hyper_tls",
         "//third_party:tokio",
     ]
