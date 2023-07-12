@@ -1,11 +1,9 @@
-use futures::TryFutureExt;
+use futures::{Future, Stream, TryFutureExt};
 use hyper::body::{Buf, HttpBody};
 use hyper::client::{connect::Connect, HttpConnector};
 use hyper::http;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Client, Request, Response, Server};
-
-use bus::Stream;
 
 use std::collections::VecDeque;
 use std::convert::Infallible;
@@ -50,7 +48,7 @@ pub async fn serve<H: bus::BusAsyncServer + 'static>(port: u16, handler: H) -> b
                     };
 
                     if is_stream {
-                        let (sink, rec) = bus::BusSink::new();
+                        let (sink, rec) = bus::BusSinkBase::new();
                         tokio::task::spawn(async move {
                             handler
                                 .serve_stream(&service, &method, &payload, sink)
@@ -199,62 +197,91 @@ impl HyperClient<hyper_tls::HttpsConnector<HttpConnector>> {
 
 #[derive(Clone)]
 struct BusStream {
-    inner: Arc<Mutex<BusStreamInner>>,
+    state: Arc<Mutex<BusStreamState>>,
+    bytes: Arc<Mutex<Response<Body>>>,
 }
 
-struct BusStreamInner {
-    bytes: Response<Body>,
+struct BusStreamState {
     size: Option<usize>,
     buffer: VecDeque<u8>,
+    future: Option<
+        std::pin::Pin<
+            Box<
+                dyn std::future::Future<Output = Option<Result<hyper::body::Bytes, hyper::Error>>>
+                    + Send,
+            >,
+        >,
+    >,
 }
 
 impl BusStream {
     fn new(r: Response<Body>) -> Self {
         Self {
-            inner: Arc::new(Mutex::new(BusStreamInner {
-                bytes: r,
+            state: Arc::new(Mutex::new(BusStreamState {
                 size: None,
                 buffer: VecDeque::new(),
+                future: None,
             })),
-        }
-    }
-
-    async fn next(&mut self) -> Option<Vec<u8>> {
-        loop {
-            let mut _self = self.inner.lock().await;
-
-            if let Some(len) = _self.size {
-                if _self.buffer.len() > len {
-                    let mut out = _self.buffer.split_off(len);
-                    std::mem::swap(&mut out, &mut _self.buffer);
-                    _self.size = None;
-                    return Some(Vec::from(out));
-                }
-            } else if _self.buffer.len() > 4 {
-                _self.size = Some(u32::from_le_bytes([
-                    _self.buffer.pop_front().unwrap(),
-                    _self.buffer.pop_front().unwrap(),
-                    _self.buffer.pop_front().unwrap(),
-                    _self.buffer.pop_front().unwrap(),
-                ]) as usize);
-            }
-
-            let data = match _self.bytes.data().await {
-                Some(Ok(d)) => d,
-                None | Some(Err(_)) => return None,
-            };
-
-            for byte in data.iter() {
-                _self.buffer.push_back(*byte);
-            }
+            bytes: Arc::new(Mutex::new(r)),
         }
     }
 }
 
-impl Stream for BusStream {
-    fn next(&mut self) -> std::pin::Pin<Box<dyn std::future::Future<Output = Option<Vec<u8>>>>> {
-        let mut _self = self.clone();
-        Box::pin(async move { _self.next().await })
+impl futures::Stream for BusStream {
+    type Item = Result<Vec<u8>, String>;
+
+    fn poll_next(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut futures::task::Context<'_>,
+    ) -> futures::task::Poll<Option<Self::Item>> {
+        let _self = self.clone();
+        let mut state = match _self.state.try_lock() {
+            Ok(l) => l,
+            Err(_) => {
+                return futures::task::Poll::Pending;
+            }
+        };
+
+        if let Some(len) = state.size {
+            if state.buffer.len() > len {
+                let mut out = state.buffer.split_off(len);
+                std::mem::swap(&mut out, &mut state.buffer);
+
+                state.size = None;
+                return futures::task::Poll::Ready(Some(Ok(Vec::from(out))));
+            }
+        } else if state.buffer.len() > 4 {
+            state.size = Some(u32::from_le_bytes([
+                state.buffer.pop_front().unwrap(),
+                state.buffer.pop_front().unwrap(),
+                state.buffer.pop_front().unwrap(),
+                state.buffer.pop_front().unwrap(),
+            ]) as usize);
+        }
+
+        let bytes = self.bytes.clone();
+        if state.future.is_none() {
+            state.future = Some(Box::pin(async move { bytes.lock().await.data().await }));
+        }
+
+        if let Some(fut) = &mut state.future {
+            match std::pin::Pin::new(fut).poll(cx) {
+                futures::task::Poll::Ready(Some(Ok(data))) => {
+                    for byte in data.iter() {
+                        state.buffer.push_back(*byte);
+                    }
+                    state.future = None;
+                    std::mem::drop(state);
+
+                    return Self::poll_next(self, cx);
+                }
+                futures::task::Poll::Pending => return futures::task::Poll::Pending,
+
+                _ => return futures::task::Poll::Ready(None),
+            };
+        }
+
+        futures::task::Poll::Pending
     }
 }
 
@@ -375,15 +402,19 @@ impl<T: Connect + Clone + Send + Sync + 'static> bus::BusAsyncClient for HyperCl
     ) -> std::pin::Pin<
         Box<
             dyn std::future::Future<
-                Output = Result<std::pin::Pin<Box<dyn Stream>>, bus::BusRpcError>,
-            >,
+                    Output = Result<
+                        std::pin::Pin<Box<dyn Stream<Item = Result<Vec<u8>, String>> + Send>>,
+                        bus::BusRpcError,
+                    >,
+                > + Send,
         >,
     > {
         let _self = self.clone();
         Box::pin(async move {
             _self.stream_async(uri, data).await.map(|r| {
-                let result: std::pin::Pin<Box<dyn Stream>> = Box::pin(r);
-                result
+                let o: std::pin::Pin<Box<dyn Stream<Item = Result<Vec<u8>, String>> + Send>> =
+                    Box::pin(r);
+                o
             })
         })
     }

@@ -41,6 +41,7 @@ rust_binary(
         "//util/bus",
         "//util/bus:bus_rpc",
         "//third_party:tokio",
+        "//third_party:futures",
     ],
 )
 

@@ -21,6 +21,7 @@ use bus::{
 };
 
 use futures::{Future, TryFutureExt};
+use futures::stream::StreamExt;
 
 "#;
 
@@ -234,6 +235,11 @@ fn generate_service<W: std::io::Write>(
         name = svc.name
     )?;
     for rpc in &svc.rpcs {
+        // Streaming responses aren't supported in sync handler
+        if rpc.ast.stream.is_some() {
+            continue;
+        }
+
         write!(
             w,
             "    fn {name}(&self, msg: {argtype}) -> Result<{rettype}, bus::BusRpcError>;\n",
@@ -250,13 +256,23 @@ fn generate_service<W: std::io::Write>(
         name = svc.name
     )?;
     for rpc in &svc.rpcs {
-        write!(
+        if rpc.ast.stream.is_some() {
+            write!(
+            w,
+            "    fn {name}(&self, msg: {argtype}, sink: bus::BusSink<{rettype}>) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>;\n",
+            name = rpc.name,
+            argtype = rpc.argument_type,
+            rettype = rpc.return_type,
+        )?;
+        } else {
+            write!(
             w,
             "    fn {name}(&self, msg: {argtype}) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<{rettype}, bus::BusRpcError>> + Send>>;\n",
             name = rpc.name,
             argtype = rpc.argument_type,
             rettype = rpc.return_type,
         )?;
+        }
     }
     write!(w, "}}\n\n")?;
 
@@ -289,6 +305,9 @@ pub struct {name}AsyncService(pub std::sync::Arc<dyn {name}AsyncServiceHandler>)
     )?;
 
     for rpc in &svc.rpcs {
+        if rpc.ast.stream.is_some() {
+            continue;
+        }
         write!(
             w,
             r#"            "{name}" => {{
@@ -357,7 +376,7 @@ pub struct {name}AsyncService(pub std::sync::Arc<dyn {name}AsyncServiceHandler>)
     }}
 
 
-    fn serve_stream(&self, service: &str, method: &str, payload: &[u8], sink: bus::BusSink<u64>) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> {{
+    fn serve_stream(&self, service: &str, method: &str, payload: &[u8], sink: bus::BusSinkBase) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> {{
         if service != \"{name}\" {{
             return Box::pin(std::future::ready(()));
         }}
@@ -378,7 +397,7 @@ pub struct {name}AsyncService(pub std::sync::Arc<dyn {name}AsyncServiceHandler>)
                     Ok(a) => a,
                     Err(e) => return Box::pin(std::future::ready(())),
                 }};
-                return Box::pin(self.0.{name}(arg, sink));
+                return Box::pin(self.0.{name}(arg, sink.specialize()));
             }},
 "#,
             name = rpc.name,
@@ -444,7 +463,36 @@ impl {name}AsyncClient {{
     )?;
 
     for rpc in &svc.rpcs {
-        write!(
+        if rpc.ast.stream.is_some() {
+            write!(
+            w,
+            "    pub fn {name}(&self, req: {argtype}) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<std::pin::Pin<Box<dyn futures::Stream<Item={rettype}> + Send>>, bus::BusRpcError>> + Send>> {{
+        let mut buf = Vec::new();
+        if let Err(e) = req.encode(&mut buf) {{
+            return Box::pin(
+                std::future::ready(Err(bus::BusRpcError::InvalidData(e)))
+            );
+        }}
+
+        let _self = self.clone();
+        Box::pin(async move {{
+            match _self.0.request_stream(\"/{svc_name}/{name}\", buf).await {{
+                Ok(s) => Ok({{
+                    let r: std::pin::Pin<Box<dyn futures::Stream<Item = {rettype}> + Send>> = Box::pin(s.map(|data| {rettype}::decode_owned(&data.unwrap()).unwrap()));
+                    r
+                }}),
+                Err(e) => Err(e),
+            }}
+        }})
+    }}
+",
+            svc_name = svc.name,
+            name = rpc.name,
+            argtype = rpc.argument_type,
+            rettype = rpc.return_type,
+        )?;
+        } else {
+            write!(
             w,
             "    pub fn {name}(&self, req: {argtype}) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<{rettype}, bus::BusRpcError>> + Send>> {{
         let mut buf = Vec::new();
@@ -468,6 +516,7 @@ impl {name}AsyncClient {{
             argtype = rpc.argument_type,
             rettype = rpc.return_type,
         )?;
+        }
     }
 
     write!(w, "}}\n\n")

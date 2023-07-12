@@ -127,6 +127,7 @@ ggen::sequence!(
     "->",
     _ws7: Option<Whitespace>,
     stream: Option<Stream>,
+    _ws8: Option<Whitespace>,
     return_type: Identifier,
     _trailing_semicolon: Option<Semicolon>,
     _trailing_newline: AtLeastOne<WhitespaceNewlineComment>,

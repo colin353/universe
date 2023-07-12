@@ -40,7 +40,7 @@ pub trait BusAsyncServer: Clone + Send + Sync {
         service: &str,
         method: &str,
         payload: &[u8],
-        sink: BusSink<u64>,
+        sink: BusSinkBase,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>;
 }
 
@@ -60,7 +60,7 @@ impl<T: BusServer> BusAsyncServer for T {
         service: &str,
         method: &str,
         payload: &[u8],
-        sink: BusSink<u64>,
+        sink: BusSinkBase,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> {
         Box::pin(std::future::ready(()))
     }
@@ -70,24 +70,37 @@ pub trait BusClient: Send + Sync {
     fn request(&self, uri: &'static str, data: Vec<u8>) -> Result<Vec<u8>, BusRpcError>;
 }
 
-pub trait Stream {
-    fn next(&mut self) -> std::pin::Pin<Box<dyn std::future::Future<Output = Option<Vec<u8>>>>>;
-}
-
 pub struct BusSink<T: Serialize> {
     tx: tokio::sync::mpsc::Sender<Vec<u8>>,
     _mark: std::marker::PhantomData<T>,
 }
 
+pub struct BusSinkBase {
+    tx: tokio::sync::mpsc::Sender<Vec<u8>>,
+}
+
+impl BusSinkBase {
+    pub fn specialize<T: Serialize>(self) -> BusSink<T> {
+        BusSink {
+            tx: self.tx,
+            _mark: std::marker::PhantomData,
+        }
+    }
+}
+
 impl<T: Serialize> BusSink<T> {
-    fn send(
+    pub fn send(
         &self,
         msg: T,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = std::io::Result<()>>>> {
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = std::io::Result<()>> + Send>> {
         let mut tx = self.tx.clone();
-        let mut data = Vec::new();
+        let mut data = vec![0, 0, 0, 0];
         if let Err(e) = msg.encode(&mut data) {
             return Box::pin(std::future::ready(Err(e)));
+        }
+        let size = ((data.len() - 4) as u32).to_le_bytes();
+        for i in 0..4 {
+            data[i] = size[i];
         }
 
         Box::pin(async move {
@@ -102,16 +115,10 @@ pub struct BusStreamReceive {
     rx: tokio::sync::mpsc::Receiver<Vec<u8>>,
 }
 
-impl<T: Serialize> BusSink<T> {
-    pub fn new() -> (BusSink<T>, BusStreamReceive) {
+impl BusSinkBase {
+    pub fn new() -> (BusSinkBase, BusStreamReceive) {
         let (tx, rx) = tokio::sync::mpsc::channel(32);
-        (
-            BusSink {
-                tx,
-                _mark: std::marker::PhantomData,
-            },
-            BusStreamReceive { rx },
-        )
+        (BusSinkBase { tx }, BusStreamReceive { rx })
     }
 }
 
@@ -119,10 +126,14 @@ impl futures::Stream for BusStreamReceive {
     type Item = Result<Vec<u8>, String>;
 
     fn poll_next(
-        self: std::pin::Pin<&mut Self>,
+        mut self: std::pin::Pin<&mut Self>,
         cx: &mut futures::task::Context<'_>,
     ) -> futures::task::Poll<Option<Self::Item>> {
-        futures::task::Poll::Pending
+        match self.rx.poll_recv(cx) {
+            futures::task::Poll::Ready(Some(r)) => futures::task::Poll::Ready(Some(Ok(r))),
+            futures::task::Poll::Ready(None) => futures::task::Poll::Ready(None),
+            futures::task::Poll::Pending => futures::task::Poll::Pending,
+        }
     }
 }
 
@@ -138,6 +149,15 @@ pub trait BusAsyncClient: Send + Sync {
         uri: &'static str,
         data: Vec<u8>,
     ) -> std::pin::Pin<
-        Box<dyn std::future::Future<Output = Result<std::pin::Pin<Box<dyn Stream>>, BusRpcError>>>,
+        Box<
+            dyn std::future::Future<
+                    Output = Result<
+                        std::pin::Pin<
+                            Box<dyn futures::Stream<Item = Result<Vec<u8>, String>> + Send>,
+                        >,
+                        BusRpcError,
+                    >,
+                > + Send,
+        >,
     >;
 }

@@ -8,4 +8,5 @@ message FortuneResponse {
 
 service Fortune {
     rpc fortune(FortuneRequest) -> FortuneResponse
+    rpc fortune_stream(FortuneRequest) -> stream FortuneResponse
 }

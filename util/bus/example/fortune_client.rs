@@ -1,3 +1,4 @@
+use futures::stream::StreamExt;
 use std::sync::Arc;
 
 #[tokio::main]
@@ -14,4 +15,18 @@ async fn main() {
         .await
         .unwrap();
     println!("{}", resp.fortune);
+
+    // Now stream them
+    println!("streaming...");
+
+    let mut resp = client
+        .fortune_stream(fortune_bus::FortuneRequest {
+            fortune_id: id.value() as u32,
+        })
+        .await
+        .unwrap();
+
+    while let Some(item) = resp.next().await {
+        println!("{}", item.fortune);
+    }
 }

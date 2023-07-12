@@ -204,8 +204,11 @@ impl bus::BusAsyncClient for MetalAsyncClient {
     ) -> std::pin::Pin<
         Box<
             dyn std::future::Future<
-                Output = Result<std::pin::Pin<Box<dyn Stream>>, bus::BusRpcError>,
-            >,
+                    Output = Result<
+                        std::pin::Pin<Box<dyn Stream<Item = Result<Vec<u8>, String>> + Send>>,
+                        bus::BusRpcError,
+                    >,
+                > + Send,
         >,
     > {
         let _self = self.clone();
