@@ -59,11 +59,14 @@ impl FortuneAsyncServiceHandler for FortuneHandler {
                     }
                     x => (x - 1) as usize,
                 };
-                sink.send(FortuneResponse {
-                    fortune: FORTUNES[id % FORTUNES.len()].to_string(),
-                })
-                .await
-                .unwrap();
+                if let Err(_) = sink
+                    .send(FortuneResponse {
+                        fortune: FORTUNES[id % FORTUNES.len()].to_string(),
+                    })
+                    .await
+                {
+                    return;
+                }
             }
         })
     }
