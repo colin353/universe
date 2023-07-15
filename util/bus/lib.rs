@@ -21,6 +21,13 @@ pub enum BusRpcError {
     NotImplemented,
     ConnectionError(String),
     BackOff,
+    IOError(std::io::Error),
+}
+
+impl From<std::io::Error> for BusRpcError {
+    fn from(e: std::io::Error) -> Self {
+        BusRpcError::IOError(e)
+    }
 }
 
 pub trait BusServer: Clone + Send + Sync {

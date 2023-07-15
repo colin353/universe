@@ -3,6 +3,8 @@ use std::sync::Arc;
 
 pub type Future<T> = std::pin::Pin<Box<dyn std::future::Future<Output = T> + Send>>;
 
+pub use largetable::Filter;
+
 pub trait LargeTableClientInner: Send + Sync {
     fn read(
         &self,
@@ -306,9 +308,13 @@ impl LargeTableClient {
         let min_col = filter.min.to_string();
         let max_col = filter.max.to_string();
 
-        self.inner
+        let start = std::time::Instant::now();
+        let r = self
+            .inner
             .read_range(row, spec, min_col, max_col, limit, timestamp)
-            .await
+            .await;
+        println!("read_range took {:#?}", std::time::Instant::now() - start);
+        r
     }
 
     pub async fn reserve_id(&self, row: String, column: String) -> std::io::Result<u64> {

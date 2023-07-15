@@ -1,14 +1,19 @@
+use bus::Deserialize;
 use largetable_client::LargeTableClient;
+use queue_bus::{
+    ConsumeRequest, ConsumeResponse, EnqueueRequest, EnqueueResponse, Message,
+    QueueAsyncServiceHandler, QueueWindowLimit, ReadRequest, ReadResponse, Status, UpdateResponse,
+};
 use queue_client::message_to_lockserv_path;
-use queue_grpc_rust::*;
 
 use std::collections::{HashMap, HashSet};
+use std::future::Future;
 use std::iter::FromIterator;
+use std::pin::Pin;
 use std::sync::{Arc, RwLock};
 
 use futures::channel::mpsc;
 use futures::channel::mpsc::UnboundedSender;
-use futures::stream::Stream;
 use futures::StreamExt;
 
 pub const QUEUE: &'static str = "queues";
@@ -39,15 +44,15 @@ pub fn get_colname(id: u64) -> String {
 }
 
 fn is_consumable_status(s: Status) -> bool {
-    s == Status::CREATED || s == Status::RETRY || s == Status::CONTINUE
+    s == Status::Created || s == Status::Retry || s == Status::Continue
 }
 
 fn is_bumpable_status(s: Status) -> bool {
-    s == Status::STARTED || s == Status::BLOCKED
+    s == Status::Started || s == Status::Blocked
 }
 
 pub fn is_complete_status(s: Status) -> bool {
-    s == Status::SUCCESS || s == Status::FAILURE
+    s == Status::Success || s == Status::Failure
 }
 
 pub struct MessageRouter {
@@ -113,49 +118,57 @@ impl MessageRouter {
 }
 
 #[derive(Clone)]
-pub struct QueueServiceHandler<C: LargeTableClient + Clone + Send + Sync + 'static> {
-    database: C,
+pub struct QueueServiceHandler {
+    database: LargeTableClient,
     lockserv_client: Option<lockserv_client::LockservClient>,
     queues: Arc<RwLock<HashSet<String>>>,
     router: Arc<MessageRouter>,
     base_url: String,
 }
 
-impl<C: LargeTableClient + Clone + Send + Sync + 'static> QueueServiceHandler<C> {
-    pub fn new(
-        database: C,
+impl QueueServiceHandler {
+    pub async fn new(
+        database: largetable_client::LargeTableClient,
         lockserv_client: lockserv_client::LockservClient,
         base_url: String,
-    ) -> Self {
-        // Set up compaction policy
+    ) -> std::io::Result<Self> {
+        // TODO: Set up compaction policy
+        /*
         let mut policy = largetable_client::CompactionPolicy::new();
         policy.set_row(QUEUE.to_owned());
         policy.set_scope(String::new());
         policy.set_history(1);
         database.set_compaction_policy(policy);
+        */
 
-        let iter = largetable_client::LargeTableScopedIterator::<Message, C>::new(
-            &database,
-            QUEUES.to_string(),
-            String::new(),
-            String::new(),
-            String::new(),
-            0,
-        )
-        .map(|(k, _)| k);
+        let iter = database
+            .read_range(
+                largetable_client::Filter {
+                    row: QUEUES,
+                    spec: "",
+                    min: "",
+                    max: "",
+                },
+                0,
+                1000,
+            )
+            .await?
+            .records
+            .into_iter()
+            .map(|r| r.key);
 
         let queues = HashSet::from_iter(iter);
 
-        Self {
+        Ok(Self {
             database,
             queues: Arc::new(RwLock::new(queues)),
             lockserv_client: Some(lockserv_client),
             router: Arc::new(MessageRouter::new()),
             base_url,
-        }
+        })
     }
 
-    pub fn new_fake(database: C) -> Self {
+    pub fn new_fake(database: LargeTableClient) -> Self {
         Self {
             database,
             queues: Arc::new(RwLock::new(HashSet::new())),
@@ -165,9 +178,9 @@ impl<C: LargeTableClient + Clone + Send + Sync + 'static> QueueServiceHandler<C>
         }
     }
 
-    pub fn maybe_create_queue(&self, queue: &str) {
+    pub async fn maybe_create_queue(&self, queue: &str) -> std::io::Result<()> {
         if self.queues.read().unwrap().contains(queue) {
-            return;
+            return Ok(());
         }
 
         // Update the cache
@@ -177,86 +190,105 @@ impl<C: LargeTableClient + Clone + Send + Sync + 'static> QueueServiceHandler<C>
         }
 
         // Create the queue
-        self.database.write(QUEUES, queue, 0, Vec::new());
+        self.database
+            .write(QUEUES.to_string(), queue.to_string(), 0, bus::Nothing {})
+            .await?;
+
+        Ok(())
     }
 
-    pub fn enqueue(&self, mut req: EnqueueRequest) -> EnqueueResponse {
-        self.maybe_create_queue(req.get_queue());
+    pub async fn enqueue(&self, req: EnqueueRequest) -> std::io::Result<EnqueueResponse> {
+        self.maybe_create_queue(&req.queue).await?;
 
         // First, reserve an ID for this task
-        let id = self.database.reserve_id(MESSAGE_IDS, req.get_queue());
+        let id = self
+            .database
+            .reserve_id(MESSAGE_IDS.to_string(), req.queue.clone())
+            .await?;
 
-        let mut message = req.take_msg();
-        message.set_id(id);
-        message.set_status(Status::CREATED);
-        message.set_queue(req.get_queue().to_owned());
-        message.set_enqueued_time(get_timestamp_usec());
+        let mut message = req.msg;
+        message.id = id;
+        message.status = Status::Created;
+        message.queue = req.queue.to_owned();
+        message.enqueued_time = get_timestamp_usec();
 
-        self.update(message.clone());
-        self.router.put(req.get_queue(), &message);
+        self.update(message.clone()).await?;
+        self.router.put(&req.queue, &message);
 
         let mut response = EnqueueResponse::new();
-        response.set_id(id);
-        response
+        response.id = id;
+        Ok(response)
     }
 
-    fn get_queue_limit(&self, queue: &str) -> u64 {
+    async fn get_queue_limit(&self, queue: &str) -> u64 {
         // If this is the oldest in-progress task, then bump up
         // the queue window.
         match self
             .database
-            .read_proto::<QueueWindowLimit>(&get_queue_window_rowname(), queue, 0)
+            .read::<QueueWindowLimit>(&get_queue_window_rowname(), queue, 0)
+            .await
         {
-            Some(l) => l.get_limit(),
-            None => 0,
+            Some(Ok(l)) => l.limit,
+            None | Some(Err(_)) => 0,
         }
     }
 
-    pub fn update(&self, msg: Message) -> UpdateResponse {
-        self.database.write_proto(
-            &get_queue_rowname(msg.get_queue()),
-            &get_colname(msg.get_id()),
-            0,
-            &msg,
-        );
-
-        UpdateResponse::new()
-    }
-
-    pub fn read(&self, queue: &str, id: u64) -> Option<Message> {
+    pub async fn update(&self, msg: Message) -> std::io::Result<UpdateResponse> {
         self.database
-            .read_proto(&get_queue_rowname(queue), &get_colname(id), 0)
-            .map(|mut m: Message| {
-                m.set_info_url(format!("{}queue/{}/{}", self.base_url, queue, id));
-                m
-            })
+            .write(get_queue_rowname(&msg.queue), get_colname(msg.id), 0, &msg)
+            .await?;
+
+        Ok(UpdateResponse::new())
     }
 
-    pub fn consume(&self, req: ConsumeRequest) -> ConsumeResponse {
-        let limit = self.get_queue_limit(req.get_queue());
-        let mut iter = largetable_client::LargeTableScopedIterator::<Message, C>::new(
-            &self.database,
-            get_queue_rowname(req.get_queue()),
-            String::new(),
-            get_colname(limit),
-            String::new(),
-            0,
-        )
-        .map(|(_, m)| m);
+    pub async fn read(&self, queue: &str, id: u64) -> std::io::Result<Option<Message>> {
+        match self
+            .database
+            .read::<Message>(&get_queue_rowname(queue), &get_colname(id), 0)
+            .await
+        {
+            Some(Ok(mut m)) => {
+                m.info_url = format!("{}queue/{}/{}", self.base_url, queue, id);
+                Ok(Some(m))
+            }
+            Some(Err(e)) => Err(e),
+            None => Ok(None),
+        }
+    }
+
+    pub async fn consume(&self, req: ConsumeRequest) -> std::io::Result<ConsumeResponse> {
+        let limit = self.get_queue_limit(&req.queue).await;
+
+        let iter = self
+            .database
+            .read_range(
+                largetable_client::Filter {
+                    row: &get_queue_rowname(&req.queue),
+                    spec: "",
+                    min: &get_colname(limit),
+                    max: "",
+                },
+                0,
+                1000,
+            )
+            .await?
+            .records
+            .into_iter()
+            .map(|r| Message::decode(&r.data).unwrap());
 
         let mut limit_bump = 0;
         let mut all_complete = true;
         let mut response = ConsumeResponse::new();
         for msg in iter {
-            if all_complete && is_complete_status(msg.get_status()) {
+            if all_complete && is_complete_status(msg.status) {
                 limit_bump += 1;
             } else {
                 all_complete = false;
             }
 
-            if is_consumable_status(msg.get_status()) {
-                response.mut_messages().push(msg);
-                if response.get_messages().len() > 10 {
+            if is_consumable_status(msg.status) {
+                response.messages.push(msg);
+                if response.messages.len() > 10 {
                     break;
                 }
             }
@@ -265,46 +297,63 @@ impl<C: LargeTableClient + Clone + Send + Sync + 'static> QueueServiceHandler<C>
         // Possibly update the bump limit
         if limit_bump > 0 {
             let mut new_limit = QueueWindowLimit::new();
-            new_limit.set_limit(limit + limit_bump);
+            new_limit.limit = limit + limit_bump;
             self.database
-                .write_proto(&get_queue_window_rowname(), req.get_queue(), 0, &new_limit);
+                .write(get_queue_window_rowname(), req.queue, 0, &new_limit)
+                .await?;
         }
 
-        response
+        Ok(response)
     }
 
     // This method watches for changes that were started but timed out, and
     // puts them back onto the queue.
-    pub fn bump(&self) {
-        let queues: Vec<_> = largetable_client::LargeTableScopedIterator::<Message, C>::new(
-            &self.database,
-            QUEUES.to_string(),
-            String::new(),
-            String::new(),
-            String::new(),
-            0,
-        )
-        .map(|(k, _)| k)
-        .collect();
+    pub async fn bump(&self) -> std::io::Result<()> {
+        let queues: Vec<_> = self
+            .database
+            .read_range(
+                largetable_client::Filter {
+                    row: QUEUE,
+                    spec: "",
+                    min: "",
+                    max: "",
+                },
+                0,
+                1000,
+            )
+            .await?
+            .records
+            .into_iter()
+            .map(|r| r.key)
+            .collect();
 
         for queue in queues {
-            self.bump_queue(queue);
+            self.bump_queue(queue).await?;
         }
+
+        Ok(())
     }
 
-    pub fn bump_queue(&self, queue: String) {
-        let limit = self.get_queue_limit(&queue);
-        let eligible_messages: Vec<_> =
-            largetable_client::LargeTableScopedIterator::<Message, C>::new(
-                &self.database,
-                get_queue_rowname(&queue),
-                String::new(),
-                get_colname(limit),
-                String::new(),
+    pub async fn bump_queue(&self, queue: String) -> std::io::Result<()> {
+        let limit = self.get_queue_limit(&queue).await;
+
+        let eligible_messages: Vec<_> = self
+            .database
+            .read_range(
+                largetable_client::Filter {
+                    row: &get_queue_rowname(&queue),
+                    spec: "",
+                    min: &get_colname(limit),
+                    max: "",
+                },
                 0,
+                1000,
             )
-            .map(|(_, m)| m)
-            .filter(|m| is_bumpable_status(m.get_status()))
+            .await?
+            .records
+            .into_iter()
+            .map(|r| Message::decode(&r.data).unwrap())
+            .filter(|m| is_bumpable_status(m.status))
             .collect();
 
         for message in eligible_messages {
@@ -319,151 +368,138 @@ impl<C: LargeTableClient + Clone + Send + Sync + 'static> QueueServiceHandler<C>
             };
 
             // Reload the message from the database now that we got the lock
-            let mut message = match self.read(&queue, message.get_id()) {
+            let mut message = match self.read(&queue, message.id).await? {
                 Some(m) => m,
                 None => continue,
             };
 
-            if message.get_status() == Status::STARTED {
-                println!(
-                    "message {} started but failed, retrying...",
-                    message.get_id()
-                );
+            if message.status == Status::Started {
+                println!("message {} started but failed, retrying...", message.id);
                 // We should never be able to acquire a lock on a started process, so
                 // it must have failed.
-                message.set_failures(message.get_failures() + 1);
+                message.failures = message.failures + 1;
 
-                if message.get_failures() >= MAX_RETRIES {
-                    message.set_status(Status::FAILURE);
-                    message.set_reason(String::from("reached max retries"));
+                if message.failures >= MAX_RETRIES {
+                    message.status = Status::Failure;
+                    message.reason = String::from("reached max retries");
                 } else {
-                    message.set_status(Status::RETRY);
+                    message.status = Status::Retry;
                 }
 
-                self.update(message.clone());
+                self.update(message.clone()).await?;
 
-                if is_consumable_status(message.get_status()) {
+                if is_consumable_status(message.status) {
                     self.router.put(&queue, &message);
                 }
-            } else if message.get_status() == Status::BLOCKED {
+            } else if message.status == Status::Blocked {
                 // Check if blocked messages are unblocked yet, and return them to
                 // the queue with CONTINUE status if they're unblocked.
                 let mut blocked = false;
                 let mut error = false;
-                for blocker in message.get_blocked_by() {
-                    let m = match self.read(blocker.get_queue(), blocker.get_id()) {
+                for blocker in &message.blocked_by {
+                    let m = match self.read(&blocker.queue, blocker.id).await? {
                         Some(m) => m,
                         None => {
                             error = true;
                             break;
                         }
                     };
-                    if !is_complete_status(m.get_status()) {
+                    if !is_complete_status(m.status) {
                         blocked = true;
                         break;
                     }
                 }
 
                 if error {
-                    message.set_status(Status::FAILURE);
-                    message.set_reason(String::from("blocked by unknown message!"));
-                    self.update(message);
+                    message.status = Status::Failure;
+                    message.reason = String::from("blocked by unknown message!");
+                    self.update(message).await?;
                 } else if !blocked {
-                    message.set_status(Status::CONTINUE);
-                    self.update(message.clone());
+                    message.status = Status::Continue;
+                    self.update(message.clone()).await?;
                     self.router.put(&queue, &message);
                 }
             }
 
-            self.lockserv_client.as_ref().unwrap().yield_lock(lock);
+            self.lockserv_client
+                .as_ref()
+                .unwrap()
+                .yield_lock(lock)
+                .unwrap();
         }
+
+        Ok(())
     }
 }
 
-impl<C: LargeTableClient + Clone + Send + Sync + 'static> queue_grpc_rust::QueueService
-    for QueueServiceHandler<C>
-{
+impl QueueAsyncServiceHandler for QueueServiceHandler {
     fn enqueue(
         &self,
-        _: grpc::ServerHandlerContext,
-        req: grpc::ServerRequestSingle<EnqueueRequest>,
-        resp: grpc::ServerResponseUnarySink<EnqueueResponse>,
-    ) -> grpc::Result<()> {
-        resp.finish(self.enqueue(req.message))
+        req: EnqueueRequest,
+    ) -> Pin<Box<dyn Future<Output = Result<EnqueueResponse, bus::BusRpcError>> + Send>> {
+        let _self = self.clone();
+        Box::pin(async move { Ok(_self.enqueue(req).await?) })
     }
 
     fn update(
         &self,
-        _: grpc::ServerHandlerContext,
-        req: grpc::ServerRequestSingle<Message>,
-        resp: grpc::ServerResponseUnarySink<UpdateResponse>,
-    ) -> grpc::Result<()> {
-        resp.finish(self.update(req.message))
+        req: Message,
+    ) -> Pin<Box<dyn Future<Output = Result<UpdateResponse, bus::BusRpcError>> + Send>> {
+        let _self = self.clone();
+        Box::pin(async move { Ok(_self.update(req).await?) })
     }
 
     fn consume(
         &self,
-        _: grpc::ServerHandlerContext,
-        req: grpc::ServerRequestSingle<ConsumeRequest>,
-        resp: grpc::ServerResponseUnarySink<ConsumeResponse>,
-    ) -> grpc::Result<()> {
-        resp.finish(self.consume(req.message))
+        req: ConsumeRequest,
+    ) -> Pin<Box<dyn Future<Output = Result<ConsumeResponse, bus::BusRpcError>> + Send>> {
+        let _self = self.clone();
+        Box::pin(async move { Ok(_self.consume(req).await?) })
     }
 
     fn read(
         &self,
-        _: grpc::ServerHandlerContext,
-        req: grpc::ServerRequestSingle<ReadRequest>,
-        resp: grpc::ServerResponseUnarySink<ReadResponse>,
-    ) -> grpc::Result<()> {
-        let mut response = ReadResponse::new();
-        let maybe_message = self.read(&req.message.get_queue(), req.message.get_id());
-        match maybe_message {
-            Some(m) => {
-                response.set_found(true);
-                *response.mut_msg() = m;
-            }
-            None => (),
-        };
-
-        resp.finish(response)
+        req: ReadRequest,
+    ) -> Pin<Box<dyn Future<Output = Result<ReadResponse, bus::BusRpcError>> + Send>> {
+        let _self = self.clone();
+        Box::pin(async move {
+            let mut response = ReadResponse::new();
+            let maybe_message = _self.read(&req.queue, req.id).await?;
+            match maybe_message {
+                Some(m) => {
+                    response.found = true;
+                    response.msg = m;
+                }
+                None => (),
+            };
+            Ok(response)
+        })
     }
 
     fn consume_stream(
         &self,
-        ctx: grpc::ServerHandlerContext,
-        req: grpc::ServerRequestSingle<ConsumeRequest>,
-        mut resp: grpc::ServerResponseSink<ConsumeResponse>,
-    ) -> grpc::Result<()> {
+        req: ConsumeRequest,
+        sink: bus::BusSink<ConsumeResponse>,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
         let (tx, mut rx) = mpsc::unbounded();
-        self.router
-            .subscribe(req.message.get_queue().to_owned(), tx);
+        self.router.subscribe(req.queue.to_owned(), tx);
 
-        let loop_handle = ctx.loop_remote();
-        let req = req.message;
         let _self = self.clone();
-        loop_handle.spawn(async move {
-            let initial_response = _self.consume(req);
-            resp.ready().await?;
-            resp.send_data(initial_response)?;
+        Box::pin(async move {
+            let initial_response = _self.consume(req).await.unwrap();
+            sink.send(initial_response).await.unwrap();
             while let Some(r) = rx.next().await {
                 let mut msg = ConsumeResponse::new();
-                msg.mut_messages().push(r);
-                resp.ready().await?;
-                resp.send_data(msg);
+                msg.messages.push(r);
+                sink.send(msg).await.unwrap();
             }
-
-            resp.send_trailers(grpc::Metadata::new())
-        });
-
-        Ok(())
+        })
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    extern crate largetable_test;
 
     fn make_handler() -> QueueServiceHandler<largetable_test::LargeTableMockClient> {
         let database = largetable_test::LargeTableMockClient::new();
@@ -480,17 +516,17 @@ mod tests {
         let mut req = ConsumeRequest::new();
         req.set_queue(String::from("test"));
         let mut response = q.consume(req);
-        assert_eq!(response.get_messages().len(), 1);
+        assert_eq!(response.messages.len(), 1);
 
         // Now let's update it to be in progress
-        let mut msg = &mut response.mut_messages()[0];
-        msg.set_status(Status::STARTED);
+        let mut msg = &mut response.messages[0];
+        msg.set_status(Status::Started);
         q.update(msg.clone());
 
         // There shouldn't be any more messages available
         let mut req = ConsumeRequest::new();
         req.set_queue(String::from("test"));
         let response = q.consume(req);
-        assert_eq!(response.get_messages().len(), 0);
+        assert_eq!(response.messages.len(), 0);
     }
 }

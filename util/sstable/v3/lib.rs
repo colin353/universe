@@ -53,7 +53,7 @@ impl<W: std::io::Write, T: Serialize> SSTableBuilder<T, W> {
     }
 
     pub fn write_ordered(&mut self, key: &str, value: T) -> std::io::Result<()> {
-        if key < &self.prev_key {
+        if key < self.prev_key.as_str() {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
                 format!(

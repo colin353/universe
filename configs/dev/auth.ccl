@@ -8,7 +8,7 @@ import {
 auth = taskset {
     task1 = task {
         binary = {
-            path = "/home/colin/Documents/code/universe/bazel-bin/auth/server"
+            url = "rainbow://auth_server:live"
         }
 
         environment = {

@@ -2,8 +2,9 @@
 extern crate tmpl;
 
 use auth_client::AuthServer;
+use bus::Deserialize;
 use largetable_client::LargeTableClient;
-use queue_grpc_rust::*;
+use queue_bus::*;
 use ws::{Body, Request, Response, Server};
 
 mod render;
@@ -14,14 +15,18 @@ static INDEX: &str = include_str!("html/index.html");
 static DETAIL: &str = include_str!("html/detail.html");
 
 #[derive(Clone)]
-pub struct QueueWebServer<C: LargeTableClient + Send + Sync + Clone + 'static> {
-    database: C,
-    auth: auth_client::AuthClient,
+pub struct QueueWebServer {
+    database: LargeTableClient,
+    auth: auth_client::AuthAsyncClient,
     base_url: String,
 }
 
-impl<C: LargeTableClient + Clone + Send + Sync + 'static> QueueWebServer<C> {
-    pub fn new(database: C, auth: auth_client::AuthClient, base_url: String) -> Self {
+impl QueueWebServer {
+    pub fn new(
+        database: LargeTableClient,
+        auth: auth_client::AuthAsyncClient,
+        base_url: String,
+    ) -> Self {
         Self {
             database,
             auth,
@@ -40,101 +45,134 @@ impl<C: LargeTableClient + Clone + Send + Sync + 'static> QueueWebServer<C> {
         )
     }
 
-    fn queue(&self, queue: &str) -> Response {
-        let limit = match self.database.read_proto::<QueueWindowLimit>(
-            &server_lib::get_queue_window_rowname(),
-            queue,
-            0,
-        ) {
-            Some(l) if l.get_limit() > 20 => (l.get_limit() - 20),
+    async fn queue(&self, queue: &str) -> Response {
+        let limit = match self
+            .database
+            .read::<QueueWindowLimit>(&server_lib::get_queue_window_rowname(), queue, 0)
+            .await
+        {
+            Some(Ok(l)) if l.limit > 20 => (l.limit - 20),
             _ => 0,
         };
 
-        let mut messages: Vec<_> = largetable_client::LargeTableScopedIterator::<Message, C>::new(
-            &self.database,
-            server_lib::get_queue_rowname(queue),
-            String::new(),
-            server_lib::get_colname(limit),
-            String::new(),
-            0,
-        )
-        .map(|(_, m)| m)
-        .take(25)
-        .collect();
+        let messages: Vec<_> = self
+            .database
+            .read_range(
+                largetable_client::Filter {
+                    row: &server_lib::get_queue_rowname(queue),
+                    spec: "",
+                    min: &server_lib::get_colname(limit),
+                    max: "",
+                },
+                0,
+                25,
+            )
+            .await
+            .unwrap()
+            .records
+            .into_iter()
+            .map(|r| Message::decode(&r.data).unwrap())
+            .collect();
 
         let content = tmpl::apply(
             QUEUE,
             &content!(
                 "queue_name" => queue;
-                "progress" => messages.iter().rev().filter(|x| !server_lib::is_complete_status(x.get_status())).map(|x| render::message(x)).collect(),
-                "completed" => messages.iter().rev().filter(|x| server_lib::is_complete_status(x.get_status())).map(|x| render::message(x)).collect()
+                "progress" => messages.iter().rev().filter(|x| !server_lib::is_complete_status(x.status)).map(|x| render::message(x)).collect(),
+                "completed" => messages.iter().rev().filter(|x| server_lib::is_complete_status(x.status)).map(|x| render::message(x)).collect()
             ),
         );
 
         Response::new(Body::from(self.wrap_template(content, queue)))
     }
 
-    fn message(&self, queue: &str, id: &str) -> Response {
+    async fn message(&self, queue: &str, id: &str) -> Response {
         let id = match id.parse::<u64>() {
             Ok(id) => id,
             Err(_) => return self.not_found(),
         };
 
-        let msg: Message = match self.database.read_proto(
-            &server_lib::get_queue_rowname(queue),
-            &server_lib::get_colname(id),
-            0,
-        ) {
-            Some(t) => t,
-            None => return self.not_found(),
+        let msg: Message = match self
+            .database
+            .read(
+                &server_lib::get_queue_rowname(queue),
+                &server_lib::get_colname(id),
+                0,
+            )
+            .await
+        {
+            Some(Ok(t)) => t,
+            _ => return self.not_found(),
         };
 
         // Annotate the parent message
-        let blocks = if msg.get_blocks().get_id() > 0 {
-            match self.database.read_proto(
-                &server_lib::get_queue_rowname(msg.get_blocks().get_queue()),
-                &server_lib::get_colname(msg.get_blocks().get_id()),
-                0,
-            ) {
-                Some(x) => render::message(&x),
-                None => content!(),
+        let blocks = if msg.blocks.id > 0 {
+            match self
+                .database
+                .read(
+                    &server_lib::get_queue_rowname(&msg.blocks.queue),
+                    &server_lib::get_colname(msg.blocks.id),
+                    0,
+                )
+                .await
+            {
+                Some(Ok(x)) => render::message(&x),
+                _ => content!(),
             }
         } else {
             content!()
         };
 
+        let mut subtasks = Vec::new();
+        for b in &msg.blocked_by {
+            match self
+                .database
+                .read(
+                    &server_lib::get_queue_rowname(&b.queue),
+                    &server_lib::get_colname(b.id),
+                    0,
+                )
+                .await
+            {
+                Some(Ok(x)) => subtasks.push(render::message(&x)),
+                _ => continue,
+            }
+        }
+
         let content = tmpl::apply(
             DETAIL,
             &content!(
                 "message" => render::message(&msg),
-                "has_parent" => msg.get_blocks().get_id() > 0,
+                "has_parent" => msg.blocks.id > 0,
                 "blocks" => blocks;
-                "subtasks" => msg.get_blocked_by().iter().filter_map(|b| {
-                    match self.database.read_proto(
-                        &server_lib::get_queue_rowname(b.get_queue()),
-                        &server_lib::get_colname(b.get_id()),
-                        0,
-                    ) {
-                        Some(x) => Some(render::message(&x)),
-                        None => None
-                    }
-                }).collect()
+                "subtasks" => subtasks
             ),
         );
         Response::new(Body::from(self.wrap_template(content, queue)))
     }
 
-    fn index(&self, _path: String, _req: Request) -> Response {
-        let queues: Vec<_> = largetable_client::LargeTableScopedIterator::<Message, C>::new(
-            &self.database,
-            server_lib::QUEUES.to_string(),
-            String::new(),
-            String::new(),
-            String::new(),
-            0,
-        )
-        .map(|(k, _)| k)
-        .collect();
+    async fn index(&self, _path: String, _req: Request) -> Response {
+        println!("start lt read");
+        let queues: Vec<_> = self
+            .database
+            .read_range(
+                largetable_client::Filter {
+                    row: server_lib::QUEUES,
+                    spec: "",
+                    min: "",
+                    max: "",
+                },
+                0,
+                100,
+            )
+            .await
+            .unwrap()
+            .records
+            .into_iter()
+            .map(|r| r.key)
+            .collect();
+
+        println!("read from largetable");
 
         let content = tmpl::apply(
             INDEX,
@@ -152,25 +190,31 @@ impl<C: LargeTableClient + Clone + Send + Sync + 'static> QueueWebServer<C> {
     }
 }
 
-impl<C: LargeTableClient + Send + Sync + Clone + 'static> Server for QueueWebServer<C> {
-    fn respond(&self, path: String, req: Request, token: &str) -> Response {
-        let result = self.auth.authenticate(token.to_owned());
-        if !result.get_success() {
-            let challenge = self
-                .auth
-                .login_then_redirect(format!("{}{}", self.base_url, path));
-            let mut response = Response::new(Body::from("redirect to login"));
-            self.redirect(challenge.get_url(), &mut response);
-            return response;
-        }
+impl Server for QueueWebServer {
+    fn respond_future(&self, path: String, req: Request, token: &str) -> ws::ResponseFuture {
+        let _self = self.clone();
+        let token = token.to_owned();
 
-        let components: Vec<_> = path.split("/").collect();
-        if components.len() == 3 && components[1] == "queue" {
-            return self.queue(components[2]);
-        } else if components.len() == 4 && components[1] == "queue" {
-            return self.message(components[2], components[3]);
-        }
+        Box::pin(async move {
+            let result = _self.auth.authenticate(token).await.unwrap();
+            if !result.success {
+                let challenge = _self
+                    .auth
+                    .login_then_redirect(format!("{}{}", _self.base_url, path))
+                    .await;
+                let mut response = Response::new(Body::from("redirect to login"));
+                _self.redirect(&challenge.url, &mut response);
+                return response;
+            }
 
-        return self.index(path, req);
+            let components: Vec<_> = path.split("/").collect();
+            if components.len() == 3 && components[1] == "queue" {
+                return _self.queue(components[2]).await;
+            } else if components.len() == 4 && components[1] == "queue" {
+                return _self.message(components[2], components[3]).await;
+            }
+
+            return _self.index(path, req).await;
+        })
     }
 }

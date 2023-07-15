@@ -80,9 +80,10 @@ message ReadResponse {
     msg: Message = 2
 }
 
-service QueueService {
+service Queue {
     rpc enqueue(EnqueueRequest) -> EnqueueResponse
     rpc update(Message) -> UpdateResponse
     rpc read(ReadRequest) -> ReadResponse
     rpc consume(ConsumeRequest) -> ConsumeResponse
+    rpc consume_stream(ConsumeRequest) -> stream ConsumeResponse
 }
