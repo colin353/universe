@@ -1,0 +1,39 @@
+message AcquireRequest {
+    path: string = 1
+    content: bytes = 2
+    timeout: u64 = 3
+
+    // If the lock is already held, must provide the previous
+    // generation number in order to defend the lock.
+    generation: u64 = 4
+
+    // Whether or not to set the content when acquiring.
+    set_content: bool = 5
+
+    // Whether or not to yield the lock
+    should_yield: bool = 6
+}
+
+message AcquireResponse {
+    success: bool = 1
+    generation: u64 = 2
+    content: bytes = 3
+}
+
+message ReadRequest {
+    path: string = 1
+}
+
+message ReadResponse {
+    content: bytes = 1
+    locked: bool = 2
+}
+
+message DataMessage {
+    data: string = 1
+}
+
+service Lock {
+    rpc acquire(AcquireRequest) -> AcquireResponse
+    rpc read(ReadRequest) -> ReadResponse
+}

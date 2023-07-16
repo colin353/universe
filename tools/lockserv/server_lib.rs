@@ -1,6 +1,9 @@
-use lockserv_grpc_rust::*;
+use lockserv_bus::*;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
+
+use std::future::Future;
+use std::pin::Pin;
 
 const DEFAULT_TIMEOUT: u64 = 30_000_000;
 const MAX_TIMEOUT: u64 = 60;
@@ -66,41 +69,41 @@ impl LockServiceHandler {
         }
     }
 
-    pub fn acquire(&self, mut req: AcquireRequest) -> AcquireResponse {
+    pub fn acquire(&self, req: AcquireRequest) -> AcquireResponse {
         let mut map = self.cells.write().unwrap();
-        let cell = map.entry(req.get_path().to_owned()).or_insert(Cell::new());
+        let cell = map.entry(req.path.to_owned()).or_insert(Cell::new());
 
         let mut response = AcquireResponse::new();
-        response.set_content(cell.content.clone());
+        response.content = cell.content.clone();
 
         // If the cell is already locked,
-        if cell.is_locked() && req.get_generation() != cell.get_generation() {
+        if cell.is_locked() && req.generation != cell.get_generation() {
             return response;
         }
 
-        if req.get_should_yield() {
+        if req.should_yield {
             cell.locked = false;
         } else {
             cell.lock();
         }
-        if req.get_set_content() {
-            cell.content = req.take_content();
+        if req.set_content {
+            cell.content = req.content;
         }
 
-        if req.get_timeout() == 0 || req.get_timeout() > MAX_TIMEOUT {
+        if req.timeout == 0 || req.timeout > MAX_TIMEOUT {
             cell.timeout = DEFAULT_TIMEOUT;
         } else {
-            cell.timeout = req.get_timeout() * 1_000_000;
+            cell.timeout = req.timeout * 1_000_000;
         }
 
-        response.set_generation(cell.get_generation());
-        response.set_success(true);
+        response.generation = cell.get_generation();
+        response.success = true;
         response
     }
 
     pub fn read(&self, req: ReadRequest) -> ReadResponse {
         let map = self.cells.read().unwrap();
-        let cell = match map.get(req.get_path()) {
+        let cell = match map.get(&req.path) {
             Some(c) => c,
             None => {
                 return ReadResponse::new();
@@ -108,29 +111,27 @@ impl LockServiceHandler {
         };
 
         let mut response = ReadResponse::new();
-        response.set_content(cell.content.clone());
-        response.set_locked(cell.is_locked());
+        response.content = cell.content.clone();
+        response.locked = cell.is_locked();
         response
     }
 }
 
-impl lockserv_grpc_rust::LockService for LockServiceHandler {
+impl lockserv_bus::LockAsyncServiceHandler for LockServiceHandler {
     fn acquire(
         &self,
-        _: grpc::ServerHandlerContext,
-        req: grpc::ServerRequestSingle<AcquireRequest>,
-        resp: grpc::ServerResponseUnarySink<AcquireResponse>,
-    ) -> grpc::Result<()> {
-        resp.finish(self.acquire(req.message))
+        req: AcquireRequest,
+    ) -> Pin<Box<dyn Future<Output = Result<AcquireResponse, bus::BusRpcError>> + Send>> {
+        let _self = self.clone();
+        Box::pin(async move { Ok(_self.acquire(req)) })
     }
 
     fn read(
         &self,
-        _: grpc::ServerHandlerContext,
-        req: grpc::ServerRequestSingle<ReadRequest>,
-        resp: grpc::ServerResponseUnarySink<ReadResponse>,
-    ) -> grpc::Result<()> {
-        resp.finish(self.read(req.message))
+        req: ReadRequest,
+    ) -> Pin<Box<dyn Future<Output = Result<ReadResponse, bus::BusRpcError>> + Send>> {
+        let _self = self.clone();
+        Box::pin(async move { Ok(_self.read(req)) })
     }
 }
 
@@ -140,94 +141,94 @@ mod tests {
 
     #[test]
     fn test_lock() {
-        let ls = LockServiceHandler::new();
+        let ls = crate::LockServiceHandler::new();
         let mut req = AcquireRequest::new();
-        req.set_path("/my_lock".to_string());
-        req.set_content(vec![1, 2, 3, 4]);
-        req.set_set_content(true);
+        req.path = "/my_lock".to_string();
+        req.content = vec![1, 2, 3, 4];
+        req.set_content = true;
         let response = ls.acquire(req);
 
-        assert_eq!(response.get_success(), true);
-        assert_eq!(response.get_generation(), 5180492295206395165);
-        assert_eq!(response.get_content(), &[]);
+        assert_eq!(response.success, true);
+        assert_eq!(response.generation, 5180492295206395165);
+        assert_eq!(response.content, &[]);
 
         // If we try to lock it again, it should fail
         let mut req = AcquireRequest::new();
-        req.set_path("/my_lock".to_string());
+        req.path = "/my_lock".to_string();
         let response = ls.acquire(req);
 
-        assert_eq!(response.get_success(), false);
-        assert_eq!(response.get_content(), &[1, 2, 3, 4]);
+        assert_eq!(response.success, false);
+        assert_eq!(response.content, &[1, 2, 3, 4]);
 
         // If we re-acquire the lock using the correct generation, should work
         let mut req = AcquireRequest::new();
-        req.set_path("/my_lock".to_string());
-        req.set_generation(5180492295206395165);
+        req.path = "/my_lock".to_string();
+        req.generation = 5180492295206395165;
         let response = ls.acquire(req);
 
-        assert_eq!(response.get_success(), true);
-        assert_eq!(response.get_content(), &[1, 2, 3, 4]);
-        assert_eq!(response.get_generation(), 10360984590412790330);
+        assert_eq!(response.success, true);
+        assert_eq!(response.content, &[1, 2, 3, 4]);
+        assert_eq!(response.generation, 10360984590412790330);
 
         // Now we'll yield the lock
         let mut req = AcquireRequest::new();
-        req.set_path("/my_lock".to_string());
-        req.set_generation(10360984590412790330);
-        req.set_should_yield(true);
+        req.path = "/my_lock".to_string();
+        req.generation = 10360984590412790330;
+        req.should_yield = true;
         let response = ls.acquire(req);
 
-        assert_eq!(response.get_success(), true);
+        assert_eq!(response.success, true);
 
         // It should be unlocked, so a request w/o generation should work
         let mut req = AcquireRequest::new();
-        req.set_path("/my_lock".to_string());
+        req.path = "/my_lock".to_string();
         let response = ls.acquire(req);
 
-        assert_eq!(response.get_success(), true);
+        assert_eq!(response.success, true);
     }
 
-    #[test]
-    fn test_lock_expiry() {
-        let ls = LockServiceHandler::new();
+    #[tokio::test]
+    async fn test_lock_expiry() {
+        let ls = crate::LockServiceHandler::new();
         let mut req = AcquireRequest::new();
-        req.set_path("/my_lock".to_string());
-        req.set_timeout(1);
+        req.path = "/my_lock".to_string();
+        req.timeout = 1;
         let response = ls.acquire(req);
 
-        assert_eq!(response.get_success(), true);
+        assert_eq!(response.success, true);
 
         // Attempting to re-acquire the lock should fail
         let mut req = AcquireRequest::new();
-        req.set_path("/my_lock".to_string());
-        req.set_timeout(1);
+        req.path = "/my_lock".to_string();
+        req.timeout = 1;
         let response = ls.acquire(req);
 
-        assert_eq!(response.get_success(), false);
+        assert_eq!(response.success, false);
 
         // Let's read the lock and check that it's locked
         let mut req = ReadRequest::new();
-        req.set_path("/my_lock".to_string());
+        req.path = "/my_lock".to_string();
         let response = ls.read(req);
 
-        assert_eq!(response.get_locked(), true);
+        assert_eq!(response.locked, true);
 
         // Wait for the lock to expire
-        std::thread::sleep(std::time::Duration::from_secs(2));
+        tokio::time::delay_for(std::time::Duration::from_secs(2)).await;
 
         // Let's read the lock and check that it expired
         let mut req = ReadRequest::new();
-        req.set_path("/my_lock".to_string());
+        req.path = "/my_lock".to_string();
         let response = ls.read(req);
 
-        assert_eq!(response.get_locked(), false);
+        assert_eq!(response.locked, false);
 
         // Now the lock should be undefended, so we can acquire it
         let mut req = AcquireRequest::new();
-        req.set_path("/my_lock".to_string());
-        req.set_timeout(1);
+        req.path = "/my_lock".to_string();
+        req.timeout = 1;
         let response = ls.acquire(req);
 
-        assert_eq!(response.get_success(), true);
-        assert_eq!(response.get_generation(), 10360984590412790330);
+        assert_eq!(response.success, true);
+        assert_eq!(response.generation, 10360984590412790330);
     }
 }
