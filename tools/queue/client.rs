@@ -1,4 +1,4 @@
-use futures::StreamExt;
+use futures::{FutureExt, StreamExt};
 pub use queue_bus::*;
 
 use std::future::Future;
@@ -142,9 +142,9 @@ pub fn next_state(mut x: u64) -> u64 {
 }
 
 pub trait Consumer: Clone + Send + Sync + 'static {
-    fn consume(&self, message: &Message) -> ConsumeResult;
+    fn consume(&self, message: &Message) -> Pin<Box<dyn Future<Output = ConsumeResult> + Send>>;
 
-    fn resume(&self, message: &Message) -> ConsumeResult {
+    fn resume(&self, message: &Message) -> Pin<Box<dyn Future<Output = ConsumeResult> + Send>> {
         self.consume(message)
     }
 
@@ -204,14 +204,15 @@ pub trait Consumer: Clone + Send + Sync + 'static {
                     _self.get_lockserv_client().put_lock(lock);
 
                     // Run potentially long-running consume task.
-                    let panic_result =
-                        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                            if did_resume {
-                                _self.resume(&m)
-                            } else {
-                                _self.consume(&m)
-                            }
-                        }));
+                    let panic_result = if did_resume {
+                        std::panic::AssertUnwindSafe(_self.resume(&m))
+                            .catch_unwind()
+                            .await
+                    } else {
+                        std::panic::AssertUnwindSafe(_self.consume(&m))
+                            .catch_unwind()
+                            .await
+                    };
 
                     if let Err(_) = panic_result {
                         // There was a panic. Just continue consuming. Queue service will

@@ -184,7 +184,6 @@ impl ManagedLargeTable {
         timestamp: u64,
         limit: usize,
     ) -> std::io::Result<service::ReadRangeResponse> {
-        println!("read range begin");
         let start = std::time::Instant::now();
         let timestamp = match timestamp {
             0 => timestamp_usec(),
@@ -197,15 +196,13 @@ impl ManagedLargeTable {
             .expect("failed to read lock largetable")
             .read_range(filter, timestamp, limit)?;
 
-        let resp = Ok(service::ReadRangeResponse {
+        Ok(service::ReadRangeResponse {
             records: results
                 .into_iter()
                 .map(|(key, data)| service::Record { key, data: data.0 })
                 .collect(),
             timestamp,
-        });
-        println!("return response: {:#?}", std::time::Instant::now() - start);
-        resp
+        })
     }
 
     pub fn reserve_id(&self, row: String, column: String) -> std::io::Result<u64> {

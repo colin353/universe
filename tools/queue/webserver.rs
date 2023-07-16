@@ -152,7 +152,6 @@ impl QueueWebServer {
     }
 
     async fn index(&self, _path: String, _req: Request) -> Response {
-        println!("start lt read");
         let queues: Vec<_> = self
             .database
             .read_range(
@@ -171,8 +170,6 @@ impl QueueWebServer {
             .into_iter()
             .map(|r| r.key)
             .collect();
-
-        println!("read from largetable");
 
         let content = tmpl::apply(
             INDEX,

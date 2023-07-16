@@ -308,13 +308,9 @@ impl LargeTableClient {
         let min_col = filter.min.to_string();
         let max_col = filter.max.to_string();
 
-        let start = std::time::Instant::now();
-        let r = self
-            .inner
+        self.inner
             .read_range(row, spec, min_col, max_col, limit, timestamp)
-            .await;
-        println!("read_range took {:#?}", std::time::Instant::now() - start);
-        r
+            .await
     }
 
     pub async fn reserve_id(&self, row: String, column: String) -> std::io::Result<u64> {

@@ -68,6 +68,7 @@ rust_binary(
     deps = [
         ":queue_client",
         "//tools/lockserv:lockserv_client",
+        "//third_party:tokio",
         "@rules_rust//proto/raze:protobuf",
     ],
 )

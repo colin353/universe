@@ -87,8 +87,6 @@ impl LargeTableServiceHandler for LargeTableHandler {
     }
 
     fn read_range(&self, req: ReadRangeRequest) -> Result<ReadRangeResponse, bus::BusRpcError> {
-        println!("read range begin");
-        let start = std::time::Instant::now();
         let timestamp = match req.timestamp {
             0 => timestamp_usec(),
             x => x,
@@ -120,8 +118,6 @@ impl LargeTableServiceHandler for LargeTableHandler {
                 .collect(),
             timestamp,
         });
-
-        println!("return response: {:#?}", std::time::Instant::now() - start);
 
         resp
     }

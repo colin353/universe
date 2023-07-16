@@ -491,7 +491,9 @@ impl QueueAsyncServiceHandler for QueueServiceHandler {
             while let Some(r) = rx.next().await {
                 let mut msg = ConsumeResponse::new();
                 msg.messages.push(r);
-                sink.send(msg).await.unwrap();
+                if let Err(_) = sink.send(msg).await {
+                    return;
+                }
             }
         })
     }
