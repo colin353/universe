@@ -149,17 +149,16 @@ async fn main() {
         }
     }));
 
+    let ls = LockservClient::new_metal("lockserv.bus");
+    let _ls = ls.clone();
     tokio::spawn(Box::pin(async {
         let q = QueueClient::new("127.0.0.1", 5554);
-        let ls = LockservClient::new("127.0.0.1", 5555);
 
-        let consumer = TestConsumer::new(q, ls);
+        let consumer = TestConsumer::new(q, _ls);
         consumer.start(String::from("builds")).await;
     }));
 
     let q = QueueClient::new("127.0.0.1", 5554);
-    let ls = LockservClient::new("127.0.0.1", 5555);
-
     let consumer = PresubmitConsumer::new(q, ls);
     consumer.start(String::from("presubmit")).await;
 }

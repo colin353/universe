@@ -17,10 +17,6 @@ pub fn get_timestamp_usec() -> u64 {
     (since_epoch.as_secs() as u64) * 1_000_000 + (since_epoch.subsec_nanos() / 1000) as u64
 }
 
-fn wait<T: Send + Sync>(resp: grpc::SingleResponse<T>) -> Result<T, grpc::Error> {
-    futures::executor::block_on(resp.join_metadata_result()).map(|r| r.1)
-}
-
 impl QueueClient {
     pub fn new(hostname: &str, port: u16) -> Self {
         let mut retries = 0;
@@ -182,6 +178,7 @@ pub trait Consumer: Clone + Send + Sync + 'static {
                     let lock = match _self
                         .get_lockserv_client()
                         .acquire(message_to_lockserv_path(&m))
+                        .await
                     {
                         Ok(l) => l,
                         Err(_) => continue,
@@ -240,7 +237,7 @@ pub trait Consumer: Clone + Send + Sync + 'static {
                     let result = panic_result.unwrap();
 
                     // Re-assert lock ownership before writing completion status
-                    let lock = match _self.get_lockserv_client().reacquire(lock) {
+                    let lock = match _self.get_lockserv_client().reacquire(lock).await {
                         Ok(l) => l,
                         Err(_) => continue,
                     };
@@ -280,7 +277,7 @@ pub trait Consumer: Clone + Send + Sync + 'static {
                     };
                     state = next_state(state);
 
-                    _self.get_lockserv_client().yield_lock(lock);
+                    _self.get_lockserv_client().yield_lock(lock).await;
                 }
 
                 // If the state didn't change since the last try, it means that the same operation

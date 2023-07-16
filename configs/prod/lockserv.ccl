@@ -1,0 +1,22 @@
+import {
+    task,
+    taskset,
+    port_binding,
+    service_binding,
+} from "metal"
+
+lockserv = taskset {
+    task1 = task {
+        binary = {
+            url = "rainbow://lockserv:live"
+        }
+
+        environment = {
+            ARGS_PORT = port_binding {
+                name = "bus"
+            }
+        }
+    }
+}
+
+

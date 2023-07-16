@@ -7,12 +7,6 @@ use std::sync::Arc;
 async fn main() {
     let bus_port = define_flag!("bus_port", 5554_u16, "The bus port to bind to");
     let web_port = define_flag!("web_port", 5553, "The webserver port to bind to");
-    let lockserv_hostname = define_flag!(
-        "lockserv_hostname",
-        String::from("127.0.0.1"),
-        "Hostname of the lockserv client"
-    );
-    let lockserv_port = define_flag!("lockserv_port", 5555, "Port of the lockserv service");
     let auth_hostname = define_flag!(
         "auth_hostname",
         String::from("auth.colinmerkel.xyz"),
@@ -29,17 +23,13 @@ async fn main() {
     parse_flags!(
         bus_port,
         web_port,
-        lockserv_hostname,
-        lockserv_port,
         auth_hostname,
         auth_port,
         base_url,
         fake_auth
     );
 
-    let ls =
-        lockserv_client::LockservClient::new(&lockserv_hostname.value(), lockserv_port.value());
-
+    let ls = lockserv_client::LockservClient::new_metal("lockserv.bus");
     let database = largetable_client::LargeTableClient::new(Arc::new(
         largetable_client::LargeTableBusClient::new(
             "largetable.bus".to_string(),

@@ -362,6 +362,7 @@ impl QueueServiceHandler {
                 .as_ref()
                 .unwrap()
                 .acquire(message_to_lockserv_path(&message))
+                .await
             {
                 Ok(l) => l,
                 Err(_) => continue,
@@ -425,6 +426,7 @@ impl QueueServiceHandler {
                 .as_ref()
                 .unwrap()
                 .yield_lock(lock)
+                .await
                 .unwrap();
         }
 
