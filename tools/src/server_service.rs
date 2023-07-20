@@ -1370,18 +1370,19 @@ mod tests {
         .unwrap()
     }
 
-    fn full_setup() -> SrcServer {
+    async fn full_setup() -> SrcServer {
         let s = setup();
         s.create(CreateRequest {
             token: String::new(),
             name: "example".to_string(),
         })
+        .await
         .unwrap();
         s
     }
 
     //#[test]
-    fn test_create_repo() {
+    async fn test_create_repo() {
         let s = setup();
         let resp = s
             .get_repository(GetRepositoryRequest {
@@ -1389,6 +1390,7 @@ mod tests {
                 owner: "colin".to_string(),
                 name: "universe".to_string(),
             })
+            .await
             .unwrap();
         assert_eq!(resp.failed, true);
 
@@ -1397,6 +1399,7 @@ mod tests {
                 token: String::new(),
                 name: "universe".to_string(),
             })
+            .await
             .unwrap();
         assert_eq!(resp.failed, false);
 
@@ -1406,6 +1409,7 @@ mod tests {
                 owner: "colin".to_string(),
                 name: "universe".to_string(),
             })
+            .await
             .unwrap();
         assert_eq!(resp.failed, false);
         assert_eq!(resp.index, 1);
@@ -1417,6 +1421,7 @@ mod tests {
             token: String::new(),
             name: "example".to_string(),
         })
+        .await
         .unwrap();
 
         let r = s
@@ -1440,13 +1445,14 @@ mod tests {
                     message: String::new(),
                 },
             })
+            .await
             .unwrap();
         assert!(!r.failed);
         assert_eq!(r.id, 1);
     }
 
-    #[test]
-    fn test_get_change() {
+    #[tokio::test]
+    async fn test_get_change() {
         let s = setup();
         s.create(CreateRequest {
             token: String::new(),
@@ -1474,6 +1480,7 @@ mod tests {
                     message: String::new(),
                 },
             })
+            .await
             .unwrap();
         let id = response.id;
 
@@ -1485,6 +1492,7 @@ mod tests {
                 id: id,
                 ..Default::default()
             })
+            .await
             .unwrap();
 
         assert_eq!(response.error_message, String::new());
@@ -1493,8 +1501,8 @@ mod tests {
         assert_eq!(&response.change.description, "do something");
     }
 
-    #[test]
-    fn test_list_changes() {
+    #[tokio::test]
+    async fn test_list_changes() {
         let s = setup();
         s.create(CreateRequest {
             token: String::new(),
@@ -1521,6 +1529,7 @@ mod tests {
                 message: String::new(),
             },
         })
+        .await
         .unwrap();
 
         let response = s
@@ -1529,6 +1538,7 @@ mod tests {
                 owner: "colin".to_string(),
                 ..Default::default()
             })
+            .await
             .unwrap();
 
         assert_eq!(response.error_message, String::new());
@@ -1543,6 +1553,7 @@ mod tests {
                 repo_name: "example".to_string(),
                 ..Default::default()
             })
+            .await
             .unwrap();
 
         assert_eq!(response.error_message, String::new());

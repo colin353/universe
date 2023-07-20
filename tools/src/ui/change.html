@@ -37,12 +37,12 @@
     <div class="actions">
         <script>
             async function submit() {
-              response = await fetch('/api/tasks/submit/{{id}}', { method: 'POST' })
+              response = await fetch('/api/{{repo_owner}}/{{repo_name}}/{{id}}/submit', { method: 'POST' })
               window.location.reload()
             }
             async function archive() {
               if (confirm("Really archive this change?")) {
-                response = await fetch('/api/archive/{{repo_owner}}/{{repo_name}}/{{id}}', { method: 'POST' })
+                response = await fetch('/api/{{repo_owner}}/{{repo_name}}/{{id}}/archive', { method: 'POST' })
                 window.location.reload()
               }
             }

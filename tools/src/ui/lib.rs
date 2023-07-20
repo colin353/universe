@@ -13,6 +13,7 @@ static INDEX: &str = include_str!("homepage.html");
 #[derive(Clone)]
 pub struct SrcUIServer {
     client: service::SrcServerAsyncClient,
+    queue: Option<queue_bus::QueueAsyncClient>,
     auth: Option<auth_client::AuthAsyncClient>,
     base_url: String,
 }
@@ -23,12 +24,14 @@ impl SrcUIServer {
         port: u16,
         base_url: String,
         auth: Option<auth_client::AuthAsyncClient>,
+        queue: Option<queue_bus::QueueAsyncClient>,
     ) -> Self {
         let connector = Arc::new(bus_rpc::HyperClient::new(address, port));
         Self {
             client: service::SrcServerAsyncClient::new(connector),
             auth,
             base_url,
+            queue,
         }
     }
 
@@ -36,12 +39,14 @@ impl SrcUIServer {
         service_name: String,
         base_url: String,
         auth: Option<auth_client::AuthAsyncClient>,
+        queue: Option<queue_bus::QueueAsyncClient>,
     ) -> Self {
         let connector = Arc::new(bus_rpc::MetalAsyncClient::new(service_name));
         Self {
             client: service::SrcServerAsyncClient::new(connector),
             auth,
             base_url,
+            queue,
         }
     }
 
@@ -57,6 +62,10 @@ impl SrcUIServer {
 
     async fn api(&self, path: &str, _req: ws::Request, token: String) -> ws::Response {
         let mut path_iter = path.rsplit("/");
+        let verb = match path_iter.next() {
+            Some(s) => s,
+            None => return ws::Response::new(ws::Body::from("no such change")),
+        };
         let change_id: u64 = match path_iter.next() {
             Some(c) => c.parse().unwrap_or(0),
             None => return ws::Response::new(ws::Body::from("no such change")),
@@ -66,10 +75,6 @@ impl SrcUIServer {
             None => return ws::Response::new(ws::Body::from("no such change")),
         };
         let repo_owner = match path_iter.next() {
-            Some(s) => s,
-            None => return ws::Response::new(ws::Body::from("no such change")),
-        };
-        let verb = match path_iter.next() {
             Some(s) => s,
             None => return ws::Response::new(ws::Body::from("no such change")),
         };
@@ -97,8 +102,32 @@ impl SrcUIServer {
             }
 
             return ws::Response::new(ws::Body::from("ok"));
+        } else if verb == "submit" {
+            let client = match &self.queue {
+                Some(c) => c,
+                None => return ws::Response::new(ws::Body::from("unknown api method")),
+            };
+
+            if let Ok(_) = client
+                .enqueue(queue_bus::EnqueueRequest {
+                    queue: "presubmit".to_string(),
+                    msg: queue_bus::Message {
+                        arguments: vec![queue_bus::Artifact {
+                            name: "change".to_string(),
+                            value_int: change_id as i64,
+                            ..Default::default()
+                        }],
+                        ..Default::default()
+                    },
+                })
+                .await
+            {
+                ws::Response::new(ws::Body::from("ok"))
+            } else {
+                ws::Response::new(ws::Body::from("failed to enqueue task"))
+            }
         } else {
-            return ws::Response::new(ws::Body::from("unknown api method"));
+            ws::Response::new(ws::Body::from("unknown api method"))
         }
     }
 

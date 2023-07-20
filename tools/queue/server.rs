@@ -7,12 +7,6 @@ use std::sync::Arc;
 async fn main() {
     let bus_port = define_flag!("bus_port", 5554_u16, "The bus port to bind to");
     let web_port = define_flag!("web_port", 5553, "The webserver port to bind to");
-    let auth_hostname = define_flag!(
-        "auth_hostname",
-        String::from("auth.colinmerkel.xyz"),
-        "the hostname of the auth service"
-    );
-    let auth_port = define_flag!("auth_port", 8888, "the port of the auth service");
     let base_url = define_flag!(
         "base_url",
         String::from("http://localhost:5553"),
@@ -20,14 +14,7 @@ async fn main() {
     );
     let fake_auth = define_flag!("fake_auth", false, "whether or not to use fake auth");
 
-    parse_flags!(
-        bus_port,
-        web_port,
-        auth_hostname,
-        auth_port,
-        base_url,
-        fake_auth
-    );
+    parse_flags!(bus_port, web_port, base_url, fake_auth);
 
     let ls = lockserv_client::LockservClient::new_metal("lockserv.bus");
     let database = largetable_client::LargeTableClient::new(Arc::new(
