@@ -26,6 +26,14 @@ impl QueueClient {
         Self { client }
     }
 
+    pub fn new_metal(service: &str) -> Self {
+        let mut retries = 0;
+        let connector = bus_rpc::MetalAsyncClient::new(service);
+        let client = QueueAsyncClient::new(Arc::new(connector));
+
+        Self { client }
+    }
+
     pub async fn enqueue(&self, queue: String, msg: Message) -> Result<u64, bus::BusRpcError> {
         let mut req = EnqueueRequest::new();
         req.queue = queue;
@@ -125,6 +133,7 @@ pub fn message_to_lockserv_path(m: &Message) -> String {
     format!("/ls/queue/{}/{}", m.queue, m.id)
 }
 
+#[derive(Debug)]
 pub enum ConsumeResult {
     Success(Vec<Artifact>),
     Failure(String, Vec<Artifact>),
@@ -152,9 +161,8 @@ pub trait Consumer: Clone + Send + Sync + 'static {
         Box::pin(async move {
             let renewer_client = _self.get_lockserv_client().clone();
 
-            // Use tokio??
-            std::thread::spawn(move || {
-                renewer_client.defend();
+            tokio::spawn(async move {
+                renewer_client.defend().await;
             });
 
             let mut prev_state = 0;

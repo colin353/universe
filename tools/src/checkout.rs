@@ -21,10 +21,10 @@ fn decode_key<'a>(key: &'a str) -> std::io::Result<(usize, &'a str)> {
 }
 
 impl crate::Src {
-    pub fn checkout(
+    pub async fn checkout(
         &self,
         dir: std::path::PathBuf,
-        basis: service::BasisView,
+        basis: service::Basis,
     ) -> std::io::Result<std::path::PathBuf> {
         let mut directory = dir;
         let mut existing_space = None;
@@ -44,12 +44,14 @@ impl crate::Src {
                 }
             };
             directory = std::path::PathBuf::from(&space.directory);
-            let resp = self.snapshot(service::SnapshotRequest {
-                dir: directory.to_str().unwrap().to_owned(),
-                message: "detached space".to_string(),
-                skip_if_no_changes: true,
-                ..Default::default()
-            })?;
+            let resp = self
+                .snapshot(service::SnapshotRequest {
+                    dir: directory.to_str().unwrap().to_owned(),
+                    message: "detached space".to_string(),
+                    skip_if_no_changes: true,
+                    ..Default::default()
+                })
+                .await?;
             if resp.failed {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
@@ -92,9 +94,9 @@ impl crate::Src {
                 output
             }
         };
-        let metadata = self.get_metadata(basis)?;
+        let metadata = self.get_metadata(basis.clone()).await?;
         let previous_metadata = match &existing_space {
-            Some(space) => self.get_metadata(space.basis.as_view())?,
+            Some(space) => self.get_metadata(space.basis.clone()).await?,
             None => crate::metadata::Metadata::empty(),
         };
         for (key, maybe_prev_file, maybe_new_file) in previous_metadata.diff(&metadata) {
@@ -125,15 +127,16 @@ impl crate::Src {
         println!("phase 1 complete");
 
         // Phase 2: Download all required blobs
-        let client = self.get_client(basis.get_host())?;
-        let token = self
-            .get_identity(basis.get_host())
-            .unwrap_or_else(String::new);
+        let client = self.get_client(&basis.host)?;
+        let token = self.get_identity(&basis.host).unwrap_or_else(String::new);
         for shas in shas_to_download.into_iter().collect::<Vec<_>>().chunks(250) {
-            let resp = match client.get_blobs(service::GetBlobsRequest {
-                token: token.clone(),
-                shas: shas.to_owned(),
-            }) {
+            let resp = match client
+                .get_blobs(service::GetBlobsRequest {
+                    token: token.clone(),
+                    shas: shas.to_owned(),
+                })
+                .await
+            {
                 Err(_) => {
                     return Err(std::io::Error::new(
                         std::io::ErrorKind::InvalidData,
@@ -268,13 +271,13 @@ impl crate::Src {
         Ok(directory)
     }
 
-    pub fn apply_snapshot(
+    pub async fn apply_snapshot(
         &self,
         dir: &std::path::Path,
-        basis: service::BasisView,
+        basis: service::Basis,
         differences: &[service::FileDiff],
     ) -> std::io::Result<()> {
-        let metadata = self.get_metadata(basis)?;
+        let metadata = self.get_metadata(basis).await?;
         for diff in differences {
             match diff.kind {
                 service::DiffKind::Added => {

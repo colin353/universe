@@ -489,7 +489,9 @@ impl QueueAsyncServiceHandler for QueueServiceHandler {
         let _self = self.clone();
         Box::pin(async move {
             let initial_response = _self.consume(req).await.unwrap();
-            sink.send(initial_response).await.unwrap();
+            if !initial_response.messages.is_empty() {
+                sink.send(initial_response).await.unwrap();
+            }
             while let Some(r) = rx.next().await {
                 let mut msg = ConsumeResponse::new();
                 msg.messages.push(r);

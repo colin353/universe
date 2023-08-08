@@ -242,21 +242,27 @@ impl futures::Stream for BusStream {
             }
         };
 
-        if let Some(len) = state.size {
-            if state.buffer.len() > len {
-                let mut out = state.buffer.split_off(len);
-                std::mem::swap(&mut out, &mut state.buffer);
+        loop {
+            if let Some(len) = state.size {
+                if state.buffer.len() >= len {
+                    let mut out = state.buffer.split_off(len);
+                    std::mem::swap(&mut out, &mut state.buffer);
 
-                state.size = None;
-                return futures::task::Poll::Ready(Some(Ok(Vec::from(out))));
+                    state.size = None;
+                    return futures::task::Poll::Ready(Some(Ok(Vec::from(out))));
+                } else {
+                    break;
+                }
+            } else if state.buffer.len() >= 4 {
+                state.size = Some(u32::from_le_bytes([
+                    state.buffer.pop_front().unwrap(),
+                    state.buffer.pop_front().unwrap(),
+                    state.buffer.pop_front().unwrap(),
+                    state.buffer.pop_front().unwrap(),
+                ]) as usize);
+            } else {
+                break;
             }
-        } else if state.buffer.len() > 4 {
-            state.size = Some(u32::from_le_bytes([
-                state.buffer.pop_front().unwrap(),
-                state.buffer.pop_front().unwrap(),
-                state.buffer.pop_front().unwrap(),
-                state.buffer.pop_front().unwrap(),
-            ]) as usize);
         }
 
         let bytes = self.bytes.clone();

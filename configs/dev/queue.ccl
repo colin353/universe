@@ -1,0 +1,35 @@
+import {
+    task,
+    taskset,
+    port_binding,
+    service_binding,
+} from "metal"
+
+queue = taskset {
+    task1 = task {
+        binary = {
+            url = "rainbow://queue:live"
+            path = "/home/colin/Documents/code/universe/bazel-bin/tools/queue/queue"
+        }
+
+        environment = {
+            ARGS_WEB_PORT = port_binding {
+                name = "http"
+            }
+            ARGS_BUS_PORT = port_binding {
+                name = "bus"
+            }
+            ARGS_FAKE_AUTH = "true"
+            ARGS_BASE_URL = port_binding {
+                name = "https://tasks.colinmerkel.xyz"
+            }
+        }
+    }
+
+    http = service_binding {
+        port = 443
+        hostname = "tasks.colinmerkel.xyz"
+    }
+}
+
+

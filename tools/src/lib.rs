@@ -11,7 +11,7 @@ mod metadata;
 #[derive(Clone)]
 pub struct Src {
     root: std::path::PathBuf,
-    remotes: Arc<RwLock<HashMap<String, service::SrcServerClient>>>,
+    remotes: Arc<RwLock<HashMap<String, service::SrcServerAsyncClient>>>,
 }
 
 impl Src {
@@ -24,7 +24,7 @@ impl Src {
         })
     }
 
-    pub fn get_client(&self, host: &str) -> std::io::Result<service::SrcServerClient> {
+    pub fn get_client(&self, host: &str) -> std::io::Result<service::SrcServerAsyncClient> {
         // Check if the client already exists
         match self
             .remotes
@@ -51,15 +51,12 @@ impl Src {
             None => (&host, 8888),
         };
 
-        let connector: Arc<dyn bus::BusClient> = if hostname == "localhost" {
-            Arc::new(bus_rpc::HyperSyncClient::new(hostname.to_string(), port))
+        let connector: Arc<dyn bus::BusAsyncClient> = if hostname == "localhost" {
+            Arc::new(bus_rpc::HyperClient::new(hostname.to_string(), port))
         } else {
-            Arc::new(bus_rpc::HyperSyncClient::new_tls(
-                hostname.to_string(),
-                port,
-            ))
+            Arc::new(bus_rpc::HyperClient::new_tls(hostname.to_string(), port))
         };
-        let client = service::SrcServerClient::new(connector);
+        let client = service::SrcServerAsyncClient::new(connector);
 
         self.remotes
             .write()
@@ -69,34 +66,33 @@ impl Src {
         Ok(client)
     }
 
-    pub fn get_metadata(
+    pub async fn get_metadata(
         &self,
-        basis: service::BasisView,
+        basis: service::Basis,
     ) -> std::io::Result<metadata::Metadata<'static>> {
         // Check whether we already downloaded the metadata
         let metadata_path = self
             .root
             .join("metadata")
-            .join(basis.get_host())
-            .join(basis.get_owner())
-            .join(basis.get_name())
-            .join(format!("{}", basis.get_index()))
+            .join(&basis.host)
+            .join(&basis.owner)
+            .join(&basis.name)
+            .join(format!("{}", basis.index))
             .with_extension("sstable");
 
         if metadata_path.exists() {
             return metadata::Metadata::from_path(metadata_path.clone());
         }
 
-        let client = self.get_client(basis.get_host())?;
-        let token = self
-            .get_identity(basis.get_host())
-            .unwrap_or_else(String::new);
+        let client = self.get_client(&basis.host)?;
+        let token = self.get_identity(&basis.host).unwrap_or_else(String::new);
 
         let resp = client
             .get_metadata(service::GetMetadataRequest {
                 token,
-                basis: basis.to_owned()?,
+                basis: basis.clone(),
             })
+            .await
             .map_err(|e| {
                 eprintln!("{:?}", e);
                 std::io::Error::new(
@@ -120,7 +116,7 @@ impl Src {
         metadata::Metadata::from_path(metadata_path)
     }
 
-    pub fn initialize_repo(
+    pub async fn initialize_repo(
         &self,
         basis: service::Basis,
         path: &std::path::Path,
@@ -146,7 +142,7 @@ impl Src {
         Ok(alias)
     }
 
-    pub fn diff(&self, req: service::DiffRequest) -> std::io::Result<service::DiffResponse> {
+    pub async fn diff(&self, req: service::DiffRequest) -> std::io::Result<service::DiffResponse> {
         let change = if !req.dir.is_empty() {
             match self.get_change_by_dir(std::path::Path::new(&req.dir)) {
                 Some(c) => c,
@@ -174,7 +170,7 @@ impl Src {
         let basis = change.basis;
         let directory = std::path::PathBuf::from(change.directory);
 
-        let metadata = self.get_metadata(basis.as_view())?;
+        let metadata = self.get_metadata(basis.clone()).await?;
 
         let mut differences = self.diff_from(directory.clone(), directory.clone(), metadata)?;
         differences.sort_by_cached_key(|d| d.path.clone());
@@ -186,7 +182,7 @@ impl Src {
         })
     }
 
-    pub fn snapshot(
+    pub async fn snapshot(
         &self,
         req: service::SnapshotRequest,
     ) -> std::io::Result<service::SnapshotResponse> {
@@ -205,10 +201,12 @@ impl Src {
             req.alias
         };
 
-        let diff = self.diff(service::DiffRequest {
-            alias: alias.clone(),
-            ..Default::default()
-        })?;
+        let diff = self
+            .diff(service::DiffRequest {
+                alias: alias.clone(),
+                ..Default::default()
+            })
+            .await?;
 
         if diff.failed {
             return Ok(service::SnapshotResponse {
@@ -344,7 +342,7 @@ impl Src {
         Ok(())
     }
 
-    pub fn sync(
+    pub async fn sync(
         &self,
         alias: &str,
         dry_run: bool,
@@ -374,6 +372,7 @@ impl Src {
                 owner: space.basis.owner.clone(),
                 name: space.basis.name.clone(),
             })
+            .await
             .unwrap();
 
         // If we're already up to date, nothing to do
@@ -381,7 +380,7 @@ impl Src {
             return Ok(Ok(space.basis.clone()));
         }
 
-        let original_metadata = self.get_metadata(space.basis.as_view())?;
+        let original_metadata = self.get_metadata(space.basis.clone()).await?;
 
         let mut new_basis = space.basis.clone();
         new_basis.index = repo.index;
@@ -393,6 +392,7 @@ impl Src {
                 old: space.basis.clone(),
                 new: new_basis.clone(),
             })
+            .await
             .unwrap();
 
         if resp.failed {
@@ -404,12 +404,14 @@ impl Src {
 
         let mut remote_changes = resp.files;
 
-        let resp = self.snapshot(service::SnapshotRequest {
-            alias: alias.to_string(),
-            message: format!("before syncing to #{}", new_basis.index),
-            skip_if_no_changes: true,
-            ..Default::default()
-        })?;
+        let resp = self
+            .snapshot(service::SnapshotRequest {
+                alias: alias.to_string(),
+                message: format!("before syncing to #{}", new_basis.index),
+                skip_if_no_changes: true,
+                ..Default::default()
+            })
+            .await?;
 
         if resp.failed {
             return Err(std::io::Error::new(
@@ -497,21 +499,24 @@ impl Src {
 
         self.apply_snapshot(
             std::path::Path::new(&space.directory),
-            space.basis.as_view(),
+            space.basis.clone(),
             &merged_changes,
-        )?;
+        )
+        .await?;
 
         // Update the space to point to the new basis
         space.basis = new_basis.clone();
         self.set_change_by_alias(alias, &space)?;
 
         // Record one final snapshot, with the new basis
-        let resp = self.snapshot(service::SnapshotRequest {
-            alias: alias.to_string(),
-            message: format!("sync to #{}", new_basis.index),
-            skip_if_no_changes: false,
-            ..Default::default()
-        })?;
+        let resp = self
+            .snapshot(service::SnapshotRequest {
+                alias: alias.to_string(),
+                message: format!("sync to #{}", new_basis.index),
+                skip_if_no_changes: false,
+                ..Default::default()
+            })
+            .await?;
 
         if resp.failed {
             return Err(std::io::Error::new(

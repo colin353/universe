@@ -161,42 +161,43 @@ impl crate::Src {
         std::fs::remove_file(self.root.join("identity").join(host)).ok();
     }
 
-    pub(crate) fn validate_basis(&self, basis: service::BasisView) -> std::io::Result<u64> {
-        if basis.get_host().is_empty() {
+    pub(crate) async fn validate_basis(&self, basis: service::Basis) -> std::io::Result<u64> {
+        if basis.host.is_empty() {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
                 "must provide host name",
             ));
         }
 
-        if basis.get_owner().is_empty() {
+        if basis.owner.is_empty() {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
                 "must provide owner",
             ));
         }
 
-        if basis.get_name().is_empty() {
+        if basis.name.is_empty() {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
                 "must provide repository name",
             ));
         }
 
-        if basis.get_change() != 0 {
+        if basis.change != 0 {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
                 "change basis isn't supported yet",
             ));
         }
 
-        let client = self.get_client(basis.get_host())?;
+        let client = self.get_client(&basis.host)?;
         let resp = client
             .get_repository(service::GetRepositoryRequest {
                 token: String::new(),
-                owner: basis.get_owner().to_string(),
-                name: basis.get_name().to_string(),
+                owner: basis.owner.clone(),
+                name: basis.name.clone(),
             })
+            .await
             .map_err(|e| {
                 eprintln!("{:?}", e);
                 std::io::Error::new(
@@ -212,10 +213,10 @@ impl crate::Src {
             ));
         }
 
-        Ok(if basis.get_index() == 0 {
+        Ok(if basis.index == 0 {
             resp.index
         } else {
-            std::cmp::min(resp.index, basis.get_index())
+            std::cmp::min(resp.index, basis.index)
         })
     }
 

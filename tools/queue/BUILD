@@ -64,7 +64,6 @@ rust_test(
 rust_binary(
     name = "example",
     srcs = ["example.rs"],
-    edition = "2018",
     deps = [
         ":queue_client",
         "//tools/lockserv:lockserv_client",
