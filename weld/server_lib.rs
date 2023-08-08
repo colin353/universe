@@ -32,8 +32,8 @@ impl<C: LargeTableClient + Clone> WeldServiceHandler<C> {
 impl<C: LargeTableClient> WeldServiceHandler<C> {
     fn authenticate(&self, token: String) -> Option<String> {
         let mut response = self.auth.authenticate(token.clone());
-        if response.get_success() {
-            return Some(response.take_username());
+        if response.success {
+            return Some(response.username);
         }
 
         None

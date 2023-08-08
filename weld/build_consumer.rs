@@ -8,7 +8,8 @@ use queue_client::{
 };
 use weld::{RunBuildQueryRequest, RunBuildRequest, WeldServer};
 
-pub struct BuildConsumer<C: LargeTableClient> {
+#[derive(Clone)]
+pub struct BuildConsumer<C: LargeTableClient + Send + Sync> {
     queue_client: QueueClient,
     chat_client: ChatClient,
     lockserv_client: LockservClient,
@@ -153,6 +154,7 @@ impl<C: LargeTableClient> Consumer for BuildConsumer<C> {
     }
 }
 
+#[derive(Clone)]
 pub struct PresubmitConsumer {
     queue_client: QueueClient,
     lockserv_client: LockservClient,

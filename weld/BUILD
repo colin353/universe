@@ -130,49 +130,6 @@ rust_binary(
     ],
 )
 
-rust_binary(
-    name = "weld_client_for_build",
-    srcs = [
-        "fs.rs",
-        "parallel_fs.rs",
-        "weld_client_for_build.rs",
-    ],
-    deps = [
-        ":build_consumer",
-        ":client_service",
-        ":weld",
-        ":weld_repo",
-        "//largetable:batching_client",
-        "//largetable:largetable_client",
-        "//largetable:largetable_test",
-        "//third_party:fuse",
-        "//third_party:libc",
-        "//third_party:rand",
-        "//third_party:time",
-        "//third_party:tls_api_openssl",
-        "//tools/chat:chat_client",
-        "//tools/lockserv:lockserv_client",
-        "//tools/queue:queue_client",
-        "//util/flags",
-        "//util/pool",
-        "@rules_rust//proto/raze:grpc",
-        "@rules_rust//proto/raze:protobuf",
-        "@rules_rust//proto/raze:tls_api",
-        "@rules_rust//proto/raze:tls_api_stub",
-    ],
-)
-rust_image(
-    name = "build_server_img",
-    base = "@build_base//image",
-    binary = ":weld_client_for_build",
-)
-docker_push(
-    name = "build_server_img_push",
-    image = ":build_server_img",
-    registry = "us.gcr.io",
-    repository = "mushu-194218/build",
-    tag = "dev",
-)
 rust_library(
     name = "weld_server_lib",
     srcs = [
@@ -252,20 +209,6 @@ rust_library(
         ":weld",
         ":weld_server_lib",
         "//largetable:largetable_test",
-    ],
-)
-rust_library(
-    name = "build_consumer",
-    srcs = ["build_consumer.rs"],
-    edition = "2018",
-    deps = [
-        ":client_service",
-        ":weld",
-        ":weld_server_lib",
-        "//largetable:largetable_client",
-        "//tools/chat:chat_client",
-        "//tools/lockserv:lockserv_client",
-        "//tools/queue:queue_client",
     ],
 )
 rust_binary(

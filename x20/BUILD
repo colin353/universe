@@ -36,26 +36,6 @@ rust_test(
     ],
 )
 
-rust_binary(
-    name = "x20_server",
-    srcs = [
-        "server.rs",
-    ],
-    edition = "2018",
-    deps = [
-        ":consumer",
-        ":x20_grpc_rust",
-        ":x20_server_lib",
-        "//auth:auth_client",
-        "//largetable:largetable_client",
-        "//tools/lockserv:lockserv_client",
-        "//tools/queue:queue_client",
-        "//util/flags",
-        "@rules_rust//proto/raze:grpc",
-        "@rules_rust//proto/raze:tls_api_stub",
-    ],
-)
-
 rust_library(
     name = "x20_client",
     srcs = ["client.rs"],
@@ -64,19 +44,6 @@ rust_library(
         "//util/grpc_tls",
         "//third_party:futures",
         "@rules_rust//proto/raze:grpc",
-    ],
-)
-
-rust_library(
-    name = "consumer",
-    srcs = ["consumer.rs"],
-    edition = "2018",
-    deps = [
-        ":x20_grpc_rust",
-        ":x20_server_lib",
-        "//largetable:largetable_client",
-        "//tools/lockserv:lockserv_client",
-        "//tools/queue:queue_client",
     ],
 )
 
@@ -105,20 +72,6 @@ rust_test(
     crate = ":x20",
 )
 
-rust_image(
-    name = "x20_server_img",
-    base = "@glibc_base//image",
-    binary = ":x20_server",
-)
-
-docker_push(
-    name = "x20_server_img_push",
-    image = ":x20_server_img",
-    registry = "us.gcr.io",
-    repository = "mushu-194218/x20",
-    tag = "dev",
-)
-
 rust_binary(
     name = "x20_webserver",
     srcs = ["webserver.rs"],
@@ -132,18 +85,4 @@ rust_binary(
         "//third_party:tokio",
         "//util/ws",
     ],
-)
-
-rust_image(
-    name = "x20_webserver_img",
-    base = "@glibc_base//image",
-    binary = ":x20_webserver",
-)
-
-docker_push(
-    name = "x20_webserver_img_push",
-    image = ":x20_webserver_img",
-    registry = "us.gcr.io",
-    repository = "mushu-194218/x20_web",
-    tag = "dev",
 )

@@ -60,6 +60,7 @@ rust_library(
       "//util/sstable/v3:sstable",
       "//tools/largetable",
       "//auth:auth_client",
+      "//third_party:tokio",
     ],
 )
 
@@ -97,6 +98,7 @@ rust_binary(
     deps = [
         ":cli",
         "//util/flags",
+        "//third_party:tokio",
     ]
 )
 

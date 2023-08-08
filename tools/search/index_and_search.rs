@@ -67,9 +67,8 @@ async fn main() {
     server.http.set_port(grpc_port.value());
 
     let searcher = Arc::new(search_lib::Searcher::new(&output_dir.path()));
-    let auth = auth_client::AuthClient::new_fake();
 
-    let handler = server_lib::SearchServiceHandler::new(searcher.clone(), auth.clone());
+    let handler = server_lib::SearchServiceHandler::new(searcher.clone());
     server.add_service(search_grpc_rust::SearchServiceServer::new_service_def(
         handler,
     ));
@@ -84,13 +83,7 @@ async fn main() {
     println!("indexing done! serving at {}", base_url);
 
     ws::serve(
-        webserver::SearchWebserver::new(
-            searcher,
-            static_files.value(),
-            base_url,
-            auth,
-            js_src.value(),
-        ),
+        webserver::SearchWebserver::new(searcher, static_files.value(), base_url, js_src.value()),
         web_port.value(),
     )
     .await;

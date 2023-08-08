@@ -46,7 +46,7 @@ impl<C: LargeTableClient + Clone> X20ServiceHandler<C> {
     }
 
     fn authenticate(&self, token: &str) -> bool {
-        self.auth.authenticate(token.to_owned()).get_success()
+        self.auth.authenticate(token.to_owned()).success
     }
 
     pub fn publish_binary(

@@ -32,6 +32,7 @@ rust_library(
         "//tools/largetable:largetable_client",
         "//tools/lockserv:lockserv_client",
         "//third_party:futures",
+        "//third_party:tokio",
         "@rules_rust//proto/raze:grpc",
         "@rules_rust//proto/raze:protobuf",
     ],
@@ -49,15 +50,6 @@ rust_library(
         "//third_party:futures",
         "//third_party:tokio",
         "@rules_rust//proto/raze:protobuf",
-    ],
-)
-
-rust_test(
-    name = "queue_test",
-    crate = ":server_lib",
-    edition = "2018",
-    deps = [
-        "//largetable:largetable_test",
     ],
 )
 

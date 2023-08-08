@@ -32,7 +32,7 @@ pub fn clear_identity(d: &src_lib::Src, host: &str) {
     d.clear_identity(host);
 }
 
-pub fn get_identity(d: &src_lib::Src, host: &str) -> String {
+pub async fn get_identity(d: &src_lib::Src, host: &str) -> String {
     if let Some(token) = AUTH_CONTEXT.read().unwrap().get(host) {
         return token.to_string();
     }
@@ -48,6 +48,7 @@ pub fn get_identity(d: &src_lib::Src, host: &str) -> String {
     let client = d.get_client(host).expect("failed to construct client");
     let response = client
         .discover_auth(service::DiscoverAuthRequest {})
+        .await
         .expect("failed to discover auth");
     let token = match response.auth_kind {
         service::AuthKind::None => {
@@ -63,7 +64,7 @@ pub fn get_identity(d: &src_lib::Src, host: &str) -> String {
                 response.auth_service_port,
             );
             loop {
-                let mut challenge = ac.login();
+                let challenge = ac.login();
                 eprintln!(
                     "Visit this URL: \n\n{}\n\nthen press enter when you've logged in.",
                     challenge.url
@@ -93,7 +94,7 @@ pub fn get_identity(d: &src_lib::Src, host: &str) -> String {
     token
 }
 
-pub fn create(data_dir: std::path::PathBuf, basis: String) {
+pub async fn create(data_dir: std::path::PathBuf, basis: String) {
     let basis = match core::parse_basis(&basis) {
         Ok(b) => b,
         Err(e) => {
@@ -107,12 +108,15 @@ pub fn create(data_dir: std::path::PathBuf, basis: String) {
         .get_client(&basis.host)
         .expect("failed to construct client");
 
-    let token = get_identity(&d, &basis.host);
+    let token = get_identity(&d, &basis.host).await;
 
-    let resp = match client.create(service::CreateRequest {
-        token,
-        name: basis.name.clone(),
-    }) {
+    let resp = match client
+        .create(service::CreateRequest {
+            token,
+            name: basis.name.clone(),
+        })
+        .await
+    {
         Ok(r) => r,
         Err(_) => {
             eprintln!("couldn't reach src server!");
@@ -128,7 +132,7 @@ pub fn create(data_dir: std::path::PathBuf, basis: String) {
     println!("OK, created {}", core::fmt_basis(basis.as_view()));
 }
 
-pub fn checkout(data_dir: std::path::PathBuf, name: String, arg0: String) {
+pub async fn checkout(data_dir: std::path::PathBuf, name: String, arg0: String) {
     let cwd = match std::env::current_dir() {
         Ok(d) => d,
         Err(e) => {
@@ -159,17 +163,20 @@ pub fn checkout(data_dir: std::path::PathBuf, name: String, arg0: String) {
                 alias = basis.name.clone();
             }
 
-            let token = get_identity(&d, &basis.host);
+            let token = get_identity(&d, &basis.host).await;
 
             // If the basis index is zero, we should checkout the latest change.
             if basis.index == 0 {
                 let client = d.get_client(&basis.host).unwrap();
-                let repo = match client.get_repository(service::GetRepositoryRequest {
-                    token,
-                    owner: basis.owner.clone(),
-                    name: basis.name.clone(),
-                    ..Default::default()
-                }) {
+                let repo = match client
+                    .get_repository(service::GetRepositoryRequest {
+                        token,
+                        owner: basis.owner.clone(),
+                        name: basis.name.clone(),
+                        ..Default::default()
+                    })
+                    .await
+                {
                     Ok(r) => r,
                     Err(e) => {
                         eprintln!("failed to get repository: {:?}", e);
@@ -183,7 +190,7 @@ pub fn checkout(data_dir: std::path::PathBuf, name: String, arg0: String) {
         }
     };
 
-    let directory = match d.checkout(cwd.clone(), basis.as_view()) {
+    let directory = match d.checkout(cwd.clone(), basis.clone()).await {
         Ok(r) => r,
         Err(e) => {
             eprintln!("failed to checkout: {:?}", e);
@@ -194,7 +201,7 @@ pub fn checkout(data_dir: std::path::PathBuf, name: String, arg0: String) {
     // Apply the latest snapshot (if one exists)
     if existing_space.is_some() {
         if let Ok(Some(snapshot)) = d.get_latest_snapshot(&alias) {
-            if let Err(e) = d.apply_snapshot(&cwd, basis.as_view(), &snapshot.files) {
+            if let Err(e) = d.apply_snapshot(&cwd, basis.clone(), &snapshot.files).await {
                 eprintln!("failed to apply snapshot: {:?}", e);
                 std::process::exit(1);
             }
@@ -232,7 +239,7 @@ pub fn checkout(data_dir: std::path::PathBuf, name: String, arg0: String) {
     );
 }
 
-pub fn diff(data_dir: std::path::PathBuf) {
+pub async fn diff(data_dir: std::path::PathBuf) {
     let cwd = match std::env::current_dir() {
         Ok(d) => d,
         Err(e) => {
@@ -250,6 +257,7 @@ pub fn diff(data_dir: std::path::PathBuf) {
                 .to_owned(),
             ..Default::default()
         })
+        .await
         .unwrap();
 
     if resp.failed {
@@ -258,7 +266,7 @@ pub fn diff(data_dir: std::path::PathBuf) {
     }
 
     // Collect up the original versions of the files to print the patch
-    let metadata = match d.get_metadata(resp.basis.as_view()) {
+    let metadata = match d.get_metadata(resp.basis.clone()).await {
         Ok(m) => m,
         Err(e) => {
             eprintln!("{}", e);
@@ -297,7 +305,7 @@ pub fn diff(data_dir: std::path::PathBuf) {
     print!("{}", core::render::print_patch(diff_ingredients.as_slice()));
 }
 
-pub fn files(data_dir: std::path::PathBuf) {
+pub async fn files(data_dir: std::path::PathBuf) {
     let cwd = match std::env::current_dir() {
         Ok(d) => d,
         Err(e) => {
@@ -315,6 +323,7 @@ pub fn files(data_dir: std::path::PathBuf) {
                 .to_owned(),
             ..Default::default()
         })
+        .await
         .unwrap();
 
     if resp.failed {
@@ -327,7 +336,7 @@ pub fn files(data_dir: std::path::PathBuf) {
     }
 }
 
-pub fn snapshot(data_dir: std::path::PathBuf, msg: String) {
+pub async fn snapshot(data_dir: std::path::PathBuf, msg: String) {
     let cwd = match std::env::current_dir() {
         Ok(d) => d,
         Err(e) => {
@@ -346,6 +355,7 @@ pub fn snapshot(data_dir: std::path::PathBuf, msg: String) {
             message: msg,
             ..Default::default()
         })
+        .await
         .unwrap();
 
     if resp.failed {
@@ -422,7 +432,7 @@ pub fn history(data_dir: std::path::PathBuf) {
     }
 }
 
-pub fn status(data_dir: std::path::PathBuf) {
+pub async fn status(data_dir: std::path::PathBuf) {
     let cwd = match std::env::current_dir() {
         Ok(d) => d,
         Err(e) => {
@@ -448,6 +458,7 @@ pub fn status(data_dir: std::path::PathBuf) {
                 .to_owned(),
             ..Default::default()
         })
+        .await
         .unwrap();
 
     if resp.failed {
@@ -513,7 +524,7 @@ fn edit_string(input: &str) -> Result<String, ()> {
     std::fs::read_to_string(&filename).map_err(|_| ())
 }
 
-pub fn push(data_dir: std::path::PathBuf, description: String) {
+pub async fn push(data_dir: std::path::PathBuf, description: String) {
     let cwd = match std::env::current_dir() {
         Ok(d) => d,
         Err(e) => {
@@ -562,18 +573,21 @@ pub fn push(data_dir: std::path::PathBuf, description: String) {
     }
 
     // Always run a snapshot before update
-    let resp = match d.snapshot(service::SnapshotRequest {
-        dir: cwd
-            .to_str()
-            .expect("current working directory must be valid unicode!")
-            .to_owned(),
-        message: format!(
-            "push to {}/{}/{}",
-            space.basis.host, space.basis.owner, space.basis.name
-        ),
-        skip_if_no_changes: true,
-        ..Default::default()
-    }) {
+    let resp = match d
+        .snapshot(service::SnapshotRequest {
+            dir: cwd
+                .to_str()
+                .expect("current working directory must be valid unicode!")
+                .to_owned(),
+            message: format!(
+                "push to {}/{}/{}",
+                space.basis.host, space.basis.owner, space.basis.name
+            ),
+            skip_if_no_changes: true,
+            ..Default::default()
+        })
+        .await
+    {
         Ok(r) => r,
         Err(_) => {
             eprintln!("couldn't reach src server!");
@@ -598,12 +612,15 @@ pub fn push(data_dir: std::path::PathBuf, description: String) {
         .get_client(&space.basis.host)
         .expect("failed to construct client");
 
-    let token = get_identity(&d, &space.basis.host);
-    let resp = match client.update_change(service::UpdateChangeRequest {
-        token,
-        change: change,
-        snapshot,
-    }) {
+    let token = get_identity(&d, &space.basis.host).await;
+    let resp = match client
+        .update_change(service::UpdateChangeRequest {
+            token,
+            change: change,
+            snapshot,
+        })
+        .await
+    {
         Ok(r) => r,
         Err(_) => {
             eprintln!("couldn't reach src server!");
@@ -624,7 +641,7 @@ pub fn push(data_dir: std::path::PathBuf, description: String) {
     }
 }
 
-pub fn submit(data_dir: std::path::PathBuf) {
+pub async fn submit(data_dir: std::path::PathBuf) {
     let cwd = match std::env::current_dir() {
         Ok(d) => d,
         Err(e) => {
@@ -669,14 +686,17 @@ pub fn submit(data_dir: std::path::PathBuf) {
     let client = d
         .get_client(&space.basis.host)
         .expect("failed to construct client");
-    let token = get_identity(&d, &space.basis.host);
-    let resp = match client.submit(service::SubmitRequest {
-        token,
-        repo_owner: space.basis.owner.clone(),
-        repo_name: space.basis.name.clone(),
-        change_id: space.change_id,
-        snapshot_timestamp: snapshot.timestamp,
-    }) {
+    let token = get_identity(&d, &space.basis.host).await;
+    let resp = match client
+        .submit(service::SubmitRequest {
+            token,
+            repo_owner: space.basis.owner.clone(),
+            repo_name: space.basis.name.clone(),
+            change_id: space.change_id,
+            snapshot_timestamp: snapshot.timestamp,
+        })
+        .await
+    {
         Ok(r) => r,
         Err(_) => {
             eprintln!("couldn't reach src server!");
@@ -691,7 +711,7 @@ pub fn submit(data_dir: std::path::PathBuf) {
     println!("submitted as {}", resp.index);
 }
 
-pub fn revert(data_dir: std::path::PathBuf, paths: &[String]) {
+pub async fn revert(data_dir: std::path::PathBuf, paths: &[String]) {
     let cwd = match std::env::current_dir() {
         Ok(d) => d,
         Err(e) => {
@@ -718,7 +738,7 @@ pub fn revert(data_dir: std::path::PathBuf, paths: &[String]) {
         }
     };
 
-    let metadata = match d.get_metadata(space.basis.as_view()) {
+    let metadata = match d.get_metadata(space.basis.clone()).await {
         Ok(m) => m,
         Err(e) => {
             eprintln!(
@@ -740,7 +760,7 @@ pub fn revert(data_dir: std::path::PathBuf, paths: &[String]) {
     }
 }
 
-pub fn sync(
+pub async fn sync(
     data_dir: std::path::PathBuf,
     mut conflict_resolutions: std::collections::HashMap<String, core::ConflictResolutionOverride>,
 ) {
@@ -763,6 +783,7 @@ pub fn sync(
     loop {
         match d
             .sync(&alias, false, &conflict_resolutions)
+            .await
             .expect("failed to sync")
         {
             Ok(basis) => {
@@ -966,7 +987,7 @@ pub fn spaces(data_dir: std::path::PathBuf) {
     }
 }
 
-pub fn clean(data_dir: std::path::PathBuf) {
+pub async fn clean(data_dir: std::path::PathBuf) {
     let d = src_lib::Src::new(data_dir).expect("failed to initialize src!");
 
     let mut empty_no_changes = 0;
@@ -994,13 +1015,16 @@ pub fn clean(data_dir: std::path::PathBuf) {
             .get_client(&space.basis.host)
             .expect("failed to construct client");
 
-        let token = get_identity(&d, &space.basis.host);
-        let resp = match client.get_change(service::GetChangeRequest {
-            token,
-            repo_owner: space.basis.owner.clone(),
-            repo_name: space.basis.name.clone(),
-            id: space.change_id,
-        }) {
+        let token = get_identity(&d, &space.basis.host).await;
+        let resp = match client
+            .get_change(service::GetChangeRequest {
+                token,
+                repo_owner: space.basis.owner.clone(),
+                repo_name: space.basis.name.clone(),
+                id: space.change_id,
+            })
+            .await
+        {
             Ok(r) => r,
             Err(_) => continue,
         };

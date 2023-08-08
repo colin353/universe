@@ -15,28 +15,22 @@ static FAVICON: &[u8] = include_bytes!("html/favicon.png");
 static OPENSEARCH: &str = include_str!("html/opensearch.xml");
 
 #[derive(Clone)]
-pub struct SearchWebserver<A> {
+pub struct SearchWebserver {
     static_dir: String,
-    auth: A,
     searcher: Arc<search_lib::Searcher>,
     base_url: String,
     settings: tmpl::ContentsMap,
 }
 
-impl<A> SearchWebserver<A>
-where
-    A: auth_client::AuthServer,
-{
+impl SearchWebserver {
     pub fn new(
         searcher: Arc<search_lib::Searcher>,
         static_dir: String,
         base_url: String,
-        auth: A,
         js_src: String,
     ) -> Self {
         Self {
             static_dir: static_dir,
-            auth: auth,
             base_url: base_url,
             searcher: searcher,
             settings: content!("js_src" => js_src),
@@ -243,10 +237,7 @@ where
     }
 }
 
-impl<A> Server for SearchWebserver<A>
-where
-    A: auth_client::AuthServer,
-{
+impl Server for SearchWebserver {
     fn respond(&self, path: String, req: Request, token: &str) -> Response {
         if path == "/static/favicon.png" {
             return self.serve_static_file(&path, FAVICON);
@@ -254,16 +245,6 @@ where
 
         if path.starts_with("/static/") {
             return self.serve_static_files(path, "/static/", &self.static_dir);
-        }
-
-        let result = self.auth.authenticate(token.to_owned());
-        if !result.get_success() {
-            let challenge = self
-                .auth
-                .login_then_redirect(format!("{}{}", self.base_url, path));
-            let mut response = Response::new(Body::from("redirect to login"));
-            self.redirect(challenge.get_url(), &mut response);
-            return response;
         }
 
         let mut query = String::new();

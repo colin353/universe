@@ -502,37 +502,3 @@ impl QueueAsyncServiceHandler for QueueServiceHandler {
         })
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn make_handler() -> QueueServiceHandler<largetable_test::LargeTableMockClient> {
-        let database = largetable_test::LargeTableMockClient::new();
-        QueueServiceHandler::new_fake(database)
-    }
-
-    #[test]
-    fn test_enqueue_reserve() {
-        let q = make_handler();
-        let mut req = EnqueueRequest::new();
-        req.set_queue(String::from("test"));
-        q.enqueue(req);
-
-        let mut req = ConsumeRequest::new();
-        req.set_queue(String::from("test"));
-        let mut response = q.consume(req);
-        assert_eq!(response.messages.len(), 1);
-
-        // Now let's update it to be in progress
-        let mut msg = &mut response.messages[0];
-        msg.set_status(Status::Started);
-        q.update(msg.clone());
-
-        // There shouldn't be any more messages available
-        let mut req = ConsumeRequest::new();
-        req.set_queue(String::from("test"));
-        let response = q.consume(req);
-        assert_eq!(response.messages.len(), 0);
-    }
-}

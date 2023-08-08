@@ -17,14 +17,7 @@ async fn main() {
         String::new(),
         "The directory of the search index."
     );
-    let auth_hostname = define_flag!(
-        "auth_hostname",
-        String::from("auth.colinmerkel.xyz"),
-        "the hostname for auth service"
-    );
-    let disable_auth = define_flag!("disable_auth", false, "whether to enable or disable auth");
-
-    let auth_port = define_flag!("auth_port", 8888, "the port for auth service");
+    let disable_auth = define_flag!("disable_auth", false, "Deprecated, auth is not supported");
     let static_files = define_flag!(
         "static_files",
         String::from("/static/"),
@@ -45,8 +38,6 @@ async fn main() {
         web_port,
         grpc_port,
         index_dir,
-        auth_hostname,
-        auth_port,
         disable_auth,
         static_files,
         base_url,
@@ -58,12 +49,7 @@ async fn main() {
 
     let searcher = Arc::new(search_lib::Searcher::new(&index_dir.path()));
 
-    let auth = match disable_auth.value() {
-        true => auth_client::AuthClient::new_fake(),
-        false => auth_client::AuthClient::new(&auth_hostname.value(), auth_port.value()),
-    };
-
-    let handler = server_lib::SearchServiceHandler::new(searcher.clone(), auth.clone());
+    let handler = server_lib::SearchServiceHandler::new(searcher.clone());
     server.add_service(search_grpc_rust::SearchServiceServer::new_service_def(
         handler,
     ));
@@ -74,7 +60,6 @@ async fn main() {
             searcher,
             static_files.value(),
             base_url.value(),
-            auth,
             js_src.value(),
         ),
         web_port.value(),

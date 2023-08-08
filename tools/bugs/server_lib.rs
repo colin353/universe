@@ -92,7 +92,7 @@ impl<C: LargeTableClient + Clone> BugServiceHandler<C> {
             .as_ref()
             .unwrap()
             .authenticate(token.to_owned())
-            .get_success()
+            .success
     }
 }
 

@@ -234,10 +234,10 @@ impl ReviewServer {
             for arg in args.build() {
                 msg.mut_arguments().push(arg);
             }
-            msg.set_name(format!("submit c/{}", change_id));
+            msg.name = format!("submit c/{}", change_id);
             let id = self.queue_client.enqueue("submit".to_string(), msg);
             let mut task = weld::TaskId::new();
-            task.set_id(id);
+            task.id = id;
             task.set_queue("submit".to_string());
 
             // Remember the task we scheduled
@@ -271,12 +271,12 @@ impl Server for ReviewServer {
         }
 
         let result = self.auth.authenticate(token.to_owned());
-        if !result.get_success() {
+        if !result.success {
             let challenge = self
                 .auth
                 .login_then_redirect(format!("{}{}", self.base_url, path));
             let mut response = Response::new(Body::from("redirect to login"));
-            self.redirect(challenge.get_url(), &mut response);
+            self.redirect(&challenge.url, &mut response);
             return response;
         }
 

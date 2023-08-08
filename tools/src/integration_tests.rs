@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 const DATA_DIR: &'static str = "/tmp/src_integration/src";
 
-async fn in_cleanroom(f: impl FnOnce() + Sync + Send + 'static) -> bool {
+async fn in_cleanroom<F: std::future::Future<Output = ()> + Send + 'static>(f: F) -> bool {
     std::fs::remove_dir_all("/tmp/src_integration").ok();
     std::fs::create_dir_all("/tmp/src_integration/server").unwrap();
     std::fs::create_dir_all(DATA_DIR).unwrap();
@@ -23,8 +23,8 @@ async fn in_cleanroom(f: impl FnOnce() + Sync + Send + 'static) -> bool {
     )
     .unwrap();
 
-    std::thread::spawn(move || {
-        f();
+    tokio::spawn(async move {
+        f.await;
         tx.send(()).unwrap();
     });
 
@@ -94,19 +94,21 @@ fn login(host: &str, user: &str) {
     cli::login(data_dir.to_owned(), host, Some(user));
 }
 
-fn setup_repository() {
+async fn setup_repository() {
     let data_dir = std::path::Path::new(DATA_DIR);
     std::fs::create_dir_all("/tmp/src_integration/spaces/z01").unwrap();
     std::env::set_current_dir("/tmp/src_integration/spaces/z01").unwrap();
     cli::create(
         data_dir.to_owned(),
         "localhost:44959/colin/test".to_string(),
-    );
+    )
+    .await;
     cli::checkout(
         data_dir.to_owned(),
         String::new(),
         "localhost:44959/colin/test".to_string(),
-    );
+    )
+    .await;
     write_files(
         std::path::Path::new("/tmp/src_integration/spaces/z01"),
         "
@@ -117,25 +119,27 @@ fn setup_repository() {
     ",
     )
     .unwrap();
-    cli::push(data_dir.to_owned(), "initial code".to_string());
+    cli::push(data_dir.to_owned(), "initial code".to_string()).await;
 
     // Should be submitted as localhost:44959/colin/test/2
-    cli::submit(data_dir.to_owned());
+    cli::submit(data_dir.to_owned()).await;
 }
 
-fn setup_repository_3() {
+async fn setup_repository_3() {
     let data_dir = std::path::Path::new(DATA_DIR);
     std::fs::create_dir_all("/tmp/src_integration/spaces/x01").unwrap();
     std::env::set_current_dir("/tmp/src_integration/spaces/x01").unwrap();
     cli::create(
         data_dir.to_owned(),
         "localhost:44959/colin/program".to_string(),
-    );
+    )
+    .await;
     cli::checkout(
         data_dir.to_owned(),
         String::new(),
         "localhost:44959/colin/program".to_string(),
-    );
+    )
+    .await;
     std::fs::write(
         "/tmp/src_integration/spaces/x01/main.rs",
         r#"
@@ -146,25 +150,27 @@ fn main() {
 "#,
     )
     .unwrap();
-    cli::push(data_dir.to_owned(), "initial code".to_string());
+    cli::push(data_dir.to_owned(), "initial code".to_string()).await;
 
     // Should be submitted as localhost:44959/colin/example/2
-    cli::submit(data_dir.to_owned());
+    cli::submit(data_dir.to_owned()).await;
 }
 
-fn setup_repository_2() {
+async fn setup_repository_2() {
     let data_dir = std::path::Path::new(DATA_DIR);
     std::fs::create_dir_all("/tmp/src_integration/spaces/y01").unwrap();
     std::env::set_current_dir("/tmp/src_integration/spaces/y01").unwrap();
     cli::create(
         data_dir.to_owned(),
         "localhost:44959/colin/example".to_string(),
-    );
+    )
+    .await;
     cli::checkout(
         data_dir.to_owned(),
         String::new(),
         "localhost:44959/colin/example".to_string(),
-    );
+    )
+    .await;
     write_files(
         std::path::Path::new("/tmp/src_integration/spaces/y01"),
         "
@@ -173,15 +179,15 @@ fn setup_repository_2() {
     ",
     )
     .unwrap();
-    cli::push(data_dir.to_owned(), "initial code".to_string());
+    cli::push(data_dir.to_owned(), "initial code".to_string()).await;
 
     // Should be submitted as localhost:44959/colin/example/2
-    cli::submit(data_dir.to_owned());
+    cli::submit(data_dir.to_owned()).await;
 }
 
-async fn run_test(
+async fn run_test<F: std::future::Future<Output = ()> + Send + 'static>(
     name: &'static str,
-    f: impl FnOnce() + Sync + Send + 'static,
+    f: F,
     filters: &[String],
 ) -> Result<(), ()> {
     for filter in filters {
@@ -217,20 +223,23 @@ async fn main() {
 
     run_test(
         "submit and checkout",
-        || {
+        async {
             let data_dir = std::path::Path::new(DATA_DIR);
-            setup_repository();
+            setup_repository().await;
             login("localhost:44959", "colin");
 
             // We've submitted a change in the previous step, so the repo should be at 2
             let d = src_lib::Src::new(data_dir.to_owned()).expect("failed to initialize src!");
             let client = d.get_client("localhost:44959").unwrap();
-            let repo = match client.get_repository(service::GetRepositoryRequest {
-                token: String::new(),
-                owner: "colin".to_string(),
-                name: "test".to_string(),
-                ..Default::default()
-            }) {
+            let repo = match client
+                .get_repository(service::GetRepositoryRequest {
+                    token: String::new(),
+                    owner: "colin".to_string(),
+                    name: "test".to_string(),
+                    ..Default::default()
+                })
+                .await
+            {
                 Ok(r) => r,
                 Err(e) => {
                     eprintln!("failed to checkout: {:?}", e);
@@ -245,7 +254,8 @@ async fn main() {
                 data_dir.to_owned(),
                 "my-alias".to_string(),
                 "localhost:44959/colin/test".to_string(),
-            );
+            )
+            .await;
             assert_eq!(
                 &std::fs::read_to_string("/tmp/src_integration/spaces/z02/another_file").unwrap(),
                 "content"
@@ -261,7 +271,7 @@ async fn main() {
     ",
             )
             .unwrap();
-            cli::snapshot(data_dir.to_owned(), "some updates".to_string());
+            cli::snapshot(data_dir.to_owned(), "some updates".to_string()).await;
 
             let s = d.get_latest_snapshot("my-alias").unwrap().unwrap();
             assert_eq!(s.files.len(), 2);
@@ -280,6 +290,7 @@ async fn main() {
                     dir: "/tmp/src_integration/spaces/z02".to_string(),
                     ..Default::default()
                 })
+                .await
                 .unwrap();
             assert_eq!(resp.failed, false);
             assert_eq!(
@@ -294,9 +305,9 @@ async fn main() {
 
     run_test(
         "create, delete, revert",
-        || {
+        async {
             let data_dir = std::path::Path::new(DATA_DIR);
-            setup_repository();
+            setup_repository().await;
             login("localhost:44959", "colin");
 
             std::fs::create_dir_all("/tmp/src_integration/spaces/z02").unwrap();
@@ -305,7 +316,8 @@ async fn main() {
                 data_dir.to_owned(),
                 "my-alias".to_string(),
                 "localhost:44959/colin/test".to_string(),
-            );
+            )
+            .await;
 
             // Make sure checkout worked OK
             assert_eq!(
@@ -320,6 +332,7 @@ async fn main() {
                     dir: "/tmp/src_integration/spaces/z02".to_string(),
                     ..Default::default()
                 })
+                .await
                 .unwrap();
             assert_eq!(resp.failed, false);
             assert_eq!(resp.files.len(), 0);
@@ -342,6 +355,7 @@ async fn main() {
                     dir: "/tmp/src_integration/spaces/z02".to_string(),
                     ..Default::default()
                 })
+                .await
                 .unwrap();
             assert_eq!(resp.failed, false);
             assert_eq!(
@@ -353,7 +367,8 @@ async fn main() {
             cli::revert(
                 data_dir.to_owned(),
                 &["another_file".to_string(), "dir/newfile".to_string()],
-            );
+            )
+            .await;
 
             // No changes after revert
             let d = src_lib::Src::new(data_dir.to_owned()).expect("failed to initialize src!");
@@ -362,6 +377,7 @@ async fn main() {
                     dir: "/tmp/src_integration/spaces/z02".to_string(),
                     ..Default::default()
                 })
+                .await
                 .unwrap();
             assert_eq!(resp.failed, false);
             assert_eq!(resp.files.len(), 0);
@@ -376,6 +392,7 @@ async fn main() {
                     dir: "/tmp/src_integration/spaces/z02".to_string(),
                     ..Default::default()
                 })
+                .await
                 .unwrap();
             assert_eq!(resp.failed, false);
             assert_eq!(resp.files.len(), 1);
@@ -383,7 +400,7 @@ async fn main() {
             assert_eq!(resp.files[0].kind, service::DiffKind::Removed);
 
             // Revert deletion
-            cli::revert(data_dir.to_owned(), &["another_file".to_string()]);
+            cli::revert(data_dir.to_owned(), &["another_file".to_string()]).await;
 
             // File should be back after revert
             assert!(std::path::Path::new("/tmp/src_integration/spaces/z02/another_file").exists());
@@ -395,10 +412,10 @@ async fn main() {
 
     run_test(
         "attach and detach spaces",
-        || {
+        async {
             let data_dir = std::path::Path::new(DATA_DIR);
-            setup_repository();
-            setup_repository_2();
+            setup_repository().await;
+            setup_repository_2().await;
             login("localhost:44959", "colin");
 
             std::fs::create_dir_all("/tmp/src_integration/spaces/z02").unwrap();
@@ -407,7 +424,8 @@ async fn main() {
                 data_dir.to_owned(),
                 "my-alias".to_string(),
                 "localhost:44959/colin/test".to_string(),
-            );
+            )
+            .await;
             assert_eq!(
                 &std::fs::read_to_string("/tmp/src_integration/spaces/z02/another_file").unwrap(),
                 "content"
@@ -429,14 +447,15 @@ async fn main() {
                 data_dir.to_owned(),
                 "other-project".to_string(),
                 "localhost:44959/colin/example".to_string(),
-            );
+            )
+            .await;
             assert!(std::path::Path::new("/tmp/src_integration/spaces/z02/main.cc").exists());
             assert!(!std::path::Path::new("/tmp/src_integration/spaces/z02/another_file").exists());
             assert!(!std::path::Path::new("/tmp/src_integration/spaces/z02/dir/newfile").exists());
             assert!(!std::path::Path::new("/tmp/src_integration/spaces/z02/dir").exists());
 
             // Check out the original one again, this time it should restore the snapshotted changes as well
-            cli::checkout(data_dir.to_owned(), String::new(), "my-alias".to_string());
+            cli::checkout(data_dir.to_owned(), String::new(), "my-alias".to_string()).await;
             assert!(!std::path::Path::new("/tmp/src_integration/spaces/z02/main.cc").exists());
             assert!(std::path::Path::new("/tmp/src_integration/spaces/z02/another_file").exists());
             assert_eq!(
@@ -453,9 +472,9 @@ async fn main() {
 
     run_test(
         "sync",
-        || {
+        async {
             let data_dir = std::path::Path::new(DATA_DIR);
-            setup_repository();
+            setup_repository().await;
             login("localhost:44959", "colin");
 
             // Check out the repository and don't modify it yet
@@ -465,7 +484,8 @@ async fn main() {
                 data_dir.to_owned(),
                 "laggard".to_string(),
                 "localhost:44959/colin/test".to_string(),
-            );
+            )
+            .await;
 
             write_files(
                 std::path::Path::new("/tmp/src_integration/spaces/z03"),
@@ -482,7 +502,8 @@ async fn main() {
                 data_dir.to_owned(),
                 "my-alias".to_string(),
                 "localhost:44959/colin/test".to_string(),
-            );
+            )
+            .await;
             write_files(
                 std::path::Path::new("/tmp/src_integration/spaces/z02"),
                 "
@@ -492,13 +513,13 @@ async fn main() {
     ",
             )
             .unwrap();
-            cli::push(data_dir.to_owned(), "small changes".to_string());
-            cli::submit(data_dir.to_owned());
+            cli::push(data_dir.to_owned(), "small changes".to_string()).await;
+            cli::submit(data_dir.to_owned()).await;
 
             // Should be submitted as localhost:44959/colin/example/3. Now go back to the old space
             // and sync.
             std::env::set_current_dir("/tmp/src_integration/spaces/z03").unwrap();
-            cli::sync(data_dir.to_owned(), std::collections::HashMap::new());
+            cli::sync(data_dir.to_owned(), std::collections::HashMap::new()).await;
 
             // Should observe modifications to `another_file` and `dir/newfile`
             assert_eq!(
@@ -517,9 +538,9 @@ async fn main() {
 
     run_test(
         "sync with conflicts",
-        || {
+        async {
             let data_dir = std::path::Path::new(DATA_DIR);
-            setup_repository_3();
+            setup_repository_3().await;
             login("localhost:44959", "colin");
 
             // Check out the repository and change it
@@ -529,7 +550,8 @@ async fn main() {
                 data_dir.to_owned(),
                 "version_a".to_string(),
                 "localhost:44959/colin/program".to_string(),
-            );
+            )
+            .await;
 
             std::fs::write(
                 "/tmp/src_integration/spaces/z03/main.rs",
@@ -549,7 +571,8 @@ fn main() {
                 data_dir.to_owned(),
                 "version_b".to_string(),
                 "localhost:44959/colin/program".to_string(),
-            );
+            )
+            .await;
 
             std::fs::write(
                 "/tmp/src_integration/spaces/z02/main.rs",
@@ -561,8 +584,8 @@ fn main() {
 "#,
             )
             .unwrap();
-            cli::push(data_dir.to_owned(), "small changes".to_string());
-            cli::submit(data_dir.to_owned());
+            cli::push(data_dir.to_owned(), "small changes".to_string()).await;
+            cli::submit(data_dir.to_owned()).await;
 
             // Should be submitted as localhost:44959/colin/program/3. Now go back to the old space
             // and sync.
@@ -575,7 +598,7 @@ fn main() {
                 core::ConflictResolutionOverride::Merged(data),
             );
 
-            cli::sync(data_dir.to_owned(), resolutions);
+            cli::sync(data_dir.to_owned(), resolutions).await;
 
             assert_eq!(
                 &std::fs::read_to_string("/tmp/src_integration/spaces/z03/main.rs").unwrap(),

@@ -111,28 +111,6 @@ rust_image(
     binary = ":index_and_search",
 )
 
-docker_push(
-    name = "index_and_search_img_push",
-    image = ":index_and_search_img",
-    registry = "us.gcr.io",
-    repository = "mushu-194218/codesearch_combined",
-    tag = "dev",
-)
-
-rust_image(
-    name = "search_server_img",
-    base = "//weld/review:review_base_img",
-    binary = ":server",
-)
-
-docker_push(
-    name = "search_server_img_push",
-    image = ":search_server_img",
-    registry = "us.gcr.io",
-    repository = "mushu-194218/search_server",
-    tag = "dev",
-)
-
 rust_library(
     name = "search_client",
     srcs = ["client.rs"],
