@@ -3,8 +3,6 @@ package(default_visibility = ["//visibility:public"])
 load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_test")
 load("@rules_rust//proto:proto.bzl", "rust_proto_library")
 load("@rules_rust//proto:proto.bzl", "rust_grpc_library")
-load("@io_bazel_rules_docker//rust:image.bzl", "rust_image")
-load("@io_bazel_rules_docker//docker:docker.bzl", "docker_push")
 
 proto_library(
     name = "bugs_proto",
@@ -78,18 +76,4 @@ rust_binary(
         "//util/flags",
         "//util/init",
     ],
-)
-
-rust_image(
-    name = "bug_server_img",
-    base = "@glibc_base//image",
-    binary = ":bug_server",
-)
-
-docker_push(
-    name = "bug_server_img_push",
-    image = ":bug_server_img",
-    registry = "us.gcr.io",
-    repository = "mushu-194218/bugs",
-    tag = "dev",
 )

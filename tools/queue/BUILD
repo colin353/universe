@@ -3,8 +3,6 @@ package(default_visibility = ["//visibility:public"])
 load("@rules_rust//proto:proto.bzl", "rust_proto_library")
 load("@rules_rust//proto:proto.bzl", "rust_grpc_library")
 load("@rules_rust//rust:defs.bzl", "rust_library", "rust_binary", "rust_test")
-load("@io_bazel_rules_docker//rust:image.bzl", "rust_image")
-load("@io_bazel_rules_docker//docker:docker.bzl", "docker_push")
 load("//util/bus:bus.bzl", "rust_bus_library")
 
 rust_bus_library(
@@ -108,18 +106,4 @@ rust_library(
         "//util/bus",
         "//util/ws",
     ],
-)
-
-rust_image(
-    name = "queue_img",
-    base = "@glibc_base//image",
-    binary = ":queue",
-)
-
-docker_push(
-    name = "queue_img_push",
-    image = ":queue_img",
-    registry = "us.gcr.io",
-    repository = "mushu-194218/queue",
-    tag = "dev",
 )

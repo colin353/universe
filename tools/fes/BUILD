@@ -1,8 +1,6 @@
 package(default_visibility = ["//visibility:public"])
 
 load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_test")
-load("@io_bazel_rules_docker//rust:image.bzl", "rust_image")
-load("@io_bazel_rules_docker//docker:docker.bzl", "docker_push")
 
 rust_binary(
     name = "fes",
@@ -29,18 +27,4 @@ rust_binary(
         "//util/ws",
         "//third_party:tokio",
     ],
-)
-
-rust_image(
-    name = "fes_img",
-    base = "@glibc_base//image",
-    binary = ":fes_with_js",
-)
-
-docker_push(
-    name = "fes_img_push",
-    image = ":fes_img",
-    registry = "us.gcr.io",
-    repository = "mushu-194218/fes",
-    tag = "dev",
 )

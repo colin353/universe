@@ -2,8 +2,6 @@ package(default_visibility = ["//visibility:public"])
 
 load("@rules_rust//rust:defs.bzl", "rust_library", "rust_binary", "rust_test")
 load("@rules_rust//proto:proto.bzl", "rust_proto_library", "rust_grpc_library")
-load("@io_bazel_rules_docker//rust:image.bzl", "rust_image")
-load("@io_bazel_rules_docker//docker:docker.bzl", "docker_push")
 
 proto_library(
     name = "largetable_proto",
@@ -95,40 +93,6 @@ rust_binary(
         "@rules_rust//proto/raze:tls_api",
         "@rules_rust//proto/raze:tls_api_stub",
     ],
-)
-
-rust_image(
-    name = "largetable_server_img",
-    srcs = [
-        "largetable_server.rs",
-    ],
-    base = "@glibc_base//image",
-    data = ["server_service.rs"],
-    deps = [
-        ":compaction",
-        ":largetable",
-        ":largetable_grpc_rust",
-        ":largetable_proto_rust",
-        "//third_party:futures",
-        "//third_party:glob",
-        "//third_party:time",
-        "//third_party:tokio",
-        "//tools/logger:logger_client",
-        "//util/flags",
-        "//util/sstable",
-        "@rules_rust//proto/raze:grpc",
-        "@rules_rust//proto/raze:protobuf",
-        "@rules_rust//proto/raze:tls_api",
-        "@rules_rust//proto/raze:tls_api_stub",
-    ],
-)
-
-docker_push(
-    name = "largetable_server_img_push",
-    image = ":largetable_server_img",
-    registry = "us.gcr.io",
-    repository = "mushu-194218/largetable",
-    tag = "dev",
 )
 
 rust_library(

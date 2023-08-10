@@ -1,8 +1,6 @@
 package(default_visibility = ["//visibility:public"])
 load("@rules_rust//rust:defs.bzl", "rust_library", "rust_binary", "rust_test")
 load("@rules_rust//proto:proto.bzl", "rust_proto_library", "rust_grpc_library")
-load("@io_bazel_rules_docker//rust:image.bzl", "rust_image")
-load("@io_bazel_rules_docker//docker:docker.bzl", "docker_push")
 
 proto_library(
     name = "weld_proto",
@@ -170,36 +168,6 @@ rust_binary(
         "@rules_rust//proto/raze:protobuf",
         "@rules_rust//proto/raze:tls_api",
     ],
-)
-rust_image(
-    name = "weld_server_img",
-    srcs = ["server.rs"],
-    base = "@glibc_base//image",
-    edition = "2018",
-    deps = [
-        ":weld",
-        ":weld_repo",
-        ":weld_server_lib",
-        "//largetable:largetable_client",
-        "//util/init",
-        "//largetable:largetable_test",
-        "//third_party:native_tls",
-        "//auth:auth_client",
-        "//third_party:openssl",
-        "//third_party:tls_api_openssl",
-        "//util/flags",
-        "@rules_rust//proto/raze:grpc",
-        "@rules_rust//proto/raze:protobuf",
-        "@rules_rust//proto/raze:tls_api",
-        "@rules_rust//proto/raze:tls_api_stub",
-    ],
-)
-docker_push(
-    name = "weld_server_img_push",
-    image = ":weld_server_img",
-    registry = "us.gcr.io",
-    repository = "mushu-194218/weld",
-    tag = "dev",
 )
 rust_library(
     name = "weld_test",

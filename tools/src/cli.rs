@@ -165,7 +165,7 @@ pub async fn checkout(data_dir: std::path::PathBuf, name: String, arg0: String) 
 
             let token = get_identity(&d, &basis.host).await;
 
-            if basis.change != 0 && basis.index == 0 {
+            if basis.change == 0 && basis.index == 0 {
                 // If the basis index is zero, we should checkout the latest change.
                 let client = d.get_client(&basis.host).unwrap();
                 let repo = match client

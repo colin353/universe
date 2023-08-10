@@ -89,9 +89,9 @@ fn write_files(root: &std::path::Path, desc: &str) -> std::io::Result<()> {
     Ok(())
 }
 
-fn login(host: &str, user: &str) {
+async fn login(host: &str, user: &str) {
     let data_dir = std::path::Path::new(DATA_DIR);
-    cli::login(data_dir.to_owned(), host, Some(user));
+    cli::login(data_dir.to_owned(), host, Some(user)).await;
 }
 
 async fn setup_repository() {
@@ -226,7 +226,7 @@ async fn main() {
         async {
             let data_dir = std::path::Path::new(DATA_DIR);
             setup_repository().await;
-            login("localhost:44959", "colin");
+            login("localhost:44959", "colin").await;
 
             // We've submitted a change in the previous step, so the repo should be at 2
             let d = src_lib::Src::new(data_dir.to_owned()).expect("failed to initialize src!");
@@ -308,7 +308,7 @@ async fn main() {
         async {
             let data_dir = std::path::Path::new(DATA_DIR);
             setup_repository().await;
-            login("localhost:44959", "colin");
+            login("localhost:44959", "colin").await;
 
             std::fs::create_dir_all("/tmp/src_integration/spaces/z02").unwrap();
             std::env::set_current_dir("/tmp/src_integration/spaces/z02").unwrap();
@@ -416,7 +416,7 @@ async fn main() {
             let data_dir = std::path::Path::new(DATA_DIR);
             setup_repository().await;
             setup_repository_2().await;
-            login("localhost:44959", "colin");
+            login("localhost:44959", "colin").await;
 
             std::fs::create_dir_all("/tmp/src_integration/spaces/z02").unwrap();
             std::env::set_current_dir("/tmp/src_integration/spaces/z02").unwrap();
@@ -475,7 +475,7 @@ async fn main() {
         async {
             let data_dir = std::path::Path::new(DATA_DIR);
             setup_repository().await;
-            login("localhost:44959", "colin");
+            login("localhost:44959", "colin").await;
 
             // Check out the repository and don't modify it yet
             std::fs::create_dir_all("/tmp/src_integration/spaces/z03").unwrap();
@@ -541,7 +541,7 @@ async fn main() {
         async {
             let data_dir = std::path::Path::new(DATA_DIR);
             setup_repository_3().await;
-            login("localhost:44959", "colin");
+            login("localhost:44959", "colin").await;
 
             // Check out the repository and change it
             std::fs::create_dir_all("/tmp/src_integration/spaces/z03").unwrap();
