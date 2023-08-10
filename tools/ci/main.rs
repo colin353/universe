@@ -14,11 +14,14 @@ async fn main() {
     let ls = lockserv_client::LockservClient::new_metal("lockserv.bus");
 
     let mut args = ArtifactsBuilder::new();
-    args.add_string("basis", "src.colinmerkel.xyz/colin/code/3".to_string());
+    args.add_string(
+        "basis",
+        "src.colinmerkel.xyz/colin/code/change/5".to_string(),
+    );
     q.enqueue(
         "presubmit".to_string(),
         Message {
-            name: "build colin/code/3".to_string(),
+            name: "build colin/code/4".to_string(),
             arguments: args.build(),
             ..Default::default()
         },
@@ -184,6 +187,28 @@ async fn checkout(basis: service::Basis) -> Result<(), std::io::Error> {
     std::fs::create_dir_all("/tmp/ci/src").unwrap();
 
     let d = src_lib::Src::new(std::path::PathBuf::from("/tmp/ci/src"))?;
+
+    let mut space_basis = basis.clone();
+
+    if basis.change != 0 {
+        let token = d.get_identity(&basis.host).unwrap_or_else(String::new);
+        let client = d.get_client(&basis.host)?;
+
+        let change = client
+            .get_change(service::GetChangeRequest {
+                token: token.clone(),
+                repo_owner: basis.owner.clone(),
+                repo_name: basis.name.clone(),
+                id: basis.change,
+            })
+            .await
+            .map_err(|e| {
+                std::io::Error::new(std::io::ErrorKind::InvalidData, "failed to look up change")
+            })?;
+
+        space_basis = change.latest_snapshot.basis.clone();
+    }
+
     d.checkout(std::path::PathBuf::from("/tmp/ci/work"), basis.clone())
         .await?;
 
@@ -192,7 +217,7 @@ async fn checkout(basis: service::Basis) -> Result<(), std::io::Error> {
         &alias,
         &service::Space {
             directory: "/tmp/ci/work".to_string(),
-            basis: basis,
+            basis: space_basis,
             ..Default::default()
         },
     );

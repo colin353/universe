@@ -94,7 +94,7 @@ async fn main() {
             if args.len() != 2 {
                 eprintln!("usage: src login <host>");
             }
-            login(data_dir, &args[1], args.get(2).map(|s| s.as_str()))
+            login(data_dir, &args[1], args.get(2).map(|s| s.as_str())).await
         }
         _ => usage(),
     }

@@ -70,8 +70,8 @@ pub async fn get_identity(d: &src_lib::Src, host: &str) -> String {
                     challenge.url
                 );
 
-                std::io::stdout().flush();
-                for line in std::io::stdin().lock().lines() {
+                std::io::stdout().flush().unwrap();
+                for _ in std::io::stdin().lock().lines() {
                     break;
                 }
 
@@ -165,8 +165,8 @@ pub async fn checkout(data_dir: std::path::PathBuf, name: String, arg0: String) 
 
             let token = get_identity(&d, &basis.host).await;
 
-            // If the basis index is zero, we should checkout the latest change.
-            if basis.index == 0 {
+            if basis.change != 0 && basis.index == 0 {
+                // If the basis index is zero, we should checkout the latest change.
                 let client = d.get_client(&basis.host).unwrap();
                 let repo = match client
                     .get_repository(service::GetRepositoryRequest {
@@ -1086,14 +1086,14 @@ pub async fn clean(data_dir: std::path::PathBuf) {
     }
 }
 
-pub fn login(data_dir: std::path::PathBuf, host: &str, token: Option<&str>) {
+pub async fn login(data_dir: std::path::PathBuf, host: &str, token: Option<&str>) {
     let d = src_lib::Src::new(data_dir).expect("failed to initialize src!");
     clear_identity(&d, host);
 
     if let Some(t) = token {
-        d.set_identity(host, t);
+        d.set_identity(host, t).unwrap();
     } else {
-        get_identity(&d, host);
+        get_identity(&d, host).await;
     }
     println!("OK");
 }

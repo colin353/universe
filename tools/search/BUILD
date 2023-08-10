@@ -2,8 +2,6 @@ package(default_visibility = ["//visibility:public"])
 
 load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_test")
 load("@rules_rust//proto:proto.bzl", "rust_proto_library", "rust_grpc_library")
-load("@io_bazel_rules_docker//rust:image.bzl", "rust_image")
-load("@io_bazel_rules_docker//docker:docker.bzl", "docker_push")
 
 proto_library(
     name = "search_proto",
@@ -105,12 +103,6 @@ rust_binary(
     ],
 )
 
-rust_image(
-    name = "index_and_search_img",
-    base = "@glibc_base//image",
-    binary = ":index_and_search",
-)
-
 rust_library(
     name = "search_client",
     srcs = ["client.rs"],
@@ -209,20 +201,6 @@ rust_test(
     crate = ":entity_lib",
 )
 
-
-rust_image(
-    name = "indexer_img",
-    base = "@glibc_base//image",
-    binary = ":indexer",
-)
-
-docker_push(
-    name = "indexer_img_push",
-    image = ":indexer_img",
-    registry = "us.gcr.io",
-    repository = "mushu-194218/search_indexer",
-    tag = "dev",
-)
 
 rust_library(
     name = "indexer_lib",
