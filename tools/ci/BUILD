@@ -4,7 +4,7 @@ load("@rules_rust//rust:defs.bzl", "rust_library", "rust_binary", "rust_test")
 
 rust_binary(
     name = "ci",
-    srcs = [ "main.rs" ],
+    srcs = [ "main.rs", "submit.rs" ],
     deps = [
         "//tools/queue:queue_client",
         "//tools/src:service",

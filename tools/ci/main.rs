@@ -1,4 +1,3 @@
-use futures::join;
 use lockserv_client::LockservClient;
 use queue_client::Consumer;
 use queue_client::{
@@ -8,6 +7,10 @@ use std::collections::HashSet;
 use std::future::Future;
 use std::pin::Pin;
 
+mod submit;
+
+use submit::SubmitConsumer;
+
 #[tokio::main]
 async fn main() {
     let q = queue_client::QueueClient::new_metal("queue.bus");
@@ -16,18 +19,22 @@ async fn main() {
     let mut args = ArtifactsBuilder::new();
     args.add_string(
         "basis",
-        "src.colinmerkel.xyz/colin/code/change/5".to_string(),
+        "src.colinmerkel.xyz/colin/code/change/3/1692205666071485".to_string(),
+    );
+    args.add_string(
+        "git_repository",
+        "git@github.com:colin353/universe.git".to_string(),
     );
     q.enqueue(
-        "presubmit".to_string(),
+        "submit".to_string(),
         Message {
-            name: "build colin/code/4".to_string(),
+            name: "submit colin/code/3".to_string(),
             arguments: args.build(),
             ..Default::default()
         },
     )
     .await
-    .unwrap();
+    .expect("failed to enqueue");
 
     let presubmit_consumer = PresubmitConsumer {
         queue_client: q.clone(),
@@ -39,9 +46,12 @@ async fn main() {
         lockserv_client: ls.clone(),
     };
 
+    let submit_consumer = SubmitConsumer::new(q.clone(), ls.clone());
+
     futures::join!(
         presubmit_consumer.start("presubmit".to_string()),
-        builds_consumer.start("builds".to_string())
+        builds_consumer.start("builds".to_string()),
+        submit_consumer.start("submit".to_string())
     );
 }
 
@@ -82,8 +92,6 @@ impl queue_client::Consumer for PresubmitConsumer {
     }
 
     fn resume(&self, message: &Message) -> Pin<Box<dyn Future<Output = ConsumeResult> + Send>> {
-        let mut output = ArtifactsBuilder::new();
-
         let _self = self.clone();
         let message = message.clone();
         Box::pin(async move {
@@ -97,7 +105,7 @@ impl queue_client::Consumer for PresubmitConsumer {
                             Vec::new(),
                         )
                     }
-                    Err(e) => {
+                    Err(_) => {
                         return ConsumeResult::Failure(
                             "failed to read blocking task due to RPC error!".to_string(),
                             Vec::new(),
@@ -115,7 +123,6 @@ impl queue_client::Consumer for PresubmitConsumer {
     }
 
     fn consume(&self, message: &Message) -> Pin<Box<dyn Future<Output = ConsumeResult> + Send>> {
-        println!("picked up presubmit task");
         let _self = self.clone();
         let message = message.clone();
         Box::pin(async move {
@@ -182,13 +189,15 @@ impl queue_client::Consumer for PresubmitConsumer {
     }
 }
 
-async fn checkout(basis: service::Basis) -> Result<(), std::io::Error> {
+pub async fn checkout(basis: service::Basis) -> Result<service::Snapshot, std::io::Error> {
     std::fs::create_dir_all("/tmp/ci/work").unwrap();
     std::fs::create_dir_all("/tmp/ci/src").unwrap();
 
     let d = src_lib::Src::new(std::path::PathBuf::from("/tmp/ci/src"))?;
 
     let mut space_basis = basis.clone();
+    let mut snapshot = service::Snapshot::new();
+    snapshot.basis = basis.clone();
 
     if basis.change != 0 {
         let token = d.get_identity(&basis.host).unwrap_or_else(String::new);
@@ -202,11 +211,12 @@ async fn checkout(basis: service::Basis) -> Result<(), std::io::Error> {
                 id: basis.change,
             })
             .await
-            .map_err(|e| {
+            .map_err(|_| {
                 std::io::Error::new(std::io::ErrorKind::InvalidData, "failed to look up change")
             })?;
 
         space_basis = change.latest_snapshot.basis.clone();
+        snapshot = change.latest_snapshot.clone();
     }
 
     d.checkout(std::path::PathBuf::from("/tmp/ci/work"), basis.clone())
@@ -220,9 +230,9 @@ async fn checkout(basis: service::Basis) -> Result<(), std::io::Error> {
             basis: space_basis,
             ..Default::default()
         },
-    );
+    )?;
 
-    Ok(())
+    Ok(snapshot)
 }
 
 // Find affected targets based on the provided snapshot
@@ -288,21 +298,14 @@ async fn find_rdeps(targets: Vec<String>) -> Result<Vec<String>, String> {
 async fn query(basis: service::Basis) -> ConsumeResult {
     let mut outputs = ArtifactsBuilder::new();
 
-    if let Err(e) = checkout(basis.clone()).await {
-        return ConsumeResult::Failure(format!("failed to checkout: {e:?}"), outputs.build());
-    }
+    let snapshot = match checkout(basis.clone()).await {
+        Ok(s) => s,
+        Err(e) => {
+            return ConsumeResult::Failure(format!("failed to checkout: {e:?}"), outputs.build())
+        }
+    };
 
-    let directs = match find_targets(service::Snapshot {
-        timestamp: 123,
-        basis: basis.clone(),
-        files: vec![service::FileDiff {
-            path: "util/pool/pool.rs".to_string(),
-            ..Default::default()
-        }],
-        message: String::new(),
-    })
-    .await
-    {
+    let directs = match find_targets(snapshot).await {
         Ok(d) => d,
         Err(e) => {
             return ConsumeResult::Failure(

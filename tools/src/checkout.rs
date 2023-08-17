@@ -20,6 +20,34 @@ fn decode_key<'a>(key: &'a str) -> std::io::Result<(usize, &'a str)> {
     }
 }
 
+fn parent_dirs_to_create(
+    path: &std::path::Path,
+    prev: &std::path::Path,
+) -> Vec<std::path::PathBuf> {
+    let mut components = path.iter();
+    let mut prev_components = prev.iter();
+
+    let mut shared = std::path::PathBuf::from("/");
+    let mut output = Vec::new();
+    loop {
+        match (prev_components.next(), components.next()) {
+            (Some(a), Some(b)) if a == b => {
+                shared.push(a);
+            }
+            (None, Some(p)) | (Some(_), Some(p)) => {
+                // Create all directories in the components iterator
+                shared.push(p);
+                while let Some(p) = components.next() {
+                    output.push(shared.clone());
+                    shared.push(p);
+                }
+                return output;
+            }
+            (Some(_), None) | (None, None) => return Vec::new(),
+        }
+    }
+}
+
 impl crate::Src {
     pub async fn checkout(
         &self,
@@ -125,7 +153,10 @@ impl crate::Src {
         let metadata = self.get_metadata(basis.clone()).await?;
         let previous_metadata = match &existing_space {
             Some(space) => self.get_metadata(space.basis.clone()).await?,
-            None => crate::metadata::Metadata::empty(),
+            None => {
+                println!("there is no previous metadata");
+                crate::metadata::Metadata::empty()
+            }
         };
         for (key, maybe_prev_file, maybe_new_file) in previous_metadata.diff(&metadata) {
             let (depth, path) = decode_key(&key)?;
@@ -142,6 +173,12 @@ impl crate::Src {
             }
 
             if let Some(file) = maybe_new_file {
+                println!(
+                    "new {}: {:?}",
+                    if file.get_is_dir() { "dir" } else { "file" },
+                    path
+                );
+
                 if file.get_is_dir() {
                     dirs_to_create.push((depth, directory.join(path), file.get_mtime()));
                 }
@@ -215,8 +252,19 @@ impl crate::Src {
 
         // Phase 3c: Create all required directories
         dirs_to_create.sort_by_key(|(depth, _, _)| *depth);
+        let mut prev_path = &directory;
         for (_, path, _) in &dirs_to_create {
+            let parents = parent_dirs_to_create(&path, prev_path);
+            if !parents.is_empty() {
+                println!("transition {:?} --> {:?}", prev_path, path);
+            }
+            for parent_dir in parents {
+                println!("creating parent dir: {:?}", parent_dir);
+                std::fs::create_dir(parent_dir).ok();
+            }
             std::fs::create_dir(path).ok();
+
+            prev_path = path;
         }
 
         println!("phase 3c complete");
@@ -234,7 +282,16 @@ impl crate::Src {
                     // Directories are already created on the first pass
                     if !new.get_is_dir() {
                         let dest = directory.join(path);
-                        std::fs::copy(self.get_blob_path(new.get_sha()), &dest)?;
+                        std::fs::copy(self.get_blob_path(new.get_sha()), &dest).map_err(|e| {
+                            std::io::Error::new(
+                                e.kind(),
+                                format!(
+                                    "failed to copy from {:?} to {:?}",
+                                    self.get_blob_path(new.get_sha()),
+                                    &dest
+                                ),
+                            )
+                        })?;
                         self.set_mtime(&dest, new.get_mtime())?;
                     }
                 }
@@ -243,7 +300,9 @@ impl crate::Src {
                     if prev.get_is_dir() {
                         dirs_to_remove.push(directory.join(path));
                     } else {
-                        std::fs::remove_file(directory.join(path))?;
+                        std::fs::remove_file(directory.join(path)).map_err(|e| {
+                            std::io::Error::new(e.kind(), format!("failed to remove {:?}", path))
+                        })?;
                     }
                 }
                 // Shouldn't be possible

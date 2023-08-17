@@ -47,7 +47,7 @@ impl SrcServer {
         self.table
             .read(
                 &format!("code/submitted/{}/{}", &basis.owner, &basis.name),
-                &format!("{}/{}", path.split("/").count(), path),
+                &format!("{:03}/{}", path.split("/").count(), path),
                 basis.index,
             )
             .await
@@ -418,7 +418,7 @@ impl SrcServer {
                 self.table
                     .delete(
                         format!("code/submitted/{}/{}", req.repo_owner, req.repo_name),
-                        format!("{}/{}", diff.path.split("/").count(), diff.path),
+                        format!("{:03}/{}", diff.path.split("/").count(), diff.path),
                         submitted_id,
                     )
                     .await
@@ -433,7 +433,7 @@ impl SrcServer {
                 self.table
                     .write(
                         format!("code/submitted/{}/{}", req.repo_owner, req.repo_name),
-                        format!("{}/{}", diff.path.split("/").count(), diff.path),
+                        format!("{:03}/{}", diff.path.split("/").count(), diff.path),
                         submitted_id,
                         service::File {
                             is_dir: true,
@@ -499,7 +499,7 @@ impl SrcServer {
             self.table
                 .write(
                     format!("code/submitted/{}/{}", change.repo_owner, change.repo_name),
-                    format!("{}/{}", diff.path.split("/").count(), diff.path),
+                    format!("{:03}/{}", diff.path.split("/").count(), diff.path),
                     submitted_id,
                     service::File {
                         is_dir: false,
@@ -527,7 +527,7 @@ impl SrcServer {
             self.table
                 .write(
                     format!("code/submitted/{}/{}", req.repo_owner, req.repo_name),
-                    format!("{}/{}", path.split("/").count(), path),
+                    format!("{:03}/{}", path.split("/").count(), path),
                     submitted_id,
                     service::File {
                         is_dir: true,
@@ -612,7 +612,7 @@ impl SrcServer {
         let mut shas: Vec<Vec<u8>> = Vec::new();
         let row = format!("code/submitted/{}/{}", req.basis.owner, req.basis.name);
         for path in req.paths {
-            let col = format!("{}/{}", path.split("/").count(), path);
+            let col = format!("{:03}/{}", path.split("/").count(), path);
             let file = match self
                 .table
                 .read::<service::File>(&row, &col, req.basis.index)
@@ -1237,7 +1237,7 @@ impl SrcServer {
                     .table
                     .read::<File>(
                         &row,
-                        &format!("{}/{}", path.split("/").count(), path),
+                        &format!("{:03}/{}", path.split("/").count(), path),
                         req.old.index,
                     )
                     .await;
@@ -1245,7 +1245,7 @@ impl SrcServer {
                     .table
                     .read::<File>(
                         &row,
-                        &format!("{}/{}", path.split("/").count(), path),
+                        &format!("{:03}/{}", path.split("/").count(), path),
                         req.new.index,
                     )
                     .await;

@@ -10,14 +10,14 @@ impl<'a> Metadata<'a> {
     }
 
     pub fn key(&self, path: &str) -> String {
-        format!("{}/{}", path.split("/").count(), path)
+        format!("{:03}/{}", path.split("/").count(), path)
     }
 
     pub fn filter_key(&self, path: &str) -> Filter {
         if path.is_empty() {
-            "1/".to_string()
+            "001/".to_string()
         } else {
-            format!("{}/{}/", path.split("/").count() + 1, path)
+            format!("{:03}/{}/", path.split("/").count() + 1, path)
         }
     }
 
