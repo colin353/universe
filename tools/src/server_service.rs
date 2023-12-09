@@ -352,7 +352,7 @@ impl SrcServer {
             }
         };
 
-        let mut change = match self
+        let mut change: Change = match self
             .table
             .read(
                 &format!("{}/{}/changes", req.repo_owner, req.repo_name),
@@ -372,6 +372,15 @@ impl SrcServer {
                 });
             }
         };
+
+        // Check that the change can be submitted according to the status
+        if change.status != ChangeStatus::Pending {
+            return Ok(SubmitResponse {
+                failed: true,
+                error_message: format!("Cannot submit change with status {:?}", change.status),
+                ..Default::default()
+            });
+        }
 
         let snapshot = match self.get_snapshot(&change, 0).await? {
             Some(s) => s,
@@ -965,7 +974,7 @@ impl SrcServer {
         &self,
         req: ListChangesRequest,
     ) -> Result<ListChangesResponse, bus::BusRpcError> {
-        let user = match self.auth(&req.token).await {
+        let _user = match self.auth(&req.token).await {
             Ok(u) => u,
             Err(e) => {
                 return Ok(ListChangesResponse {

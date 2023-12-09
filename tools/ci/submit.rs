@@ -150,7 +150,7 @@ async fn sync_to_github(basis: service::Basis, destination: String) -> Result<()
     crate::checkout(basis.clone()).await?;
 
     // Clone the target repository
-    std::fs::remove_dir_all("/tmp/ci/github").unwrap();
+    std::fs::remove_dir_all("/tmp/ci/github").ok();
     std::fs::create_dir_all("/tmp/ci/github").unwrap();
     let output = std::process::Command::new("git")
         .env("GIT_TERMINAL_PROMPT", "0")

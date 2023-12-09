@@ -14,12 +14,11 @@ use submit::SubmitConsumer;
 #[tokio::main]
 async fn main() {
     let q = queue_client::QueueClient::new_metal("queue.bus");
-    let ls = lockserv_client::LockservClient::new_metal("lockserv.bus");
 
     let mut args = ArtifactsBuilder::new();
     args.add_string(
         "basis",
-        "src.colinmerkel.xyz/colin/code/change/3/1692205666071485".to_string(),
+        "src.colinmerkel.xyz/colin/code/change/14/1692312914201470".to_string(),
     );
     args.add_string(
         "git_repository",
@@ -38,15 +37,18 @@ async fn main() {
 
     let presubmit_consumer = PresubmitConsumer {
         queue_client: q.clone(),
-        lockserv_client: ls.clone(),
+        lockserv_client: lockserv_client::LockservClient::new_metal("lockserv.bus"),
     };
 
     let builds_consumer = BuildConsumer {
         queue_client: q.clone(),
-        lockserv_client: ls.clone(),
+        lockserv_client: lockserv_client::LockservClient::new_metal("lockserv.bus"),
     };
 
-    let submit_consumer = SubmitConsumer::new(q.clone(), ls.clone());
+    let submit_consumer = SubmitConsumer::new(
+        q.clone(),
+        lockserv_client::LockservClient::new_metal("lockserv.bus"),
+    );
 
     futures::join!(
         presubmit_consumer.start("presubmit".to_string()),

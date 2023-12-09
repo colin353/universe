@@ -202,7 +202,7 @@ impl SrcUIServer {
         };
 
         let mut r = service::GetChangeRequest::new();
-        r.token = token;
+        r.token = token.clone();
         r.repo_owner = repo_owner.to_owned();
         r.repo_name = repo_name.to_owned();
         r.id = id;
@@ -229,7 +229,9 @@ impl SrcUIServer {
 
         let filename = path_components.collect::<Vec<_>>().join("/");
         if !filename.is_empty() {
-            return self.change_detail(&filename, change, snapshot, req).await;
+            return self
+                .change_detail(&filename, change, snapshot, req, token)
+                .await;
         }
 
         let mut content = render::change(&change);
@@ -248,6 +250,7 @@ impl SrcUIServer {
         change: service::Change,
         snapshot: service::Snapshot,
         _req: ws::Request,
+        token: String,
     ) -> ws::Response {
         let (fd, next_file) = {
             let mut files_iter = snapshot.files.iter();
@@ -274,6 +277,7 @@ impl SrcUIServer {
             Vec::new()
         } else {
             let r = service::GetBlobsByPathRequest {
+                token: token.clone(),
                 basis: snapshot.basis.clone(),
                 paths: vec![path.to_string()],
                 ..Default::default()
