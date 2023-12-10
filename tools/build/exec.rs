@@ -1,283 +1,267 @@
-use std::collections::hash_map::DefaultHasher;
-use std::collections::{HashMap, HashSet};
-use std::hash::{Hash, Hasher};
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
-use std::os::unix::fs::PermissionsExt;
+use crate::core::*;
 
-use crate::{
-    BuildHash, BuildResult, Error, FileResolver, Target, TargetIdentifier, TargetResolver,
-};
-
+#[derive(Debug)]
 pub struct ExecutionContext {
-    origin: String,
-    targets: HashMap<TargetIdentifier, Target>,
-    target_resolver: Box<dyn TargetResolver>,
-    file_resolver: Box<dyn FileResolver>,
-    build_dir: std::path::PathBuf,
+    start_time: std::time::Instant,
 }
 
-impl ExecutionContext {
-    pub fn new(
-        origin: String,
-        build_dir: std::path::PathBuf,
-        target_resolver: Box<dyn TargetResolver>,
-        file_resolver: Box<dyn FileResolver>,
-    ) -> Self {
+#[derive(Debug)]
+pub struct Executor {
+    context: ExecutionContext,
+    tasks: Mutex<TaskGraph>,
+
+    resolvers: Vec<Box<dyn ResolverPlugin>>,
+    builders: Mutex<HashMap<String, Arc<dyn BuildPlugin>>>,
+}
+
+#[derive(Debug)]
+pub struct TaskGraph {
+    tasks: Vec<Task>,
+    by_target: HashMap<String, usize>,
+    rdeps: Vec<Vec<usize>>,
+}
+
+impl Executor {
+    pub fn new() -> Self {
         Self {
-            origin,
-            targets: HashMap::new(),
-            target_resolver,
-            file_resolver,
-            build_dir,
+            context: ExecutionContext {
+                start_time: std::time::Instant::now(),
+            },
+            tasks: Mutex::new(TaskGraph::new()),
+
+            resolvers: Vec::new(),
+            builders: Mutex::new(HashMap::new()),
         }
     }
 
-    pub fn build(&mut self, identifier: &TargetIdentifier) -> Result<BuildResult, Error> {
-        // First, resolve all targets and build dependency tree
-        let mut to_resolve = HashSet::new();
-        to_resolve.insert(identifier.clone());
-        while to_resolve.len() > 0 {
-            let this_round = std::mem::replace(&mut to_resolve, HashSet::new());
-            for target in this_round {
-                let resolved = self.target_resolver.resolve(&target)?;
+    pub fn add_task<T: Into<String>>(&self, target: T, rdep: Option<usize>) -> usize {
+        let target: String = target.into();
+        let is_builder = self.builders.lock().unwrap().contains_key(&target);
+        let mut graph = self.tasks.lock().unwrap();
+        let id = graph.add_task(target, rdep);
+        if is_builder {
+            graph.mark_build_success(id, BuildResult::noop());
+        }
+        id
+    }
 
-                for dep in &resolved.dependencies() {
-                    if !self.targets.contains_key(dep) {
-                        to_resolve.insert(dep.clone());
+    pub fn next_task(&self) -> Option<Task> {
+        let mut graph = self.tasks.lock().unwrap();
+        for task in &mut graph.tasks {
+            println!("check on {:#?} (status = {:?})", task, task.status());
+            if task.available {
+                match task.status() {
+                    TaskStatus::Resolving | TaskStatus::Building => {
+                        // Mark the task as unavailable
+                        task.available = false;
+                        return Some(task.clone());
                     }
+                    TaskStatus::Blocked | TaskStatus::Done => continue,
                 }
-                self.targets.insert(target, resolved.clone());
             }
         }
-
-        // Second, resolve the build hash
-        self.resolve_hash(&identifier)?;
-
-        // Finally, run the build
-        self.build_target_and_dependencies(&identifier)
+        None
     }
 
-    pub fn resolve_hash(&mut self, identifier: &TargetIdentifier) -> Result<BuildHash, Error> {
-        let mut hasher = DefaultHasher::new();
-        let dependencies: Vec<TargetIdentifier> = {
-            let target = self
-                .targets
-                .get_mut(identifier)
-                .expect("all targets should be resolved");
-
-            // If we already resolved this target through another path, quit early
-            if let Some(build_hash) = &target.hash {
-                return Ok(*build_hash);
+    pub fn run(&self, roots: &[usize]) -> BuildResult {
+        while let Some(task) = self.next_task() {
+            match task.status() {
+                TaskStatus::Resolving => self.resolve(task),
+                TaskStatus::Building => self.build(task),
+                TaskStatus::Blocked | TaskStatus::Done => {
+                    unreachable!("cannot acquire a blocked or done task!")
+                }
             }
-
-            if target.resolving {
-                return Err(Error::new(format!(
-                    "circular dependency resolving {:?}",
-                    identifier,
-                )));
-            }
-            target.resolving = true;
-            target.identifier.hash(&mut hasher);
-            target.operation_hash().hash(&mut hasher);
-
-            target.dependencies()
-        };
-
-        for dependency in &dependencies {
-            self.resolve_hash(dependency)?.hash(&mut hasher);
         }
 
-        let target = self
-            .targets
-            .get_mut(identifier)
-            .expect("all targets should be resolved");
+        // All tasks must be built by now...
+        let graph = self.tasks.lock().unwrap();
+        for task in &graph.tasks {
+            if task.status() != TaskStatus::Done {
+                return BuildResult::Failure(format!(
+                    "not all tasks finished, deadlock! still waiting on {task:?}",
+                ));
+            }
 
-        for file in &target.files {
-            self.file_resolver.get_hash(file)?.hash(&mut hasher);
+            match &task.result {
+                Some(BuildResult::Success { .. }) => continue,
+                Some(BuildResult::Failure(reason)) => {
+                    return BuildResult::Failure(reason.to_string());
+                }
+                None => {
+                    return BuildResult::Failure(String::from("not all tasks produced a result"))
+                }
+            }
         }
 
-        let build_hash = hasher.finish();
-        target.hash = Some(build_hash);
-        target.resolving = false;
-
-        Ok(hasher.finish())
+        BuildResult::merged(roots.iter().map(|r| {
+            graph.tasks[*r]
+                .result
+                .as_ref()
+                .expect("result must be available")
+        }))
     }
 
-    fn build_target_and_dependencies(
-        &mut self,
-        identifier: &TargetIdentifier,
-    ) -> Result<BuildResult, Error> {
-        let dependencies: Vec<TargetIdentifier> = {
-            let target = self
-                .targets
-                .get_mut(identifier)
-                .expect("all targets should be resolved");
-
-            if let Some(result) = &target.result {
-                return Ok(result.clone());
+    pub fn resolve(&self, task: Task) {
+        for resolver in &self.resolvers {
+            if !resolver.can_resolve(&task.target) {
+                continue;
             }
+            match resolver.resolve(&task.target) {
+                Ok(config) => {
+                    // Add all dependent tasks first
+                    let deps: Vec<usize> = config
+                        .dependencies()
+                        .into_iter()
+                        .map(|t| self.add_task(t, Some(task.id)))
+                        .collect();
 
-            if target.resolving {
-                return Err(Error::new(format!(
-                    "circular dependency building {:?}",
-                    identifier,
-                )));
+                    let mut graph = self.tasks.lock().unwrap();
+                    let mut t = &mut graph.tasks[task.id];
+                    t.dependencies = deps;
+                    t.config = Some(config);
+                    t.available = true;
+                }
+                Err(e) => {
+                    self.mark_task_failure(
+                        task.id,
+                        BuildResult::Failure(format!("target resolution failed: {e:#?}")),
+                    );
+                }
             }
-            target.resolving = true;
-            target.dependencies()
-        };
-
-        for dependency in &dependencies {
-            self.build_target_and_dependencies(dependency)?;
+            return;
         }
 
-        let result = self.build_ready_target(identifier)?;
-
-        let target = self
-            .targets
-            .get_mut(identifier)
-            .expect("all targets should be resolved");
-        target.result = Some(result.clone());
-        target.resolving = false;
-        Ok(result)
-    }
-
-    fn build_ready_target(&mut self, identifier: &TargetIdentifier) -> Result<BuildResult, Error> {
-        let target = self
-            .targets
-            .get(identifier)
-            .expect("all targets should be resolved");
-
-        let target_dir = target.build_dir(&self.build_dir);
-        if let Err(e) = std::fs::create_dir_all(&target_dir) {
-            return Err(Error::new(format!(
-                "unable to create build directory: {:?}",
-                e
-            )));
-        }
-
-        // Copy in all of the necessary files
-        let mut sources = Vec::new();
-        for file in &target.files {
-            let dest = target_dir.join(file);
-            self.file_resolver.realize_at(file, &dest)?;
-            sources.push(dest.into_os_string().into_string().unwrap());
-        }
-
-        // Construct environment vars for the build script
-        let mut environment: HashMap<String, String> = HashMap::new();
-        environment.insert("SOURCE_FILES".to_string(), sources.join("\n"));
-        environment.insert(
-            "TARGET_DIR".to_string(),
-            target_dir.into_os_string().into_string().unwrap(),
+        // No resolver available for the target!
+        self.mark_task_failure(
+            task.id,
+            BuildResult::Failure(format!("no resolver available for target {}", task.target)),
         );
-        for input in &target.operation.inputs {
-            let ident = TargetIdentifier::from_str(&input.target);
-            let dep = self
-                .targets
-                .get(&ident)
-                .expect("all targets should be resolved");
-            let hash = dep.hash.expect("build hash must be computed by now");
-            environment.insert(
-                input.name.to_string(),
-                format!(
-                    "{}/{}",
-                    dep.build_dir(&self.build_dir).to_str().unwrap().to_string(),
-                    input.filename
-                ),
+    }
+
+    pub fn build(&self, task: Task) {
+        let config = task
+            .config
+            .as_ref()
+            .expect("must have config resolved before build can begin!");
+
+        let plugin = {
+            let mut builders = self.builders.lock().unwrap();
+            if let Some(p) = builders.get(&config.build_plugin) {
+                p.clone()
+            } else {
+                // Load the plugin from built dependencies
+                let graph = self.tasks.lock().unwrap();
+                let plugin_task = match graph.by_target.get(&config.build_plugin) {
+                    Some(t) => &graph.tasks[*t],
+                    None => {
+                        panic!("we must have already loaded this plugin's target by now!");
+                    }
+                };
+                let plugin_path = match plugin_task
+                    .result
+                    .as_ref()
+                    .expect("this plugin must already have been built!")
+                {
+                    BuildResult::Success { outputs } => outputs[0].clone(),
+                    _ => panic!("the plugin build must have succeeded by now!"),
+                };
+                let plugin = load_plugin(&plugin_path);
+                builders.insert(config.build_plugin.clone(), plugin.clone());
+                plugin
+            }
+        };
+
+        let result = plugin.build(task.clone());
+        match result {
+            BuildResult::Success { .. } => {
+                self.mark_build_success(task.id, result);
+            }
+            BuildResult::Failure(_) => {
+                self.mark_task_failure(task.id, result);
+            }
+        }
+    }
+
+    pub fn mark_task_failure(&self, id: usize, result: BuildResult) {
+        self.tasks.lock().unwrap().mark_task_failure(id, id, result);
+    }
+
+    pub fn mark_build_success(&self, id: usize, result: BuildResult) {
+        self.tasks.lock().unwrap().mark_build_success(id, result);
+    }
+}
+
+impl TaskGraph {
+    pub fn new() -> Self {
+        Self {
+            tasks: Vec::new(),
+            by_target: HashMap::new(),
+            rdeps: Vec::new(),
+        }
+    }
+
+    pub fn add_task<T: Into<String>>(&mut self, target: T, rdep: Option<usize>) -> usize {
+        let target: String = target.into();
+        if let Some(id) = self.by_target.get(&target) {
+            return *id;
+        }
+
+        let id = self.tasks.len();
+        self.tasks.push(Task::new(id, target.clone()));
+        self.by_target.insert(target.into(), id);
+        match rdep {
+            Some(r) => self.rdeps.push(vec![r]),
+            None => self.rdeps.push(Vec::new()),
+        }
+        id
+    }
+
+    pub fn mark_task_failure(&mut self, id: usize, root_cause: usize, result: BuildResult) {
+        self.tasks[id].result = Some(result);
+        self.tasks[id].available = true;
+        for rdep in self.rdeps[id].clone() {
+            self.mark_task_failure(
+                rdep,
+                root_cause,
+                BuildResult::Failure(format!(
+                    "failed to build dependency: {}",
+                    self.tasks[root_cause].target
+                )),
             );
         }
-
-        // Pass along custom variables
-        for variable in &target.operation.variables {
-            environment.insert(variable.name.clone(), variable.value.clone());
-        }
-
-        if target.operation.get_script().filename.len() > 0 {
-            let script_ident = TargetIdentifier::from_str(&target.operation.get_script().target);
-            let script_target = self
-                .targets
-                .get(&script_ident)
-                .expect("all targets should be resolved");
-
-            let script_build_dir = script_target.build_dir(&self.build_dir);
-            let script_path = script_build_dir.join(target.operation.get_script().get_filename());
-
-            // Mark operation script executable
-            let mut perms = std::fs::Permissions::from_mode(0o777);
-            std::fs::set_permissions(script_path, perms);
-
-            // Execute the operation script
-            let status = std::process::Command::new(format!(
-                "{}/{}",
-                script_build_dir.to_str().unwrap(),
-                target.operation.get_script().filename
-            ))
-            .env_clear()
-            .envs(&environment)
-            .status();
-
-            let status = match status {
-                Ok(s) => s,
-                Err(e) => {
-                    return Err(Error::new(format!("failed to start build, {:?}", e)));
-                }
-            };
-
-            if !status.success() {
-                return Err(Error::new(format!("failed to build")));
-            }
-        }
-
-        eprintln!("building {}", target.fully_qualified_name());
-        eprintln!("operation: {:?}", target.operation);
-        eprintln!("environment: {:?}", environment);
-
-        Ok(BuildResult {
-            build_hash: target.hash.expect("target must have hash by now"),
-            outputs: Vec::new(),
-        })
     }
+
+    pub fn mark_build_success(&mut self, id: usize, result: BuildResult) {
+        self.tasks[id].result = Some(result);
+        self.tasks[id].available = true;
+        for rdep in &self.rdeps[id] {
+            self.tasks[*rdep].dependencies_ready += 1;
+        }
+    }
+}
+
+fn load_plugin(path: &std::path::Path) -> Arc<dyn BuildPlugin> {
+    Arc::new(FakeBuilder {})
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::file_resolver::FakeFileResolver;
-    use crate::target_resolver::FakeTargetResolver;
 
     #[test]
-    fn test_build() {
-        let file_resolver = FakeFileResolver::new(vec![
-            ("main.rs", "fn main() { println!(\"cool\") }"),
-            ("lib.rs", "// TODO: write lib"),
-            ("xyz.rs", "my func"),
-            ("rustc.sh", "#!/bin/bash\necho $SOURCE_FILES\n"),
-        ]);
-
-        let mut op = build_grpc_rust::Operation::new();
-        op.name = String::from("compile");
-        op.mut_script().target = String::from("//compiler");
-        op.mut_script().filename = String::from("rustc.sh");
-
-        let target_resolver = FakeTargetResolver::new(vec![
-            Target::for_test("//util:my_lib", &[], &["main.rs", "lib.rs"], op.clone()),
-            Target::for_test("//util:my_bin", &["//util:my_lib"], &["xyz.rs"], op),
-            Target::for_test(
-                "//compiler",
-                &[],
-                &["rustc.sh"],
-                build_grpc_rust::Operation::new(),
-            ),
-        ]);
-
-        let mut ctx = ExecutionContext::new(
-            String::from(""),
-            std::path::PathBuf::from("/tmp/builds"),
-            Box::new(target_resolver),
-            Box::new(file_resolver),
-        );
-        ctx.build(&TargetIdentifier::from_str("//util:my_bin"))
-            .unwrap();
+    fn test_execution() {
+        let mut e = Executor::new();
+        e.builders
+            .lock()
+            .unwrap()
+            .insert("@filesystem".to_string(), Arc::new(FilesystemBuilder {}));
+        e.resolvers.push(Box::new(FakeResolver {}));
+        let id = e.add_task("//:my_target", None);
+        let result = e.run(&[id]);
+        assert_eq!(result, BuildResult::noop());
     }
 }
