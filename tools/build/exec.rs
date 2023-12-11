@@ -51,7 +51,6 @@ impl Executor {
     pub fn next_task(&self) -> Option<Task> {
         let mut graph = self.tasks.lock().unwrap();
         for task in &mut graph.tasks {
-            println!("check on {:#?} (status = {:?})", task, task.status());
             if task.available {
                 match task.status() {
                     TaskStatus::Resolving | TaskStatus::Building => {
@@ -120,8 +119,18 @@ impl Executor {
                         .collect();
 
                     let mut graph = self.tasks.lock().unwrap();
+
+                    // It's possible that some of the dependencies are already ready, so pre-set
+                    // the right ready count.
+                    let dependencies_ready = deps
+                        .iter()
+                        .filter(|id| graph.tasks[**id].status() == TaskStatus::Done)
+                        .count();
+
                     let mut t = &mut graph.tasks[task.id];
                     t.dependencies = deps;
+                    t.dependencies_ready = dependencies_ready;
+
                     t.config = Some(config);
                     t.available = true;
                 }
@@ -166,7 +175,7 @@ impl Executor {
                     .as_ref()
                     .expect("this plugin must already have been built!")
                 {
-                    BuildResult::Success { outputs } => outputs[0].clone(),
+                    BuildResult::Success(BuildOutput { outputs }) => outputs[0].clone(),
                     _ => panic!("the plugin build must have succeeded by now!"),
                 };
                 let plugin = load_plugin(&plugin_path);
@@ -175,7 +184,35 @@ impl Executor {
             }
         };
 
-        let result = plugin.build(task.clone());
+        let mut deps = HashMap::new();
+        {
+            let graph = self.tasks.lock().unwrap();
+            for dep in task
+                .config
+                .as_ref()
+                .expect("task must have config defined by now!")
+                .dependencies()
+            {
+                let dt = match graph.by_target.get(dep) {
+                    Some(t) => &graph.tasks[*t],
+                    None => {
+                        panic!("all dependencies must exist by now!");
+                    }
+                };
+
+                match dt.result.as_ref() {
+                    Some(BuildResult::Success(out)) => {
+                        deps.insert(dt.target.clone(), out.clone());
+                    }
+                    Some(BuildResult::Failure(_)) => {
+                        panic!("all dependencies must be succesfully built by now!");
+                    }
+                    None => panic!("all dependencies must be finished building by now!"),
+                }
+            }
+        }
+
+        let result = plugin.build(task.clone(), deps);
         match result {
             BuildResult::Success { .. } => {
                 self.mark_build_success(task.id, result);
@@ -245,6 +282,12 @@ impl TaskGraph {
 }
 
 fn load_plugin(path: &std::path::Path) -> Arc<dyn BuildPlugin> {
+    if let Some(f) = path.file_name() {
+        if f == "rust.cdylib" {
+            return Arc::new(crate::plugins::RustPlugin {});
+        }
+    }
+
     Arc::new(FakeBuilder {})
 }
 
@@ -259,9 +302,71 @@ mod tests {
             .lock()
             .unwrap()
             .insert("@filesystem".to_string(), Arc::new(FilesystemBuilder {}));
-        e.resolvers.push(Box::new(FakeResolver {}));
+        e.resolvers.push(Box::new(FakeResolver::with_configs(vec![
+            (
+                "//:builder",
+                Ok(Config {
+                    build_plugin: "@filesystem".to_string(),
+                    location: Some("/tmp/file.txt".to_string()),
+                    ..Default::default()
+                }),
+            ),
+            (
+                "//:my_target",
+                Ok(Config {
+                    build_plugin: "//:builder".to_string(),
+                    ..Default::default()
+                }),
+            ),
+        ])));
         let id = e.add_task("//:my_target", None);
         let result = e.run(&[id]);
         assert_eq!(result, BuildResult::noop());
+    }
+
+    #[test]
+    fn test_build() {
+        let mut e = Executor::new();
+        e.builders
+            .lock()
+            .unwrap()
+            .insert("@filesystem".to_string(), Arc::new(FilesystemBuilder {}));
+
+        e.resolvers.push(Box::new(FakeResolver::with_configs(vec![
+            (
+                "//:my_program",
+                Ok(Config {
+                    build_plugin: "@rust_plugin".to_string(),
+                    sources: vec!["/tmp/hello_world.rs".to_string()],
+                    build_dependencies: vec!["@rust_compiler".to_string()],
+                    ..Default::default()
+                }),
+            ),
+            (
+                "@rust_plugin",
+                Ok(Config {
+                    build_plugin: "@filesystem".to_string(),
+                    location: Some("/tmp/rust.cdylib".to_string()),
+                    ..Default::default()
+                }),
+            ),
+            (
+                "@rust_compiler",
+                Ok(Config {
+                    build_plugin: "@filesystem".to_string(),
+                    location: Some("/Users/colinwm/.cargo/bin/rustc".to_string()),
+                    ..Default::default()
+                }),
+            ),
+        ])));
+
+        let id = e.add_task("//:my_program", None);
+        let result = e.run(&[id]);
+        assert_eq!(
+            result,
+            BuildResult::Success(BuildOutput {
+                outputs: vec![std::path::PathBuf::from("/tmp/a.out")],
+            })
+        );
     }
 }

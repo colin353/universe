@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 #[derive(Debug, Clone)]
 pub struct Task {
     pub id: usize,
@@ -11,28 +13,33 @@ pub struct Task {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum BuildResult {
-    Success { outputs: Vec<std::path::PathBuf> },
+    Success(BuildOutput),
     Failure(String),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct BuildOutput {
+    pub outputs: Vec<std::path::PathBuf>,
 }
 
 impl BuildResult {
     pub fn noop() -> Self {
-        BuildResult::Success {
+        BuildResult::Success(BuildOutput {
             outputs: Vec::new(),
-        }
+        })
     }
 
     pub fn merged<'a, I: Iterator<Item = &'a Self>>(results: I) -> Self {
         let mut outs = Vec::new();
         for result in results {
             match result {
-                BuildResult::Success { outputs } => {
+                BuildResult::Success(BuildOutput { outputs }) => {
                     outs.extend(outputs.to_owned());
                 }
                 _ => return result.clone(),
             }
         }
-        BuildResult::Success { outputs: outs }
+        BuildResult::Success(BuildOutput { outputs: outs })
     }
 }
 
@@ -41,12 +48,15 @@ pub struct Config {
     pub dependencies: Vec<String>,
     pub build_plugin: String,
     pub location: Option<String>,
+    pub sources: Vec<String>,
+    pub build_dependencies: Vec<String>,
 }
 
 impl Config {
     pub fn dependencies(&self) -> Vec<&str> {
         let mut out: Vec<_> = self.dependencies.iter().map(|s| s.as_str()).collect();
         out.push(self.build_plugin.as_str());
+        out.extend(self.build_dependencies.iter().map(|s| s.as_str()));
         out
     }
 }
@@ -99,20 +109,39 @@ pub trait ResolverPlugin: std::fmt::Debug {
 }
 
 pub trait BuildPlugin: std::fmt::Debug {
-    fn build(&self, task: Task) -> BuildResult;
+    fn build(&self, task: Task, dependencies: HashMap<String, BuildOutput>) -> BuildResult;
 }
 
 #[derive(Debug)]
 pub struct FakeBuilder {}
 
 impl BuildPlugin for FakeBuilder {
-    fn build(&self, task: Task) -> BuildResult {
+    fn build(&self, task: Task, dependencies: HashMap<String, BuildOutput>) -> BuildResult {
         BuildResult::noop()
     }
 }
 
 #[derive(Debug)]
-pub struct FakeResolver {}
+pub struct FakeResolver {
+    configs: HashMap<String, std::io::Result<Config>>,
+}
+
+impl FakeResolver {
+    pub fn new() -> Self {
+        Self {
+            configs: HashMap::new(),
+        }
+    }
+
+    pub fn with_configs(configs: Vec<(&str, std::io::Result<Config>)>) -> Self {
+        Self {
+            configs: configs
+                .into_iter()
+                .map(|(k, v)| (k.to_string(), v))
+                .collect(),
+        }
+    }
+}
 
 impl ResolverPlugin for FakeResolver {
     fn can_resolve(&self, target: &str) -> bool {
@@ -120,18 +149,11 @@ impl ResolverPlugin for FakeResolver {
     }
 
     fn resolve(&self, target: &str) -> std::io::Result<Config> {
-        if target == "//:builder" {
-            return Ok(Config {
-                build_plugin: "@filesystem".to_string(),
-                location: Some("/tmp/file.txt".to_string()),
-                ..Default::default()
-            });
+        match self.configs.get(target) {
+            Some(Ok(c)) => Ok(c.clone()),
+            Some(Err(e)) => Err(std::io::Error::new(e.kind(), "failed to read config")),
+            None => Err(std::io::Error::new(std::io::ErrorKind::NotFound, "asdf")),
         }
-
-        Ok(Config {
-            build_plugin: "//:builder".to_string(),
-            ..Default::default()
-        })
     }
 }
 
@@ -139,7 +161,7 @@ impl ResolverPlugin for FakeResolver {
 pub struct FilesystemBuilder {}
 
 impl BuildPlugin for FilesystemBuilder {
-    fn build(&self, task: Task) -> BuildResult {
+    fn build(&self, task: Task, deps: HashMap<String, BuildOutput>) -> BuildResult {
         let loc = match task
             .config
             .expect("config must be resolved by now")
@@ -153,8 +175,8 @@ impl BuildPlugin for FilesystemBuilder {
                 )
             }
         };
-        BuildResult::Success {
+        BuildResult::Success(BuildOutput {
             outputs: vec![std::path::PathBuf::from(loc)],
-        }
+        })
     }
 }

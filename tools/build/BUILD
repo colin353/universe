@@ -7,6 +7,7 @@ rust_binary(
     srcs = [
         "main.rs",
         "core.rs",
+        "plugins.rs",
         "exec.rs",
     ],
 )
