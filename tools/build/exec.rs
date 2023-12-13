@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use crate::core::*;
+use crate::plugins::PluginKind;
 
 #[derive(Debug)]
 pub struct ExecutionContext {
@@ -41,8 +42,9 @@ impl Executor {
         let target: String = target.into();
         let is_builder = self.builders.lock().unwrap().contains_key(&target);
         let mut graph = self.tasks.lock().unwrap();
+        let exists = graph.by_target.contains_key(&target);
         let id = graph.add_task(target, rdep);
-        if is_builder {
+        if !exists && is_builder {
             graph.mark_build_success(id, BuildResult::noop());
         }
         id
@@ -243,17 +245,23 @@ impl TaskGraph {
 
     pub fn add_task<T: Into<String>>(&mut self, target: T, rdep: Option<usize>) -> usize {
         let target: String = target.into();
+
         if let Some(id) = self.by_target.get(&target) {
+            if let Some(r) = rdep {
+                self.rdeps[*id].push(r);
+            }
+
             return *id;
+        }
+
+        match rdep {
+            Some(r) => self.rdeps.push(vec![r]),
+            None => self.rdeps.push(Vec::new()),
         }
 
         let id = self.tasks.len();
         self.tasks.push(Task::new(id, target.clone()));
         self.by_target.insert(target.into(), id);
-        match rdep {
-            Some(r) => self.rdeps.push(vec![r]),
-            None => self.rdeps.push(Vec::new()),
-        }
         id
     }
 
@@ -325,7 +333,7 @@ mod tests {
     }
 
     #[test]
-    fn test_build() {
+    fn test_library_build() {
         let mut e = Executor::new();
         e.builders
             .lock()
@@ -334,11 +342,23 @@ mod tests {
 
         e.resolvers.push(Box::new(FakeResolver::with_configs(vec![
             (
+                "//:lhello",
+                Ok(Config {
+                    build_plugin: "@rust_plugin".to_string(),
+                    sources: vec!["/tmp/lhello.rs".to_string()],
+                    build_dependencies: vec!["@rust_compiler".to_string()],
+                    kind: PluginKind::RustLibrary.to_string(),
+                    ..Default::default()
+                }),
+            ),
+            (
                 "//:my_program",
                 Ok(Config {
                     build_plugin: "@rust_plugin".to_string(),
                     sources: vec!["/tmp/hello_world.rs".to_string()],
+                    dependencies: vec!["//:lhello".to_string()],
                     build_dependencies: vec!["@rust_compiler".to_string()],
+                    kind: PluginKind::RustBinary.to_string(),
                     ..Default::default()
                 }),
             ),

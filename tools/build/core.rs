@@ -50,6 +50,7 @@ pub struct Config {
     pub location: Option<String>,
     pub sources: Vec<String>,
     pub build_dependencies: Vec<String>,
+    pub kind: String,
 }
 
 impl Config {
@@ -152,7 +153,10 @@ impl ResolverPlugin for FakeResolver {
         match self.configs.get(target) {
             Some(Ok(c)) => Ok(c.clone()),
             Some(Err(e)) => Err(std::io::Error::new(e.kind(), "failed to read config")),
-            None => Err(std::io::Error::new(std::io::ErrorKind::NotFound, "asdf")),
+            None => Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("failed to resolve target {target}"),
+            )),
         }
     }
 }
