@@ -13,6 +13,12 @@ rust_binary(
         "actions.rs",
         "exec.rs",
     ],
+    deps = [
+      "//third_party:hyper",
+      "//third_party:hyper_tls",
+      "//third_party:futures",
+      "//third_party:tokio",
+    ],
 )
 
 rust_test(

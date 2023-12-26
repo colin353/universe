@@ -5,6 +5,7 @@ mod core;
 mod exec;
 mod plugins;
 
-fn main() {
+#[tokio::main]
+async fn main() {
     println!("hello world");
 }

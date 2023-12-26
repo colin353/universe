@@ -213,3 +213,12 @@ impl BuildPlugin for FilesystemBuilder {
         })
     }
 }
+
+pub fn target_shortname(target: &str) -> &str {
+    target
+        .split("//")
+        .last()
+        .and_then(|s| s.split("/").last())
+        .and_then(|s| s.split(":").last())
+        .unwrap_or("")
+}

@@ -397,21 +397,34 @@ mod tests {
             .insert("@filesystem".to_string(), Arc::new(FilesystemBuilder {}));
 
         e.context.lockfile = Arc::new(
-            vec![("cargo://rand".to_string(), "0.8.5".to_string())]
-                .into_iter()
-                .collect(),
+            vec![
+                ("cargo://rand".to_string(), "0.8.5".to_string()),
+                ("cargo://rand_core".to_string(), "0.6.4".to_string()),
+            ]
+            .into_iter()
+            .collect(),
         );
 
         e.resolvers.push(Box::new(CargoResolver::new()));
 
-        e.resolvers.push(Box::new(FakeResolver::with_configs(vec![(
-            "@rust_compiler",
-            Ok(Config {
-                build_plugin: "@filesystem".to_string(),
-                location: Some("/Users/colinwm/.cargo/bin/rustc".to_string()),
-                ..Default::default()
-            }),
-        )])));
+        e.resolvers.push(Box::new(FakeResolver::with_configs(vec![
+            (
+                "@rust_compiler",
+                Ok(Config {
+                    build_plugin: "@filesystem".to_string(),
+                    location: Some("/Users/colinwm/.cargo/bin/rustc".to_string()),
+                    ..Default::default()
+                }),
+            ),
+            (
+                "@rust_plugin",
+                Ok(Config {
+                    build_plugin: "@filesystem".to_string(),
+                    location: Some("/tmp/rust.cdylib".to_string()),
+                    ..Default::default()
+                }),
+            ),
+        ])));
 
         let id = e.add_task("cargo://rand", None);
         let result = e.run(&[id]);
