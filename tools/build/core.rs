@@ -1,4 +1,18 @@
 use std::collections::HashMap;
+use std::sync::Arc;
+
+#[derive(Debug, Clone)]
+pub struct Context {
+    pub start_time: std::time::Instant,
+    pub actions: BuildActions,
+    pub lockfile: Arc<HashMap<String, String>>,
+    pub cache_dir: std::path::PathBuf,
+    pub target: Option<String>,
+    pub target_hash: Option<u64>,
+}
+
+#[derive(Debug, Clone)]
+pub struct BuildActions {}
 
 #[derive(Debug, Clone)]
 pub struct Task {
@@ -106,18 +120,28 @@ impl Task {
 
 pub trait ResolverPlugin: std::fmt::Debug {
     fn can_resolve(&self, target: &str) -> bool;
-    fn resolve(&self, target: &str) -> std::io::Result<Config>;
+    fn resolve(&self, context: Context, target: &str) -> std::io::Result<Config>;
 }
 
 pub trait BuildPlugin: std::fmt::Debug {
-    fn build(&self, task: Task, dependencies: HashMap<String, BuildOutput>) -> BuildResult;
+    fn build(
+        &self,
+        context: Context,
+        task: Task,
+        dependencies: HashMap<String, BuildOutput>,
+    ) -> BuildResult;
 }
 
 #[derive(Debug)]
 pub struct FakeBuilder {}
 
 impl BuildPlugin for FakeBuilder {
-    fn build(&self, task: Task, dependencies: HashMap<String, BuildOutput>) -> BuildResult {
+    fn build(
+        &self,
+        context: Context,
+        task: Task,
+        dependencies: HashMap<String, BuildOutput>,
+    ) -> BuildResult {
         BuildResult::noop()
     }
 }
@@ -149,7 +173,7 @@ impl ResolverPlugin for FakeResolver {
         true
     }
 
-    fn resolve(&self, target: &str) -> std::io::Result<Config> {
+    fn resolve(&self, context: Context, target: &str) -> std::io::Result<Config> {
         match self.configs.get(target) {
             Some(Ok(c)) => Ok(c.clone()),
             Some(Err(e)) => Err(std::io::Error::new(e.kind(), "failed to read config")),
@@ -165,7 +189,12 @@ impl ResolverPlugin for FakeResolver {
 pub struct FilesystemBuilder {}
 
 impl BuildPlugin for FilesystemBuilder {
-    fn build(&self, task: Task, deps: HashMap<String, BuildOutput>) -> BuildResult {
+    fn build(
+        &self,
+        context: Context,
+        task: Task,
+        deps: HashMap<String, BuildOutput>,
+    ) -> BuildResult {
         let loc = match task
             .config
             .expect("config must be resolved by now")

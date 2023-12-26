@@ -118,7 +118,12 @@ impl RustPlugin {
 }
 
 impl BuildPlugin for RustPlugin {
-    fn build(&self, task: Task, deps: HashMap<String, BuildOutput>) -> BuildResult {
+    fn build(
+        &self,
+        context: Context,
+        task: Task,
+        deps: HashMap<String, BuildOutput>,
+    ) -> BuildResult {
         let config = task.config.expect("config must be specified by now");
         if config.kind == PluginKind::RustLibrary {
             self.build_library(config, deps)

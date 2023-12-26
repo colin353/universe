@@ -5,13 +5,8 @@ use crate::core::*;
 use crate::plugins::PluginKind;
 
 #[derive(Debug)]
-pub struct ExecutionContext {
-    start_time: std::time::Instant,
-}
-
-#[derive(Debug)]
 pub struct Executor {
-    context: ExecutionContext,
+    context: Context,
     tasks: Mutex<TaskGraph>,
 
     resolvers: Vec<Box<dyn ResolverPlugin>>,
@@ -28,9 +23,7 @@ pub struct TaskGraph {
 impl Executor {
     pub fn new() -> Self {
         Self {
-            context: ExecutionContext {
-                start_time: std::time::Instant::now(),
-            },
+            context: Context::new(std::path::PathBuf::from("/tmp/cache")),
             tasks: Mutex::new(TaskGraph::new()),
 
             resolvers: Vec::new(),
@@ -111,7 +104,7 @@ impl Executor {
             if !resolver.can_resolve(&task.target) {
                 continue;
             }
-            match resolver.resolve(&task.target) {
+            match resolver.resolve(self.context.with_target(&task.target), &task.target) {
                 Ok(config) => {
                     // Add all dependent tasks first
                     let deps: Vec<usize> = config
@@ -214,7 +207,7 @@ impl Executor {
             }
         }
 
-        let result = plugin.build(task.clone(), deps);
+        let result = plugin.build(self.context.clone(), task.clone(), deps);
         match result {
             BuildResult::Success { .. } => {
                 self.mark_build_success(task.id, result);
@@ -266,6 +259,10 @@ impl TaskGraph {
     }
 
     pub fn mark_task_failure(&mut self, id: usize, root_cause: usize, result: BuildResult) {
+        if id == root_cause {
+            println!("{result:#?}");
+        }
+
         self.tasks[id].result = Some(result);
         self.tasks[id].available = true;
         for rdep in self.rdeps[id].clone() {
@@ -302,6 +299,7 @@ fn load_plugin(path: &std::path::Path) -> Arc<dyn BuildPlugin> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cargo::CargoResolver;
 
     #[test]
     fn test_execution() {
@@ -381,6 +379,41 @@ mod tests {
         ])));
 
         let id = e.add_task("//:my_program", None);
+        let result = e.run(&[id]);
+        assert_eq!(
+            result,
+            BuildResult::Success(BuildOutput {
+                outputs: vec![std::path::PathBuf::from("/tmp/a.out")],
+            })
+        );
+    }
+
+    #[test]
+    fn test_cargo_build() {
+        let mut e = Executor::new();
+        e.builders
+            .lock()
+            .unwrap()
+            .insert("@filesystem".to_string(), Arc::new(FilesystemBuilder {}));
+
+        e.context.lockfile = Arc::new(
+            vec![("cargo://rand".to_string(), "0.8.5".to_string())]
+                .into_iter()
+                .collect(),
+        );
+
+        e.resolvers.push(Box::new(CargoResolver::new()));
+
+        e.resolvers.push(Box::new(FakeResolver::with_configs(vec![(
+            "@rust_compiler",
+            Ok(Config {
+                build_plugin: "@filesystem".to_string(),
+                location: Some("/Users/colinwm/.cargo/bin/rustc".to_string()),
+                ..Default::default()
+            }),
+        )])));
+
+        let id = e.add_task("cargo://rand", None);
         let result = e.run(&[id]);
         assert_eq!(
             result,
