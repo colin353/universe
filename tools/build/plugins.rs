@@ -18,8 +18,6 @@ impl RustPlugin {
         config: Config,
         deps: HashMap<String, BuildOutput>,
     ) -> BuildResult {
-        println!("config: {config:#?}");
-
         let compiler = match config
             .build_dependencies
             .get(0)
@@ -36,7 +34,7 @@ impl RustPlugin {
 
         let working_directory = context.working_directory();
         std::fs::create_dir_all(&working_directory).ok();
-        let out_file = working_directory.join(format!("{name}.rlib"));
+        let out_file = working_directory.join(format!("lib{name}.rlib"));
 
         let mut root_source_candidates: Vec<_> = config
             .sources
@@ -61,23 +59,55 @@ impl RustPlugin {
                     .expect("dependencies must be built by now!")
                     .outputs
                     .iter()
-                    .map(move |d| (target_shortname(t).to_string(), d))
+                    .map(move |d| {
+                        (
+                            target_shortname(t).to_string(),
+                            d.as_path().display().to_string(),
+                        )
+                    })
+            })
+            .flatten();
+
+        let transitive_deps: HashMap<String, String> = config
+            .dependencies
+            .iter()
+            .map(|t| {
+                deps.get(t)
+                    .expect("dependencies must be built by now!")
+                    .get(BuildOutputKind::TransitiveProducts)
+                    .iter()
+                    .filter_map(move |d| {
+                        let mut components = d.splitn(1, ':');
+                        let name = components.next()?;
+                        let path = components.next()?;
+                        Some((name.to_string(), path.to_string()))
+                    })
             })
             .flatten()
-            .map(|(name, s)| {
-                vec![
-                    "--extern".to_string(),
-                    format!("{name}={}", s.as_path().display().to_string()),
-                ]
-                .into_iter()
-            })
+            .collect();
+
+        let extern_crates = libraries
+            .clone()
+            .into_iter()
+            .map(|(name, s)| vec!["--extern".to_string(), format!("{name}={}", s)].into_iter())
+            .flatten();
+
+        let features = config
+            .get(ConfigExtraKeys::Features)
+            .iter()
+            .map(|s| vec!["--cfg".to_string(), format!("feature=\"{s}\"")].into_iter())
             .flatten();
 
         let mut args: Vec<String> = Vec::new();
         args.push(root_source);
-        args.extend(libraries);
+        args.extend(extern_crates);
+        args.extend(features);
+
+        if name != "libc" {
+            args.push("--edition=2018".to_string());
+        }
+
         args.extend([
-            "--edition=2018".to_string(),
             "--crate-type".to_string(),
             "rlib".to_string(),
             "--crate-name".to_string(),
@@ -94,10 +124,20 @@ impl RustPlugin {
             Err(e) => return BuildResult::Failure(format!("failed to invoke compiler: {e:?}")),
         };
 
+        let tdeps = transitive_deps
+            .into_iter()
+            .chain(libraries)
+            .map(|(name, path)| format!("{name}:{path}"))
+            .collect();
+
+        let mut extras = HashMap::new();
+        extras.insert(BuildOutputKind::TransitiveProducts, tdeps);
+
         BuildResult::Success(BuildOutput {
             outputs: vec![std::path::PathBuf::from(
                 out_file.to_string_lossy().to_string(),
             )],
+            extras,
         })
     }
 
@@ -132,16 +172,56 @@ impl RustPlugin {
                     .expect("dependencies must be built by now!")
                     .outputs
                     .iter()
-                    .map(move |d| (target_shortname(t).to_string(), d))
+                    .map(move |d| {
+                        (
+                            target_shortname(t).to_string(),
+                            d.as_path().display().to_string(),
+                        )
+                    })
+            })
+            .flatten();
+
+        let transitive_deps: HashMap<String, String> = config
+            .dependencies
+            .iter()
+            .map(|t| {
+                deps.get(t)
+                    .expect("dependencies must be built by now!")
+                    .get(BuildOutputKind::TransitiveProducts)
+                    .iter()
+                    .filter_map(move |d| {
+                        let mut components = d.splitn(2, ':');
+                        let name = components.next()?;
+                        let path = components.next()?;
+                        Some((name.to_string(), path.to_string()))
+                    })
             })
             .flatten()
-            .map(|(name, s)| {
+            .collect();
+
+        let transitive_libraries = transitive_deps
+            .into_iter()
+            .map(|(_, path)| {
                 vec![
-                    "--extern".to_string(),
-                    format!("{name}={}", s.as_path().display().to_string()),
+                    "-L".to_string(),
+                    std::path::Path::new(&path)
+                        .parent()
+                        .expect("must have a parent...")
+                        .to_string_lossy()
+                        .to_string(),
                 ]
                 .into_iter()
             })
+            .flatten();
+
+        let extern_crates = libraries
+            .map(|(name, s)| vec!["--extern".to_string(), format!("{name}={}", s)].into_iter())
+            .flatten();
+
+        let features = config
+            .get(ConfigExtraKeys::Features)
+            .iter()
+            .map(|s| vec!["--cfg".to_string(), format!("'feature=\"{s}\"'")].into_iter())
             .flatten();
 
         let mut root_source_candidates: Vec<_> = config
@@ -150,8 +230,8 @@ impl RustPlugin {
             .filter(|s| s.ends_with("/main.rs") || s.ends_with(&format!("/{name}.rs")))
             .collect();
         root_source_candidates.sort_by_key(|c| c.split('/').count());
-        let root_source = match root_source_candidates.iter().next() {
-            Some(s) => s,
+        let root_source = match root_source_candidates.into_iter().next() {
+            Some(s) => s.to_string(),
             None => {
                 return BuildResult::Failure(format!(
                     "no main.rs or {name}.rs source file specified!"
@@ -159,24 +239,25 @@ impl RustPlugin {
             }
         };
 
-        let mut cmd = std::process::Command::new(compiler);
-        cmd.arg(root_source).args(libraries).args(["-o", out_file]);
+        let mut args: Vec<String> = Vec::new();
+        args.push(root_source);
+        args.extend(extern_crates);
+        args.extend(transitive_libraries);
+        args.extend(features);
+        args.extend(["-o".to_string(), out_file.to_string()]);
+        args.push("--edition=2021".to_string());
 
-        let out = match cmd.output() {
+        match context
+            .actions
+            .run_process(context, compiler, args.as_slice())
+        {
             Ok(o) => o,
             Err(e) => return BuildResult::Failure(format!("failed to invoke compiler: {e:?}")),
         };
 
-        if !out.status.success() {
-            return BuildResult::Failure(format!(
-                "compilation failed: {:#?}{:#?}",
-                std::str::from_utf8(&out.stdout).unwrap_or_default(),
-                std::str::from_utf8(&out.stderr).unwrap_or_default(),
-            ));
-        }
-
         BuildResult::Success(BuildOutput {
             outputs: vec![std::path::PathBuf::from(out_file)],
+            ..Default::default()
         })
     }
 }

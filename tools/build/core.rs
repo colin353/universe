@@ -31,15 +31,27 @@ pub enum BuildResult {
     Failure(String),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+pub mod BuildOutputKind {
+    pub const TransitiveProducts: u32 = 0;
+}
+
+#[derive(Debug, Default, Clone, PartialEq)]
 pub struct BuildOutput {
     pub outputs: Vec<std::path::PathBuf>,
+    pub extras: HashMap<u32, Vec<String>>,
+}
+
+impl BuildOutput {
+    pub fn get(&self, key: u32) -> &[String] {
+        self.extras.get(&key).map(|s| s.as_slice()).unwrap_or(&[])
+    }
 }
 
 impl BuildResult {
     pub fn noop() -> Self {
         BuildResult::Success(BuildOutput {
             outputs: Vec::new(),
+            ..Default::default()
         })
     }
 
@@ -47,13 +59,16 @@ impl BuildResult {
         let mut outs = Vec::new();
         for result in results {
             match result {
-                BuildResult::Success(BuildOutput { outputs }) => {
+                BuildResult::Success(BuildOutput { outputs, extras: _ }) => {
                     outs.extend(outputs.to_owned());
                 }
                 _ => return result.clone(),
             }
         }
-        BuildResult::Success(BuildOutput { outputs: outs })
+        BuildResult::Success(BuildOutput {
+            outputs: outs,
+            ..Default::default()
+        })
     }
 }
 
@@ -65,6 +80,11 @@ pub struct Config {
     pub sources: Vec<String>,
     pub build_dependencies: Vec<String>,
     pub kind: String,
+    pub extras: HashMap<u32, Vec<String>>,
+}
+
+pub mod ConfigExtraKeys {
+    pub const Features: u32 = 0;
 }
 
 impl Config {
@@ -73,6 +93,10 @@ impl Config {
         out.push(self.build_plugin.as_str());
         out.extend(self.build_dependencies.iter().map(|s| s.as_str()));
         out
+    }
+
+    pub fn get(&self, key: u32) -> &[String] {
+        self.extras.get(&key).map(|s| s.as_slice()).unwrap_or(&[])
     }
 }
 
@@ -210,6 +234,7 @@ impl BuildPlugin for FilesystemBuilder {
         };
         BuildResult::Success(BuildOutput {
             outputs: vec![std::path::PathBuf::from(loc)],
+            ..Default::default()
         })
     }
 }

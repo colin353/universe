@@ -1,4 +1,6 @@
-use crate::core::{Config, Context, ResolverPlugin};
+use std::collections::HashMap;
+
+use crate::core::{Config, ConfigExtraKeys, Context, ResolverPlugin};
 use crate::plugins::PluginKind;
 
 #[derive(Debug)]
@@ -78,9 +80,27 @@ impl ResolverPlugin for CargoResolver {
         let mut rust_files = Vec::new();
         get_rust_files(&dest.join("src"), &mut rust_files)?;
 
+        let mut extras = HashMap::new();
+
+        // TODO: read the actual TOML and generate this...
         let mut deps = Vec::new();
         if target == "cargo://rand" {
             deps.push("cargo://rand_core".to_string());
+            deps.push("cargo://libc".to_string());
+            extras.insert(
+                ConfigExtraKeys::Features,
+                vec![
+                    "std".to_string(),
+                    "libc".to_string(),
+                    "alloc".to_string(),
+                    "rand_core/std".to_string(),
+                ],
+            );
+        } else if target == "cargo://rand_core" {
+            extras.insert(
+                ConfigExtraKeys::Features,
+                vec!["alloc".to_string(), "std".to_string()],
+            );
         }
 
         Ok(Config {
@@ -93,6 +113,7 @@ impl ResolverPlugin for CargoResolver {
                 .collect(),
             build_dependencies: vec!["@rust_compiler".to_string()],
             kind: PluginKind::RustLibrary.to_string(),
+            extras,
         })
     }
 }

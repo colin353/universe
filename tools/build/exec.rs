@@ -170,7 +170,7 @@ impl Executor {
                     .as_ref()
                     .expect("this plugin must already have been built!")
                 {
-                    BuildResult::Success(BuildOutput { outputs }) => outputs[0].clone(),
+                    BuildResult::Success(BuildOutput { outputs, .. }) => outputs[0].clone(),
                     _ => panic!("the plugin build must have succeeded by now!"),
                 };
                 let plugin = load_plugin(&plugin_path);
@@ -384,6 +384,7 @@ mod tests {
             result,
             BuildResult::Success(BuildOutput {
                 outputs: vec![std::path::PathBuf::from("/tmp/a.out")],
+                ..Default::default()
             })
         );
     }
@@ -399,7 +400,8 @@ mod tests {
         e.context.lockfile = Arc::new(
             vec![
                 ("cargo://rand".to_string(), "0.8.5".to_string()),
-                ("cargo://rand_core".to_string(), "0.6.4".to_string()),
+                ("cargo://rand_core".to_string(), "0.6.0".to_string()),
+                ("cargo://libc".to_string(), "0.2.151".to_string()),
             ]
             .into_iter()
             .collect(),
@@ -424,14 +426,26 @@ mod tests {
                     ..Default::default()
                 }),
             ),
+            (
+                "//:dice_roll",
+                Ok(Config {
+                    build_plugin: "@rust_plugin".to_string(),
+                    sources: vec!["/tmp/dice_roll.rs".to_string()],
+                    dependencies: vec!["cargo://rand".to_string()],
+                    build_dependencies: vec!["@rust_compiler".to_string()],
+                    kind: PluginKind::RustBinary.to_string(),
+                    ..Default::default()
+                }),
+            ),
         ])));
 
-        let id = e.add_task("cargo://rand", None);
+        let id = e.add_task("//:dice_roll", None);
         let result = e.run(&[id]);
         assert_eq!(
             result,
             BuildResult::Success(BuildOutput {
                 outputs: vec![std::path::PathBuf::from("/tmp/a.out")],
+                ..Default::default()
             })
         );
     }
