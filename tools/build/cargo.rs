@@ -46,6 +46,7 @@ impl ResolverPlugin for CargoResolver {
             std::io::ErrorKind::Other,
             "invalid target name",
         ))?;
+
         let crate_version = context.get_locked_version(target)?;
 
         let workdir = context.working_directory();
@@ -53,29 +54,34 @@ impl ResolverPlugin for CargoResolver {
 
         // Download the crate tarball
         let tar_dest = workdir.join("crate.tar");
-        context.actions.download(
-            &context,
-            format!(
-                "https://crates.io/api/v1/crates/{}/{}/download",
-                crate_name, crate_version
-            ),
-            &tar_dest,
-        )?;
+
+        if !tar_dest.exists() {
+            context.actions.download(
+                &context,
+                format!(
+                    "https://crates.io/api/v1/crates/{}/{}/download",
+                    crate_name, crate_version
+                ),
+                &tar_dest,
+            )?;
+        }
 
         // Untar the crate tarball
         let dest = workdir.join("crate");
-        std::fs::create_dir_all(&dest).ok();
-        context.actions.run_process(
-            &context,
-            "tar",
-            &[
-                "xzvf",
-                &tar_dest.to_string_lossy(),
-                "-C",
-                &dest.to_string_lossy(),
-                "--strip-components=1",
-            ],
-        )?;
+        if !dest.exists() {
+            std::fs::create_dir_all(&dest).ok();
+            context.actions.run_process(
+                &context,
+                "tar",
+                &[
+                    "xzvf",
+                    &tar_dest.to_string_lossy(),
+                    "-C",
+                    &dest.to_string_lossy(),
+                    "--strip-components=1",
+                ],
+            )?;
+        }
 
         let mut rust_files = Vec::new();
         get_rust_files(&dest.join("src"), &mut rust_files)?;
@@ -87,16 +93,33 @@ impl ResolverPlugin for CargoResolver {
         if target == "cargo://rand" {
             deps.push("cargo://rand_core".to_string());
             deps.push("cargo://libc".to_string());
+            deps.push("cargo://rand_chacha".to_string());
             extras.insert(
                 ConfigExtraKeys::Features,
                 vec![
                     "std".to_string(),
                     "libc".to_string(),
                     "alloc".to_string(),
-                    "rand_core/std".to_string(),
+                    "std_rng".to_string(),
+                    "getrandom".to_string(),
                 ],
             );
+        } else if target == "cargo://rand_chacha" {
+            deps.push("cargo://rand_core".to_string());
+            deps.push("cargo://ppv-lite86".to_string());
         } else if target == "cargo://rand_core" {
+            deps.push("cargo://getrandom".to_string());
+            extras.insert(
+                ConfigExtraKeys::Features,
+                vec![
+                    "alloc".to_string(),
+                    "std".to_string(),
+                    "getrandom".to_string(),
+                ],
+            );
+        } else if target == "cargo://getrandom" {
+            deps.push("cargo://libc".to_string());
+            deps.push("cargo://cfg-if".to_string());
             extras.insert(
                 ConfigExtraKeys::Features,
                 vec!["alloc".to_string(), "std".to_string()],
@@ -114,6 +137,7 @@ impl ResolverPlugin for CargoResolver {
             build_dependencies: vec!["@rust_compiler".to_string()],
             kind: PluginKind::RustLibrary.to_string(),
             extras,
+            hash: 1010,
         })
     }
 }

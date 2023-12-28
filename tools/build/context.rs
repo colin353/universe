@@ -1,7 +1,7 @@
-use crate::core::{BuildActions, Context};
+use crate::core::{BuildActions, Context, Task};
 
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, RwLock};
 
 impl Context {
     pub fn new(cache_dir: std::path::PathBuf) -> Self {
@@ -12,6 +12,7 @@ impl Context {
             cache_dir,
             target: None,
             target_hash: None,
+            logs: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -21,8 +22,10 @@ impl Context {
         s
     }
 
-    pub fn with_config(&self, config: &str) -> Self {
+    pub fn with_task(&self, task: &Task) -> Self {
         let mut s = self.clone();
+        s.target = Some(task.target.clone());
+        s.target_hash = task.config.as_ref().map(|c| c.hash);
         s
     }
 
@@ -34,6 +37,32 @@ impl Context {
                 std::io::ErrorKind::NotFound,
                 format!("{target} does not have a lockfile entry!"),
             ))
+    }
+
+    pub fn log<S: Into<String>>(&self, message: S) {
+        let target = match self.target.as_ref() {
+            Some(t) => t,
+            None => {
+                println!("{}", message.into());
+                return;
+            }
+        };
+
+        {
+            let _logs = self.logs.read().expect("failed to acquire log lock");
+            if let Some(logs) = _logs.get(target) {
+                logs.lock()
+                    .expect("failed to acquire target log lock")
+                    .push(message.into());
+
+                return;
+            }
+        }
+
+        self.logs
+            .write()
+            .expect("failed to acquire log writelock")
+            .insert(target.to_string(), Mutex::new(vec![message.into()]));
     }
 
     pub fn scratch_dir(&self) -> std::path::PathBuf {

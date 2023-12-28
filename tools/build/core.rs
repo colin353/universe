@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, RwLock};
 
 #[derive(Debug, Clone)]
 pub struct Context {
@@ -9,6 +9,7 @@ pub struct Context {
     pub cache_dir: std::path::PathBuf,
     pub target: Option<String>,
     pub target_hash: Option<u64>,
+    pub logs: Arc<RwLock<HashMap<String, Mutex<Vec<String>>>>>,
 }
 
 #[derive(Debug, Clone)]
@@ -81,6 +82,7 @@ pub struct Config {
     pub build_dependencies: Vec<String>,
     pub kind: String,
     pub extras: HashMap<u32, Vec<String>>,
+    pub hash: u64,
 }
 
 pub mod ConfigExtraKeys {
@@ -119,6 +121,13 @@ impl Task {
             available: true,
             dependencies_ready: 0,
         }
+    }
+
+    pub fn failure_stage(&self) -> TaskStatus {
+        if self.config.is_none() {
+            return TaskStatus::Resolving;
+        }
+        return TaskStatus::Building;
     }
 
     pub fn status(&self) -> TaskStatus {

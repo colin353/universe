@@ -59,12 +59,7 @@ impl RustPlugin {
                     .expect("dependencies must be built by now!")
                     .outputs
                     .iter()
-                    .map(move |d| {
-                        (
-                            target_shortname(t).to_string(),
-                            d.as_path().display().to_string(),
-                        )
-                    })
+                    .map(move |d| (rust_name(t), d.as_path().display().to_string()))
             })
             .flatten();
 
@@ -77,14 +72,31 @@ impl RustPlugin {
                     .get(BuildOutputKind::TransitiveProducts)
                     .iter()
                     .filter_map(move |d| {
-                        let mut components = d.splitn(1, ':');
+                        let mut components = d.splitn(2, ':');
                         let name = components.next()?;
                         let path = components.next()?;
                         Some((name.to_string(), path.to_string()))
                     })
             })
             .flatten()
+            .chain(libraries.clone())
             .collect();
+
+        let transitive_libraries = transitive_deps
+            .clone()
+            .into_iter()
+            .map(|(_, path)| {
+                vec![
+                    "-L".to_string(),
+                    std::path::Path::new(&path)
+                        .parent()
+                        .expect("must have a parent...")
+                        .to_string_lossy()
+                        .to_string(),
+                ]
+                .into_iter()
+            })
+            .flatten();
 
         let extern_crates = libraries
             .clone()
@@ -101,6 +113,7 @@ impl RustPlugin {
         let mut args: Vec<String> = Vec::new();
         args.push(root_source);
         args.extend(extern_crates);
+        args.extend(transitive_libraries);
         args.extend(features);
 
         if name != "libc" {
@@ -114,6 +127,7 @@ impl RustPlugin {
             name.to_string(),
             "-o".to_string(),
             out_file.to_string_lossy().to_string(),
+            "--color=always".to_string(),
         ]);
 
         match context
@@ -126,7 +140,6 @@ impl RustPlugin {
 
         let tdeps = transitive_deps
             .into_iter()
-            .chain(libraries)
             .map(|(name, path)| format!("{name}:{path}"))
             .collect();
 
@@ -162,7 +175,9 @@ impl RustPlugin {
             }
         };
 
-        let out_file = "/tmp/a.out";
+        let working_directory = context.working_directory();
+        std::fs::create_dir_all(&working_directory).ok();
+        let out_file = working_directory.join(name);
 
         let libraries = config
             .dependencies
@@ -172,12 +187,7 @@ impl RustPlugin {
                     .expect("dependencies must be built by now!")
                     .outputs
                     .iter()
-                    .map(move |d| {
-                        (
-                            target_shortname(t).to_string(),
-                            d.as_path().display().to_string(),
-                        )
-                    })
+                    .map(move |d| (rust_name(t), d.as_path().display().to_string()))
             })
             .flatten();
 
@@ -197,6 +207,7 @@ impl RustPlugin {
                     })
             })
             .flatten()
+            .chain(libraries.clone())
             .collect();
 
         let transitive_libraries = transitive_deps
@@ -244,8 +255,9 @@ impl RustPlugin {
         args.extend(extern_crates);
         args.extend(transitive_libraries);
         args.extend(features);
-        args.extend(["-o".to_string(), out_file.to_string()]);
+        args.extend(["-o".to_string(), out_file.to_string_lossy().to_string()]);
         args.push("--edition=2021".to_string());
+        args.push("--color=always".to_string());
 
         match context
             .actions
@@ -262,6 +274,10 @@ impl RustPlugin {
     }
 }
 
+fn rust_name(target: &str) -> String {
+    crate::core::target_shortname(target).replace('-', "_")
+}
+
 impl BuildPlugin for RustPlugin {
     fn build(
         &self,
@@ -269,13 +285,13 @@ impl BuildPlugin for RustPlugin {
         task: Task,
         deps: HashMap<String, BuildOutput>,
     ) -> BuildResult {
-        let name = crate::core::target_shortname(&task.target);
+        let name = rust_name(&task.target);
 
         let config = task.config.expect("config must be specified by now");
         if config.kind == PluginKind::RustLibrary {
-            self.build_library(&context, name, config, deps)
+            self.build_library(&context, &name, config, deps)
         } else if config.kind == PluginKind::RustBinary {
-            self.build_binary(&context, name, config, deps)
+            self.build_binary(&context, &name, config, deps)
         } else {
             BuildResult::Failure(format!("unsupported target kind: {:?}", config.kind))
         }

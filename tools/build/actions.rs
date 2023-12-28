@@ -66,23 +66,21 @@ impl BuildActions {
         S: AsRef<str>,
     {
         let bin = bin.into();
-        let mut cmd_debug = format!("{bin:?}");
+        let mut cmd_debug = format!("{}", bin.to_string_lossy());
         let mut c = std::process::Command::new(bin);
         for arg in args {
             cmd_debug.push(' ');
             cmd_debug.push_str(arg.as_ref());
             c.arg(arg.as_ref());
         }
-        println!("run_command: {cmd_debug}");
+        context.log(format!("run_command: {cmd_debug}"));
 
         let out = c.output()?;
         if !out.status.success() {
+            context.log(std::str::from_utf8(&out.stderr).unwrap_or("<non-utf8 output>"));
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
-                format!(
-                    "command failed: {}",
-                    std::str::from_utf8(&out.stderr).unwrap_or("")
-                ),
+                format!("command failed: {cmd_debug}",),
             ));
         }
 
@@ -103,7 +101,8 @@ impl BuildActions {
             std::fs::create_dir_all(p).ok();
         }
         let url = url.into();
-        println!("download URL: {url}");
+
+        context.log(format!("download URL: {url}"));
         let url = url.parse().map_err(|e| {
             std::io::Error::new(
                 std::io::ErrorKind::InvalidData,

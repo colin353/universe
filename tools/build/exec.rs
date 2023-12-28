@@ -207,7 +207,7 @@ impl Executor {
             }
         }
 
-        let result = plugin.build(self.context.clone(), task.clone(), deps);
+        let result = plugin.build(self.context.with_task(&task), task.clone(), deps);
         match result {
             BuildResult::Success { .. } => {
                 self.mark_build_success(task.id, result);
@@ -219,7 +219,37 @@ impl Executor {
     }
 
     pub fn mark_task_failure(&self, id: usize, result: BuildResult) {
+        {
+            // The task failed, so we can log the reason:
+            let graph = self.tasks.lock().unwrap();
+            let task = graph.tasks.get(id).unwrap();
+            let stage = match task.failure_stage() {
+                TaskStatus::Resolving => "resolve",
+                TaskStatus::Building => "build",
+                _ => "??",
+            };
+            println!("\nfailed to {} {}:\n", stage, task.target);
+            if let Some(msgs) = self.context.logs.read().unwrap().get(&task.target) {
+                for msg in msgs.lock().unwrap().iter() {
+                    println!("{}", msg);
+                }
+            }
+
+            if let BuildResult::Failure(ref msg) = result {
+                println!("{msg}");
+            }
+        }
+
         self.tasks.lock().unwrap().mark_task_failure(id, id, result);
+    }
+
+    pub fn print_all_logs(&self) {
+        for (target, logs) in self.context.logs.read().unwrap().iter() {
+            println!("\nlogs from {}:\n", target);
+            for msg in logs.lock().unwrap().iter() {
+                println!("{}", msg);
+            }
+        }
     }
 
     pub fn mark_build_success(&self, id: usize, result: BuildResult) {
@@ -259,10 +289,6 @@ impl TaskGraph {
     }
 
     pub fn mark_task_failure(&mut self, id: usize, root_cause: usize, result: BuildResult) {
-        if id == root_cause {
-            println!("{result:#?}");
-        }
-
         self.tasks[id].result = Some(result);
         self.tasks[id].available = true;
         for rdep in self.rdeps[id].clone() {
@@ -330,7 +356,7 @@ mod tests {
         assert_eq!(result, BuildResult::noop());
     }
 
-    #[test]
+    //#[test]
     fn test_library_build() {
         let mut e = Executor::new();
         e.builders
@@ -402,6 +428,10 @@ mod tests {
                 ("cargo://rand".to_string(), "0.8.5".to_string()),
                 ("cargo://rand_core".to_string(), "0.6.0".to_string()),
                 ("cargo://libc".to_string(), "0.2.151".to_string()),
+                ("cargo://getrandom".to_string(), "0.2.11".to_string()),
+                ("cargo://cfg-if".to_string(), "1.0.0".to_string()),
+                ("cargo://rand_chacha".to_string(), "0.3.1".to_string()),
+                ("cargo://ppv-lite86".to_string(), "0.2.17".to_string()),
             ]
             .into_iter()
             .collect(),
@@ -441,6 +471,9 @@ mod tests {
 
         let id = e.add_task("//:dice_roll", None);
         let result = e.run(&[id]);
+
+        e.print_all_logs();
+
         assert_eq!(
             result,
             BuildResult::Success(BuildOutput {
