@@ -1,0 +1,44 @@
+enum DataFormat {
+    Unknown = 0
+    InMemory = 1
+    RecordIO = 2
+}
+
+message CollectionSpec {
+    id: u64 = 1
+    resolved: bool = 2
+
+    filenames: repeated string = 3
+    format: DataFormat = 4
+
+    group_by_key: bool = 5
+
+    starting_key: string = 6
+    ending_key: string = 7
+
+    starting_index: u64 = 8
+    ending_index: u64 = 9
+
+    memory_ids: repeated u64 = 10
+    target_memory_shards: u64 = 11
+
+    is_ptable: bool = 12
+
+    temporary_path: string = 13
+
+    num_resolved_shards: u64 = 14
+    num_shards: u64 = 15
+}
+
+message PFnSpec {
+    id: u64 = 1
+    description: string = 2
+    skip_planning: bool = 3
+}
+
+message Plan {
+    inputs: repeated CollectionSpec = 1
+    side_inputs: repeated CollectionSpec = 2
+    function: PFnSpec = 3
+    outputs: repeated CollectionSpec = 4
+}
