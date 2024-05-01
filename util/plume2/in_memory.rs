@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use crate::globals;
+use crate::iter::StreamingIterator;
 use crate::sink::SinkProducer;
 use plume_bus::*;
 
@@ -92,18 +93,33 @@ where
     }
 }
 
-struct InMemorySourceIteratorWrapper<T> {
-    data: Vec<Arc<Vec<(String, T)>>>,
+struct InMemorySourceIterator<T> {
+    data: Arc<Vec<T>>,
     index: usize,
     end_index: usize,
 }
 
+impl<T> StreamingIterator for InMemorySourceIterator<T> {
+    type Item = T;
+
+    fn advance(&mut self) {
+        self.index += 1;
+    }
+
+    fn get(&self) -> Option<&T> {
+        if self.index >= self.end_index {
+            return None;
+        }
+
+        Some(&self.data[self.index])
+    }
+}
+
 pub fn mem_source<T: Send + Sync + 'static>(
     spec: &CollectionSpec,
-) -> InMemorySourceIteratorWrapper<T> {
-    InMemorySourceIteratorWrapper {
-        data: spec
-            .memory_ids
+) -> Box<dyn StreamingIterator<Item = T>> {
+    crate::iter::chain(
+        spec.memory_ids
             .iter()
             .map(|id| {
                 let guard = globals::IN_MEMORY_DATASETS
@@ -113,11 +129,13 @@ pub fn mem_source<T: Send + Sync + 'static>(
                 let pcoll: Arc<dyn InMemoryCollectionWrapper> = dataset.data.clone();
                 let data: &InMemoryCollectionUnderlying<T> =
                     pcoll.downcast_ref().expect("failed to downcast!");
+                let out: Box<dyn StreamingIterator<Item = T>> = Box::new(InMemorySourceIterator {
                     data: data.data.clone(),
                     index: spec.starting_index as usize,
                     end_index: spec.ending_index as usize,
-                }
+                });
+                out
             })
             .collect(),
-    }
+    )
 }

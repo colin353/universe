@@ -5,6 +5,7 @@ use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, RwLock};
 
 mod in_memory;
+mod iter;
 mod map_fn;
 mod sink;
 
@@ -37,7 +38,7 @@ pub fn get_collection(id: u64) -> CollectionSpec {
         .to_owned()
 }
 
-trait PFn: Send + Sync + 'static {
+pub trait PFn: Send + Sync + 'static {
     fn plan(&self) -> (Plan, Vec<Plan>);
     fn execute(&self, plan: &Plan);
     fn name(&self) -> &'static str;
@@ -76,7 +77,7 @@ where
     }
 
     pub fn plan(&self) -> Vec<Plan> {
-        if let Some(f) = self.dependency {
+        if let Some(f) = &self.dependency {
             let (mut s, mut deps) = f.plan();
             s.outputs.push(self.spec.clone());
             deps.push(s);

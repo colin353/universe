@@ -1,4 +1,4 @@
-use crate::{Collection, EmitFn, PFn};
+use crate::{globals, reserve_id, Collection, EmitFn, InMemoryCollection, PFn};
 use plume_bus::*;
 
 pub struct SinkProducer<T> {
@@ -26,7 +26,7 @@ where
             panic!("Can't make a sink from zero outputs");
         }
         if outputs[0].format == DataFormat::InMemory {
-            return Box::new(MemorySink::new(outputs));
+            return Box::new(join(outputs.iter().map(|c| MemorySink::new(c)).collect()));
         }
         panic!(
             "I don't know how to make a sink for {:?}",
@@ -35,44 +35,66 @@ where
     }
 }
 
-struct MemorySink<T> {
-    outputs: Vec<MemorySinkSingleOutput<T>>,
+pub struct JoinedSink<E> {
+    outputs: Vec<E>,
     write_count: usize,
 }
 
-impl<T> MemorySink<T>
-where
-    T: Send + Sync + 'static,
-{
-    pub fn new(outputs: &[CollectionSpec]) -> Self {
-        Self {
-            outputs: outputs
-                .iter()
-                .map(|x| MemorySinkSingleOutput::new(x))
-                .collect(),
-            write_count: 0,
-        }
-    }
-}
-
-impl<T> EmitFn<T> for MemorySink<T>
-where
-    T: Send + Sync + 'static,
-{
+impl<T, E: EmitFn<T>> EmitFn<T> for JoinedSink<E> {
     fn finish(self: Box<Self>) {
         for out in self.outputs {
-            out.finish();
+            Box::new(out).finish();
         }
     }
 
     fn emit(&mut self, value: T) {
-        let idx = self.write_count % self.outputs.len();
-        self.outputs[idx].emit(value);
-        self.write_count += 1;
+        let len = self.outputs.len();
+        self.outputs[self.write_count % len].emit(value);
     }
 }
 
-struct MemorySinkSingleOutput<T> {
-    config: CollectionSpec,
+pub fn join<T, E: EmitFn<T>>(outputs: Vec<E>) -> JoinedSink<E> {
+    JoinedSink {
+        outputs,
+        write_count: 0,
+    }
+}
+
+struct MemorySink<T> {
+    id: u64,
     output: Vec<T>,
+}
+
+impl<T> MemorySink<T> {
+    pub fn new(config: &CollectionSpec) -> Self {
+        Self {
+            id: config.id,
+            output: Vec::new(),
+        }
+    }
+}
+
+impl<T: Send + Sync + 'static> EmitFn<T> for MemorySink<T> {
+    fn finish(self: Box<Self>) {
+        let shard_id = reserve_id();
+        globals::IN_MEMORY_DATASETS
+            .write()
+            .unwrap()
+            .insert(shard_id, InMemoryCollection::from_vec(self.output));
+
+        let mut guard = globals::COLLECTION_REGISTRY.write().unwrap();
+        let mut config = guard
+            .get_mut(&self.id)
+            .expect("failed to find collection spec in global registry!");
+        config.memory_ids.push(shard_id);
+        config.format = DataFormat::InMemory;
+        config.num_resolved_shards += 1;
+        if config.num_resolved_shards == config.num_shards {
+            config.resolved = true;
+        }
+    }
+
+    fn emit(&mut self, value: T) {
+        self.output.push(value);
+    }
 }

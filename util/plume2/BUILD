@@ -15,6 +15,7 @@ rust_library(
         "in_memory.rs",
         "map_fn.rs",
         "sink.rs",
+        "iter.rs",
     ],
     deps = [
         ":plume_bus",

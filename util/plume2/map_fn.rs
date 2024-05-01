@@ -53,11 +53,10 @@ where
             let mut sink = producer.make_sink(&plan.outputs);
             {
                 let sink_ref: &mut dyn EmitFn<Out> = &mut *sink;
-                *match input.format {
+                match input.format {
                     DataFormat::InMemory => {
-                        let mut memsource = crate::in_memory::mem_source(input);
-                        let mut source_iter = memsource.iter();
-                        while let Some(item) = source_iter.next() {
+                        let mut stream = crate::in_memory::mem_source(input);
+                        while let Some(item) = stream.next() {
                             self.function.map(item, sink_ref);
                         }
                     }
