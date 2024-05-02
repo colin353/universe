@@ -1,4 +1,4 @@
-use crate::{globals, reserve_id, Collection, EmitFn, InMemoryCollection, PFn};
+use crate::{globals, reserve_id, EmitFn, InMemoryCollection};
 use plume_bus::*;
 
 pub struct SinkProducer<T> {

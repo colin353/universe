@@ -1,12 +1,11 @@
 use std::sync::Arc;
 
-use crate::globals;
 use crate::iter::StreamingIterator;
-use crate::sink::SinkProducer;
+use crate::{globals, Error};
 use plume_bus::*;
 
 pub struct InMemoryCollection {
-    data: Arc<dyn InMemoryCollectionWrapper>,
+    pub data: Arc<dyn InMemoryCollectionWrapper>,
 }
 
 impl InMemoryCollection {
@@ -30,8 +29,14 @@ impl InMemoryCollection {
             }),
         }
     }
-    fn len(&self) -> usize {
+    pub fn len(&self) -> usize {
         self.data.len()
+    }
+
+    pub fn get_vec<T: Send + Sync + 'static>(&self) -> Result<Arc<Vec<T>>, Error> {
+        let pcoll: Arc<dyn InMemoryCollectionWrapper> = self.data.clone();
+        let data: &InMemoryCollectionUnderlying<T> = pcoll.downcast_ref()?;
+        Ok(data.data.clone())
     }
 }
 
@@ -41,7 +46,7 @@ pub trait InMemoryCollectionWrapper: Send + Sync {
 }
 
 impl dyn InMemoryCollectionWrapper {
-    pub fn downcast_ref<T: InMemoryCollectionWrapper>(&self) -> Result<&T, ()> {
+    pub fn downcast_ref<T: InMemoryCollectionWrapper>(&self) -> Result<&T, Error> {
         // TODO: I don't know how to actually check if the types match. Need to do something like
         // verify the type ID. Basically if they don't match the program will do some undefined
         // behaviour so we should actually check and panic.

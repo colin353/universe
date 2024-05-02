@@ -27,3 +27,11 @@ rust_library(
         "//util/sstable",
     ],
 )
+
+rust_binary(
+    name = "example",
+    srcs = ["example.rs"],
+    deps = [ 
+        ":plume",
+    ],
+)

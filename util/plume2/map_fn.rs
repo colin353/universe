@@ -1,5 +1,5 @@
 use crate::sink::{SinkProducer, SinkProducerTrait};
-use crate::{get_collection, reserve_id, Collection, EmitFn, PFn};
+use crate::{get_collection, reserve_id, EmitFn, PFn};
 use plume_bus::*;
 
 pub struct MapFnWrapper<In, Out> {
@@ -23,8 +23,19 @@ pub trait MapFn: Send + Sync {
     type Output;
     fn map(&self, input: &Self::Input, emit: &mut dyn EmitFn<Self::Output>);
 
-    fn type_name(&self) -> &'static str {
-        std::any::type_name::<Self>().split("::").last().unwrap()
+    fn type_name(&self) -> String {
+        format!(
+            "{}<{}, {}>",
+            std::any::type_name::<Self>().split("::").last().unwrap(),
+            std::any::type_name::<Self::Input>()
+                .split("::")
+                .last()
+                .unwrap(),
+            std::any::type_name::<Self::Output>()
+                .split("::")
+                .last()
+                .unwrap(),
+        )
     }
 }
 
@@ -43,7 +54,7 @@ where
         (s, dep_plans)
     }
 
-    fn name(&self) -> &'static str {
+    fn name(&self) -> String {
         self.function.type_name()
     }
 

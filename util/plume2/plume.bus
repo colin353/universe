@@ -28,6 +28,10 @@ message CollectionSpec {
 
     num_resolved_shards: u64 = 14
     num_shards: u64 = 15
+
+    typename: string = 16
+
+    dependency: u64 = 17
 }
 
 message PFnSpec {
